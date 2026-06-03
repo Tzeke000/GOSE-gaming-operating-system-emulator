@@ -32,9 +32,11 @@ shell, framebuffer, `gamelist.xml` convention) — not on ROCKNIX/Batocera
 internals. Distro-specific bits (theme format, paths) are isolated in config +
 `scripts/setup-device.sh`. **Status:** accepted.
 
-## ADR-0001 — Base distro: ROCKNIX first, Batocera on a spare card
+## ADR-0001 — Base distro: run BOTH in parallel, then bench
 **Context:** As of 2026-06 both support the Odin 2; ROCKNIX is officially stable on
 all three variants, Batocera v42 (SM8550) has the bigger library but is newer to
-the device. **Decision:** stand up **ROCKNIX first** for reliability, keep a second
-SD with **Batocera** to compare emulation coverage (esp. PSP/PS2/Switch). Pick the
-"daily driver" after hands-on testing. **Status:** accepted, pending hardware test.
+the device. **Decision (Zeke, 2026-06-03):** stand up **ROCKNIX and Batocera on
+two SD cards in parallel** and benchmark PSP/PS2/Switch on each, then pick the
+daily driver from real results. Device is **not yet acquired**, so all work stays
+**variant-agnostic** (Odin 2 / Mini / Portal). **Status:** accepted, pending
+hardware purchase + test.

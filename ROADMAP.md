@@ -12,11 +12,13 @@ the cloud container) · 🧱 blocked
 - ✅ Reproducible setup scripts (skeleton)
 - ✅ SessionStart hook so web sessions are primed
 
-## Phase 1 — Base OS on hardware 🔌
-- ⬜ Confirm exact Odin 2 variant (2 / Mini / Portal)
-- ⬜ Flash ROCKNIX to A2 microSD; abl mod; boot from SD (runbook §D)
-- ⬜ First-boot checklist (controller nav, Wi-Fi, BT, GPU, audio) (runbook §F)
-- ⬜ Flash Batocera SM8550 to spare card; compare
+## Phase 1 — Base OS on hardware 🔌  (device NOT yet acquired)
+- ⬜ Acquire Odin 2 (+ Super Dock, A2 microSD ×2, 8BitDo Adapter 2, USB-C→HDMI)
+- ⬜ Confirm exact variant on arrival (2 / Mini / Portal)
+- ⬜ **Both in parallel:** flash ROCKNIX (card A) + Batocera SM8550 (card B); abl
+      mod; boot from SD (runbook §D)
+- ⬜ First-boot checklist on each (controller nav, Wi-Fi, BT, GPU, audio) (§F)
+- ⬜ Bench PSP/PS2/Switch on both → pick daily driver
 
 ## Phase 2 — Emulation 🔌
 - ⬜ PSP runs great, upscaled (flagship)

@@ -37,8 +37,12 @@ AI control agent, and the reproducible setup scripts.
   keep a direct USB-C→HDMI adapter as fallback. Dock USB/Ethernet more reliable.
 
 ## Current decision (revisit anytime)
-- **Base distro: ROCKNIX first** (stable today), Batocera on a spare SD for
-  comparison. The custom code we write is **distro-agnostic** where possible.
+- **Base distro: BOTH in parallel** (Zeke's call, 2026-06-03) — stand up ROCKNIX
+  AND Batocera v42 on two SD cards and bench PSP/PS2/Switch on each before picking
+  a daily driver. Custom code stays **distro-agnostic**.
+- **Device not yet acquired** (Zeke, 2026-06-03) — keep everything
+  **variant-agnostic** (Odin 2 / Mini / Portal all viable). No hardware-specific
+  assumptions until the unit is in hand.
 - **AI control agent language: Python** (best `evdev`/`uinput` support, readable).
 - **Control transport v0: newline-delimited JSON over asyncio TCP** (zero external
   deps, identical over Wi-Fi and USB-net, fully testable). Upgrade to WebSocket/TLS
@@ -69,5 +73,6 @@ AI control agent, and the reproducible setup scripts.
 - **AI agent spec**: how do Ava/Wren/Iris expose themselves? (endpoints, auth,
   message format). The agent currently defines OUR protocol; the bridge that maps
   Ava/Wren/Iris ↔ GOSE Agent needs their real API. Tracked in `docs/03-architecture.md`.
-- Confirm exact Odin 2 variant (2 / Mini / Portal) — affects image + RAM headroom.
+- Confirm exact Odin 2 variant once acquired (currently NOT yet purchased) —
+  affects image + RAM headroom. Stay variant-agnostic until then.
 - Does the Odin 2 support simultaneous OTG + charging? (affects portable multi-dongle).
