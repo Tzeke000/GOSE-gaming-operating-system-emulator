@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Agent runtime
+agent.token
+*.log
+
+# Claude Code local (machine-specific permissions)
+.claude/settings.local.json
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Large/binary device artifacts (don't commit OS images or ROMs)
+*.img
+*.iso
+*.zip
+*.7z
+roms/

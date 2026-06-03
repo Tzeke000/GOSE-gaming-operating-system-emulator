@@ -1,0 +1,16 @@
+[project]
+name = "gose-agent"
+version = "0.1.0"
+description = "Device-side AI control agent for the GOSE custom Odin 2 gaming OS"
+requires-python = ">=3.9"
+# Core agent + client are pure stdlib. Real input injection needs evdev (device only).
+dependencies = []
+
+[project.optional-dependencies]
+device = ["evdev>=1.6"]   # only needed on the Odin 2 for real uinput injection
+
+[project.scripts]
+gose-agent = "gose_agent.__main__:main"
+
+[tool.setuptools]
+packages = ["gose_agent", "gose_agent.capabilities"]
