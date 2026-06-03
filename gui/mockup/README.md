@@ -13,6 +13,15 @@ Open the HTML in a browser; drive with keyboard, mouse, or a **gamepad** (Odin p
 / Xbox / **PS5**). Renderers need `Pillow`, `cairosvg`, `fonttools` (see
 `../../requirements-dev.txt`) and share `_render_common.py`.
 
+## Branding
+The boot splash (`boot.html` / `boot-concept.png`) recreates the GOSE identity:
+hexagon "G" + gamepad mark, violet→blue gradient, italic wordmark, capability
+icons, and the credit **"by Ezekiel Angeles-Gonzalez · powered by Tzeke000
+Studios"**. The mark is exported to `assets/brand/gose-logo.png` for reuse.
+To drop in the exact logo art, **replace `assets/brand/gose-logo.png`** (square,
+transparent PNG) — `boot.html` picks it up automatically. The splash is
+brand-fixed (always black + violet/blue), independent of the UI theme picker.
+
 ## Themes (default: sleek clean black)
 All screens share `assets/themes.css`. The default theme is **Onyx** (sleek black);
 users switch in the desktop's **Settings → Theme** (Onyx / Midnight / Neon / Light),

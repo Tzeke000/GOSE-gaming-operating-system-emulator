@@ -1,43 +1,53 @@
 <!doctype html>
-<html lang="en" data-theme="onyx">
+<html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOSE — Boot</title>
-<link rel="stylesheet" href="assets/themes.css">
 <style>
+  /* Boot splash is brand-fixed (always black + violet->blue), independent of the
+     UI theme picker. To use Zeke's exact art, replace assets/brand/gose-logo.png. */
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
-  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
+  :root{--violet:#b06cff;--blue:#4f86ff}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;overflow:hidden}
-  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px}
-  .logo{width:128px;height:128px;border-radius:32px;display:flex;align-items:center;justify-content:center;
-    background:linear-gradient(150deg,var(--accent),var(--accent2));color:#06080e;font-weight:700;font-size:78px;
-    box-shadow:0 20px 60px #0008;animation:pop .6s ease}
-  @keyframes pop{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
-  h1{font-weight:700;font-size:54px;margin:18px 0 0;letter-spacing:1px}
-  .sub{color:var(--muted);font-size:16px}
-  .bar{width:320px;height:6px;border-radius:3px;background:var(--surface2);margin-top:40px;overflow:hidden}
-  .bar i{display:block;height:100%;width:0;background:var(--accent);border-radius:3px;animation:load 3.2s ease forwards}
-  @keyframes load{to{width:100%}}
-  .status{color:var(--muted);font-size:13px;margin-top:12px}
-  .foot{position:absolute;bottom:40px;color:#6b7080;font-size:13px}
+  body{font-family:Inter,system-ui,sans-serif;background:#030306;color:#fff;
+    display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .logo{width:230px;height:230px;object-fit:contain;
+    filter:drop-shadow(0 0 26px #9a5bff66);animation:rise .8s ease both}
+  @keyframes rise{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
+  .word{font-weight:700;font-size:74px;letter-spacing:6px;transform:skewX(-9deg);
+    margin:6px 0 0;color:#f3f2ff;text-shadow:0 0 24px #8a5cff66}
+  .tag{color:var(--violet);font-weight:600;font-size:17px;letter-spacing:6px;margin-top:2px}
+  .booting{color:#bd9cff;font-weight:700;font-size:15px;letter-spacing:8px;margin-top:30px}
+  .bar{position:relative;width:360px;height:7px;border-radius:4px;background:#28243c;margin-top:14px;overflow:visible}
+  .bar i{position:absolute;left:0;top:0;height:100%;width:0;border-radius:4px;
+    background:linear-gradient(90deg,var(--violet),var(--blue));animation:load 3s ease forwards}
+  .bar .comet{position:absolute;top:50%;width:16px;height:16px;border-radius:50%;
+    background:#dcd3ff;box-shadow:0 0 14px 4px #b79bff;transform:translate(-50%,-50%);left:0;animation:comet 3s ease forwards}
+  @keyframes load{to{width:100%}} @keyframes comet{to{left:100%}}
+  .caps{display:flex;gap:72px;margin-top:34px}
+  .caps .ic{width:36px;height:36px;background:#aa82f5;display:inline-block;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .powered{color:#8c6ebe;font-weight:600;font-size:13px;letter-spacing:4px;margin-top:30px}
+  .credit{color:#6e6090;font-weight:500;font-size:13px;letter-spacing:1.5px;margin-top:14px}
 </style></head>
 <body>
-  <div class="logo">G</div>
-  <h1>GOSE</h1>
-  <div class="sub">Gaming Operating System Emulator</div>
-  <div class="bar"><i></i></div>
-  <div class="status" id="status">Starting services…</div>
-  <div class="foot">v0.1 · ROCKNIX · Snapdragon 8 Gen 2</div>
+  <img class="logo" src="assets/brand/gose-logo.png" alt="GOSE">
+  <div class="word">GOSE</div>
+  <div class="tag">GAME&nbsp;OPERATING&nbsp;SYSTEM&nbsp;EMULATOR</div>
+  <div class="booting">BOOTING...</div>
+  <div class="bar"><i></i><div class="comet"></div></div>
+  <div class="caps">
+    <span class="ic" data-i="gamepad-2"></span><span class="ic" data-i="cpu"></span>
+    <span class="ic" data-i="globe"></span><span class="ic" data-i="cloud"></span>
+  </div>
+  <div class="powered">POWERED BY EMULATION. &nbsp;DRIVEN BY AI.</div>
+  <div class="credit">by Ezekiel Angeles-Gonzalez &nbsp;·&nbsp; powered by Tzeke000 Studios</div>
 <script>
-  // theme from saved preference
-  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
-  const steps=["Starting services…","Loading controllers…","Mounting game library…","Launching desktop…"];
-  let i=0;const s=document.getElementById("status");
-  const t=setInterval(()=>{i++;if(i<steps.length)s.textContent=steps[i];},800);
-  // after boot, go to login (comment out if you just want the splash)
-  setTimeout(()=>{clearInterval(t);location.href="login.html";},3400);
+  document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));
+  // flow: boot menu -> this splash -> login. (Hold L1+R1 at power-on for the menu.)
+  setTimeout(()=>location.href="login.html",3200);
 </script>
 </body></html>
