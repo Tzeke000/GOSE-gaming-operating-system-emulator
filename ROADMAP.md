@@ -34,7 +34,10 @@ the cloud container) · 🧱 blocked
 - ⬜ Confirm simultaneous OTG + charging
 
 ## Phase 5 — Windows-like GUI `[CUSTOM]`
-- ✅ Windows-PC concept image + **navigable HTML prototype** (`gui/mockup/`)
+- ✅ Windows-PC concept images + **navigable HTML prototypes** (`gui/mockup/`)
+- ✅ Boot splash + login/user-select screens (boot.html, login.html)
+- ✅ Theme system: default Onyx (sleek black) + Midnight/Neon/Light, switchable in Settings
+- ✅ Vendored Lucide icons + Inter font (licenses incl.)
 - ✅ Multi-input in prototype: gamepad focus-nav + gamepad pointer + mouse/kbd + PS5
 - ✅ Toolchain curated (`docs/09-toolchain.md`); input stack (`docs/07-controllers.md`)
 - ⬜ Ship AntiMicroX profile for desktop pointer; Skyscraper for box art `[on device]`

@@ -1,0 +1,37 @@
+/* GOSE theme tokens — shared by desktop.html, boot.html, login.html.
+   Default is "onyx" (sleek clean black). Users switch in Settings; the choice is
+   saved to localStorage and applied via <html data-theme="...">. */
+:root, [data-theme="onyx"]{
+  --accent:#5cd0ff; --accent2:#8b90a6; --text:#edf0f6; --muted:#8b91a6;
+  --surface:rgba(16,17,22,.82); --surface2:rgba(22,24,32,.92); --line:#ffffff16;
+  --bg:radial-gradient(1100px 720px at 82% -12%, #15171f, transparent 60%),
+       linear-gradient(180deg,#08090c,#0a0b10);
+  --focusglow:0 0 0 2px var(--accent), 0 0 14px #5cd0ff3d;
+  --tile:#15171e;
+}
+[data-theme="midnight"]{
+  --accent:#5cc8ff; --accent2:#9b6bff; --text:#eef2ff; --muted:#9aa6c8;
+  --surface:rgba(20,26,48,.78); --surface2:rgba(30,38,68,.9); --line:#ffffff1f;
+  --bg:radial-gradient(1200px 700px at 78% -8%,#3a2f7a55,transparent 60%),
+       radial-gradient(900px 600px at 8% 110%,#0e5e8e55,transparent 60%),
+       linear-gradient(160deg,#0a0e1f,#11183a 55%,#0a1230);
+  --focusglow:0 0 0 2px var(--accent), 0 0 22px #5cc8ff66;
+  --tile:#262f56;
+}
+[data-theme="neon"]{
+  --accent:#16f2c8; --accent2:#ff3d9a; --text:#eafff8; --muted:#83bcb4;
+  --surface:rgba(10,14,18,.82); --surface2:rgba(14,20,26,.92); --line:#16f2c826;
+  --bg:radial-gradient(900px 600px at 86% -10%, #ff3d9a30, transparent 60%),
+       radial-gradient(900px 600px at 4% 112%, #16f2c830, transparent 60%),
+       linear-gradient(160deg,#05070a,#070b10);
+  --focusglow:0 0 0 2px var(--accent), 0 0 22px #16f2c8aa;
+  --tile:#10201d;
+}
+[data-theme="aurora"]{ /* light */
+  --accent:#0a84ff; --accent2:#7d52ff; --text:#0c1020; --muted:#5b637a;
+  --surface:rgba(255,255,255,.72); --surface2:rgba(255,255,255,.88); --line:#0c102018;
+  --bg:radial-gradient(1000px 720px at 82% -12%, #cfe0ff, transparent 60%),
+       linear-gradient(180deg,#eef1f8,#e6ebf5);
+  --focusglow:0 0 0 2px var(--accent), 0 0 14px #0a84ff44;
+  --tile:#ffffffcc;
+}

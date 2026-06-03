@@ -3,6 +3,17 @@
 Append-only. Newest at top. Each: context → decision → status. Revisit freely;
 mark superseded ones rather than deleting.
 
+## ADR-0010 — GUI: sleek-black default + switchable themes; boot + login screens
+**Context:** Zeke wants a "really cool Windows PC" look that's clean/black by
+default but lets users choose other themes in Settings; plus a boot splash and a
+controller-driven login. **Decision:** a shared **theme-token system**
+(`gui/mockup/assets/themes.css`) with **Onyx (sleek black) as default** and
+Midnight/Neon/Light alternates, switchable in Settings and persisted in
+localStorage. Added **boot.html** (animated splash) and **login.html** (user-select
++ PIN, controller/keyboard/gamepad navigable) that flow into the desktop. Concept
+PNGs rendered via a shared `_render_common.py` (Inter + Lucide via cairosvg).
+**Status:** accepted (prototype); ports to the device front-end in Phase 5.
+
 ## ADR-0009 — AI connects via MCP (primary), with SSH/console as alternates
 **Context:** Zeke confirmed (2026-06-03) Ava/Wren/Iris "most likely will use MCP,
 or maybe SSH/console in." **Decision:** build a **zero-dependency MCP stdio server**

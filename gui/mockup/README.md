@@ -1,13 +1,23 @@
 # GOSE Desktop — visual mockup & prototype
 
-Two artifacts for vibe-coding the Windows-PC-style, controller-only home screen:
+Live prototypes + rendered concepts for the Windows-PC-style, controller-only UI.
+Flow: **boot.html → login.html → desktop.html** (the login signs into the desktop).
 
-- **`desktop-concept.png`** — rendered concept ("what it looks like").
-  Regenerate: `python3 render_desktop.py` (needs `Pillow`, `cairosvg`, `fonttools`
-  from `../../requirements-dev.txt`).
-- **`desktop.html`** — the **live, navigable prototype**. Open in a browser; drive
-  with keyboard, mouse, or a **gamepad** (Odin pad / Xbox / **PS5**). Home → Games
-  window → launch; Start menu; Settings panel.
+| Screen | Live prototype | Concept PNG | Render with |
+|--------|----------------|-------------|-------------|
+| Boot splash | `boot.html` | `boot-concept.png` | `python3 render_boot.py` |
+| Login / user select | `login.html` | `login-concept.png` | `python3 render_login.py` |
+| Desktop | `desktop.html` | `desktop-concept.png` | `python3 render_desktop.py` |
+
+Open the HTML in a browser; drive with keyboard, mouse, or a **gamepad** (Odin pad
+/ Xbox / **PS5**). Renderers need `Pillow`, `cairosvg`, `fonttools` (see
+`../../requirements-dev.txt`) and share `_render_common.py`.
+
+## Themes (default: sleek clean black)
+All screens share `assets/themes.css`. The default theme is **Onyx** (sleek black);
+users switch in the desktop's **Settings → Theme** (Onyx / Midnight / Neon / Light),
+and the choice persists in `localStorage` and applies via `<html data-theme="…">`.
+Add a theme by adding a `[data-theme="…"]` block of CSS vars in `themes.css`.
 
 ## Look & feel (current)
 A real Windows-desktop vibe: frosted **Explorer-style window** with box-art grid +

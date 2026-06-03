@@ -4,26 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOSE — Windows-style Desktop (prototype v3)</title>
+<link rel="stylesheet" href="assets/themes.css">
 <style>
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400;font-display:swap}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500;font-display:swap}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600;font-display:swap}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700;font-display:swap}
-  :root{--accent:#5cc8ff;--accent2:#9b6bff;--text:#eef2ff;--muted:#9aa6c8;
-    --glass:rgba(20,26,48,.74);--glass2:rgba(30,38,68,.86);--line:#ffffff1f}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;overflow:hidden;cursor:default}
   body{font-family:Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);user-select:none;
-    background:radial-gradient(1200px 700px at 78% -8%,#3a2f7a55,transparent 60%),
-      radial-gradient(900px 600px at 8% 110%,#0e5e8e55,transparent 60%),
-      linear-gradient(160deg,#0a0e1f,#11183a 55%,#0a1230)}
+    background:var(--bg);background-attachment:fixed}
   .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
     -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
   .icons{position:absolute;top:24px;left:22px;display:flex;flex-direction:column;gap:8px;width:96px}
   .ico{padding:10px 6px;border-radius:12px;text-align:center;font-size:12px;color:#dbe3ff;border:2px solid transparent}
   .ico .g{width:50px;height:50px;margin:0 auto 6px;border-radius:13px;display:flex;align-items:center;justify-content:center;
     font-size:24px;background:linear-gradient(145deg,#1b2347,#141a36);color:var(--accent);box-shadow:inset 0 0 0 1px var(--line)}
-  .win{position:absolute;left:330px;top:70px;width:760px;height:470px;background:var(--glass);border:1px solid var(--line);
+  .win{position:absolute;left:330px;top:70px;width:760px;height:470px;background:var(--surface);border:1px solid var(--line);
     border-radius:14px;backdrop-filter:blur(18px) saturate(140%);box-shadow:0 30px 80px #000a;display:flex;flex-direction:column;overflow:hidden}
   .win.hide{display:none}
   .titlebar{height:42px;display:flex;align-items:center;gap:8px;padding:0 12px;background:linear-gradient(180deg,#ffffff10,#ffffff04);border-bottom:1px solid var(--line)}
@@ -38,21 +35,21 @@
   .card{border:2px solid transparent;border-radius:12px;cursor:pointer}
   .card .art{height:128px;border-radius:10px;display:flex;align-items:flex-end;padding:10px;font-size:13px;font-weight:700;box-shadow:inset 0 0 0 1px var(--line)}
   .card .nm{font-size:12px;margin-top:7px;color:var(--muted)}
-  .settings{position:absolute;left:330px;top:70px;width:760px;height:470px;background:var(--glass);border:1px solid var(--line);
+  .settings{position:absolute;left:330px;top:70px;width:760px;height:470px;background:var(--surface);border:1px solid var(--line);
     border-radius:14px;backdrop-filter:blur(18px);box-shadow:0 30px 80px #000a;display:none;flex-direction:column;overflow:hidden}
   .settings.show{display:flex}
   .settings .body{padding:18px 22px;overflow:auto}
   .setrow{display:flex;align-items:center;gap:12px;padding:14px;border-radius:12px;background:#ffffff08;border:2px solid transparent;margin-bottom:10px;font-size:14px}
   .setrow .sub{color:var(--muted);font-size:12px}
-  .start{position:absolute;left:50%;transform:translateX(-50%);bottom:74px;width:680px;height:470px;background:var(--glass2);
+  .start{position:absolute;left:50%;transform:translateX(-50%);bottom:74px;width:680px;height:470px;background:var(--surface2);
     border:1px solid var(--line);border-radius:18px;backdrop-filter:blur(22px);box-shadow:0 30px 90px #000b;padding:22px 26px;display:none;flex-direction:column}
   .start.open{display:flex}
-  .search{height:40px;border-radius:20px;background:#0d1330;border:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 16px;color:var(--muted);font-size:14px}
+  .search{height:40px;border-radius:20px;background:var(--surface2);border:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 16px;color:var(--muted);font-size:14px}
   .start h3{color:var(--muted);font-weight:600;font-size:12px;margin:18px 4px 10px;letter-spacing:.4px}
   .pins{display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
   .pin{background:#ffffff0d;border:2px solid transparent;border-radius:12px;height:84px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;font-size:12px}
   .pin .g{font-size:22px;color:var(--accent)}
-  .taskbar{position:absolute;left:0;right:0;bottom:0;height:58px;background:rgba(8,11,24,.86);backdrop-filter:blur(20px);border-top:1px solid var(--line);display:flex;align-items:center;padding:0 14px}
+  .taskbar{position:absolute;left:0;right:0;bottom:0;height:58px;background:var(--surface2);backdrop-filter:blur(20px);border-top:1px solid var(--line);display:flex;align-items:center;padding:0 14px}
   .tcenter{position:absolute;left:50%;transform:translateX(-50%);display:flex;gap:8px}
   .tbtn{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#cdd7ff;border:2px solid transparent;cursor:pointer;background:#ffffff08}
   .tbtn.startbtn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#07112a}
@@ -61,11 +58,11 @@
   .dot{width:8px;height:8px;border-radius:50%;background:#3a466e;display:inline-block;margin-left:4px}
   .dot.on{background:var(--accent);box-shadow:0 0 8px var(--accent)}
   .mode{background:#ffffff10;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px;display:flex;align-items:center;gap:6px}
-  .focus{border-color:var(--accent)!important;box-shadow:0 0 0 2px var(--accent),0 0 22px #5cc8ff66!important;outline:none}
+  .focus{border-color:var(--accent)!important;box-shadow:var(--focusglow)!important;outline:none}
   .focus .art{box-shadow:0 0 0 2px var(--accent)!important}
   #cursor{position:absolute;width:22px;height:22px;pointer-events:none;z-index:9999;display:none;color:#fff;font-size:22px;filter:drop-shadow(0 1px 2px #000a)}
   body.pointer #cursor{display:block}
-  .hinttip{position:absolute;top:20px;right:18px;background:#0d1330cc;border:1px solid var(--line);border-radius:10px;padding:8px 14px;color:var(--muted);font-size:13px}
+  .hinttip{position:absolute;top:20px;right:18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 14px;color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
@@ -130,6 +127,10 @@
   <span id="cursor"><span class="ic" data-i="mouse-pointer-2"></span></span>
 
 <script>
+// apply saved theme (default: onyx — sleek clean black)
+const THEMES=[["onyx","Onyx"],["midnight","Midnight"],["neon","Neon"],["aurora","Light"]];
+function setTheme(t){document.documentElement.dataset.theme=t;try{localStorage.setItem("gose-theme",t)}catch(e){}}
+setTheme(localStorage.getItem("gose-theme")||"onyx");
 // wire icon masks
 document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));
 
@@ -153,6 +154,15 @@ SYS.forEach(([n,ic])=>{const d=document.createElement("div");d.className="pin fo
 const setbody=document.getElementById("setbody");
 SETTINGS.forEach(([ic,t,s])=>{const d=document.createElement("div");d.className="setrow focusable";
   d.innerHTML=`<span class="ic" data-i="${ic}" style="--u:url(assets/icons/${ic}.svg);font-size:22px;color:var(--accent)"></span><div><div>${t}</div><div class="sub">${s}</div></div>`;setbody.appendChild(d);});
+// theme picker row (default Onyx; choice persists)
+const trow=document.createElement("div");trow.className="setrow";
+trow.innerHTML=`<span class="ic" data-i="palette" style="--u:url(assets/icons/palette.svg);font-size:22px;color:var(--accent)"></span>`+
+  `<div style="flex:1"><div>Theme</div><div class="sub">Default: Onyx — sleek clean black</div></div>`;
+const sw=document.createElement("div");sw.style.cssText="display:flex;gap:8px";
+THEMES.forEach(([id,nm])=>{const b=document.createElement("div");b.className="focusable";b.dataset.act="theme";b.dataset.theme=id;
+  b.textContent=nm;b.style.cssText="padding:8px 12px;border-radius:10px;border:2px solid transparent;background:#ffffff10;font-size:12px;cursor:pointer";
+  sw.appendChild(b);});
+trow.appendChild(sw);setbody.appendChild(trow);
 
 let pointer=false,cx=innerWidth/2,cy=innerHeight/2,startOpen=false;
 const cursor=document.getElementById("cursor");
@@ -175,7 +185,8 @@ function activate(el){el=el||current();if(!el)return;const a=el.dataset.act,n=el
   if(a==="win"){document.getElementById("settings").classList.remove("show");document.getElementById("win").classList.remove("hide");if(startOpen)toggleStart();return setFocus(document.querySelector("#cards .focusable"));}
   if(a==="settings"){document.getElementById("settings").classList.add("show");if(startOpen)toggleStart();return setFocus(document.querySelector("#setbody .focusable"));}
   if(a==="term")return toast("Terminal — AI drives this over SSH/console too");
-  if(a==="ai")return toast("AI Hub — Ava/Wren/Iris via MCP or SSH");}
+  if(a==="ai")return toast("AI Hub — Ava/Wren/Iris via MCP or SSH");
+  if(a==="theme"){setTheme(el.dataset.theme);return toast("Theme: "+el.dataset.theme);}}
 function toggleStart(){startOpen=!startOpen;startEl().classList.toggle("open",startOpen);
   setFocus(startOpen?document.querySelector("#pins .focusable"):document.querySelector(".icons .focusable"));}
 function togglePointer(){pointer=!pointer;document.body.classList.toggle("pointer",pointer);

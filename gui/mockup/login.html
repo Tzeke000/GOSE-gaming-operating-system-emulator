@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Sign in</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);background-attachment:fixed}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .clock{text-align:center;padding-top:64px}.clock .t{font-size:72px;font-weight:700}.clock .d{color:var(--muted);font-size:18px}
+  .users{display:flex;justify-content:center;gap:90px;margin-top:70px}
+  .user{width:200px;text-align:center;cursor:pointer}
+  .av{width:96px;height:96px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;
+    background:var(--surface2);border:2px solid #3c4050;color:var(--muted);font-size:48px;transition:.15s}
+  .user .nm{font-weight:600;color:var(--muted)}.user .sub{color:var(--muted);font-size:13px;opacity:.8}
+  .user.focus .av{border-color:var(--accent);color:var(--accent);box-shadow:var(--focusglow);width:112px;height:112px}
+  .user.focus .nm{color:var(--text);font-weight:700}
+  .pinbox{width:300px;margin:34px auto 0;height:46px;border-radius:23px;background:var(--surface);border:1px solid var(--line);
+    display:flex;align-items:center;gap:10px;padding:0 18px;color:var(--muted);font-size:15px}
+  .pinbox .dots{margin-left:auto;display:flex;gap:8px}.pinbox .dots i{width:12px;height:12px;border-radius:50%;background:#3c4050}
+  .pinbox .dots i.on{background:var(--accent)}
+  .hint{text-align:center;color:var(--muted);font-size:13px;margin-top:16px}
+  .br{position:absolute;right:24px;bottom:22px;display:flex;gap:12px}
+  .br .b{width:40px;height:40px;border-radius:11px;background:var(--surface);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;color:var(--text);cursor:pointer}
+  .br .b.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .bl{position:absolute;left:24px;bottom:22px;display:flex;align-items:center;gap:12px}
+  .bl .lg{width:40px;height:40px;border-radius:11px;background:linear-gradient(150deg,var(--accent),var(--accent2));
+    color:#06080e;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:24px}
+  .tip{position:absolute;top:24px;right:18px;background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:8px 14px;color:var(--muted);font-size:13px}
+</style></head>
+<body>
+  <div class="tip">D-pad pick user · A sign in · X power</div>
+  <div class="clock"><div class="t" id="clock">--:--</div><div class="d" id="date"></div></div>
+  <div class="users" id="users"></div>
+  <div class="pinbox"><span class="ic" data-i="lock" style="--u:url(assets/icons/lock.svg)"></span>Enter PIN
+    <span class="dots"><i class="on"></i><i class="on"></i><i></i><i></i></span></div>
+  <div class="hint">Press <b>A</b> to sign in · on-screen keypad for PIN</div>
+  <div class="bl"><div class="lg">G</div><div><div style="font-weight:700">GOSE</div>
+    <div style="color:var(--muted);font-size:12px">odin2-gose · 192.168.1.50</div></div></div>
+  <div class="br" id="power"></div>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const USERS=[["Zeke","user","Administrator"],["Guest","user","Limited session"],["AI Session","sparkles","Ava / Wren / Iris"]];
+  const POWER=["wifi","settings","rotate-ccw","power"];
+  const u=document.getElementById("users");
+  USERS.forEach(([n,ic,s],i)=>{const d=document.createElement("div");d.className="user focusable"+(i===0?" focus":"");
+    d.dataset.user=n;d.innerHTML=`<div class="av"><span class="ic" data-i="${ic}" style="--u:url(assets/icons/${ic}.svg)"></span></div>`+
+    `<div class="nm">${n}</div><div class="sub">${s}</div>`;u.appendChild(d);});
+  const p=document.getElementById("power");
+  POWER.forEach(ic=>{const b=document.createElement("div");b.className="b focusable";b.dataset.power=ic;
+    b.innerHTML=`<span class="ic" data-i="${ic}" style="--u:url(assets/icons/${ic}.svg);${ic==='power'?'color:#ff7a6e':''}"></span>`;p.appendChild(b);});
+
+  const items=()=>[...document.querySelectorAll(".focusable")];
+  function cur(){return document.querySelector(".focus");}
+  function setF(el){if(!el)return;const c=cur();if(c)c.classList.remove("focus");el.classList.add("focus");}
+  function move(d){const a=cur()||items()[0];const r=a.getBoundingClientRect();let best,bd=1e9;
+    for(const el of items()){if(el===a)continue;const b=el.getBoundingClientRect();
+      const dx=(b.left+b.width/2)-(r.left+r.width/2),dy=(b.top+b.height/2)-(r.top+r.height/2);
+      const ok={right:dx>6,left:dx<-6,down:dy>6,up:dy<-6}[d];if(!ok)continue;
+      const al=(d==="left"||d==="right")?Math.abs(dx):Math.abs(dy),of=(d==="left"||d==="right")?Math.abs(dy):Math.abs(dx);
+      const dd=al+of*2;if(dd<bd){bd=dd;best=el}}if(best)setF(best);}
+  function act(){const el=cur();if(!el)return;if(el.dataset.user){location.href="desktop.html";}
+    else if(el.dataset.power==="power"){document.body.style.opacity=.2;}}
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="ArrowRight")move("right");else if(k==="ArrowLeft")move("left");
+    else if(k==="ArrowDown")move("down");else if(k==="ArrowUp")move("up");
+    else if(k==="Enter")act();else return;e.preventDefault();});
+  addEventListener("click",e=>{const f=e.target.closest&&e.target.closest(".focusable");if(f){setF(f);act();}});
+  let prev={};(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const tap=i=>gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(tap(14))move("left");if(tap(15))move("right");if(tap(12))move("up");if(tap(13))move("down");
+      if(tap(0))act();gp.buttons.forEach((b,i)=>prev[i]=b.pressed);}requestAnimationFrame(pad);})();
+  function tick(){const d=new Date();document.getElementById("clock").textContent=
+    String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+    document.getElementById("date").textContent=d.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"});}
+  tick();setInterval(tick,1000);
+  document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));
+</script>
+</body></html>
