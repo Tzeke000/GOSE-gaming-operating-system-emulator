@@ -3,6 +3,18 @@
 Append-only. Newest at top. Each: context → decision → status. Revisit freely;
 mark superseded ones rather than deleting.
 
+## ADR-0012 — Single Linux OS = ROCKNIX; dual-boot ROCKNIX + Android (supersedes ADR-0001)
+**Context:** Zeke (2026-06-03) dropped the run-both-in-parallel plan: "just choose
+the best Linux one for now and we'll just have Android and that one." **Decision:**
+ship a **single Linux OS = ROCKNIX** alongside stock **Android** (the device's
+natural dual-boot: ROCKNIX on microSD, Android on internal). ROCKNIX chosen as
+"best" because it's the **verified-stable, officially-supported** base on all Odin 2
+variants — the right call when there's one Linux slot. **Batocera stays a
+documented fallback** (bigger core library) if a specific system isn't covered well;
+custom code remains distro-agnostic so a swap is cheap. Boot Menu trimmed to
+**ROCKNIX + Android** (Batocera entry removed). **Status:** accepted; supersedes
+ADR-0001. Variant still TBD until hardware purchase.
+
 ## ADR-0011 — PC-style boot access: GOSE Boot Menu ("BIOS") over firmware fastboot
 **Context:** Zeke wants to hold two side buttons at power-on to reach a
 bootloader, like a Windows PC. Two layers exist: the Qualcomm firmware bootloader
@@ -100,7 +112,7 @@ shell, framebuffer, `gamelist.xml` convention) — not on ROCKNIX/Batocera
 internals. Distro-specific bits (theme format, paths) are isolated in config +
 `scripts/setup-device.sh`. **Status:** accepted.
 
-## ADR-0001 — Base distro: run BOTH in parallel, then bench
+## ADR-0001 — Base distro: run BOTH in parallel, then bench  ·  ⚠️ SUPERSEDED by ADR-0012
 **Context:** As of 2026-06 both support the Odin 2; ROCKNIX is officially stable on
 all three variants, Batocera v42 (SM8550) has the bigger library but is newer to
 the device. **Decision (Zeke, 2026-06-03):** stand up **ROCKNIX and Batocera on

@@ -40,11 +40,13 @@ class BootMenuLogic(unittest.TestCase):
         self.assertEqual(bm.move(n - 1, 1, n), 0)
 
     def test_select_returns_action(self):
-        self.assertEqual(bm.select(0), "boot:sd1")
+        self.assertEqual(bm.select(0), "boot:sd")
         self.assertEqual(bm.select(len(bm.BOOT_ENTRIES) - 1), "tool:poweroff")
 
-    def test_entries_match_count(self):
-        self.assertEqual(len(bm.BOOT_ENTRIES), 8)
+    def test_entries_are_rocknix_and_android_only(self):
+        boot = [e for e in bm.BOOT_ENTRIES if e[2].startswith("boot:")]
+        self.assertEqual([e[0] for e in boot], ["rocknix", "android"])
+        self.assertEqual(len(bm.BOOT_ENTRIES), 7)
 
 
 if __name__ == "__main__":

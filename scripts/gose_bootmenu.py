@@ -25,8 +25,7 @@ DEFAULT_COMBO = frozenset({"L1", "R1"})
 
 # id, label, action — kept in sync with gui/mockup/bootmenu.html
 BOOT_ENTRIES = [
-    ("rocknix",  "ROCKNIX",          "boot:sd1"),
-    ("batocera", "Batocera v42",     "boot:sd2"),
+    ("rocknix",  "ROCKNIX",          "boot:sd"),
     ("android",  "Android",          "boot:internal"),
     ("recovery", "Recovery",         "tool:recovery"),
     ("safe",     "Safe Mode",        "tool:safe"),
@@ -93,7 +92,7 @@ def _cli(argv=None):
         assert decide(set(), 5.0, cfg) == "boot:rocknix"
         assert decide(set(), 99, cfg, menu_open=True) == "menu"
         assert move(0, -1, 8) == 7 and move(7, 1, 8) == 0
-        assert select(0) == "boot:sd1"
+        assert select(0) == "boot:sd"
         print("self-test OK")
         return 0
     held = {b.strip() for b in a.mock_hold.split(",") if b.strip()}

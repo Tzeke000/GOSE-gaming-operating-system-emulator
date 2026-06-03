@@ -33,8 +33,7 @@ countdown you can interrupt by holding the combo or pressing any input).
 ### Menu entries
 | Group | Entry | Action |
 |-------|-------|--------|
-| Boot device | ROCKNIX (microSD 1) — **default** | boot the Linux SD |
-| | Batocera v42 (microSD 2) | boot the spare SD |
+| Boot device | ROCKNIX (microSD) — **default** | boot the Linux SD |
 | | Android (internal) | reboot to stock Android |
 | Tools | Recovery | system repair / factory reset |
 | | Safe Mode | software render, no overclock |
@@ -42,11 +41,13 @@ countdown you can interrupt by holding the combo or pressing any input).
 | | GOSE Setup | BIOS settings — boot order, timeout, theme |
 | | Power Off | shut down |
 
-> Caveat: switching **between** ROCKNIX SD, Batocera SD, and internal Android is
-> not a pure software choice on the Odin 2 — it depends on the abl-mod + fastboot
-> boot-mode switch. So some entries trigger a **reboot into the right firmware
-> mode** rather than chain-loading directly. Final command wiring is **[needs
-> hardware]**.
+> Distro choice (ADR-0012): a **single Linux OS = ROCKNIX**, dual-booted with stock
+> **Android**. Batocera is a documented fallback only and is not in the menu.
+>
+> Caveat: switching **between** the ROCKNIX SD and internal Android is not a pure
+> software choice on the Odin 2 — it depends on the abl-mod + fastboot boot-mode
+> switch. So the Android entry triggers a **reboot into the right firmware mode**
+> rather than chain-loading directly. Final command wiring is **[needs hardware]**.
 
 ## Detection mechanism
 Pure decision logic lives in **`scripts/gose_bootmenu.py`** (unit-tested in

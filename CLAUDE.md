@@ -37,9 +37,11 @@ AI control agent, and the reproducible setup scripts.
   keep a direct USB-C→HDMI adapter as fallback. Dock USB/Ethernet more reliable.
 
 ## Current decision (revisit anytime)
-- **Base distro: BOTH in parallel** (Zeke's call, 2026-06-03) — stand up ROCKNIX
-  AND Batocera v42 on two SD cards and bench PSP/PS2/Switch on each before picking
-  a daily driver. Custom code stays **distro-agnostic**.
+- **Base distro: ROCKNIX only + Android** (Zeke, 2026-06-03, ADR-0012 — supersedes
+  the earlier "both in parallel" plan). One Linux slot, pick the best → **ROCKNIX**
+  (verified-stable, officially supported on Odin 2). Dual-boot = ROCKNIX (microSD) +
+  stock Android (internal). **Batocera = documented fallback** only. Custom code
+  stays **distro-agnostic** so a swap stays cheap.
 - **Device not yet acquired** (Zeke, 2026-06-03) — keep everything
   **variant-agnostic** (Odin 2 / Mini / Portal all viable). No hardware-specific
   assumptions until the unit is in hand.

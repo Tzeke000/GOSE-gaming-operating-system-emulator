@@ -15,10 +15,10 @@ the cloud container) · 🧱 blocked
 ## Phase 1 — Base OS on hardware 🔌  (device NOT yet acquired)
 - ⬜ Acquire Odin 2 (+ Super Dock, A2 microSD ×2, 8BitDo Adapter 2, USB-C→HDMI)
 - ⬜ Confirm exact variant on arrival (2 / Mini / Portal)
-- ⬜ **Both in parallel:** flash ROCKNIX (card A) + Batocera SM8550 (card B); abl
-      mod; boot from SD (runbook §D)
-- ⬜ First-boot checklist on each (controller nav, Wi-Fi, BT, GPU, audio) (§F)
-- ⬜ Bench PSP/PS2/Switch on both → pick daily driver
+- ⬜ **Single Linux = ROCKNIX** (ADR-0012): flash ROCKNIX to microSD; abl mod; boot
+      from SD alongside stock Android (runbook §D). Batocera = fallback only.
+- ⬜ First-boot checklist (controller nav, Wi-Fi, BT, GPU, audio) (§F)
+- ⬜ Bench PSP/PS2/Switch on ROCKNIX → confirm it's the keeper
 
 ## Phase 2 — Emulation 🔌
 - ⬜ PSP runs great, upscaled (flagship)

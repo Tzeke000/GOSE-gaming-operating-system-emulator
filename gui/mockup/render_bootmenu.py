@@ -12,8 +12,7 @@ from _render_common import (base, font, icon, panel, text, logo,
 W, H = 1280, 720
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bootmenu-concept.png")
 
-BOOT = [("play", "ROCKNIX", "microSD 1  ·  Linux", "Default", True),
-        ("cpu", "Batocera v42", "microSD 2  ·  Linux", "", False),
+BOOT = [("play", "ROCKNIX", "microSD  ·  Linux", "Default", True),
         ("smartphone", "Android", "internal storage", "", False)]
 TOOLS = [("rotate-ccw", "Recovery", "system repair & factory reset", "", False),
          ("shield", "Safe Mode", "software render · no overclock", "", False),
