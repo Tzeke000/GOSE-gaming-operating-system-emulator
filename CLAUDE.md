@@ -60,8 +60,12 @@ AI control agent, and the reproducible setup scripts.
   Accepts stable-retro type descriptors; `agent/tools/import_stable_retro.py` imports
   their maps. See `docs/08-game-state-interface.md`. Demo: `agent/examples/pong_no_screenshots.py`.
 - `gui/mockup/` — desktop **concept PNG** + **navigable HTML prototype** for the
-  Windows-like home (vibe-code here). See `docs/06-gui-plan.md`.
+  Windows-like home (vibe-code here). Multi-input: gamepad focus-nav + gamepad
+  pointer + mouse + keyboard + PS5. See `docs/06-gui-plan.md`.
 - `gui/` — Windows-like front-end work (theme and/or custom app). `[CUSTOM]`
+- `mcp/` — **MCP server**: how Ava/Wren/Iris/Claude drive the device (stdio
+  JSON-RPC, proxies to the agent). Zero-dep. See `mcp/README.md`.
+- `docs/09-toolchain.md` — curated open-source tools to adopt (coding→OS→games→design).
 - `scripts/` — reproducible, idempotent device setup scripts.
 - `ROADMAP.md` — build order + live status checklist.
 
@@ -75,10 +79,14 @@ AI control agent, and the reproducible setup scripts.
 - Most "real device" steps (flashing, uinput, HDMI) can only be validated on the
   actual Odin 2 — mark those as **[needs hardware]** and keep them in the runbook.
 
+## How the AIs connect (Zeke, 2026-06-03)
+- **Ava/Wren/Iris will most likely use MCP**, or **SSH / console**. → We built an
+  MCP server (`mcp/`) + the CLI works over SSH + `system.run` is the console path.
+  Remaining: confirm any auth/transport specifics they need (e.g., HTTP/SSE MCP
+  transport vs stdio). The tool layer is done either way.
+
 ## Open items needing Zeke's input
-- **AI agent spec**: how do Ava/Wren/Iris expose themselves? (endpoints, auth,
-  message format). The agent currently defines OUR protocol; the bridge that maps
-  Ava/Wren/Iris ↔ GOSE Agent needs their real API. Tracked in `docs/03-architecture.md`.
+- Confirm Ava/Wren/Iris MCP transport (stdio vs HTTP/SSE) + auth, if any.
 - Confirm exact Odin 2 variant once acquired (currently NOT yet purchased) —
   affects image + RAM headroom. Stay variant-agnostic until then.
 - Does the Odin 2 support simultaneous OTG + charging? (affects portable multi-dongle).

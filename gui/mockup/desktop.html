@@ -3,181 +3,253 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GOSE — Windows-like Desktop (prototype)</title>
+<title>GOSE — Windows-style Desktop (prototype v2)</title>
 <style>
   :root{
-    --bg-top:#0c1022; --bg-bot:#1c2356; --panel:#161c34cc; --tile:#262f56;
-    --tile-sel:#4cc2ff; --text:#e9eefc; --muted:#96a2c4; --accent:#78dca6;
-    --taskbar:#0a0e1e;
+    --accent:#5cc8ff; --accent2:#9b6bff; --text:#eef2ff; --muted:#9aa6c8;
+    --glass:rgba(20,26,48,.72); --glass-2:rgba(30,38,68,.85); --line:#ffffff1f;
   }
-  *{box-sizing:border-box} html,body{margin:0;height:100%;overflow:hidden}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;cursor:default}
   body{
-    font-family:"Segoe UI",system-ui,DejaVu Sans,sans-serif;color:var(--text);
-    background:linear-gradient(180deg,var(--bg-top),var(--bg-bot));
+    font-family:"Segoe UI Variable","Segoe UI",system-ui,"DejaVu Sans",sans-serif;color:var(--text);
+    background:
+      radial-gradient(1200px 700px at 78% -8%, #3a2f7a55, transparent 60%),
+      radial-gradient(900px 600px at 8% 110%, #0e5e8e55, transparent 60%),
+      linear-gradient(160deg,#0a0e1f,#11183a 55%,#0a1230);
     user-select:none;
   }
-  .screen{position:absolute;inset:0;display:flex;flex-direction:column}
-  .hintbar{position:absolute;top:18px;right:18px;background:#12182e;border-radius:10px;
-    padding:8px 14px;color:var(--muted);font-size:14px}
-  /* desktop shortcuts */
-  .shortcuts{position:absolute;top:36px;left:30px;display:flex;flex-direction:column;gap:24px}
-  .sc{width:64px;text-align:center;color:var(--muted);font-size:12px;cursor:pointer}
-  .sc .ico{width:60px;height:60px;border-radius:12px;background:#141a32;display:flex;
-    align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:20px;margin:0 auto 6px}
-  /* start menu / library panel */
-  .panel{position:absolute;left:300px;top:70px;width:900px;height:520px;background:var(--panel);
-    border-radius:18px;padding:24px 28px;backdrop-filter:blur(8px);box-shadow:0 20px 60px #0008}
-  .panel h1{margin:0;font-size:26px} .panel .sub{color:var(--muted);margin:4px 0 18px}
-  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
-  .tile{background:var(--tile);border-radius:14px;height:128px;padding:14px;position:relative;
-    cursor:pointer;transition:transform .08s,box-shadow .08s;border:3px solid transparent}
-  .tile .chip{width:40px;height:40px;border-radius:10px;background:#10162c;display:flex;
-    align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:22px}
-  .tile .lbl{position:absolute;bottom:12px;left:14px;font-weight:700;font-size:17px}
-  .tile.sel{border-color:var(--tile-sel);background:#36406e;transform:translateY(-2px);
-    box-shadow:0 0 0 2px #4cc2ff55,0 10px 30px #0006}
-  .tile.sel .chip{color:var(--tile-sel)}
-  /* library cards */
-  .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:18px}
-  .card{cursor:pointer;border:3px solid transparent;border-radius:12px}
-  .card .art{height:150px;border-radius:10px;background:linear-gradient(135deg,#2a3566,#19204a);
-    display:flex;align-items:center;justify-content:center;color:#8ea0d6;font-size:13px;text-align:center;padding:8px}
-  .card .name{font-size:14px;margin-top:8px;color:var(--text)}
-  .card.sel{border-color:var(--tile-sel)} .card.sel .art{box-shadow:0 0 0 2px #4cc2ff55}
-  /* taskbar */
-  .taskbar{position:absolute;left:0;right:0;bottom:0;height:56px;background:var(--taskbar);
-    display:flex;align-items:center;padding:0 14px;gap:12px}
-  .start{background:#264678;border-radius:10px;padding:9px 16px;font-weight:700;cursor:pointer}
-  .pin{background:#1a213c;border-radius:8px;padding:9px 12px;color:var(--muted);font-size:14px}
-  .tray{margin-left:auto;color:var(--text);font-size:14px;display:flex;gap:16px;align-items:center}
-  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#3a466e;margin-left:5px}
+  /* ---------- desktop icons ---------- */
+  .icons{position:absolute;top:24px;left:22px;display:flex;flex-direction:column;gap:10px;width:96px}
+  .ico{padding:10px 6px;border-radius:12px;text-align:center;font-size:12px;color:#dbe3ff;border:2px solid transparent}
+  .ico .g{width:48px;height:48px;margin:0 auto 6px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+    font-size:22px;font-weight:700;background:linear-gradient(145deg,#1b2347,#141a36);color:var(--accent);
+    box-shadow:inset 0 0 0 1px var(--line)}
+  /* ---------- window ---------- */
+  .win{position:absolute;left:330px;top:70px;width:760px;height:470px;background:var(--glass);
+    border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(18px) saturate(140%);
+    box-shadow:0 30px 80px #000a;display:flex;flex-direction:column;overflow:hidden}
+  .titlebar{height:42px;display:flex;align-items:center;gap:10px;padding:0 12px;
+    background:linear-gradient(180deg,#ffffff10,#ffffff04);border-bottom:1px solid var(--line)}
+  .titlebar .t{font-weight:600;font-size:14px}.titlebar .path{color:var(--muted);font-size:13px}
+  .winbtns{margin-left:auto;display:flex;gap:8px}
+  .winbtns i{width:13px;height:13px;border-radius:50%;display:inline-block}
+  .winbtns .a{background:#ffbd44}.winbtns .b{background:#28c840}.winbtns .c{background:#ff5f57}
+  .winbody{display:flex;flex:1;min-height:0}
+  .sidebar{width:160px;border-right:1px solid var(--line);padding:12px 8px;color:var(--muted);font-size:13px}
+  .sidebar div{padding:8px 10px;border-radius:8px;border:2px solid transparent}
+  .content{flex:1;padding:16px;overflow:auto}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .card{border:2px solid transparent;border-radius:12px;cursor:pointer}
+  .card .art{height:128px;border-radius:10px;display:flex;align-items:flex-end;padding:10px;font-size:13px;font-weight:600;
+    background:linear-gradient(150deg,#2b376e,#171d3f);box-shadow:inset 0 0 0 1px var(--line)}
+  .card .nm{font-size:12px;margin-top:7px;color:var(--muted)}
+  /* ---------- start menu ---------- */
+  .start{position:absolute;left:50%;transform:translateX(-50%);bottom:74px;width:680px;height:470px;
+    background:var(--glass-2);border:1px solid var(--line);border-radius:18px;backdrop-filter:blur(22px);
+    box-shadow:0 30px 90px #000b;padding:22px 26px;display:none;flex-direction:column}
+  .start.open{display:flex}
+  .search{height:40px;border-radius:20px;background:#0d1330;border:1px solid var(--line);
+    display:flex;align-items:center;padding:0 16px;color:var(--muted);font-size:14px}
+  .start h3{color:var(--muted);font-weight:600;font-size:13px;margin:18px 4px 10px;letter-spacing:.3px}
+  .pins{display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
+  .pin{background:#ffffff0d;border:2px solid transparent;border-radius:12px;height:84px;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:12px}
+  .pin .g{font-size:22px;color:var(--accent)}
+  /* ---------- taskbar ---------- */
+  .taskbar{position:absolute;left:0;right:0;bottom:0;height:58px;background:rgba(8,11,24,.86);
+    backdrop-filter:blur(20px);border-top:1px solid var(--line);display:flex;align-items:center;padding:0 14px}
+  .tcenter{position:absolute;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center}
+  .tbtn{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+    font-size:20px;color:#cdd7ff;border:2px solid transparent;cursor:pointer;background:#ffffff08}
+  .tbtn.startbtn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#07112a;font-weight:800}
+  .tray{margin-left:auto;display:flex;gap:14px;align-items:center;font-size:13px;color:#d7defb}
+  .dot{width:8px;height:8px;border-radius:50%;background:#3a466e;display:inline-block;margin-left:4px}
   .dot.on{background:var(--accent);box-shadow:0 0 8px var(--accent)}
-  .hidden{display:none}
+  .mode{background:#ffffff10;border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:12px}
+  /* ---------- focus + cursor ---------- */
+  .focus{border-color:var(--accent)!important;
+    box-shadow:0 0 0 2px var(--accent), 0 0 22px #5cc8ff66 !important;outline:none}
+  .focus .art,.focus .g{box-shadow:0 0 0 2px var(--accent)!important}
+  #cursor{position:absolute;width:20px;height:20px;pointer-events:none;z-index:9999;display:none;
+    transform:translate(-3px,-2px);filter:drop-shadow(0 1px 2px #000a)}
+  body.pointer #cursor{display:block}
+  .hinttip{position:absolute;top:20px;right:18px;background:#0d1330cc;border:1px solid var(--line);
+    border-radius:10px;padding:8px 14px;color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
-<div class="screen">
-  <div class="hintbar">[A] Select &nbsp; [B] Back &nbsp; [☰] Start/Settings &nbsp; LB/RB Switch</div>
+  <div class="hinttip" id="hint">Focus mode · D-pad move · A select · B back · ☰ Start · Y pointer</div>
 
-  <div class="shortcuts" id="shortcuts">
-    <div class="sc"><div class="ico">&gt;_</div>Terminal</div>
-    <div class="sc"><div class="ico">▤</div>Files</div>
-    <div class="sc"><div class="ico">≈</div>Network</div>
-    <div class="sc"><div class="ico">AI</div>AI Bridge</div>
+  <div class="icons" id="icons">
+    <div class="ico focusable" data-act="win"><div class="g">🖥</div>This PC</div>
+    <div class="ico focusable" data-act="win"><div class="g">🎮</div>Games</div>
+    <div class="ico focusable" data-act="win"><div class="g">▦</div>Emulators</div>
+    <div class="ico focusable" data-act="win"><div class="g">▤</div>Files</div>
+    <div class="ico focusable" data-act="term"><div class="g">&gt;_</div>Terminal</div>
+    <div class="ico focusable" data-act="ai"><div class="g">✦</div>AI Hub</div>
   </div>
 
-  <!-- Start menu (systems) -->
-  <div class="panel" id="startmenu">
-    <h1>Start</h1><div class="sub">Pick a system &nbsp;·&nbsp; controller-only</div>
-    <div class="grid" id="systemGrid"></div>
+  <div class="win" id="win">
+    <div class="titlebar" id="titlebar">
+      <span class="t">🎮 Games</span><span class="path">› This PC › Library</span>
+      <span class="winbtns"><i class="a"></i><i class="b"></i><i class="c"></i></span>
+    </div>
+    <div class="winbody">
+      <div class="sidebar">
+        <div class="focusable">⭐ Favorites</div><div class="focusable">🕑 Recent</div>
+        <div class="focusable">▶ PSP</div><div class="focusable">★ N64</div>
+        <div class="focusable">◆ PS2</div><div class="focusable">⬡ Switch</div>
+      </div>
+      <div class="content"><div class="cards" id="cards"></div></div>
+    </div>
   </div>
 
-  <!-- Library (per system) -->
-  <div class="panel hidden" id="library">
-    <h1 id="libTitle">PSP</h1><div class="sub" id="libSub">Recently played · Favorites · All</div>
-    <div class="cards" id="cardGrid"></div>
+  <div class="start" id="start">
+    <div class="search focusable">🔍 Search games, apps, settings…</div>
+    <h3>PINNED</h3>
+    <div class="pins" id="pins"></div>
+    <h3>RECOMMENDED</h3>
+    <div class="pins" id="recent"></div>
   </div>
 
   <div class="taskbar">
-    <div class="start">▣ GOSE</div>
-    <div class="pin">God of War</div><div class="pin">Mario 64</div><div class="pin">Sonic</div>
+    <div class="tcenter" id="taskcenter">
+      <div class="tbtn startbtn focusable" data-act="start">▣</div>
+      <div class="tbtn focusable" data-act="win">🎮</div>
+      <div class="tbtn focusable" data-act="term">&gt;_</div>
+      <div class="tbtn focusable" data-act="ai">✦</div>
+      <div class="tbtn focusable" data-act="settings">⚙</div>
+    </div>
     <div class="tray">
-      <span>Ava<span class="dot on"></span></span>
-      <span>Wren<span class="dot on"></span></span>
-      <span>Iris<span class="dot"></span></span>
-      <span>⌁ 82%</span><span>≋ WiFi</span><span id="clock">--:--</span>
+      <span class="mode focusable" id="modebtn" data-act="mode">🎯 Focus</span>
+      <span>Ava<span class="dot on"></span>Wren<span class="dot on"></span>Iris<span class="dot"></span></span>
+      <span>≋</span><span>🔊</span><span>⌁82%</span><span id="clock">--:--</span>
     </div>
   </div>
-</div>
+
+  <svg id="cursor" viewBox="0 0 24 24"><path d="M3 2l7 18 2.5-7 7-2.5z" fill="#fff" stroke="#0a0f22" stroke-width="1.5"/></svg>
 
 <script>
-const SYSTEMS = [
-  ["PSP","▶"],["PS2","◆"],["Switch","⬡"],["SNES","✦"],["N64","★"],["Genesis","∞"],
-  ["PS1","●"],["GameCube","◼"],["Dreamcast","◐"],["Arcade","▣"],["Mario 64","M"],["Tools","⚙"]
-];
-const LIB = { "PSP":["God of War","Daxter","GTA: VCS","Patapon","Wipeout Pure","Tekken 6"],
-  "N64":["Mario 64","Zelda OoT","GoldenEye","Mario Kart 64","Banjo-Kazooie","F-Zero X"],
-  "Mario 64":["Super Mario 64"], "Tools":["Terminal","File Manager","Network","AI Bridge"] };
+const GAMES = {
+  default:[["God of War","#5a3"],["Daxter","#37a"],["Patapon","#a55"],["Wipeout","#3aa"],
+           ["Tekken 6","#a37"],["GTA VCS","#7a3"],["Crisis Core","#55a"],["Lumines","#a73"]],
+};
+const SYS = [["PSP","▶"],["PS2","◆"],["Switch","⬡"],["SNES","✦"],["N64","★"],["Genesis","∞"],
+             ["PS1","●"],["GameCube","◼"],["Mario 64","M"],["Arcade","▣"],["Terminal",">_"],["AI Hub","✦"]];
 
-let view = "start";      // "start" | "library"
-let sysIdx = 0, cardIdx = 0, curSystem = "PSP";
+// fill window cards
+const cards=document.getElementById("cards");
+GAMES.default.forEach(([n,c])=>{const d=document.createElement("div");d.className="card focusable";
+  d.dataset.act="launch";d.dataset.name=n;
+  d.innerHTML=`<div class="art" style="background:linear-gradient(150deg,${c}cc,#171d3f)">${n}</div><div class="nm">${n}</div>`;
+  cards.appendChild(d);});
+// fill start menu
+const pins=document.getElementById("pins"), recent=document.getElementById("recent");
+SYS.forEach(([n,g])=>{const d=document.createElement("div");d.className="pin focusable";d.dataset.act="sys";d.dataset.name=n;
+  d.innerHTML=`<div class="g">${g}</div>${n}`;pins.appendChild(d);});
+["God of War","Mario 64","Sonic","Patapon"].forEach(n=>{const d=document.createElement("div");
+  d.className="pin focusable";d.dataset.act="launch";d.dataset.name=n;d.innerHTML=`<div class="g">▷</div>${n}`;recent.appendChild(d);});
 
-const systemGrid = document.getElementById("systemGrid");
-SYSTEMS.forEach(([name,gl],i)=>{
-  const t=document.createElement("div"); t.className="tile"; t.dataset.i=i;
-  t.innerHTML=`<div class="chip">${gl}</div><div class="lbl">${name}</div>`;
-  t.onclick=()=>{sysIdx=i;render();openSystem();}; systemGrid.appendChild(t);
-});
+// ---------------- input model: focus-nav + pointer + mouse + keyboard ----------------
+let pointer=false, cx=innerWidth/2, cy=innerHeight/2, startOpen=false;
+const cursor=document.getElementById("cursor");
+function vis(el){const r=el.getBoundingClientRect();return r.width&&r.height&&
+  (el.offsetParent!==null)&&(!startEl().contains(el)||startOpen);}
+function startEl(){return document.getElementById("start");}
+function focusables(){return [...document.querySelectorAll(".focusable")].filter(vis);}
+function current(){return document.querySelector(".focus");}
+function setFocus(el){if(!el)return;const c=current();if(c)c.classList.remove("focus");el.classList.add("focus");
+  el.scrollIntoView({block:"nearest",inline:"nearest"});}
+function center(el){const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};}
 
-function render(){
-  if(view==="start"){
-    document.getElementById("startmenu").classList.remove("hidden");
-    document.getElementById("library").classList.add("hidden");
-    [...systemGrid.children].forEach((t,i)=>t.classList.toggle("sel",i===sysIdx));
-  } else {
-    document.getElementById("startmenu").classList.add("hidden");
-    document.getElementById("library").classList.remove("hidden");
-    [...document.getElementById("cardGrid").children]
-      .forEach((c,i)=>c.classList.toggle("sel",i===cardIdx));
+function moveFocus(dir){
+  const cur=current()||focusables()[0]; if(!cur){return;} setFocus(cur);
+  const a=center(cur); let best=null,bd=1e9;
+  for(const el of focusables()){ if(el===cur)continue; const b=center(el);
+    const dx=b.x-a.x, dy=b.y-a.y;
+    const ok={right:dx>6,left:dx<-6,down:dy>6,up:dy<-6}[dir]; if(!ok)continue;
+    const along=(dir==="left"||dir==="right")?Math.abs(dx):Math.abs(dy);
+    const off=(dir==="left"||dir==="right")?Math.abs(dy):Math.abs(dx);
+    const d=along+off*2; if(d<bd){bd=d;best=el;}
   }
+  if(best)setFocus(best);
 }
-function openSystem(){
-  curSystem = SYSTEMS[sysIdx][0];
-  const games = LIB[curSystem] || ["No games scanned yet"];
-  document.getElementById("libTitle").textContent = curSystem;
-  const cg = document.getElementById("cardGrid"); cg.innerHTML="";
-  games.forEach((g,i)=>{
-    const c=document.createElement("div"); c.className="card";
-    c.innerHTML=`<div class="art">${g}</div><div class="name">${g}</div>`;
-    c.onclick=()=>{cardIdx=i;launch(g);}; cg.appendChild(c);
-  });
-  view="library"; cardIdx=0; render();
+function activate(el){
+  el=el||current(); if(!el)return; const act=el.dataset.act, name=el.dataset.name;
+  if(act==="start"){toggleStart();return;}
+  if(act==="mode"){togglePointer();return;}
+  if(act==="launch"){toast(`Launching “${name}” → games.launch + emulator`);return;}
+  if(act==="sys"){toast(`Open ${name} library`);if(startOpen)toggleStart();return;}
+  if(act==="win"){document.getElementById("win").style.display="flex";if(startOpen)toggleStart();
+    setFocus(document.querySelector("#cards .focusable"));return;}
+  if(act==="term"){toast("Open Terminal (SSH/console — AI can drive this too)");return;}
+  if(act==="ai"){toast("AI Hub — Ava/Wren/Iris connect via MCP or SSH");return;}
+  if(act==="settings"){toast("Settings: Wi-Fi · Bluetooth · Controllers · Display");return;}
 }
-function launch(g){ alert(`Launch "${g}" (${curSystem})\n→ on device this calls games.launch + the right emulator`); }
+function toggleStart(){startOpen=!startOpen;startEl().classList.toggle("open",startOpen);
+  if(startOpen)setFocus(document.querySelector("#pins .focusable"));else setFocus(document.querySelector(".icons .focusable"));}
+function togglePointer(){pointer=!pointer;document.body.classList.toggle("pointer",pointer);
+  document.getElementById("modebtn").textContent=pointer?"🖱 Pointer":"🎯 Focus";
+  document.getElementById("hint").textContent=pointer
+    ?"Pointer mode · R-stick move · A click · Y focus-mode"
+    :"Focus mode · D-pad move · A select · B back · ☰ Start · Y pointer";
+  if(pointer)moveCursor(0,0);}
+function moveCursor(dx,dy){cx=Math.max(0,Math.min(innerWidth,cx+dx));cy=Math.max(0,Math.min(innerHeight,cy+dy));
+  cursor.style.left=cx+"px";cursor.style.top=cy+"px";}
+function clickAt(){const el=document.elementFromPoint(cx,cy);const f=el&&el.closest(".focusable");if(f){setFocus(f);activate(f);}}
 
-// ---- keyboard nav (D-pad analog) ----
-document.addEventListener("keydown",e=>{
-  const cols = view==="start"?4:5;
-  const max = view==="start"?SYSTEMS.length:document.getElementById("cardGrid").children.length;
-  let i = view==="start"?sysIdx:cardIdx;
-  if(e.key==="ArrowRight") i=Math.min(max-1,i+1);
-  else if(e.key==="ArrowLeft") i=Math.max(0,i-1);
-  else if(e.key==="ArrowDown") i=Math.min(max-1,i+cols);
-  else if(e.key==="ArrowUp") i=Math.max(0,i-cols);
-  else if(e.key==="Enter"){ view==="start"?openSystem():launch((LIB[curSystem]||[])[cardIdx]); return;}
-  else if(e.key==="Escape"||e.key==="Backspace"){ if(view==="library"){view="start";render();} return;}
-  else return;
-  if(view==="start") sysIdx=i; else cardIdx=i; render(); e.preventDefault();
+let toastT;function toast(m){let t=document.getElementById("toast");if(!t){t=document.createElement("div");t.id="toast";
+  t.style.cssText="position:absolute;left:50%;top:24px;transform:translateX(-50%);background:#0d1330ee;border:1px solid #ffffff22;"+
+  "padding:10px 18px;border-radius:10px;color:#eef2ff;font-size:14px;z-index:99999";document.body.appendChild(t);}
+  t.textContent=m;t.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>t.style.opacity=0,1600);}
+
+// keyboard
+addEventListener("keydown",e=>{
+  const k=e.key;
+  if(k==="ArrowRight")moveFocus("right");else if(k==="ArrowLeft")moveFocus("left");
+  else if(k==="ArrowDown")moveFocus("down");else if(k==="ArrowUp")moveFocus("up");
+  else if(k==="Enter")activate();else if(k==="Escape"){if(startOpen)toggleStart();}
+  else if(k===" "||k==="Meta")toggleStart();else if(k.toLowerCase()==="y")togglePointer();else return;
+  e.preventDefault();
 });
+// mouse
+addEventListener("mousemove",e=>{const f=e.target.closest&&e.target.closest(".focusable");if(f)setFocus(f);});
+addEventListener("click",e=>{const f=e.target.closest&&e.target.closest(".focusable");if(f)activate(f);});
 
-// ---- gamepad nav (real controller) ----
+// gamepad (works with Odin native pad, Xbox, and PS5 DualSense via 'standard' mapping)
 let prev={};
 function pollPad(){
-  const gp=navigator.getGamepads&&navigator.getGamepads()[0];
+  const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(p=>p);
   if(gp){
-    const press=(idx)=>gp.buttons[idx]&&gp.buttons[idx].pressed && !prev[idx];
-    const cols = view==="start"?4:5;
-    if(press(12)) move(-cols); if(press(13)) move(cols);
-    if(press(14)) move(-1);    if(press(15)) move(1);
-    if(press(0)){ view==="start"?openSystem():launch((LIB[curSystem]||[])[cardIdx]); }
-    if(press(1)){ if(view==="library"){view="start";render();} }
-    gp.buttons.forEach((b,idx)=>prev[idx]=b.pressed);
+    const b=i=>gp.buttons[i]&&gp.buttons[i].pressed, tap=i=>b(i)&&!prev[i];
+    if(pointer){
+      const ax=gp.axes[2]||gp.axes[0]||0, ay=gp.axes[3]||gp.axes[1]||0, sp=14, dz=.18;
+      moveCursor(Math.abs(ax)>dz?ax*sp:0, Math.abs(ay)>dz?ay*sp:0);
+      if(tap(0))clickAt();
+    }else{
+      if(tap(12))moveFocus("up");if(tap(13))moveFocus("down");
+      if(tap(14))moveFocus("left");if(tap(15))moveFocus("right");
+      // left-stick as dpad
+      const lx=gp.axes[0]||0,ly=gp.axes[1]||0;
+      if(tap("lx+")||(lx>.6&&!prev.lxp)){moveFocus("right");prev.lxp=1}if(lx<.4)prev.lxp=0;
+      if(ly>.6&&!prev.lyp){moveFocus("down");prev.lyp=1}if(ly<.4)prev.lyp=0;
+      if(ly<-.6&&!prev.lyn){moveFocus("up");prev.lyn=1}if(ly>-.4)prev.lyn=0;
+      if(lx<-.6&&!prev.lxn){moveFocus("left");prev.lxn=1}if(lx>-.4)prev.lxn=0;
+      if(tap(0))activate();
+      if(tap(1)){if(startOpen)toggleStart();}
+    }
+    if(tap(9)||tap(16))toggleStart();           // Start / Guide
+    if(tap(3))togglePointer();                  // Y / Triangle
+    gp.buttons.forEach((bt,i)=>prev[i]=bt.pressed);
   }
   requestAnimationFrame(pollPad);
 }
-function move(d){
-  const max=view==="start"?SYSTEMS.length:document.getElementById("cardGrid").children.length;
-  if(view==="start") sysIdx=Math.max(0,Math.min(max-1,sysIdx+d));
-  else cardIdx=Math.max(0,Math.min(max-1,cardIdx+d));
-  render();
-}
 requestAnimationFrame(pollPad);
 
-// clock
-setInterval(()=>{const d=new Date();
-  document.getElementById("clock").textContent =
-    String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");},1000);
-render();
+setInterval(()=>{const d=new Date();document.getElementById("clock").textContent=
+  String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");},1000);
+setFocus(document.querySelector(".icons .focusable"));
 </script>
 </body>
 </html>

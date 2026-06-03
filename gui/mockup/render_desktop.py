@@ -1,118 +1,117 @@
 #!/usr/bin/env python3
-"""Render a concept image of the GOSE Windows-like desktop (controller-only).
+"""Render the GOSE Windows-style desktop concept -> desktop-concept.png.
 
-Produces desktop-concept.png — a static "what it looks like" mockup to vibe on.
-The living, navigable version is desktop.html. Run:  python3 render_desktop.py
+The living, navigable version is desktop.html. Run: python3 render_desktop.py
 """
 from __future__ import annotations
-
 import os
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 W, H = 1280, 720
 OUT = os.path.join(os.path.dirname(__file__), "desktop-concept.png")
-
-# Palette
-BG_TOP = (12, 16, 34)
-BG_BOT = (28, 36, 86)
-PANEL = (22, 28, 52)
-TILE = (38, 47, 86)
-TILE_SEL = (76, 194, 255)
-TEXT = (233, 238, 252)
-MUTED = (150, 162, 196)
-ACCENT = (120, 220, 170)
+ACC = (92, 200, 255); ACC2 = (155, 107, 255)
+TEXT = (238, 242, 255); MUTED = (150, 162, 196); LINE = (255, 255, 255, 30)
 
 
-def font(size, bold=False):
-    paths = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans%s.ttf" % ("-Bold" if bold else ""),
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]
-    for p in paths:
+def font(s, bold=False):
+    for p in ("/usr/share/fonts/truetype/dejavu/DejaVuSans%s.ttf" % ("-Bold" if bold else ""),
+              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"):
         if os.path.exists(p):
-            return ImageFont.truetype(p, size)
+            return ImageFont.truetype(p, s)
     return ImageFont.load_default()
 
 
-def vgrad(draw):
-    for y in range(H):
-        t = y / H
-        c = tuple(int(BG_TOP[i] + (BG_BOT[i] - BG_TOP[i]) * t) for i in range(3))
-        draw.line([(0, y), (W, y)], fill=c)
-
-
-def tile(draw, x, y, w, h, label, glyph, selected=False):
-    fill = tuple(min(255, c + 40) for c in TILE) if selected else TILE
-    draw.rounded_rectangle([x, y, x + w, y + h], radius=14, fill=fill)
-    if selected:
-        draw.rounded_rectangle([x, y, x + w, y + h], radius=14, outline=TILE_SEL, width=4)
-    # glyph chip
-    draw.rounded_rectangle([x + 14, y + 14, x + 54, y + 54], radius=10, fill=(16, 22, 44))
-    g = font(24, bold=True)
-    gb = draw.textbbox((0, 0), glyph, font=g)
-    draw.text((x + 34 - (gb[2] - gb[0]) / 2, y + 34 - (gb[3] - gb[1]) / 2),
-              glyph, font=g, fill=TILE_SEL if selected else ACCENT)
-    draw.text((x + 16, y + h - 30), label, font=font(17, bold=True), fill=TEXT)
+def panel(img, box, radius, fill):
+    lay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(lay).rounded_rectangle(box, radius=radius, fill=fill, outline=LINE, width=1)
+    img.alpha_composite(lay)
 
 
 def main():
-    img = Image.new("RGB", (W, H))
+    img = Image.new("RGBA", (W, H))
     d = ImageDraw.Draw(img)
-    vgrad(d)
+    for y in range(H):  # diagonal-ish gradient
+        t = y / H
+        c = (int(10 + 7 * t), int(14 + 24 * t), int(31 + 17 * t), 255)
+        d.line([(0, y), (W, y)], fill=c)
+    # soft glows
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    gd.ellipse([820, -160, 1320, 280], fill=ACC2 + (110,))
+    gd.ellipse([-200, 470, 360, 900], fill=(14, 110, 160, 120))
+    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(130)))
 
-    # Desktop shortcut icons (top-left) — the "hacker tools" live on the desktop.
-    for i, (lbl, gl) in enumerate([("Terminal", ">_"), ("Files", "▤"), ("Network", "≈"),
-                                   ("AI Bridge", "AI")]):
-        ix, iy = 36, 40 + i * 92
-        d.rounded_rectangle([ix, iy, ix + 60, iy + 60], radius=12, fill=(20, 26, 50))
-        gg = font(22, bold=True)
-        d.text((ix + 30 - d.textlength(gl, font=gg) / 2, iy + 18), gl, font=gg, fill=ACCENT)
-        d.text((ix + 30 - d.textlength(lbl, font=font(13)) / 2, iy + 64), lbl,
-               font=font(13), fill=MUTED)
+    # desktop icons
+    icons = [("■", "This PC"), ("▶", "Games"), ("▲", "Emulators"),
+             ("≡", "Files"), (">_", "Terminal"), ("★", "AI Hub")]
+    for i, (g, lbl) in enumerate(icons):
+        x, y = 30, 24 + i * 96
+        panel(img, [x, y, x + 86, y + 84], 14, (26, 33, 60, 90))
+        gf = font(22, bold=True)
+        d.text((x + 43 - d.textlength(g, font=gf) / 2, y + 12), g, font=gf, fill=ACC)
+        d.text((x + 43 - d.textlength(lbl, font=font(12)) / 2, y + 60), lbl, font=font(12), fill=TEXT)
 
-    # Start menu panel (open) — the system "tiles"
-    px, py, pw, ph = 300, 70, 900, 520
-    d.rounded_rectangle([px, py, px + pw, py + ph], radius=18, fill=PANEL)
-    d.text((px + 28, py + 22), "Start", font=font(26, bold=True), fill=TEXT)
-    d.text((px + 28, py + 56), "Pick a system", font=font(16), fill=MUTED)
+    # ---- window ----
+    wx, wy, ww, wh = 330, 70, 760, 470
+    panel(img, [wx, wy, wx + ww, wy + wh], 14, (20, 26, 48, 225))
+    panel(img, [wx, wy, wx + ww, wy + 42], 14, (255, 255, 255, 14))
+    d.text((wx + 16, wy + 12), "▶  Games", font=font(15, bold=True), fill=TEXT)
+    d.text((wx + 120, wy + 13), "›  This PC  ›  Library", font=font(13), fill=MUTED)
+    for i, col in enumerate([(255, 189, 68), (40, 200, 64), (255, 95, 87)]):
+        d.ellipse([wx + ww - 30 - i * 22, wy + 15, wx + ww - 18 - i * 22, wy + 27], fill=col)
+    # sidebar
+    for i, s in enumerate(["★ Favorites", "◷ Recent", "▶ PSP", "◆ N64", "● PS2", "○ Switch"]):
+        d.text((wx + 16, wy + 60 + i * 34), s, font=font(13), fill=TEXT if i == 2 else MUTED)
+    # cards
+    games = [("God of War", (90, 160, 80)), ("Daxter", (60, 120, 170)), ("Patapon", (160, 80, 80)),
+             ("Wipeout", (60, 170, 170)), ("Tekken 6", (160, 70, 120)), ("GTA VCS", (120, 160, 70)),
+             ("Crisis Core", (90, 90, 170)), ("Lumines", (170, 120, 60))]
+    cw, ch, gap = 138, 128, 16
+    gx, gy = wx + 176, wy + 60
+    for i, (nm, col) in enumerate(games):
+        r, c = divmod(i, 4)
+        x, y = gx + c * (cw + gap), gy + r * (ch + 36 + gap)
+        sel = (i == 0)
+        lay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        ld = ImageDraw.Draw(lay)
+        ld.rounded_rectangle([x, y, x + cw, y + ch], 10, fill=col + (210,),
+                             outline=ACC if sel else LINE[:3] + (30,), width=3 if sel else 1)
+        img.alpha_composite(lay)
+        d.text((x + 10, y + ch - 24), nm, font=font(13, bold=True), fill=TEXT)
+        d.text((x + 2, y + ch + 6), nm, font=font(12), fill=MUTED)
 
-    systems = [("PSP", "▶"), ("PS2", "◆"), ("Switch", "⬡"), ("SNES", "✦"),
-               ("N64", "★"), ("Genesis", "∞"), ("PS1", "●"), ("GameCube", "◼"),
-               ("Dreamcast", "◐"), ("Arcade", "▣"), ("Mario 64", "M"), ("Tools", "⚙")]
-    cols, tw, th, gap = 4, 190, 132, 22
-    gx, gy = px + 28, py + 96
-    for idx, (name, gl) in enumerate(systems):
-        r, c = divmod(idx, cols)
-        x = gx + c * (tw + gap)
-        y = gy + r * (th + gap)
-        tile(d, x, y, tw, th, name, gl, selected=(name == "PSP"))
+    # ---- taskbar (Win11: full-width bar, centered icons) ----
+    panel(img, [0, H - 58, W, H], 0, (8, 11, 24, 220))
+    btns = [("■", True), ("▶", False), (">_", False), ("★", False), ("≡", False)]
+    total = len(btns) * 50 - 8
+    bx = W / 2 - total / 2
+    for g, start in btns:
+        lay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        if start:
+            ImageDraw.Draw(lay).rounded_rectangle([bx, H - 50, bx + 42, H - 8], 11,
+                                                  fill=(92, 200, 255, 255))
+        else:
+            ImageDraw.Draw(lay).rounded_rectangle([bx, H - 50, bx + 42, H - 8], 11,
+                                                  fill=(255, 255, 255, 18))
+        img.alpha_composite(lay)
+        gf = font(20, bold=True)
+        d.text((bx + 21 - d.textlength(g, font=gf) / 2, H - 44), g, font=gf,
+               fill=(7, 17, 42) if start else (205, 215, 255))
+        bx += 50
+    # tray
+    tray = "◉ Focus     Ava ●  Wren ●  Iris ○     wifi   vol   bat 82%    14:32"
+    d.text((W - 18 - d.textlength(tray, font=font(14)), H - 38), tray, font=font(14), fill=TEXT)
 
-    # Right info card: AI agents + game state
-    cx, cy, cw, ch = 300, py + ph - 0, pw, 0  # placeholder (kept layout simple)
+    # hint + cursor
+    hint = "Focus: D-pad move · A select · B back · Menu=Start · Y -> pointer"
+    panel(img, [W - 30 - d.textlength(hint, font=font(13)) - 20, 20,
+                W - 14, 50], 10, (13, 19, 48, 200))
+    d.text((W - 28 - d.textlength(hint, font=font(13)), 28), hint, font=font(13), fill=MUTED)
+    # mouse cursor
+    cur = [(past := (642, 372)), (662, 392), (652, 392), (657, 404), (651, 406), (647, 394), (640, 398)]
+    d.polygon(cur, fill=(255, 255, 255), outline=(10, 15, 34))
 
-    # Taskbar
-    tb = H - 56
-    d.rectangle([0, tb, W, H], fill=(10, 14, 30))
-    d.rounded_rectangle([12, tb + 10, 12 + 120, tb + 46], radius=10, fill=(38, 70, 120))
-    d.text((30, tb + 18), "▣ GOSE", font=font(18, bold=True), fill=TEXT)
-    # pinned recents
-    for i, lbl in enumerate(["God of War", "Mario 64", "Sonic"]):
-        bx = 150 + i * 150
-        d.rounded_rectangle([bx, tb + 10, bx + 138, tb + 46], radius=8, fill=(26, 33, 60))
-        d.text((bx + 12, tb + 18), lbl, font=font(14), fill=MUTED)
-    # system tray
-    tray = "Ava ●  Wren ●  Iris ○   ⌁ 82%   ≋ WiFi   14:32"
-    d.text((W - 18 - d.textlength(tray, font=font(15)), tb + 19), tray,
-           font=font(15), fill=TEXT)
-
-    # Controller hint bar (top-right)
-    hint = "[A] Select   [B] Back   [☰] Start/Settings   LB/RB Switch system"
-    d.rounded_rectangle([W - 30 - d.textlength(hint, font=font(15)) - 24, 18,
-                         W - 18, 52], radius=10, fill=(18, 24, 46))
-    d.text((W - 30 - d.textlength(hint, font=font(15)), 27), hint,
-           font=font(15), fill=MUTED)
-
-    img.save(OUT)
+    img.convert("RGB").save(OUT)
     print("wrote", OUT)
 
 

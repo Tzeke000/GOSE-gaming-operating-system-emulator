@@ -34,7 +34,10 @@ the cloud container) · 🧱 blocked
 - ⬜ Confirm simultaneous OTG + charging
 
 ## Phase 5 — Windows-like GUI `[CUSTOM]`
-- ✅ Concept image + **navigable HTML prototype** (`gui/mockup/`) for vibe-coding
+- ✅ Windows-PC concept image + **navigable HTML prototype** (`gui/mockup/`)
+- ✅ Multi-input in prototype: gamepad focus-nav + gamepad pointer + mouse/kbd + PS5
+- ✅ Toolchain curated (`docs/09-toolchain.md`); input stack (`docs/07-controllers.md`)
+- ⬜ Ship AntiMicroX profile for desktop pointer; Skyscraper for box art `[on device]`
 - 🟡 Plan written (`docs/06-gui-plan.md`)
 - ⬜ Lock the visual direction with Zeke, then pick Path A vs B
 - ⬜ Path A: Windows-style ES theme (home→system→library→launch, controller-only)
@@ -48,8 +51,10 @@ the cloud container) · 🧱 blocked
 - 🔌 Real backends on device (uinput pad, framebuffer capture, real game launch)
 - 🔌 Verify RAM-map addresses on hardware (Mario 64 via Mupen64Plus-Next)
 - 🔌 USB-cable path (USB gadget networking → `usb0`)
-- ⬜ Expose GOSE Agent over **MCP** (so Ava/Wren/Iris/Claude connect via standard)
-- 🧱 AI bridge mapping **Ava/Wren/Iris** ↔ GOSE — blocked on their API spec (Zeke)
+- ✅ Expose GOSE Agent over **MCP** (`mcp/` — Ava/Wren/Iris/Claude connect via standard)
+- ✅ SSH/console path (CLI over SSH + `system.run`)
+- ⬜ Confirm MCP transport/auth specifics with Zeke (stdio vs HTTP/SSE)
+- 🟡 AI bridge: MCP is the main path now; bridge.py kept for non-MCP/intent style
 
 ## Phase 7 — Reproducibility
 - 🟡 `scripts/setup-device.sh` grows with every customization

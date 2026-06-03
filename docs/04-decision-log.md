@@ -3,6 +3,25 @@
 Append-only. Newest at top. Each: context → decision → status. Revisit freely;
 mark superseded ones rather than deleting.
 
+## ADR-0009 — AI connects via MCP (primary), with SSH/console as alternates
+**Context:** Zeke confirmed (2026-06-03) Ava/Wren/Iris "most likely will use MCP,
+or maybe SSH/console in." **Decision:** build a **zero-dependency MCP stdio server**
+(`mcp/gose_mcp_server.py`) that proxies to the GOSE Agent daemon, exposing its
+capabilities as MCP tools. Keep SSH (CLI + `system.run`) as first-class alternates.
+**Alternatives:** official MCP Python SDK (heavier dep, harder to deploy on the
+device) — kept as [ref]; we hand-roll the small tools-only stdio subset like we did
+for the JSON-lines protocol. **Status:** accepted, implemented + tested. Transport
+specifics (stdio vs HTTP/SSE) to confirm with Zeke; tool layer is transport-agnostic.
+
+## ADR-0008 — Multi-input: focus-nav + gamepad-pointer + mouse/keyboard + PS5
+**Context:** the Windows-style desktop must be driven by the native Odin pad, a
+mouse+keyboard, and a PS5 DualSense. Desktops expect a pointer. **Decision:** two
+complementary controller paths — (1) built-in **focus-nav** (highlight + A/B) as
+default, (2) **pointer mode** via **AntiMicroX** with per-app auto-profiles for apps
+that need a mouse. All inputs ride standard `evdev`; PS5 via native `hid-playstation`.
+The HTML prototype implements both (Y toggles). **Status:** accepted; AntiMicroX
+profile is `[on device]`.
+
 ## ADR-0007 — Game-state interface via RetroArch memory (no screenshots)
 **Context:** Zeke wants the AI to play/observe games from **game state, not pixels**
 (Mineflayer-style), at least for simple games (Pong, chess, Mario 64).
