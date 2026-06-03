@@ -36,6 +36,8 @@ the cloud container) · 🧱 blocked
 ## Phase 5 — Windows-like GUI `[CUSTOM]`
 - ✅ Windows-PC concept images + **navigable HTML prototypes** (`gui/mockup/`)
 - ✅ Boot splash + login/user-select screens (boot.html, login.html)
+- ✅ GOSE Boot Menu / "BIOS" — hold L1+R1 at power-on; mock-tested trigger logic
+  (`scripts/gose_bootmenu.py`) + `bootmenu.html`. Real evdev/GPIO read [needs hardware]
 - ✅ Theme system: default Onyx (sleek black) + Midnight/Neon/Light, switchable in Settings
 - ✅ Vendored Lucide icons + Inter font (licenses incl.)
 - ✅ Multi-input in prototype: gamepad focus-nav + gamepad pointer + mouse/kbd + PS5

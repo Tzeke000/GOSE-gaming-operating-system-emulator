@@ -3,6 +3,19 @@
 Append-only. Newest at top. Each: context → decision → status. Revisit freely;
 mark superseded ones rather than deleting.
 
+## ADR-0011 — PC-style boot access: GOSE Boot Menu ("BIOS") over firmware fastboot
+**Context:** Zeke wants to hold two side buttons at power-on to reach a
+bootloader, like a Windows PC. Two layers exist: the Qualcomm firmware bootloader
+(fastboot/EDL, fixed combo, used to flash GOSE — can't restyle) and an OS-level
+menu we control. **Decision:** build a **GOSE Boot Menu** shown when a trigger
+combo (**default L1+R1**, configurable) is held in a POST-style window at power-on,
+else auto-boot the default entry after a timeout. Entries: ROCKNIX / Batocera /
+Android, Recovery, Safe Mode, Fastboot (→ firmware), GOSE Setup, Power Off.
+Decision logic in `scripts/gose_bootmenu.py` (mock-tested, 10 tests); real
+evdev/GPIO read + OS-switch commands are `[needs hardware]`. Mockups:
+`bootmenu.html` + `bootmenu-concept.png`. See `docs/10-boot-menu.md`.
+**Status:** accepted (logic + UI prototype); I/O glue at hardware bring-up.
+
 ## ADR-0010 — GUI: sleek-black default + switchable themes; boot + login screens
 **Context:** Zeke wants a "really cool Windows PC" look that's clean/black by
 default but lets users choose other themes in Settings; plus a boot splash and a

@@ -59,14 +59,19 @@ AI control agent, and the reproducible setup scripts.
   ("Mineflayer for retro"): read game state from emulator memory, no screenshots.
   Accepts stable-retro type descriptors; `agent/tools/import_stable_retro.py` imports
   their maps. See `docs/08-game-state-interface.md`. Demo: `agent/examples/pong_no_screenshots.py`.
-- `gui/mockup/` — desktop **concept PNG** + **navigable HTML prototype** for the
-  Windows-like home (vibe-code here). Multi-input: gamepad focus-nav + gamepad
-  pointer + mouse + keyboard + PS5. See `docs/06-gui-plan.md`.
+- `gui/mockup/` — concept PNGs + **navigable HTML prototypes**: boot splash
+  (`boot.html`), login/user-select (`login.html`), the **GOSE Boot Menu / "BIOS"**
+  (`bootmenu.html`), and the Windows-like desktop (`desktop.html`). Shared theme
+  tokens in `assets/themes.css` (default sleek-black **onyx**, switchable in
+  Settings). Multi-input: gamepad focus-nav + pointer + mouse + keyboard + PS5.
+  See `docs/06-gui-plan.md`; boot/BIOS model in `docs/10-boot-menu.md`.
 - `gui/` — Windows-like front-end work (theme and/or custom app). `[CUSTOM]`
 - `mcp/` — **MCP server**: how Ava/Wren/Iris/Claude drive the device (stdio
   JSON-RPC, proxies to the agent). Zero-dep. See `mcp/README.md`.
 - `docs/09-toolchain.md` — curated open-source tools to adopt (coding→OS→games→design).
-- `scripts/` — reproducible, idempotent device setup scripts.
+- `scripts/` — reproducible, idempotent device setup scripts. Also
+  `gose_bootmenu.py`: the Boot Menu trigger logic (mock-testable; `[needs hardware]`
+  for the real evdev/GPIO read).
 - `ROADMAP.md` — build order + live status checklist.
 
 ## How to work in this repo
