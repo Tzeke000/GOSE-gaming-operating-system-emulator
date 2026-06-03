@@ -1,0 +1,8 @@
+# build working dir + image artifacts (large, regenerated)
+build/
+*.img
+*.img.gz
+*.vmdk
+*.ova
+*.ovf
+*.mf

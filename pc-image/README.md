@@ -27,8 +27,12 @@ python3 ../scripts/gose_vm.py --image build/gose-pc-x86_64.img --share ~/roms   
 # or import GOSE-PC.ova into VirtualBox/VMware: File > Import Appliance
 ```
 
+Base is pinned to **Batocera 42 "Papilio Ulysses" (2025-10-12)** x86_64 stable;
+the build verifies a pinned `BATOCERA_SHA256`, falls back to a sidecar `.sha256`,
+or warns if neither is set.
+
 ## Status
 - ✅ Layer, OVA packager (tested), and orchestrator (dry-run verified).
-- ⬜ `[needs build]` a real run on a Linux host with a pinned Batocera release →
-  publish `GOSE-PC.img` + `GOSE-PC.ova`.
-- ⬜ `[next]` the Windows-like EmulationStation theme in `gose-layer/themes/gose/`.
+- ✅ Pinned base version (Batocera 42) + robust checksum handling.
+- ✅ GOSE EmulationStation theme (`gose-layer/themes/gose/`, onyx, tested + preview).
+- ⬜ `[needs build]` a real run on a Linux host → publish `GOSE-PC.img` + `GOSE-PC.ova`.

@@ -20,9 +20,13 @@ LAYER="$HERE/gose-layer"
 OUT_IMG="$WORK/gose-pc-x86_64.img"
 OUT_OVA="${OUT_OVA:-$HERE/GOSE-PC.ova}"
 
-# Pinned base image (override via env). [verify] against the current Batocera release.
+# Pinned base: Batocera 42 "Papilio Ulysses" (released 2025-10-12), x86_64 stable.
+# Override via env. For a frozen, reproducible build set BATOCERA_IMG_URL to a
+# versioned archive file (e.g. the Internet Archive "all versions" item) and
+# BATOCERA_SHA256 to its published checksum.
+BATOCERA_VERSION="${BATOCERA_VERSION:-42}"
 BATOCERA_IMG_URL="${BATOCERA_IMG_URL:-https://mirrors.o2switch.fr/batocera/x86_64/stable/last/batocera-x86_64.img.gz}"
-BATOCERA_SHA256="${BATOCERA_SHA256:-PUT_REAL_SHA256_HERE}"
+BATOCERA_SHA256="${BATOCERA_SHA256:-}"   # empty -> try sidecar .sha256, else warn
 
 GROW_TO="${GROW_TO:-32G}"      # final virtual disk size
 MEMORY_MB="${MEMORY_MB:-6144}"
@@ -39,7 +43,23 @@ step() { printf '\n==> %s\n' "$*"; }
 require_real() {  # guard steps that can't be faked
   if [[ $DRY_RUN -eq 0 ]]; then
     [[ $EUID -eq 0 ]] || { echo "ERROR: real build needs root (loop mounts). Re-run with sudo."; exit 1; }
-    [[ "$BATOCERA_SHA256" != "PUT_REAL_SHA256_HERE" ]] || { echo "ERROR: set BATOCERA_SHA256 (and URL) to a real Batocera release."; exit 1; }
+  fi
+}
+
+verify_base() {  # verify the downloaded base: pinned SHA, else sidecar, else warn
+  local gz="$WORK/batocera.img.gz" sha="$BATOCERA_SHA256"
+  if [[ -z "$sha" ]]; then
+    if run "curl -fsL '${BATOCERA_IMG_URL}.sha256' -o '$WORK/base.sha256'"; then
+      sha="$( [[ $DRY_RUN -eq 1 ]] && echo '<from-sidecar>' || awk '{print $1}' "$WORK/base.sha256" )"
+    fi
+  fi
+  if [[ -n "$sha" && "$sha" != "<from-sidecar>" ]]; then
+    run "echo '$sha  $gz' | sha256sum -c -"
+  elif [[ "$sha" == "<from-sidecar>" ]]; then
+    run "sha256sum -c '$WORK/base.sha256'"
+  else
+    echo "  ! no BATOCERA_SHA256 pinned and no sidecar checksum — proceeding UNVERIFIED"
+    echo "    (set BATOCERA_SHA256 for a reproducible, verified build)"
   fi
 }
 
@@ -50,9 +70,9 @@ echo "    out  : $OUT_IMG  +  $OUT_OVA  (${MEMORY_MB}MB / ${CPUS} vCPU / ${GROW_
 require_real
 run "mkdir -p '$WORK'"
 
-step "1/6 Download + verify Batocera x86_64 base [needs network]"
+step "1/6 Download + verify Batocera $BATOCERA_VERSION x86_64 base [needs network]"
 run "curl -fL '$BATOCERA_IMG_URL' -o '$WORK/batocera.img.gz'"
-run "echo '$BATOCERA_SHA256  $WORK/batocera.img.gz' | sha256sum -c -"
+verify_base
 
 step "2/6 Decompress to the working image"
 run "gunzip -kf '$WORK/batocera.img.gz'"

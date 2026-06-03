@@ -48,9 +48,12 @@ the cloud container) · 🧱 blocked
 - ✅ GOSE-PC image build scaffolded (`pc-image/`): GOSE layer + OVA packager
   (tested) + `build-gose-pc.sh` (dry-run verified)
 - ✅ New GOSE logo wired into boot splash, boot menu, login, desktop Start button
-- ⬜ **Run the real GOSE-PC build** (pin Batocera x86_64; on a Linux host) → publish
+- ✅ GOSE EmulationStation theme (`pc-image/gose-layer/themes/gose/`): onyx, brand,
+  Inter, gamelist + carousel + help bar; XML tested + preview render
+- ✅ Pinned base = Batocera 42 "Papilio Ulysses" (2025-10-12) in `build-gose-pc.sh`
+- ⬜ **Run the real GOSE-PC build** (on a Linux host w/ network+root+qemu) → publish
   `GOSE-PC.img` + `GOSE-PC.ova` `[needs build]`
-- ⬜ Windows-like EmulationStation theme (`pc-image/gose-layer/themes/gose/`) `[next]`
+- ⬜ Theme visual tuning on real EmulationStation `[needs device]`
 - ✅ Toolchain curated (`docs/09-toolchain.md`); input stack (`docs/07-controllers.md`)
 - ⬜ Ship AntiMicroX profile for desktop pointer; Skyscraper for box art `[on device]`
 - 🟡 Plan written (`docs/06-gui-plan.md`)

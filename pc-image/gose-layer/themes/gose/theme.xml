@@ -1,0 +1,152 @@
+<?xml version="1.0"?>
+<!-- GOSE theme for batocera-emulationstation (classic theme format v7).
+     Sleek-black "onyx" to match the GOSE desktop (assets/themes.css). Colors:
+     bg #08090C, text #EDF0F6, muted #8B91A6, accent #5CD0FF.
+     Layout follows gui/mockup/desktop.html; visual tuning on hardware is [needs device]. -->
+<theme>
+  <formatVersion>7</formatVersion>
+
+  <!-- shared by every view: background, brand logo, styled help bar -->
+  <view name="system,basic,detailed,video,grid,gamelist">
+    <image name="background" extra="true">
+      <pos>0 0</pos>
+      <size>1 1</size>
+      <origin>0 0</origin>
+      <path>./art/background.png</path>
+      <zIndex>0</zIndex>
+    </image>
+    <image name="gose_logo" extra="true">
+      <pos>0.018 0.022</pos>
+      <maxSize>0.055 0.055</maxSize>
+      <origin>0 0</origin>
+      <path>./art/logo.png</path>
+      <zIndex>40</zIndex>
+    </image>
+    <helpsystem name="help">
+      <pos>0.5 0.957</pos>
+      <origin>0.5 0.5</origin>
+      <textColor>8B91A6FF</textColor>
+      <iconColor>5CD0FFFF</iconColor>
+      <fontPath>./fonts/Inter-600.ttf</fontPath>
+      <fontSize>0.030</fontSize>
+    </helpsystem>
+  </view>
+
+  <!-- system selector -->
+  <view name="system">
+    <text name="systemLabel" extra="true">
+      <pos>0.5 0.28</pos>
+      <origin>0.5 0.5</origin>
+      <text>GOSE</text>
+      <color>EDF0F6FF</color>
+      <fontPath>./fonts/Inter-700.ttf</fontPath>
+      <fontSize>0.060</fontSize>
+      <alignment>center</alignment>
+      <zIndex>45</zIndex>
+    </text>
+    <carousel name="systemcarousel">
+      <type>horizontal</type>
+      <color>0A0B10E6</color>
+      <pos>0 0.40</pos>
+      <size>1 0.22</size>
+      <logoScale>1.10</logoScale>
+      <logoSize>0.25 0.155</logoSize>
+      <maxLogoCount>5</maxLogoCount>
+      <zIndex>50</zIndex>
+    </carousel>
+    <text name="systemInfo">
+      <pos>0 0.655</pos>
+      <size>1 0.060</size>
+      <backgroundColor>00000000</backgroundColor>
+      <color>5CD0FFFF</color>
+      <fontPath>./fonts/Inter-700.ttf</fontPath>
+      <fontSize>0.038</fontSize>
+      <alignment>center</alignment>
+      <zIndex>50</zIndex>
+    </text>
+  </view>
+
+  <!-- simple game list -->
+  <view name="basic">
+    <text name="logoText">
+      <pos>0.072 0.045</pos>
+      <size>0.7 0.06</size>
+      <color>EDF0F6FF</color>
+      <fontPath>./fonts/Inter-700.ttf</fontPath>
+      <fontSize>0.048</fontSize>
+      <zIndex>50</zIndex>
+    </text>
+    <textlist name="gamelist">
+      <pos>0.04 0.14</pos>
+      <size>0.92 0.78</size>
+      <selectorColor>5CD0FF33</selectorColor>
+      <selectorHeight>0.060</selectorHeight>
+      <selectedColor>FFFFFFFF</selectedColor>
+      <primaryColor>EDF0F6FF</primaryColor>
+      <secondaryColor>8B91A6FF</secondaryColor>
+      <fontPath>./fonts/Inter-600.ttf</fontPath>
+      <fontSize>0.045</fontSize>
+      <horizontalMargin>0.02</horizontalMargin>
+      <alignment>left</alignment>
+      <zIndex>50</zIndex>
+    </textlist>
+  </view>
+
+  <!-- game list with box art + metadata -->
+  <view name="detailed">
+    <text name="logoText">
+      <pos>0.072 0.045</pos>
+      <size>0.7 0.06</size>
+      <color>EDF0F6FF</color>
+      <fontPath>./fonts/Inter-700.ttf</fontPath>
+      <fontSize>0.048</fontSize>
+      <zIndex>50</zIndex>
+    </text>
+    <textlist name="gamelist">
+      <pos>0.04 0.14</pos>
+      <size>0.46 0.78</size>
+      <selectorColor>5CD0FF33</selectorColor>
+      <selectorHeight>0.055</selectorHeight>
+      <selectedColor>FFFFFFFF</selectedColor>
+      <primaryColor>EDF0F6FF</primaryColor>
+      <secondaryColor>8B91A6FF</secondaryColor>
+      <fontPath>./fonts/Inter-600.ttf</fontPath>
+      <fontSize>0.040</fontSize>
+      <horizontalMargin>0.02</horizontalMargin>
+      <alignment>left</alignment>
+      <zIndex>50</zIndex>
+    </textlist>
+    <image name="md_image">
+      <pos>0.54 0.155</pos>
+      <maxSize>0.42 0.42</maxSize>
+      <origin>0 0</origin>
+      <zIndex>50</zIndex>
+    </image>
+    <text name="md_description">
+      <pos>0.54 0.60</pos>
+      <size>0.42 0.30</size>
+      <color>C7CCDAFF</color>
+      <fontPath>./fonts/Inter-600.ttf</fontPath>
+      <fontSize>0.028</fontSize>
+      <zIndex>50</zIndex>
+    </text>
+    <text name="md_lbl_rating,md_lbl_releasedate,md_lbl_developer,md_lbl_publisher,md_lbl_genre,md_lbl_players,md_lbl_lastplayed,md_lbl_playcount">
+      <color>8B91A6FF</color>
+      <fontPath>./fonts/Inter-700.ttf</fontPath>
+      <fontSize>0.024</fontSize>
+    </text>
+    <text name="md_developer,md_publisher,md_genre,md_players,md_lastplayed,md_playcount">
+      <color>EDF0F6FF</color>
+      <fontPath>./fonts/Inter-600.ttf</fontPath>
+      <fontSize>0.024</fontSize>
+    </text>
+    <rating name="md_rating">
+      <color>5CD0FFFF</color>
+    </rating>
+    <datetime name="md_releasedate">
+      <color>EDF0F6FF</color>
+      <fontPath>./fonts/Inter-600.ttf</fontPath>
+      <fontSize>0.024</fontSize>
+    </datetime>
+  </view>
+</theme>
