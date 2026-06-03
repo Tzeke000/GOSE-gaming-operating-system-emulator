@@ -41,6 +41,11 @@ the cloud container) · 🧱 blocked
 - ✅ Theme system: default Onyx (sleek black) + Midnight/Neon/Light, switchable in Settings
 - ✅ Vendored Lucide icons + Inter font (licenses incl.)
 - ✅ Multi-input in prototype: gamepad focus-nav + gamepad pointer + mouse/kbd + PS5
+- ✅ Boot-time navigation chooser (`input-select.html`) + platform/input model
+  (`scripts/gose_input.py`, `assets/platform.js`): device→Native, PC→Keyboard
+- ✅ GOSE on PC = **VM** (ADR-0013): QEMU launcher `scripts/gose_vm.py` (tested) +
+  `scripts/gose-preview.py` UI preview
+- ⬜ **Build the GOSE-PC x86_64 image** (Batocera x86_64 + GOSE layer; `.img`/`.ova`) `[needs build]`
 - ✅ Toolchain curated (`docs/09-toolchain.md`); input stack (`docs/07-controllers.md`)
 - ⬜ Ship AntiMicroX profile for desktop pointer; Skyscraper for box art `[on device]`
 - 🟡 Plan written (`docs/06-gui-plan.md`)

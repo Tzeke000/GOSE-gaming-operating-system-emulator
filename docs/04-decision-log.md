@@ -3,6 +3,22 @@
 Append-only. Newest at top. Each: context → decision → status. Revisit freely;
 mark superseded ones rather than deleting.
 
+## ADR-0013 — GOSE on PC = a virtual machine (x86_64 image in QEMU) + boot input chooser
+**Context:** Zeke (2026-06-03): make GOSE a downloadable PC app to use first
+before the Odin 2 arrives, and it "should be more like a virtual machine." Plus a
+boot-time choice of how to navigate. **Decision:** GOSE-PC is a **separate x86_64
+GOSE image** (base: Batocera x86_64 + the GOSE custom layer) booted in a **QEMU
+VM** — not a web/Electron wrapper (UI-only) and not ARM-emulation of the device
+image (too slow). Accel auto-detected (KVM/HVF/WHPX, tcg fallback), virtio-gpu-gl
+display, user-net forwards TCP 5555 for the agent, virtio-9p ROM share, USB
+controller passthrough. Launcher `scripts/gose_vm.py` (command builder + accel
+tested). UI-only quick look via `scripts/gose-preview.py`. **Input chooser:**
+shown after the splash (`input-select.html`); platform-aware defaults — device →
+Native (auto-accepts peripherals), PC → Keyboard (can pick Controller). Logic in
+`scripts/gose_input.py` (+ web `assets/platform.js`), tested. Building/publishing
+the GOSE-PC image is **[needs build]**; per-OS peripheral enum **[needs hardware]**.
+See `docs/11-pc-app-and-input.md`. **Status:** accepted; image build is next.
+
 ## ADR-0012 — Single Linux OS = ROCKNIX; dual-boot ROCKNIX + Android (supersedes ADR-0001)
 **Context:** Zeke (2026-06-03) dropped the run-both-in-parallel plan: "just choose
 the best Linux one for now and we'll just have Android and that one." **Decision:**

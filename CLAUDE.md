@@ -45,6 +45,13 @@ AI control agent, and the reproducible setup scripts.
 - **Device not yet acquired** (Zeke, 2026-06-03) — keep everything
   **variant-agnostic** (Odin 2 / Mini / Portal all viable). No hardware-specific
   assumptions until the unit is in hand.
+- **GOSE on PC = a virtual machine** (Zeke, 2026-06-03, ADR-0013) — a separate
+  **x86_64 GOSE image** (base Batocera x86_64 + GOSE layer) booted in **QEMU**, not
+  a web wrapper or ARM emulation. Zeke uses the PC app first until the Odin 2
+  arrives. Launcher `scripts/gose_vm.py`; UI-only preview `scripts/gose-preview.py`.
+  Image build = next milestone `[needs build]`.
+- **Boot-time input chooser** (ADR-0013): device default **Native** (auto-accepts
+  peripherals), PC default **Keyboard** (can pick Controller). `scripts/gose_input.py`.
 - **AI control agent language: Python** (best `evdev`/`uinput` support, readable).
 - **Control transport v0: newline-delimited JSON over asyncio TCP** (zero external
   deps, identical over Wi-Fi and USB-net, fully testable). Upgrade to WebSocket/TLS
@@ -71,9 +78,10 @@ AI control agent, and the reproducible setup scripts.
 - `mcp/` — **MCP server**: how Ava/Wren/Iris/Claude drive the device (stdio
   JSON-RPC, proxies to the agent). Zero-dep. See `mcp/README.md`.
 - `docs/09-toolchain.md` — curated open-source tools to adopt (coding→OS→games→design).
-- `scripts/` — reproducible, idempotent device setup scripts. Also
-  `gose_bootmenu.py`: the Boot Menu trigger logic (mock-testable; `[needs hardware]`
-  for the real evdev/GPIO read).
+- `scripts/` — reproducible, idempotent device setup scripts + mock-testable logic:
+  `gose_bootmenu.py` (Boot Menu trigger), `gose_input.py` (platform/input model),
+  `gose_vm.py` (**GOSE-PC VM launcher**, QEMU command builder), `gose-preview.py`
+  (zero-dep UI preview in a browser).
 - `ROADMAP.md` — build order + live status checklist.
 
 ## How to work in this repo
