@@ -1,0 +1,12 @@
+# Lint/format config for the Python side (agent, mcp, ai-bridge, tools).
+# Run:  ruff check .   and   ruff format .   (pip install -r requirements-dev.txt)
+line-length = 100
+target-version = "py39"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501", "E741"]  # long lines tolerated in tables/strings; ambiguous names ok
+
+[lint.per-file-ignores]
+"agent/tests/*" = ["E402"]      # sys.path inserts before imports in tests
+"**/__init__.py" = ["F401"]

@@ -1,0 +1,9 @@
+# Dev/build tooling (not needed to run the agent — core is stdlib).
+ruff>=0.6          # lint + format
+pytest>=8.0        # alt test runner (the suite also runs under stdlib unittest)
+
+# Asset/build helpers used by gui/mockup/render_desktop.py:
+Pillow>=10         # rendering the desktop concept PNG
+cairosvg>=2.7      # rasterizing vendored Lucide SVG icons into the PNG
+fonttools>=4.0     # converting Inter woff2 -> ttf for the renderer
+brotli>=1.1        # woff2 decompression for fonttools

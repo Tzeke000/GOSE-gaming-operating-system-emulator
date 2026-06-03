@@ -73,7 +73,7 @@ See `07-controllers.md` for the full input architecture.
 | **GIMP / Krita** | Wallpapers, box-art touch-ups, raster assets. | [adopt now] |
 | **ImageMagick** | Batch art processing in the asset pipeline (resize/pad/format). | [adopt now] |
 | **Blender** | 3D logo / animated boot splash, render marketing shots. | [later] |
-| **Lucide / Phosphor icons**, **Inter / Manrope fonts** | Clean, license-friendly UI icon + font sets for the desktop. | [adopt now] |
+| **Lucide icons** (ISC) + **Inter font** (OFL) | Clean UI icon + font sets. **✅ vendored** into `gui/mockup/assets/` and used by the prototype + concept renderer. | [done] |
 
 ## Immediate integration shortlist
 1. **Skyscraper** → wire into `scripts/setup-device.sh` to populate libraries.

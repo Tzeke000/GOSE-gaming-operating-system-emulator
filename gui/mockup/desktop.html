@@ -3,252 +3,216 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GOSE — Windows-style Desktop (prototype v2)</title>
+<title>GOSE — Windows-style Desktop (prototype v3)</title>
 <style>
-  :root{
-    --accent:#5cc8ff; --accent2:#9b6bff; --text:#eef2ff; --muted:#9aa6c8;
-    --glass:rgba(20,26,48,.72); --glass-2:rgba(30,38,68,.85); --line:#ffffff1f;
-  }
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400;font-display:swap}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500;font-display:swap}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600;font-display:swap}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700;font-display:swap}
+  :root{--accent:#5cc8ff;--accent2:#9b6bff;--text:#eef2ff;--muted:#9aa6c8;
+    --glass:rgba(20,26,48,.74);--glass2:rgba(30,38,68,.86);--line:#ffffff1f}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;overflow:hidden;cursor:default}
-  body{
-    font-family:"Segoe UI Variable","Segoe UI",system-ui,"DejaVu Sans",sans-serif;color:var(--text);
-    background:
-      radial-gradient(1200px 700px at 78% -8%, #3a2f7a55, transparent 60%),
-      radial-gradient(900px 600px at 8% 110%, #0e5e8e55, transparent 60%),
-      linear-gradient(160deg,#0a0e1f,#11183a 55%,#0a1230);
-    user-select:none;
-  }
-  /* ---------- desktop icons ---------- */
-  .icons{position:absolute;top:24px;left:22px;display:flex;flex-direction:column;gap:10px;width:96px}
+  body{font-family:Inter,"Segoe UI",system-ui,sans-serif;color:var(--text);user-select:none;
+    background:radial-gradient(1200px 700px at 78% -8%,#3a2f7a55,transparent 60%),
+      radial-gradient(900px 600px at 8% 110%,#0e5e8e55,transparent 60%),
+      linear-gradient(160deg,#0a0e1f,#11183a 55%,#0a1230)}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .icons{position:absolute;top:24px;left:22px;display:flex;flex-direction:column;gap:8px;width:96px}
   .ico{padding:10px 6px;border-radius:12px;text-align:center;font-size:12px;color:#dbe3ff;border:2px solid transparent}
-  .ico .g{width:48px;height:48px;margin:0 auto 6px;border-radius:12px;display:flex;align-items:center;justify-content:center;
-    font-size:22px;font-weight:700;background:linear-gradient(145deg,#1b2347,#141a36);color:var(--accent);
-    box-shadow:inset 0 0 0 1px var(--line)}
-  /* ---------- window ---------- */
-  .win{position:absolute;left:330px;top:70px;width:760px;height:470px;background:var(--glass);
-    border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(18px) saturate(140%);
-    box-shadow:0 30px 80px #000a;display:flex;flex-direction:column;overflow:hidden}
-  .titlebar{height:42px;display:flex;align-items:center;gap:10px;padding:0 12px;
-    background:linear-gradient(180deg,#ffffff10,#ffffff04);border-bottom:1px solid var(--line)}
-  .titlebar .t{font-weight:600;font-size:14px}.titlebar .path{color:var(--muted);font-size:13px}
-  .winbtns{margin-left:auto;display:flex;gap:8px}
-  .winbtns i{width:13px;height:13px;border-radius:50%;display:inline-block}
+  .ico .g{width:50px;height:50px;margin:0 auto 6px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+    font-size:24px;background:linear-gradient(145deg,#1b2347,#141a36);color:var(--accent);box-shadow:inset 0 0 0 1px var(--line)}
+  .win{position:absolute;left:330px;top:70px;width:760px;height:470px;background:var(--glass);border:1px solid var(--line);
+    border-radius:14px;backdrop-filter:blur(18px) saturate(140%);box-shadow:0 30px 80px #000a;display:flex;flex-direction:column;overflow:hidden}
+  .win.hide{display:none}
+  .titlebar{height:42px;display:flex;align-items:center;gap:8px;padding:0 12px;background:linear-gradient(180deg,#ffffff10,#ffffff04);border-bottom:1px solid var(--line)}
+  .titlebar .t{font-weight:700;font-size:14px}.titlebar .path{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:6px}
+  .winbtns{margin-left:auto;display:flex;gap:8px}.winbtns i{width:13px;height:13px;border-radius:50%}
   .winbtns .a{background:#ffbd44}.winbtns .b{background:#28c840}.winbtns .c{background:#ff5f57}
   .winbody{display:flex;flex:1;min-height:0}
-  .sidebar{width:160px;border-right:1px solid var(--line);padding:12px 8px;color:var(--muted);font-size:13px}
-  .sidebar div{padding:8px 10px;border-radius:8px;border:2px solid transparent}
+  .sidebar{width:166px;border-right:1px solid var(--line);padding:12px 8px;font-size:13px}
+  .srow{padding:8px 10px;border-radius:8px;border:2px solid transparent;color:var(--muted);display:flex;align-items:center;gap:9px}
   .content{flex:1;padding:16px;overflow:auto}
   .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
   .card{border:2px solid transparent;border-radius:12px;cursor:pointer}
-  .card .art{height:128px;border-radius:10px;display:flex;align-items:flex-end;padding:10px;font-size:13px;font-weight:600;
-    background:linear-gradient(150deg,#2b376e,#171d3f);box-shadow:inset 0 0 0 1px var(--line)}
+  .card .art{height:128px;border-radius:10px;display:flex;align-items:flex-end;padding:10px;font-size:13px;font-weight:700;box-shadow:inset 0 0 0 1px var(--line)}
   .card .nm{font-size:12px;margin-top:7px;color:var(--muted)}
-  /* ---------- start menu ---------- */
-  .start{position:absolute;left:50%;transform:translateX(-50%);bottom:74px;width:680px;height:470px;
-    background:var(--glass-2);border:1px solid var(--line);border-radius:18px;backdrop-filter:blur(22px);
-    box-shadow:0 30px 90px #000b;padding:22px 26px;display:none;flex-direction:column}
+  .settings{position:absolute;left:330px;top:70px;width:760px;height:470px;background:var(--glass);border:1px solid var(--line);
+    border-radius:14px;backdrop-filter:blur(18px);box-shadow:0 30px 80px #000a;display:none;flex-direction:column;overflow:hidden}
+  .settings.show{display:flex}
+  .settings .body{padding:18px 22px;overflow:auto}
+  .setrow{display:flex;align-items:center;gap:12px;padding:14px;border-radius:12px;background:#ffffff08;border:2px solid transparent;margin-bottom:10px;font-size:14px}
+  .setrow .sub{color:var(--muted);font-size:12px}
+  .start{position:absolute;left:50%;transform:translateX(-50%);bottom:74px;width:680px;height:470px;background:var(--glass2);
+    border:1px solid var(--line);border-radius:18px;backdrop-filter:blur(22px);box-shadow:0 30px 90px #000b;padding:22px 26px;display:none;flex-direction:column}
   .start.open{display:flex}
-  .search{height:40px;border-radius:20px;background:#0d1330;border:1px solid var(--line);
-    display:flex;align-items:center;padding:0 16px;color:var(--muted);font-size:14px}
-  .start h3{color:var(--muted);font-weight:600;font-size:13px;margin:18px 4px 10px;letter-spacing:.3px}
+  .search{height:40px;border-radius:20px;background:#0d1330;border:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 16px;color:var(--muted);font-size:14px}
+  .start h3{color:var(--muted);font-weight:600;font-size:12px;margin:18px 4px 10px;letter-spacing:.4px}
   .pins{display:grid;grid-template-columns:repeat(6,1fr);gap:14px}
-  .pin{background:#ffffff0d;border:2px solid transparent;border-radius:12px;height:84px;cursor:pointer;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:12px}
+  .pin{background:#ffffff0d;border:2px solid transparent;border-radius:12px;height:84px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;font-size:12px}
   .pin .g{font-size:22px;color:var(--accent)}
-  /* ---------- taskbar ---------- */
-  .taskbar{position:absolute;left:0;right:0;bottom:0;height:58px;background:rgba(8,11,24,.86);
-    backdrop-filter:blur(20px);border-top:1px solid var(--line);display:flex;align-items:center;padding:0 14px}
-  .tcenter{position:absolute;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center}
-  .tbtn{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;
-    font-size:20px;color:#cdd7ff;border:2px solid transparent;cursor:pointer;background:#ffffff08}
-  .tbtn.startbtn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#07112a;font-weight:800}
+  .taskbar{position:absolute;left:0;right:0;bottom:0;height:58px;background:rgba(8,11,24,.86);backdrop-filter:blur(20px);border-top:1px solid var(--line);display:flex;align-items:center;padding:0 14px}
+  .tcenter{position:absolute;left:50%;transform:translateX(-50%);display:flex;gap:8px}
+  .tbtn{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#cdd7ff;border:2px solid transparent;cursor:pointer;background:#ffffff08}
+  .tbtn.startbtn{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#07112a}
   .tray{margin-left:auto;display:flex;gap:14px;align-items:center;font-size:13px;color:#d7defb}
+  .tray .ic{font-size:17px}
   .dot{width:8px;height:8px;border-radius:50%;background:#3a466e;display:inline-block;margin-left:4px}
   .dot.on{background:var(--accent);box-shadow:0 0 8px var(--accent)}
-  .mode{background:#ffffff10;border:1px solid var(--line);border-radius:8px;padding:5px 9px;font-size:12px}
-  /* ---------- focus + cursor ---------- */
-  .focus{border-color:var(--accent)!important;
-    box-shadow:0 0 0 2px var(--accent), 0 0 22px #5cc8ff66 !important;outline:none}
-  .focus .art,.focus .g{box-shadow:0 0 0 2px var(--accent)!important}
-  #cursor{position:absolute;width:20px;height:20px;pointer-events:none;z-index:9999;display:none;
-    transform:translate(-3px,-2px);filter:drop-shadow(0 1px 2px #000a)}
+  .mode{background:#ffffff10;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px;display:flex;align-items:center;gap:6px}
+  .focus{border-color:var(--accent)!important;box-shadow:0 0 0 2px var(--accent),0 0 22px #5cc8ff66!important;outline:none}
+  .focus .art{box-shadow:0 0 0 2px var(--accent)!important}
+  #cursor{position:absolute;width:22px;height:22px;pointer-events:none;z-index:9999;display:none;color:#fff;font-size:22px;filter:drop-shadow(0 1px 2px #000a)}
   body.pointer #cursor{display:block}
-  .hinttip{position:absolute;top:20px;right:18px;background:#0d1330cc;border:1px solid var(--line);
-    border-radius:10px;padding:8px 14px;color:var(--muted);font-size:13px}
+  .hinttip{position:absolute;top:20px;right:18px;background:#0d1330cc;border:1px solid var(--line);border-radius:10px;padding:8px 14px;color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
-  <div class="hinttip" id="hint">Focus mode · D-pad move · A select · B back · ☰ Start · Y pointer</div>
+  <div class="hinttip" id="hint">Focus mode · D-pad move · A select · B back · Menu Start · Y pointer</div>
 
   <div class="icons" id="icons">
-    <div class="ico focusable" data-act="win"><div class="g">🖥</div>This PC</div>
-    <div class="ico focusable" data-act="win"><div class="g">🎮</div>Games</div>
-    <div class="ico focusable" data-act="win"><div class="g">▦</div>Emulators</div>
-    <div class="ico focusable" data-act="win"><div class="g">▤</div>Files</div>
-    <div class="ico focusable" data-act="term"><div class="g">&gt;_</div>Terminal</div>
-    <div class="ico focusable" data-act="ai"><div class="g">✦</div>AI Hub</div>
+    <div class="ico focusable" data-act="win"><div class="g"><span class="ic" data-i="monitor"></span></div>This PC</div>
+    <div class="ico focusable" data-act="win"><div class="g"><span class="ic" data-i="gamepad-2"></span></div>Games</div>
+    <div class="ico focusable" data-act="win"><div class="g"><span class="ic" data-i="cpu"></span></div>Emulators</div>
+    <div class="ico focusable" data-act="win"><div class="g"><span class="ic" data-i="folder"></span></div>Files</div>
+    <div class="ico focusable" data-act="term"><div class="g"><span class="ic" data-i="terminal"></span></div>Terminal</div>
+    <div class="ico focusable" data-act="ai"><div class="g"><span class="ic" data-i="sparkles"></span></div>AI Hub</div>
   </div>
 
   <div class="win" id="win">
-    <div class="titlebar" id="titlebar">
-      <span class="t">🎮 Games</span><span class="path">› This PC › Library</span>
+    <div class="titlebar">
+      <span class="ic" data-i="gamepad-2"></span><span class="t">Games</span>
+      <span class="path"><span class="ic" data-i="chevron-right"></span>This PC<span class="ic" data-i="chevron-right"></span>Library</span>
       <span class="winbtns"><i class="a"></i><i class="b"></i><i class="c"></i></span>
     </div>
     <div class="winbody">
       <div class="sidebar">
-        <div class="focusable">⭐ Favorites</div><div class="focusable">🕑 Recent</div>
-        <div class="focusable">▶ PSP</div><div class="focusable">★ N64</div>
-        <div class="focusable">◆ PS2</div><div class="focusable">⬡ Switch</div>
+        <div class="srow focusable"><span class="ic" data-i="star"></span>Favorites</div>
+        <div class="srow focusable"><span class="ic" data-i="clock"></span>Recent</div>
+        <div class="srow focusable"><span class="ic" data-i="play"></span>PSP</div>
+        <div class="srow focusable"><span class="ic" data-i="gamepad-2"></span>N64</div>
+        <div class="srow focusable"><span class="ic" data-i="gamepad-2"></span>PS2</div>
+        <div class="srow focusable"><span class="ic" data-i="gamepad-2"></span>Switch</div>
       </div>
       <div class="content"><div class="cards" id="cards"></div></div>
     </div>
   </div>
 
+  <div class="settings" id="settings">
+    <div class="titlebar"><span class="ic" data-i="settings"></span><span class="t">Settings</span>
+      <span class="winbtns"><i class="a"></i><i class="b"></i><i class="c"></i></span></div>
+    <div class="body" id="setbody"></div>
+  </div>
+
   <div class="start" id="start">
-    <div class="search focusable">🔍 Search games, apps, settings…</div>
-    <h3>PINNED</h3>
-    <div class="pins" id="pins"></div>
-    <h3>RECOMMENDED</h3>
-    <div class="pins" id="recent"></div>
+    <div class="search focusable"><span class="ic" data-i="search"></span>Search games, apps, settings…</div>
+    <h3>PINNED</h3><div class="pins" id="pins"></div>
+    <h3>RECOMMENDED</h3><div class="pins" id="recent"></div>
   </div>
 
   <div class="taskbar">
-    <div class="tcenter" id="taskcenter">
-      <div class="tbtn startbtn focusable" data-act="start">▣</div>
-      <div class="tbtn focusable" data-act="win">🎮</div>
-      <div class="tbtn focusable" data-act="term">&gt;_</div>
-      <div class="tbtn focusable" data-act="ai">✦</div>
-      <div class="tbtn focusable" data-act="settings">⚙</div>
+    <div class="tcenter">
+      <div class="tbtn startbtn focusable" data-act="start"><span class="ic" data-i="layout-grid"></span></div>
+      <div class="tbtn focusable" data-act="win"><span class="ic" data-i="gamepad-2"></span></div>
+      <div class="tbtn focusable" data-act="term"><span class="ic" data-i="terminal"></span></div>
+      <div class="tbtn focusable" data-act="ai"><span class="ic" data-i="sparkles"></span></div>
+      <div class="tbtn focusable" data-act="settings"><span class="ic" data-i="settings"></span></div>
     </div>
     <div class="tray">
-      <span class="mode focusable" id="modebtn" data-act="mode">🎯 Focus</span>
+      <span class="mode focusable" id="modebtn" data-act="mode"><span class="ic" data-i="target"></span>Focus</span>
       <span>Ava<span class="dot on"></span>Wren<span class="dot on"></span>Iris<span class="dot"></span></span>
-      <span>≋</span><span>🔊</span><span>⌁82%</span><span id="clock">--:--</span>
+      <span class="ic" data-i="wifi"></span><span class="ic" data-i="volume-2"></span>
+      <span class="ic" data-i="battery"></span><span>82%</span><span id="clock">--:--</span>
     </div>
   </div>
 
-  <svg id="cursor" viewBox="0 0 24 24"><path d="M3 2l7 18 2.5-7 7-2.5z" fill="#fff" stroke="#0a0f22" stroke-width="1.5"/></svg>
+  <span id="cursor"><span class="ic" data-i="mouse-pointer-2"></span></span>
 
 <script>
-const GAMES = {
-  default:[["God of War","#5a3"],["Daxter","#37a"],["Patapon","#a55"],["Wipeout","#3aa"],
-           ["Tekken 6","#a37"],["GTA VCS","#7a3"],["Crisis Core","#55a"],["Lumines","#a73"]],
-};
-const SYS = [["PSP","▶"],["PS2","◆"],["Switch","⬡"],["SNES","✦"],["N64","★"],["Genesis","∞"],
-             ["PS1","●"],["GameCube","◼"],["Mario 64","M"],["Arcade","▣"],["Terminal",">_"],["AI Hub","✦"]];
+// wire icon masks
+document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));
 
-// fill window cards
+const GAMES=[["God of War","#5a3"],["Daxter","#37a"],["Patapon","#a55"],["Wipeout","#3aa"],
+  ["Tekken 6","#a37"],["GTA VCS","#7a3"],["Crisis Core","#55a"],["Lumines","#a73"]];
+const SYS=[["PSP","play"],["PS2","gamepad-2"],["Switch","gamepad-2"],["SNES","gamepad-2"],["N64","gamepad-2"],
+  ["Genesis","gamepad-2"],["PS1","gamepad-2"],["GameCube","gamepad-2"],["Mario 64","play"],["Arcade","gamepad-2"],
+  ["Terminal","terminal"],["AI Hub","sparkles"]];
+const SETTINGS=[["wifi","Wi-Fi","Connected · HomeNet 6E"],["gamepad-2","Controllers","Odin pad · PS5 · Xbox · mouse/kbd"],
+  ["monitor","Display & HDMI","1080p · dock HDMI fallback ready"],["sparkles","AI Agents","Ava ● Wren ● — via MCP / SSH"],
+  ["volume-2","Sound","Speakers · USB mic"],["cpu","System","ROCKNIX · Snapdragon 8 Gen 2"]];
+
 const cards=document.getElementById("cards");
-GAMES.default.forEach(([n,c])=>{const d=document.createElement("div");d.className="card focusable";
-  d.dataset.act="launch";d.dataset.name=n;
-  d.innerHTML=`<div class="art" style="background:linear-gradient(150deg,${c}cc,#171d3f)">${n}</div><div class="nm">${n}</div>`;
-  cards.appendChild(d);});
-// fill start menu
-const pins=document.getElementById("pins"), recent=document.getElementById("recent");
-SYS.forEach(([n,g])=>{const d=document.createElement("div");d.className="pin focusable";d.dataset.act="sys";d.dataset.name=n;
-  d.innerHTML=`<div class="g">${g}</div>${n}`;pins.appendChild(d);});
-["God of War","Mario 64","Sonic","Patapon"].forEach(n=>{const d=document.createElement("div");
-  d.className="pin focusable";d.dataset.act="launch";d.dataset.name=n;d.innerHTML=`<div class="g">▷</div>${n}`;recent.appendChild(d);});
+GAMES.forEach(([n,c])=>{const d=document.createElement("div");d.className="card focusable";d.dataset.act="launch";d.dataset.name=n;
+  d.innerHTML=`<div class="art" style="background:linear-gradient(150deg,${c}cc,#171d3f)">${n}</div><div class="nm">${n}</div>`;cards.appendChild(d);});
+const pins=document.getElementById("pins"),recent=document.getElementById("recent");
+SYS.forEach(([n,ic])=>{const d=document.createElement("div");d.className="pin focusable";d.dataset.act="sys";d.dataset.name=n;
+  d.innerHTML=`<span class="g ic" data-i="${ic}" style="--u:url(assets/icons/${ic}.svg)"></span>${n}`;pins.appendChild(d);});
+["God of War","Mario 64","Patapon","Wipeout"].forEach(n=>{const d=document.createElement("div");d.className="pin focusable";
+  d.dataset.act="launch";d.dataset.name=n;d.innerHTML=`<span class="g ic" data-i="play" style="--u:url(assets/icons/play.svg)"></span>${n}`;recent.appendChild(d);});
+const setbody=document.getElementById("setbody");
+SETTINGS.forEach(([ic,t,s])=>{const d=document.createElement("div");d.className="setrow focusable";
+  d.innerHTML=`<span class="ic" data-i="${ic}" style="--u:url(assets/icons/${ic}.svg);font-size:22px;color:var(--accent)"></span><div><div>${t}</div><div class="sub">${s}</div></div>`;setbody.appendChild(d);});
 
-// ---------------- input model: focus-nav + pointer + mouse + keyboard ----------------
-let pointer=false, cx=innerWidth/2, cy=innerHeight/2, startOpen=false;
+let pointer=false,cx=innerWidth/2,cy=innerHeight/2,startOpen=false;
 const cursor=document.getElementById("cursor");
-function vis(el){const r=el.getBoundingClientRect();return r.width&&r.height&&
-  (el.offsetParent!==null)&&(!startEl().contains(el)||startOpen);}
-function startEl(){return document.getElementById("start");}
+const startEl=()=>document.getElementById("start");
+function vis(el){const r=el.getBoundingClientRect();return r.width&&r.height&&el.offsetParent!==null&&(!startEl().contains(el)||startOpen);}
 function focusables(){return [...document.querySelectorAll(".focusable")].filter(vis);}
 function current(){return document.querySelector(".focus");}
-function setFocus(el){if(!el)return;const c=current();if(c)c.classList.remove("focus");el.classList.add("focus");
-  el.scrollIntoView({block:"nearest",inline:"nearest"});}
-function center(el){const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2};}
-
-function moveFocus(dir){
-  const cur=current()||focusables()[0]; if(!cur){return;} setFocus(cur);
-  const a=center(cur); let best=null,bd=1e9;
-  for(const el of focusables()){ if(el===cur)continue; const b=center(el);
-    const dx=b.x-a.x, dy=b.y-a.y;
-    const ok={right:dx>6,left:dx<-6,down:dy>6,up:dy<-6}[dir]; if(!ok)continue;
-    const along=(dir==="left"||dir==="right")?Math.abs(dx):Math.abs(dy);
-    const off=(dir==="left"||dir==="right")?Math.abs(dy):Math.abs(dx);
-    const d=along+off*2; if(d<bd){bd=d;best=el;}
-  }
-  if(best)setFocus(best);
-}
-function activate(el){
-  el=el||current(); if(!el)return; const act=el.dataset.act, name=el.dataset.name;
-  if(act==="start"){toggleStart();return;}
-  if(act==="mode"){togglePointer();return;}
-  if(act==="launch"){toast(`Launching “${name}” → games.launch + emulator`);return;}
-  if(act==="sys"){toast(`Open ${name} library`);if(startOpen)toggleStart();return;}
-  if(act==="win"){document.getElementById("win").style.display="flex";if(startOpen)toggleStart();
-    setFocus(document.querySelector("#cards .focusable"));return;}
-  if(act==="term"){toast("Open Terminal (SSH/console — AI can drive this too)");return;}
-  if(act==="ai"){toast("AI Hub — Ava/Wren/Iris connect via MCP or SSH");return;}
-  if(act==="settings"){toast("Settings: Wi-Fi · Bluetooth · Controllers · Display");return;}
-}
+function setFocus(el){if(!el)return;const c=current();if(c)c.classList.remove("focus");el.classList.add("focus");el.scrollIntoView({block:"nearest"});}
+function center(el){const r=el.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2};}
+function moveFocus(dir){const cur=current()||focusables()[0];if(!cur)return;setFocus(cur);const a=center(cur);let best,bd=1e9;
+  for(const el of focusables()){if(el===cur)continue;const b=center(el),dx=b.x-a.x,dy=b.y-a.y;
+    const ok={right:dx>6,left:dx<-6,down:dy>6,up:dy<-6}[dir];if(!ok)continue;
+    const along=(dir==="left"||dir==="right")?Math.abs(dx):Math.abs(dy),off=(dir==="left"||dir==="right")?Math.abs(dy):Math.abs(dx);
+    const dd=along+off*2;if(dd<bd){bd=dd;best=el;}}if(best)setFocus(best);}
+function show(id,on){document.getElementById(id).classList.toggle(id==="win"?"hide":"show",id==="win"?!on:on);}
+function activate(el){el=el||current();if(!el)return;const a=el.dataset.act,n=el.dataset.name;
+  if(a==="start")return toggleStart();if(a==="mode")return togglePointer();
+  if(a==="launch")return toast(`Launching “${n}” → games.launch`);
+  if(a==="sys"){if(startOpen)toggleStart();return toast(`Open ${n} library`);}
+  if(a==="win"){document.getElementById("settings").classList.remove("show");document.getElementById("win").classList.remove("hide");if(startOpen)toggleStart();return setFocus(document.querySelector("#cards .focusable"));}
+  if(a==="settings"){document.getElementById("settings").classList.add("show");if(startOpen)toggleStart();return setFocus(document.querySelector("#setbody .focusable"));}
+  if(a==="term")return toast("Terminal — AI drives this over SSH/console too");
+  if(a==="ai")return toast("AI Hub — Ava/Wren/Iris via MCP or SSH");}
 function toggleStart(){startOpen=!startOpen;startEl().classList.toggle("open",startOpen);
-  if(startOpen)setFocus(document.querySelector("#pins .focusable"));else setFocus(document.querySelector(".icons .focusable"));}
+  setFocus(startOpen?document.querySelector("#pins .focusable"):document.querySelector(".icons .focusable"));}
 function togglePointer(){pointer=!pointer;document.body.classList.toggle("pointer",pointer);
-  document.getElementById("modebtn").textContent=pointer?"🖱 Pointer":"🎯 Focus";
-  document.getElementById("hint").textContent=pointer
-    ?"Pointer mode · R-stick move · A click · Y focus-mode"
-    :"Focus mode · D-pad move · A select · B back · ☰ Start · Y pointer";
+  document.getElementById("modebtn").innerHTML=`<span class="ic" data-i="${pointer?'mouse-pointer-2':'target'}" style="--u:url(assets/icons/${pointer?'mouse-pointer-2':'target'}.svg)"></span>${pointer?'Pointer':'Focus'}`;
+  document.getElementById("hint").textContent=pointer?"Pointer mode · R-stick move · A click · Y focus-mode":"Focus mode · D-pad move · A select · B back · Menu Start · Y pointer";
   if(pointer)moveCursor(0,0);}
-function moveCursor(dx,dy){cx=Math.max(0,Math.min(innerWidth,cx+dx));cy=Math.max(0,Math.min(innerHeight,cy+dy));
-  cursor.style.left=cx+"px";cursor.style.top=cy+"px";}
-function clickAt(){const el=document.elementFromPoint(cx,cy);const f=el&&el.closest(".focusable");if(f){setFocus(f);activate(f);}}
+function moveCursor(dx,dy){cx=Math.max(0,Math.min(innerWidth,cx+dx));cy=Math.max(0,Math.min(innerHeight,cy+dy));cursor.style.left=cx+"px";cursor.style.top=cy+"px";}
+function clickAt(){const el=document.elementFromPoint(cx,cy),f=el&&el.closest(".focusable");if(f){setFocus(f);activate(f);}}
+let tt;function toast(m){let t=document.getElementById("toast");if(!t){t=document.createElement("div");t.id="toast";
+  t.style.cssText="position:absolute;left:50%;top:24px;transform:translateX(-50%);background:#0d1330ee;border:1px solid #ffffff22;padding:10px 18px;border-radius:10px;font-size:14px;z-index:99999;transition:opacity .3s";document.body.appendChild(t);}
+  t.textContent=m;t.style.opacity=1;clearTimeout(tt);tt=setTimeout(()=>t.style.opacity=0,1600);}
 
-let toastT;function toast(m){let t=document.getElementById("toast");if(!t){t=document.createElement("div");t.id="toast";
-  t.style.cssText="position:absolute;left:50%;top:24px;transform:translateX(-50%);background:#0d1330ee;border:1px solid #ffffff22;"+
-  "padding:10px 18px;border-radius:10px;color:#eef2ff;font-size:14px;z-index:99999";document.body.appendChild(t);}
-  t.textContent=m;t.style.opacity=1;clearTimeout(toastT);toastT=setTimeout(()=>t.style.opacity=0,1600);}
-
-// keyboard
-addEventListener("keydown",e=>{
-  const k=e.key;
+addEventListener("keydown",e=>{const k=e.key;
   if(k==="ArrowRight")moveFocus("right");else if(k==="ArrowLeft")moveFocus("left");
   else if(k==="ArrowDown")moveFocus("down");else if(k==="ArrowUp")moveFocus("up");
   else if(k==="Enter")activate();else if(k==="Escape"){if(startOpen)toggleStart();}
-  else if(k===" "||k==="Meta")toggleStart();else if(k.toLowerCase()==="y")togglePointer();else return;
-  e.preventDefault();
-});
-// mouse
+  else if(k===" "||k==="Meta")toggleStart();else if(k.toLowerCase()==="y")togglePointer();else return;e.preventDefault();});
 addEventListener("mousemove",e=>{const f=e.target.closest&&e.target.closest(".focusable");if(f)setFocus(f);});
 addEventListener("click",e=>{const f=e.target.closest&&e.target.closest(".focusable");if(f)activate(f);});
 
-// gamepad (works with Odin native pad, Xbox, and PS5 DualSense via 'standard' mapping)
 let prev={};
-function pollPad(){
-  const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(p=>p);
-  if(gp){
-    const b=i=>gp.buttons[i]&&gp.buttons[i].pressed, tap=i=>b(i)&&!prev[i];
-    if(pointer){
-      const ax=gp.axes[2]||gp.axes[0]||0, ay=gp.axes[3]||gp.axes[1]||0, sp=14, dz=.18;
-      moveCursor(Math.abs(ax)>dz?ax*sp:0, Math.abs(ay)>dz?ay*sp:0);
-      if(tap(0))clickAt();
-    }else{
-      if(tap(12))moveFocus("up");if(tap(13))moveFocus("down");
-      if(tap(14))moveFocus("left");if(tap(15))moveFocus("right");
-      // left-stick as dpad
+function pollPad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(p=>p);
+  if(gp){const b=i=>gp.buttons[i]&&gp.buttons[i].pressed,tap=i=>b(i)&&!prev[i];
+    if(pointer){const ax=gp.axes[2]||gp.axes[0]||0,ay=gp.axes[3]||gp.axes[1]||0,dz=.18;
+      moveCursor(Math.abs(ax)>dz?ax*14:0,Math.abs(ay)>dz?ay*14:0);if(tap(0))clickAt();}
+    else{if(tap(12))moveFocus("up");if(tap(13))moveFocus("down");if(tap(14))moveFocus("left");if(tap(15))moveFocus("right");
       const lx=gp.axes[0]||0,ly=gp.axes[1]||0;
-      if(tap("lx+")||(lx>.6&&!prev.lxp)){moveFocus("right");prev.lxp=1}if(lx<.4)prev.lxp=0;
-      if(ly>.6&&!prev.lyp){moveFocus("down");prev.lyp=1}if(ly<.4)prev.lyp=0;
-      if(ly<-.6&&!prev.lyn){moveFocus("up");prev.lyn=1}if(ly>-.4)prev.lyn=0;
-      if(lx<-.6&&!prev.lxn){moveFocus("left");prev.lxn=1}if(lx>-.4)prev.lxn=0;
-      if(tap(0))activate();
-      if(tap(1)){if(startOpen)toggleStart();}
-    }
-    if(tap(9)||tap(16))toggleStart();           // Start / Guide
-    if(tap(3))togglePointer();                  // Y / Triangle
-    gp.buttons.forEach((bt,i)=>prev[i]=bt.pressed);
-  }
-  requestAnimationFrame(pollPad);
-}
+      if(lx>.6&&!prev.lr){moveFocus("right");prev.lr=1}if(lx<.4)prev.lr=0;
+      if(lx<-.6&&!prev.ll){moveFocus("left");prev.ll=1}if(lx>-.4)prev.ll=0;
+      if(ly>.6&&!prev.ld){moveFocus("down");prev.ld=1}if(ly<.4)prev.ld=0;
+      if(ly<-.6&&!prev.lu){moveFocus("up");prev.lu=1}if(ly>-.4)prev.lu=0;
+      if(tap(0))activate();if(tap(1)){if(startOpen)toggleStart();}}
+    if(tap(9)||tap(16))toggleStart();if(tap(3))togglePointer();
+    gp.buttons.forEach((bt,i)=>prev[i]=bt.pressed);}
+  requestAnimationFrame(pollPad);}
 requestAnimationFrame(pollPad);
-
-setInterval(()=>{const d=new Date();document.getElementById("clock").textContent=
-  String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");},1000);
+setInterval(()=>{const d=new Date();document.getElementById("clock").textContent=String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");},1000);
 setFocus(document.querySelector(".icons .focusable"));
 </script>
 </body>

@@ -1,28 +1,34 @@
 # GOSE Desktop — visual mockup & prototype
 
-Two artifacts for vibe-coding the Windows-like, controller-only home screen:
+Two artifacts for vibe-coding the Windows-PC-style, controller-only home screen:
 
-- **`desktop-concept.png`** — a rendered concept image ("what it looks like").
-  Regenerate: `python3 render_desktop.py` (uses Pillow).
-- **`desktop.html`** — a **live, navigable prototype**. Open it in any browser and
-  drive it with **arrow keys + Enter/Esc** or a **real gamepad** (Gamepad API).
-  Home (system tiles) → pick a system → game library → launch.
+- **`desktop-concept.png`** — rendered concept ("what it looks like").
+  Regenerate: `python3 render_desktop.py` (needs `Pillow`, `cairosvg`, `fonttools`
+  from `../../requirements-dev.txt`).
+- **`desktop.html`** — the **live, navigable prototype**. Open in a browser; drive
+  with keyboard, mouse, or a **gamepad** (Odin pad / Xbox / **PS5**). Home → Games
+  window → launch; Start menu; Settings panel.
 
-## The vibe (current concept)
-A Windows-desktop feel adapted to a console: a wallpaper, **desktop shortcuts**
-(Terminal / Files / Network / AI Bridge — the hacker tools), a **Start menu** of
-big system tiles (PSP, PS2, Switch, …), and a **taskbar** with a GOSE start
-button, pinned recents, and a tray showing **Ava/Wren/Iris** connection status,
-battery, Wi-Fi, and clock. Everything is highlight-and-select: D-pad/stick moves,
-**A** selects, **B** backs out, **☰** opens Start/Settings.
+## Look & feel (current)
+A real Windows-desktop vibe: frosted **Explorer-style window** with box-art grid +
+sidebar, a **Windows-11 centered taskbar** (Start in cyan + pinned apps), desktop
+shortcut icons, **Start menu** (search + pinned systems + recents), a **Settings**
+panel, and a system tray with **Ava/Wren/Iris** status, Wi-Fi/volume/battery,
+clock, and the current **input mode**.
 
-## How to iterate ("vibe code")
-Edit `desktop.html` directly — palette is in the `:root` CSS vars, systems in the
-`SYSTEMS` array, per-system games in `LIB`. It's intentionally dependency-free and
-self-contained so changes are instant. Once we like the feel, we port it to the
-chosen implementation path (see `../../docs/06-gui-plan.md`):
-- **Path A:** a `batocera-emulationstation` XML theme (format v7) on the device.
-- **Path B:** a custom gamepad-first app (the HTML/JS here could even ship as a
-  lightweight kiosk front-end, or be rebuilt in Godot).
+## Multi-input (matches the device requirement)
+- **Focus mode** (default): D-pad/stick moves a highlight, **A** select, **B** back.
+- **Pointer mode**: press **Y** → right stick becomes a mouse cursor, **A** clicks.
+  On device this is **AntiMicroX** with per-app auto-profiles (`docs/07-controllers.md`).
+- **Mouse + keyboard** work natively; **PS5 DualSense** via the standard Gamepad API.
 
-This prototype is the design source of truth until we commit to a path on hardware.
+## Vibe-coding it
+Edit `desktop.html`: palette in `:root` CSS vars, systems in `SYS`, games in
+`GAMES`, settings rows in `SETTINGS`. Icons are tintable Lucide SVGs (just add a
+`<span class="ic" data-i="icon-name">`); fonts are Inter. Instant, dependency-free.
+
+## Vendored assets (pulled into the repo, licenses included)
+- **Lucide icons** — `assets/icons/*.svg` (ISC license, `assets/icons/LICENSE`).
+- **Inter font** — `assets/fonts/inter-latin-*.woff2` for the web + `Inter-*.ttf`
+  for the PNG renderer (OFL, `assets/fonts/LICENSE`).
+Both are MIT/ISC/OFL and safe to ship. See `docs/09-toolchain.md`.

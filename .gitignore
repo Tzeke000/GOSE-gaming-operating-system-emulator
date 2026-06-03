@@ -27,3 +27,7 @@ agent.token
 *.zip
 *.7z
 roms/
+
+# Node (only used to vendor assets; never commit)
+node_modules/
+package-lock.json
