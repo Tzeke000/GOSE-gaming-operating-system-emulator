@@ -3,7 +3,7 @@
 from __future__ import annotations
 import os
 from PIL import Image, ImageDraw
-from _render_common import (base, font, icon, panel, text, logo,
+from _render_common import (base, font, icon, panel, text, brand_logo,
                             ACC, TEXT, MUTED, SURFACE, SURFACE2, LINE)
 
 W, H = 1280, 720
@@ -55,7 +55,7 @@ def main():
          font(13), MUTED, center_w=W)
 
     # bottom-left: logo + hostname
-    logo(img, 52, H - 44, 40)
+    brand_logo(img, 50, H - 44, 56)
     text(d, (80, H - 58), "GOSE", font(15, 700), TEXT)
     text(d, (80, H - 38), "odin2-gose · 192.168.1.50", font(12), MUTED)
 

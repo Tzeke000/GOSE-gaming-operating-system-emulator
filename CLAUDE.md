@@ -82,6 +82,9 @@ AI control agent, and the reproducible setup scripts.
   `gose_bootmenu.py` (Boot Menu trigger), `gose_input.py` (platform/input model),
   `gose_vm.py` (**GOSE-PC VM launcher**, QEMU command builder), `gose-preview.py`
   (zero-dep UI preview in a browser).
+- `pc-image/` — **GOSE-PC image build**: `build-gose-pc.sh` (Batocera x86_64 + the
+  `gose-layer/` → `.img`/`.ova`; dry-run works), `make_ova.py` (OVA packager,
+  tested). Real build `[needs build]`. See `pc-image/README.md`.
 - `ROADMAP.md` — build order + live status checklist.
 
 ## How to work in this repo

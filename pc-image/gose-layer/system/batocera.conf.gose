@@ -1,0 +1,19 @@
+# GOSE layer defaults — merged into /userdata/system/batocera.conf by the build.
+# Representative keys; verify against the pinned Batocera version on first boot.
+
+# Identity
+system.hostname=gose
+
+# Networking on (so the GOSE agent / AI bridge is reachable, like Wi-Fi on device)
+wifi.enabled=0
+system.ssh.enabled=1
+
+# Front-end: the Windows-like GOSE theme ships in /userdata/themes/gose
+# (theme build is the next GUI milestone — see docs/06-gui-plan.md).
+emulationstation.theme=gose
+
+# Boot splash: use the GOSE splash placed in /userdata/splash/
+splash.screen.enabled=1
+
+# Input: keyboard/mouse is the PC-VM default (mirrors scripts/gose_input.py);
+# controllers are auto-detected when connected/passed through.

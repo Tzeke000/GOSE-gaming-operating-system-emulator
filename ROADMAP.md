@@ -45,7 +45,12 @@ the cloud container) · 🧱 blocked
   (`scripts/gose_input.py`, `assets/platform.js`): device→Native, PC→Keyboard
 - ✅ GOSE on PC = **VM** (ADR-0013): QEMU launcher `scripts/gose_vm.py` (tested) +
   `scripts/gose-preview.py` UI preview
-- ⬜ **Build the GOSE-PC x86_64 image** (Batocera x86_64 + GOSE layer; `.img`/`.ova`) `[needs build]`
+- ✅ GOSE-PC image build scaffolded (`pc-image/`): GOSE layer + OVA packager
+  (tested) + `build-gose-pc.sh` (dry-run verified)
+- ✅ New GOSE logo wired into boot splash, boot menu, login, desktop Start button
+- ⬜ **Run the real GOSE-PC build** (pin Batocera x86_64; on a Linux host) → publish
+  `GOSE-PC.img` + `GOSE-PC.ova` `[needs build]`
+- ⬜ Windows-like EmulationStation theme (`pc-image/gose-layer/themes/gose/`) `[next]`
 - ✅ Toolchain curated (`docs/09-toolchain.md`); input stack (`docs/07-controllers.md`)
 - ⬜ Ship AntiMicroX profile for desktop pointer; Skyscraper for box art `[on device]`
 - 🟡 Plan written (`docs/06-gui-plan.md`)

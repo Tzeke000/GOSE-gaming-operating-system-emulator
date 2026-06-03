@@ -82,3 +82,17 @@ def logo(img, cx, cy, size):
     gf = font(int(size * 0.62), 700)
     g = "G"
     d.text((cx - d.textlength(g, font=gf) / 2, cy - int(size * 0.40)), g, font=gf, fill=(6, 8, 14))
+
+
+BRAND = os.path.join(HERE, "assets", "brand", "gose-logo.png")
+_brand = {}
+def brand_logo(img, cx, cy, size):
+    """Paste the official GOSE mark (hexagon + gamepad) centered at (cx, cy).
+
+    The PNG includes glow padding; bump `size` ~20% over the visible mark you want.
+    """
+    if size not in _brand:
+        _brand[size] = Image.open(BRAND).convert("RGBA").resize((size, size), Image.LANCZOS)
+    b = _brand[size]
+    img.alpha_composite(b, (cx - size // 2, cy - size // 2))
+

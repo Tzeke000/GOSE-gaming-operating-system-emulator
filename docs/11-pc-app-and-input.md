@@ -37,10 +37,15 @@ unit-tested in `agent/tests/test_vm.py`):
 python3 scripts/gose_vm.py --dry-run                      # show the QEMU command
 python3 scripts/gose_vm.py --share ~/roms --controller 046d:c21d   # real boot [needs image]
 ```
-Booting for real needs the **GOSE-PC image** + a host QEMU. Building/publishing
-that image (Batocera x86_64 + GOSE layer, as `.img` and an importable `.ova`) is
-the next milestone — **[needs build]**. VirtualBox/VMware import documented as
-manual alternatives.
+Booting for real needs the **GOSE-PC image** + a host QEMU. The image build is
+scaffolded in **`pc-image/`**: `build-gose-pc.sh` (download Batocera x86_64 →
+inject the GOSE layer → emit `.img` + `.ova`; `--dry-run` works now) and
+`make_ova.py` (OVF/OVA packager, unit-tested). The **GOSE layer**
+(`pc-image/gose-layer/`) is what makes Batocera "GOSE": `custom.sh` autostarts the
+agent on TCP 5555, `batocera.conf.gose` sets hostname/theme/splash, and the brand
+splash ships in `splash/`. A real build (pin a Batocera release, run on a Linux
+host as root) to publish `GOSE-PC.img` + `GOSE-PC.ova` is **[needs build]**;
+VirtualBox/VMware import is the manual alternative. See `pc-image/README.md`.
 
 ### See the UI right now (no image needed)
 `scripts/gose-preview.py` serves the HTML front-end and opens the boot flow as the

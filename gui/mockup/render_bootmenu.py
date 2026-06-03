@@ -6,7 +6,7 @@ PC-style boot picker shown when L1+R1 are held at power-on. onyx theme.
 from __future__ import annotations
 import os
 from PIL import Image, ImageDraw
-from _render_common import (base, font, icon, panel, text, logo,
+from _render_common import (base, font, icon, panel, text, brand_logo,
                             ACC, TEXT, MUTED, LINE, SURFACE, SURFACE2)
 
 W, H = 1280, 720
@@ -50,8 +50,8 @@ def main():
     d = ImageDraw.Draw(img)
 
     # top bar: logo + title + POST prompt
-    logo(img, 52, 56, 40)
-    text(d, (80, 38), "GOSE Boot Menu", font(22, 700), TEXT)
+    brand_logo(img, 52, 54, 58)
+    text(d, (84, 38), "GOSE Boot Menu", font(22, 700), TEXT)
     text(d, (80, 66), "Snapdragon 8 Gen 2  ·  abl-mod  ·  firmware v0.1", font(12), MUTED)
     prompt = "Auto-boot ROCKNIX in 5s  —  hold L1 + R1 to stay"
     pw = d.textlength(prompt, font=font(13))

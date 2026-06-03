@@ -7,7 +7,7 @@ renderer (Inter font + Lucide icons via cairosvg). Run: python3 render_desktop.p
 from __future__ import annotations
 import os
 from PIL import Image, ImageDraw
-from _render_common import (base, font, icon, panel, text,
+from _render_common import (base, font, icon, panel, text, brand_logo,
                             ACC, TEXT, MUTED, LINE, SURFACE, SURFACE2)
 
 W, H = 1280, 720
@@ -71,12 +71,14 @@ def main():
             ("sparkles", False), ("settings", False)]
     bx = W / 2 - (len(btns) * 50 - 8) / 2
     for ic, start in btns:
+        if start:  # Start button = the GOSE brand mark
+            brand_logo(img, int(bx + 21), H - 29, 46)
+            bx += 50
+            continue
         lay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        fill = ACC + (255,) if start else (255, 255, 255, 16)
-        ImageDraw.Draw(lay).rounded_rectangle([bx, H - 50, bx + 42, H - 8], 11, fill=fill)
+        ImageDraw.Draw(lay).rounded_rectangle([bx, H - 50, bx + 42, H - 8], 11, fill=(255, 255, 255, 16))
         img.alpha_composite(lay)
-        img.alpha_composite(icon(ic, 22, (6, 8, 14) if start else (205, 210, 224)),
-                            (int(bx + 10), H - 39))
+        img.alpha_composite(icon(ic, 22, (205, 210, 224)), (int(bx + 10), H - 39))
         bx += 50
     # tray
     tx = W - 18
