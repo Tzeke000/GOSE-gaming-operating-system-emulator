@@ -43,7 +43,13 @@ Capabilities:
 - **games** — enumerate systems + titles (parse `gamelist.xml`), launch/kill the
   right emulator.
 - **screen** — capture the framebuffer so the AI can "see" the screen.
+- **state** — read structured game state from emulator **memory** (RetroArch NCI)
+  instead of pixels — "Mineflayer for retro." See `08-game-state-interface.md`.
 - (later) **voice** — USB mic in / TTS out.
+
+Connection path for the AI side: today via the JSON-lines protocol; planned to
+also expose over **MCP** (mirroring the existing `mcp-retroarch` project) so
+Ava/Wren/Iris/Claude can drive the whole device through a standard interface.
 Transport = newline-delimited JSON over asyncio TCP, token-authenticated. Same
 protocol whether the AI reaches it over **Wi-Fi/Ethernet** or a **USB cable**
 (USB gadget networking brings up a `usb0` interface; agent just listens on it).

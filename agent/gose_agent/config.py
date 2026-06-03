@@ -27,6 +27,12 @@ class AgentConfig:
     # Real device fills these from the distro; mock backend just records them.
     launch_templates: Dict[str, str] = field(default_factory=dict)
 
+    # Game-state interface (RetroArch Network Command Interface).
+    retroarch_host: str = "127.0.0.1"
+    retroarch_port: int = 55355
+    # Per-game RAM-map profiles. Defaults to the packaged profiles/ directory.
+    profiles_dir: str = os.path.join(os.path.dirname(__file__), "profiles")
+
     force_mock: bool = False             # force mock backends (testing/dev)
 
     @classmethod
@@ -46,6 +52,9 @@ class AgentConfig:
         cfg.token = os.environ.get("GOSE_AGENT_TOKEN", cfg.token)
         cfg.allow_shell = _env_bool("GOSE_AGENT_ALLOW_SHELL", cfg.allow_shell)
         cfg.roms_dir = os.environ.get("GOSE_AGENT_ROMS_DIR", cfg.roms_dir)
+        cfg.retroarch_host = os.environ.get("GOSE_AGENT_RA_HOST", cfg.retroarch_host)
+        cfg.retroarch_port = int(os.environ.get("GOSE_AGENT_RA_PORT", cfg.retroarch_port))
+        cfg.profiles_dir = os.environ.get("GOSE_AGENT_PROFILES_DIR", cfg.profiles_dir)
         cfg.force_mock = _env_bool("GOSE_AGENT_FORCE_MOCK", cfg.force_mock)
         return cfg
 

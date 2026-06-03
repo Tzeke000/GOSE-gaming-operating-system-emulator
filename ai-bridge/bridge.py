@@ -33,6 +33,10 @@ GOSE_TOOLS = [
     {"name": "gose.systems", "args": {}},
     {"name": "gose.list", "args": {"system": "str"}},
     {"name": "gose.stop", "args": {}},
+    # game state (read from memory, no screenshots)
+    {"name": "gose.state_profiles", "args": {}},
+    {"name": "gose.state_attach", "args": {"profile": "str?"}},
+    {"name": "gose.state_read", "args": {"profile": "str?"}},
 ]
 
 
@@ -49,6 +53,9 @@ def handle_intent(gose: GoseClient, name: str, args: Dict[str, Any]) -> Dict[str
     if name == "gose.systems":  return gose.systems()
     if name == "gose.list":     return gose.list_games(a["system"])
     if name == "gose.stop":     return gose.stop()
+    if name == "gose.state_profiles": return gose.profiles()
+    if name == "gose.state_attach":   return gose.attach(a.get("profile"))
+    if name == "gose.state_read":     return gose.read_state(a.get("profile"))
     raise ValueError(f"unknown intent '{name}'")
 
 

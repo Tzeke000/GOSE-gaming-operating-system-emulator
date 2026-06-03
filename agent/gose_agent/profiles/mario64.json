@@ -1,0 +1,19 @@
+{
+  "name": "Super Mario 64",
+  "system": "n64",
+  "core": "mupen64plus_next",
+  "endian": "big",
+  "read_method": "core_memory",
+  "match": { "game_substr": "super mario 64", "crc": "" },
+  "notes": "Mupen64Plus-Next exposes an N64 memory map to the NCI (confirmed). Addresses below are RDRAM offsets from the SM64 community RAM map and MUST be verified on hardware with the Memory Inspector before trusting them.",
+  "fields": [
+    { "name": "mario_x",       "address": "0x33B1AC", "type": "float32" },
+    { "name": "mario_y",       "address": "0x33B1B0", "type": "float32" },
+    { "name": "mario_z",       "address": "0x33B1B4", "type": "float32" },
+    { "name": "mario_yaw",     "address": "0x33B1BE", "type": "u16" },
+    { "name": "health",        "address": "0x33B21E", "type": "u8", "scale": 0.125 },
+    { "name": "stars",         "address": "0x207624", "type": "u16" },
+    { "name": "coins",         "address": "0x207622", "type": "u16" },
+    { "name": "lives",         "address": "0x207620", "type": "s8" }
+  ]
+}

@@ -55,6 +55,12 @@ AI control agent, and the reproducible setup scripts.
   system status, screen capture. Has **mock backends** so it runs/tests in any
   Linux container (no real `/dev/uinput` needed).
 - `agent/client/` — Python client SDK + CLI for the AI side (Ava/Wren/Iris) and for testing.
+- `agent/gose_agent/profiles/` — per-game RAM maps for the **game-state interface**
+  ("Mineflayer for retro"): read game state from emulator memory, no screenshots.
+  Accepts stable-retro type descriptors; `agent/tools/import_stable_retro.py` imports
+  their maps. See `docs/08-game-state-interface.md`. Demo: `agent/examples/pong_no_screenshots.py`.
+- `gui/mockup/` — desktop **concept PNG** + **navigable HTML prototype** for the
+  Windows-like home (vibe-code here). See `docs/06-gui-plan.md`.
 - `gui/` — Windows-like front-end work (theme and/or custom app). `[CUSTOM]`
 - `scripts/` — reproducible, idempotent device setup scripts.
 - `ROADMAP.md` — build order + live status checklist.

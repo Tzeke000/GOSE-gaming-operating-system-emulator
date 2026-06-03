@@ -73,6 +73,17 @@ r3 start select guide`.
 |----|------|--------|
 | `screen.capture` | `{ "format?": "png", "scale?": 0.5 }` | `{ "format", "w", "h", "b64" }` |
 
+### state  (the AI reads game state from memory — no screenshots)
+Talks to RetroArch's Network Command Interface. See `08-game-state-interface.md`.
+| op | args | result |
+|----|------|--------|
+| `state.profiles` | — | `{ "profiles": {...}, "active" }` |
+| `state.attach` | `{ "profile?": "mario64" }` (auto-detect if omitted) | `{ "attached", "detected" }` |
+| `state.read` | `{ "profile?": }` | `{ "profile", "fields": { "mario_x": 1.5, ... }, "ts" }` |
+| `state.status` | — | `{ "state", "core", "game", "crc" }` |
+| `state.read_raw` | `{ "address", "count", "method?": "core_memory|core_ram" }` | `{ "address", "bytes", "hex" }` |
+| `state.write_raw` | `{ "address", "data", "method?" }` | `{ "address", "written" }` |
+
 ## Versioning
 `agent.info.version` carries the agent version; `ops` lists supported ops so a
 client can feature-detect. Breaking changes bump the protocol and this doc.

@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Windows-like Desktop (prototype)</title>
+<style>
+  :root{
+    --bg-top:#0c1022; --bg-bot:#1c2356; --panel:#161c34cc; --tile:#262f56;
+    --tile-sel:#4cc2ff; --text:#e9eefc; --muted:#96a2c4; --accent:#78dca6;
+    --taskbar:#0a0e1e;
+  }
+  *{box-sizing:border-box} html,body{margin:0;height:100%;overflow:hidden}
+  body{
+    font-family:"Segoe UI",system-ui,DejaVu Sans,sans-serif;color:var(--text);
+    background:linear-gradient(180deg,var(--bg-top),var(--bg-bot));
+    user-select:none;
+  }
+  .screen{position:absolute;inset:0;display:flex;flex-direction:column}
+  .hintbar{position:absolute;top:18px;right:18px;background:#12182e;border-radius:10px;
+    padding:8px 14px;color:var(--muted);font-size:14px}
+  /* desktop shortcuts */
+  .shortcuts{position:absolute;top:36px;left:30px;display:flex;flex-direction:column;gap:24px}
+  .sc{width:64px;text-align:center;color:var(--muted);font-size:12px;cursor:pointer}
+  .sc .ico{width:60px;height:60px;border-radius:12px;background:#141a32;display:flex;
+    align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:20px;margin:0 auto 6px}
+  /* start menu / library panel */
+  .panel{position:absolute;left:300px;top:70px;width:900px;height:520px;background:var(--panel);
+    border-radius:18px;padding:24px 28px;backdrop-filter:blur(8px);box-shadow:0 20px 60px #0008}
+  .panel h1{margin:0;font-size:26px} .panel .sub{color:var(--muted);margin:4px 0 18px}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+  .tile{background:var(--tile);border-radius:14px;height:128px;padding:14px;position:relative;
+    cursor:pointer;transition:transform .08s,box-shadow .08s;border:3px solid transparent}
+  .tile .chip{width:40px;height:40px;border-radius:10px;background:#10162c;display:flex;
+    align-items:center;justify-content:center;color:var(--accent);font-weight:700;font-size:22px}
+  .tile .lbl{position:absolute;bottom:12px;left:14px;font-weight:700;font-size:17px}
+  .tile.sel{border-color:var(--tile-sel);background:#36406e;transform:translateY(-2px);
+    box-shadow:0 0 0 2px #4cc2ff55,0 10px 30px #0006}
+  .tile.sel .chip{color:var(--tile-sel)}
+  /* library cards */
+  .cards{display:grid;grid-template-columns:repeat(5,1fr);gap:18px}
+  .card{cursor:pointer;border:3px solid transparent;border-radius:12px}
+  .card .art{height:150px;border-radius:10px;background:linear-gradient(135deg,#2a3566,#19204a);
+    display:flex;align-items:center;justify-content:center;color:#8ea0d6;font-size:13px;text-align:center;padding:8px}
+  .card .name{font-size:14px;margin-top:8px;color:var(--text)}
+  .card.sel{border-color:var(--tile-sel)} .card.sel .art{box-shadow:0 0 0 2px #4cc2ff55}
+  /* taskbar */
+  .taskbar{position:absolute;left:0;right:0;bottom:0;height:56px;background:var(--taskbar);
+    display:flex;align-items:center;padding:0 14px;gap:12px}
+  .start{background:#264678;border-radius:10px;padding:9px 16px;font-weight:700;cursor:pointer}
+  .pin{background:#1a213c;border-radius:8px;padding:9px 12px;color:var(--muted);font-size:14px}
+  .tray{margin-left:auto;color:var(--text);font-size:14px;display:flex;gap:16px;align-items:center}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#3a466e;margin-left:5px}
+  .dot.on{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="hintbar">[A] Select &nbsp; [B] Back &nbsp; [☰] Start/Settings &nbsp; LB/RB Switch</div>
+
+  <div class="shortcuts" id="shortcuts">
+    <div class="sc"><div class="ico">&gt;_</div>Terminal</div>
+    <div class="sc"><div class="ico">▤</div>Files</div>
+    <div class="sc"><div class="ico">≈</div>Network</div>
+    <div class="sc"><div class="ico">AI</div>AI Bridge</div>
+  </div>
+
+  <!-- Start menu (systems) -->
+  <div class="panel" id="startmenu">
+    <h1>Start</h1><div class="sub">Pick a system &nbsp;·&nbsp; controller-only</div>
+    <div class="grid" id="systemGrid"></div>
+  </div>
+
+  <!-- Library (per system) -->
+  <div class="panel hidden" id="library">
+    <h1 id="libTitle">PSP</h1><div class="sub" id="libSub">Recently played · Favorites · All</div>
+    <div class="cards" id="cardGrid"></div>
+  </div>
+
+  <div class="taskbar">
+    <div class="start">▣ GOSE</div>
+    <div class="pin">God of War</div><div class="pin">Mario 64</div><div class="pin">Sonic</div>
+    <div class="tray">
+      <span>Ava<span class="dot on"></span></span>
+      <span>Wren<span class="dot on"></span></span>
+      <span>Iris<span class="dot"></span></span>
+      <span>⌁ 82%</span><span>≋ WiFi</span><span id="clock">--:--</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const SYSTEMS = [
+  ["PSP","▶"],["PS2","◆"],["Switch","⬡"],["SNES","✦"],["N64","★"],["Genesis","∞"],
+  ["PS1","●"],["GameCube","◼"],["Dreamcast","◐"],["Arcade","▣"],["Mario 64","M"],["Tools","⚙"]
+];
+const LIB = { "PSP":["God of War","Daxter","GTA: VCS","Patapon","Wipeout Pure","Tekken 6"],
+  "N64":["Mario 64","Zelda OoT","GoldenEye","Mario Kart 64","Banjo-Kazooie","F-Zero X"],
+  "Mario 64":["Super Mario 64"], "Tools":["Terminal","File Manager","Network","AI Bridge"] };
+
+let view = "start";      // "start" | "library"
+let sysIdx = 0, cardIdx = 0, curSystem = "PSP";
+
+const systemGrid = document.getElementById("systemGrid");
+SYSTEMS.forEach(([name,gl],i)=>{
+  const t=document.createElement("div"); t.className="tile"; t.dataset.i=i;
+  t.innerHTML=`<div class="chip">${gl}</div><div class="lbl">${name}</div>`;
+  t.onclick=()=>{sysIdx=i;render();openSystem();}; systemGrid.appendChild(t);
+});
+
+function render(){
+  if(view==="start"){
+    document.getElementById("startmenu").classList.remove("hidden");
+    document.getElementById("library").classList.add("hidden");
+    [...systemGrid.children].forEach((t,i)=>t.classList.toggle("sel",i===sysIdx));
+  } else {
+    document.getElementById("startmenu").classList.add("hidden");
+    document.getElementById("library").classList.remove("hidden");
+    [...document.getElementById("cardGrid").children]
+      .forEach((c,i)=>c.classList.toggle("sel",i===cardIdx));
+  }
+}
+function openSystem(){
+  curSystem = SYSTEMS[sysIdx][0];
+  const games = LIB[curSystem] || ["No games scanned yet"];
+  document.getElementById("libTitle").textContent = curSystem;
+  const cg = document.getElementById("cardGrid"); cg.innerHTML="";
+  games.forEach((g,i)=>{
+    const c=document.createElement("div"); c.className="card";
+    c.innerHTML=`<div class="art">${g}</div><div class="name">${g}</div>`;
+    c.onclick=()=>{cardIdx=i;launch(g);}; cg.appendChild(c);
+  });
+  view="library"; cardIdx=0; render();
+}
+function launch(g){ alert(`Launch "${g}" (${curSystem})\n→ on device this calls games.launch + the right emulator`); }
+
+// ---- keyboard nav (D-pad analog) ----
+document.addEventListener("keydown",e=>{
+  const cols = view==="start"?4:5;
+  const max = view==="start"?SYSTEMS.length:document.getElementById("cardGrid").children.length;
+  let i = view==="start"?sysIdx:cardIdx;
+  if(e.key==="ArrowRight") i=Math.min(max-1,i+1);
+  else if(e.key==="ArrowLeft") i=Math.max(0,i-1);
+  else if(e.key==="ArrowDown") i=Math.min(max-1,i+cols);
+  else if(e.key==="ArrowUp") i=Math.max(0,i-cols);
+  else if(e.key==="Enter"){ view==="start"?openSystem():launch((LIB[curSystem]||[])[cardIdx]); return;}
+  else if(e.key==="Escape"||e.key==="Backspace"){ if(view==="library"){view="start";render();} return;}
+  else return;
+  if(view==="start") sysIdx=i; else cardIdx=i; render(); e.preventDefault();
+});
+
+// ---- gamepad nav (real controller) ----
+let prev={};
+function pollPad(){
+  const gp=navigator.getGamepads&&navigator.getGamepads()[0];
+  if(gp){
+    const press=(idx)=>gp.buttons[idx]&&gp.buttons[idx].pressed && !prev[idx];
+    const cols = view==="start"?4:5;
+    if(press(12)) move(-cols); if(press(13)) move(cols);
+    if(press(14)) move(-1);    if(press(15)) move(1);
+    if(press(0)){ view==="start"?openSystem():launch((LIB[curSystem]||[])[cardIdx]); }
+    if(press(1)){ if(view==="library"){view="start";render();} }
+    gp.buttons.forEach((b,idx)=>prev[idx]=b.pressed);
+  }
+  requestAnimationFrame(pollPad);
+}
+function move(d){
+  const max=view==="start"?SYSTEMS.length:document.getElementById("cardGrid").children.length;
+  if(view==="start") sysIdx=Math.max(0,Math.min(max-1,sysIdx+d));
+  else cardIdx=Math.max(0,Math.min(max-1,cardIdx+d));
+  render();
+}
+requestAnimationFrame(pollPad);
+
+// clock
+setInterval(()=>{const d=new Date();
+  document.getElementById("clock").textContent =
+    String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");},1000);
+render();
+</script>
+</body>
+</html>

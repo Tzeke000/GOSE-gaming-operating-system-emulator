@@ -34,15 +34,21 @@ the cloud container) · 🧱 blocked
 - ⬜ Confirm simultaneous OTG + charging
 
 ## Phase 5 — Windows-like GUI `[CUSTOM]`
-- 🟡 Plan written (`docs/06-gui-plan.md`); theme stub started
+- ✅ Concept image + **navigable HTML prototype** (`gui/mockup/`) for vibe-coding
+- 🟡 Plan written (`docs/06-gui-plan.md`)
+- ⬜ Lock the visual direction with Zeke, then pick Path A vs B
 - ⬜ Path A: Windows-style ES theme (home→system→library→launch, controller-only)
 - ⬜ Tools area (terminal, file manager, network tools, AI bridge launcher)
-- ⬜ Evaluate Path B (Godot custom front-end) where theme falls short
+- ⬜ Evaluate Path B (custom front-end) where theme falls short
 
 ## Phase 6 — AI control `[CUSTOM]`
 - ✅ GOSE Agent: input/system/games/screen capabilities (mock-backed)
+- ✅ **Game-state interface** (read state from memory, no screenshots) + profiles
+- ✅ Adopt ecosystem: stable-retro type compat + importer (ADR-0006)
 - 🔌 Real backends on device (uinput pad, framebuffer capture, real game launch)
+- 🔌 Verify RAM-map addresses on hardware (Mario 64 via Mupen64Plus-Next)
 - 🔌 USB-cable path (USB gadget networking → `usb0`)
+- ⬜ Expose GOSE Agent over **MCP** (so Ava/Wren/Iris/Claude connect via standard)
 - 🧱 AI bridge mapping **Ava/Wren/Iris** ↔ GOSE — blocked on their API spec (Zeke)
 
 ## Phase 7 — Reproducibility

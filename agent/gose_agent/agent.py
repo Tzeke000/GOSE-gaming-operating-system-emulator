@@ -15,6 +15,7 @@ from .capabilities.input import make_input
 from .capabilities.system import SystemCapability
 from .capabilities.games import GamesCapability
 from .capabilities.screen import ScreenCapability
+from .capabilities.gamestate import GameStateCapability
 
 
 class Agent:
@@ -31,6 +32,9 @@ class Agent:
         if self.config.force_mock:
             self.screen.method = "mock"
             self.screen.backend = "mock"
+        self.state = GameStateCapability(self.config.profiles_dir,
+                                         self.config.retroarch_host,
+                                         self.config.retroarch_port)
         self._ops: Dict[str, Callable[[dict], dict]] = self._build_ops()
 
     # ---- introspection ----
@@ -40,6 +44,7 @@ class Agent:
             "system": self.system.backend,
             "games": self.games.backend,
             "screen": self.screen.backend,
+            "state": self.state.backend,
         }
 
     def info(self) -> Dict[str, Any]:
@@ -86,6 +91,15 @@ class Agent:
             # screen
             "screen.capture": lambda ar: self.screen.capture(
                 ar.get("format", "png"), float(ar.get("scale", 1.0))),
+            # game state (read structured state from emulator memory — no screenshots)
+            "state.profiles": lambda ar: self.state.list_profiles(),
+            "state.attach": lambda ar: self.state.attach(ar.get("profile")),
+            "state.read": lambda ar: self.state.read(ar.get("profile")),
+            "state.status": lambda ar: self.state.status(),
+            "state.read_raw": lambda ar: self.state.read_raw(
+                a(ar, "address"), int(ar.get("count", 1)), ar.get("method", "core_memory")),
+            "state.write_raw": lambda ar: self.state.write_raw(
+                a(ar, "address"), a(ar, "data"), ar.get("method", "core_memory")),
         }
 
 

@@ -30,7 +30,8 @@ def main(argv=None):
     ap.add_argument("--port", type=int, default=int(os.environ.get("GOSE_PORT", "8731")))
     ap.add_argument("--token", default=os.environ.get("GOSE_TOKEN"))
     ap.add_argument("cmd", help="ping|info|run|status|service|tap|press|release|combo|axis|"
-                                "type|systems|list|launch|stop|shot")
+                                "type|systems|list|launch|stop|shot|profiles|attach|state|"
+                                "gamestatus|readmem")
     ap.add_argument("rest", nargs="*")
     a = ap.parse_args(argv)
 
@@ -64,6 +65,11 @@ def _run(c: GoseClient, cmd: str, rest):
     if cmd == "launch": return c.launch(rest[0], " ".join(rest[1:]))
     if cmd == "stop": return c.stop()
     if cmd == "shot": return c.screenshot()
+    if cmd == "profiles": return c.profiles()
+    if cmd == "attach": return c.attach(rest[0] if rest else None)
+    if cmd == "state": return c.read_state(rest[0] if rest else None)
+    if cmd == "gamestatus": return c.game_status()
+    if cmd == "readmem": return c.read_mem(rest[0], int(rest[1]) if len(rest) > 1 else 1)
     raise SystemExit(f"unknown command: {cmd}")
 
 

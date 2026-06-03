@@ -3,6 +3,31 @@
 Append-only. Newest at top. Each: context → decision → status. Revisit freely;
 mark superseded ones rather than deleting.
 
+## ADR-0007 — Game-state interface via RetroArch memory (no screenshots)
+**Context:** Zeke wants the AI to play/observe games from **game state, not pixels**
+(Mineflayer-style), at least for simple games (Pong, chess, Mario 64).
+**Decision:** add a `state` capability that uses RetroArch's Network Command
+Interface (UDP 55355) to read/write core memory, decoded through per-game RAM-map
+**profiles** into named fields. Complements (doesn't replace) `screen.capture`.
+**Caveats accepted:** core support varies (Mupen64Plus-Next, Mesen confirmed);
+addresses are game/core specific and need on-hardware verification. **Status:**
+accepted, implemented + tested against a mock RetroArch; real-address verification
+is `[needs hardware]`.
+
+## ADR-0006 — Adopt the existing ecosystem instead of reinventing
+**Context:** Zeke: "research and see if there's anything like this already and just
+import that if you can." There is. **Decision:** build on prior art —
+- **stable-retro** (gym-retro fork): reuse its hundreds of `data.json` RAM maps;
+  our profile engine accepts its `>u4`-style type descriptors and we ship a
+  converter (`tools/import_stable_retro.py`).
+- **pyraco** (PyPI): reference/optional transport for the RetroArch NCI (our
+  built-in client stays zero-dep for guaranteed on-device operation).
+- **mcp-retroarch**: an existing MCP server for RetroArch — validates the design
+  and points to MCP as the likely **Ava/Wren/Iris** connection path; plan to expose
+  the GOSE Agent over MCP (it controls the whole device, a superset).
+**Status:** accepted. stable-retro type compat + converter implemented; pyraco/MCP
+adoption tracked in ROADMAP.
+
 ## ADR-0005 — Mock backends so the agent is testable off-device
 **Context:** Most of this project can only be fully validated on the Odin 2, which
 slows iteration. **Decision:** every GOSE Agent capability has a real backend AND a

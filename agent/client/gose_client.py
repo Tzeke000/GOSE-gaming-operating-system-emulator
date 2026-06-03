@@ -103,3 +103,13 @@ class GoseClient:
     def stop(self): return self.call("games.stop")
 
     def screenshot(self, fmt="png", scale=1.0): return self.call("screen.capture", format=fmt, scale=scale)
+
+    # game state (read structured state straight from emulator memory)
+    def profiles(self): return self.call("state.profiles")
+    def attach(self, profile=None): return self.call("state.attach", profile=profile)
+    def read_state(self, profile=None): return self.call("state.read", profile=profile)
+    def game_status(self): return self.call("state.status")
+    def read_mem(self, address, count=1, method="core_memory"):
+        return self.call("state.read_raw", address=address, count=count, method=method)
+    def write_mem(self, address, data, method="core_memory"):
+        return self.call("state.write_raw", address=address, data=data, method=method)
