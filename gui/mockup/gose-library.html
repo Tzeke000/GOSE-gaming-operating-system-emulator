@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Library</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 6px}
+  .top img{width:34px;height:34px}.top h1{font-size:20px;margin:0}
+  .top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .wrap{flex:1;display:flex;gap:16px;padding:6px 36px 0;min-height:0}
+  .rail{width:210px;flex:none;overflow:auto;padding-top:4px}
+  .sys{display:flex;align-items:center;justify-content:space-between;gap:8px;height:42px;padding:0 14px;
+    border-radius:11px;border:2px solid transparent;color:var(--muted);cursor:pointer}
+  .sys .n{font-weight:600;font-size:14px}.sys .c{font-size:11px;background:#ffffff12;border-radius:9px;padding:1px 7px}
+  .sys.on{background:var(--surface2);color:var(--text)}
+  .pane{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:14px 16px;overflow:auto}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:4px 4px 10px}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .game{cursor:pointer}
+  .game .art{height:120px;border-radius:10px;border:2px solid transparent;display:flex;align-items:flex-end;
+    padding:8px;font-weight:700;font-size:13px;color:#fff;text-shadow:0 1px 4px #000a}
+  .game.focus .art{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .game .sub{color:var(--muted);font-size:11px;margin-top:5px}
+  .empty{color:var(--muted);font-size:14px;padding:30px}
+  .foot{margin:8px 36px 14px;display:flex;gap:10px;color:var(--muted);font-size:13px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+  .gopt{position:fixed;inset:0;background:#06060cd8;display:none;align-items:center;justify-content:center;z-index:60;backdrop-filter:blur(6px)}
+  .gopt.on{display:flex}
+  .gopt .box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;width:480px;max-width:92vw;max-height:84vh;overflow:auto}
+  .gopt h3{margin:0 0 3px;font-size:17px}.gopt .gs{color:var(--muted);font-size:12px;margin-bottom:6px}
+  .gopt .sec{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--muted);text-transform:uppercase;margin:13px 0 5px}
+  .gopt .opt{display:flex;align-items:center;gap:10px;padding:9px 12px;border:2px solid transparent;border-radius:10px;background:#ffffff06}
+  .gopt .opt.focus{border-color:var(--accent);background:#5cd0ff14}
+  .gopt .opt .nm{flex:1;font-weight:600;font-size:14px}.gopt .opt .v{color:var(--accent);font-weight:700;font-size:13px}
+  .gopt .opt .chk{color:#3fe0a0;font-weight:700;font-size:15px}
+  .gopt .save{margin-top:14px;text-align:center;font-weight:700;background:var(--accent);color:#06121a;border-radius:10px;padding:10px;border:2px solid transparent}
+  .gopt .save.focus{box-shadow:var(--focusglow);border-color:#fff}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <div><h1>Library</h1><div class="s" id="sub">scanning your games…</div></div>
+    <div class="home"><span class="ic" data-i="layout-grid"></span> B / Esc — home</div>
+  </div>
+  <div class="wrap"><div class="rail" id="rail"></div><div class="pane" id="pane"></div></div>
+  <div class="foot"><span class="ic" data-i="gamepad-2"></span> GOSE Library
+    <span class="h">D-pad move · <b>A</b> launch · <b>Y/O</b> options · <b>L1/R1</b> system · <b>S</b> scrape art · <b>B</b> home</span></div>
+  <div class="toast" id="toast"></div>
+  <div class="gopt" id="gopt"><div class="box" id="gopt-box"></div></div>
+<script src="assets/platform.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const COLORS=["#3a5fb0","#7a4ab0","#5a6b3a","#3a86b0","#b0683a","#3ab08a","#b03a6b","#6a4dff"];
+  const rail=document.getElementById("rail"),pane=document.getElementById("pane"),toast=document.getElementById("toast"),$=id=>document.getElementById(id);
+  let SYS=[],cat=0,foc=0;
+  function say(m){toast.textContent=m;toast.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove("show"),1600);}
+  function fmtPlay(s){if(!s)return"new";var m=Math.round(s/60);if(m<1)return"<1m";if(m<60)return m+"m played";return Math.floor(m/60)+"h "+(m%60)+"m played";}
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function buildRail(){rail.innerHTML=SYS.map((s,i)=>
+    `<div class="sys ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.logo?`<img src="${s.logo}" alt="" style="height:13px;width:auto;max-width:104px;vertical-align:-2px;margin-right:7px;opacity:.9" onerror="this.remove()">`:''}${s.name}</span><span class="c">${s.games.length}</span></div>`).join("");
+    [...rail.children].forEach(el=>el.onclick=()=>{cat=+el.dataset.i2;foc=0;render();});}
+  function buildPane(){const s=SYS[cat]; if(!s){pane.innerHTML='<div class="empty">No games found. Drop ROMs into /userdata/roms/&lt;system&gt;.</div>';return;}
+    pane.innerHTML=`<div class="ph">${s.logo?`<img src="${s.logo}" alt="${s.name}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode('${s.name.toUpperCase()} '))">`:s.name.toUpperCase()+' '}— ${s.games.length} GAME${s.games.length!=1?'S':''}</div><div class="grid" id="grid"></div>`;
+    const g=$("grid");
+    g.innerHTML=s.games.map((gm,i)=>`<div class="game ${i===foc?'focus':''}" data-g="${i}">
+      <div class="art" style="${gm.img?`background:#0c0c1e url('/fs/file?path=${encodeURIComponent(gm.img)}') center/cover no-repeat`:`background:linear-gradient(135deg,${COLORS[i%COLORS.length]},#0c0c1e)`}">${gm.img?'':gm.name}</div>
+      <div class="sub">${gm.plays?('▶ '+gm.plays+'× · '+fmtPlay(gm.secs||0)):gm.name}</div></div>`).join("");
+    [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.g;render();launch();});}
+  function render(){buildRail();buildPane();paint();const f=pane.querySelector(".game.focus");if(f)f.scrollIntoView({block:"nearest"});}
+  function launch(){const s=SYS[cat];if(!s||!s.games[foc])return;const gm=s.games[foc];const g=gm.name;
+    const sys=gm.system||s.system;
+    say("Launching "+g+"…");
+    fetch("/launch",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system:sys,game:g})}).then(r=>r.json())
+      .then(d=>say(d.ok?("Launching "+g+" — "+s.name):("Couldn't launch: "+(d.error||"?"))))
+      .catch(e=>say("Launch failed"));}
+  function scrapeArt(){const s=SYS[cat];if(!s||s.system==="__recent"){say("Pick a system to scrape");return;}
+    say("Scraping cover art for "+s.name+"… (this can take a moment)");
+    fetch("/scrape",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:s.system})})
+      .then(r=>r.json()).then(d=>{
+        if(d.ok){say("Art: +"+d.scraped+" found · "+d.had_art+" already had · "+d.missed+" not in database");
+          if(d.scraped) setTimeout(()=>location.reload(),900);}
+        else say("Scrape: "+(d.error||"failed"));}).catch(e=>say("Scrape failed (network?)"));}
+  // ---- per-game options modal ----
+  function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  let GOPT={open:false,foc:0,items:[],sys:"",game:"",data:null,cores:[],default:null};
+  function openOptions(){const s=SYS[cat];if(!s||!s.games[foc])return;const gm=s.games[foc];
+    const sys=gm.system||s.system, game=gm.name;
+    fetch("/game/options?system="+encodeURIComponent(sys)+"&game="+encodeURIComponent(game),{cache:"no-store"})
+      .then(r=>r.json()).then(d=>{ if(!d.ok||!(d.cores&&d.cores.length)){say("No options for this system");return;}
+        GOPT={open:true,foc:0,items:[],sys:sys,game:game,cores:d.cores,default:d.default,
+              data:{core:d.core,ratio:d.ratio,shaders:d.shaders,rewind:d.rewind}};
+        renderOpt(); $("gopt").classList.add("on");
+      }).catch(()=>say("Options offline"));}
+  const RATIOS=["auto","4/3","16/9","core"], SHADERS=["none","scanlines","crt","lcd"];
+  function renderOpt(){
+    GOPT.items=GOPT.cores.map(c=>({t:"core",val:c}));
+    GOPT.items.push({t:"cycle",key:"ratio",vals:RATIOS,label:"Aspect ratio"});
+    GOPT.items.push({t:"cycle",key:"shaders",vals:SHADERS,label:"Shader"});
+    GOPT.items.push({t:"cycle",key:"rewind",vals:["0","1"],label:"Rewind",disp:{"0":"Off","1":"On"}});
+    GOPT.items.push({t:"save"});
+    let h='<h3>'+esc(GOPT.game)+'</h3><div class="gs">'+esc(GOPT.sys)+' · per-game settings · applies next launch</div><div class="sec">Emulator core</div>';
+    GOPT.items.forEach((it,i)=>{const f=i===GOPT.foc?' focus':'';
+      if(it.t==="core") h+='<div class="opt'+f+'"><span class="nm">'+esc(it.val)+(it.val===GOPT.default?' · default':'')+'</span>'+(it.val===GOPT.data.core?'<span class="chk">●</span>':'')+'</div>';
+      else if(it.t==="cycle"){ if(it.key==="ratio")h+='<div class="sec">Tweaks</div>'; var v=GOPT.data[it.key]||it.vals[0]; var disp=(it.disp&&it.disp[v])?it.disp[v]:v;
+        h+='<div class="opt'+f+'"><span class="nm">'+it.label+'</span><span class="v">‹ '+disp+' ›</span></div>';}
+      else h+='<div class="save'+f+'">Save &amp; close</div>';});
+    $("gopt-box").innerHTML=h;
+    const fe=$("gopt-box").querySelector(".focus"); if(fe)fe.scrollIntoView({block:"nearest"});
+  }
+  function goptMove(d){GOPT.foc=(GOPT.foc+d+GOPT.items.length)%GOPT.items.length;renderOpt();}
+  function goptCycle(d){const it=GOPT.items[GOPT.foc];if(it&&it.t==="cycle"){let i=it.vals.indexOf(GOPT.data[it.key]||it.vals[0]);i=(i+d+it.vals.length)%it.vals.length;GOPT.data[it.key]=it.vals[i];renderOpt();}}
+  function goptEnter(){const it=GOPT.items[GOPT.foc];if(!it)return;
+    if(it.t==="core"){GOPT.data.core=it.val;renderOpt();}
+    else if(it.t==="cycle")goptCycle(1);
+    else saveOptions();}
+  function goptClose(){GOPT.open=false;$("gopt").classList.remove("on");}
+  function saveOptions(){fetch("/game/options",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({system:GOPT.sys,game:GOPT.game,core:GOPT.data.core,ratio:GOPT.data.ratio,shaders:GOPT.data.shaders,rewind:GOPT.data.rewind})})
+    .then(r=>r.json()).then(d=>{goptClose();say(d.ok?("Saved — "+GOPT.data.core+" · applies next launch"):"Save failed");}).catch(()=>{goptClose();say("Save failed");});}
+  function moveCat(d){if(!SYS.length)return;cat=(cat+d+SYS.length)%SYS.length;foc=0;render();}
+  function moveFoc(d){const s=SYS[cat];if(!s||!s.games.length)return;foc=(foc+d+s.games.length)%s.games.length;buildPane();paint();const f=pane.querySelector(".game.focus");if(f)f.scrollIntoView({block:"nearest"});}
+  addEventListener("keydown",e=>{const k=e.key;
+    if(GOPT.open){
+      if(k==="ArrowDown")goptMove(1);else if(k==="ArrowUp")goptMove(-1);
+      else if(k==="ArrowRight")goptCycle(1);else if(k==="ArrowLeft")goptCycle(-1);
+      else if(k==="Enter"||k===" ")goptEnter();
+      else if(k==="Escape"||k==="Backspace")goptClose();
+      else return;e.preventDefault();return;}
+    if(k==="ArrowRight")moveFoc(1);else if(k==="ArrowLeft")moveFoc(-1);
+    else if(k==="ArrowDown")moveFoc(4);else if(k==="ArrowUp")moveFoc(-4);
+    else if(k==="]"||k==="PageDown")moveCat(1);else if(k==="["||k==="PageUp")moveCat(-1);
+    else if(k==="Enter"||k===" ")launch();
+    else if(k==="s"||k==="S")scrapeArt();
+    else if(k==="o"||k==="O")openOptions();
+    else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
+    else return;e.preventDefault();});
+  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(GOPT.open){
+        if(tap(13))goptMove(1);if(tap(12))goptMove(-1);if(tap(15))goptCycle(1);if(tap(14))goptCycle(-1);
+        if(tap(0))goptEnter();if(tap(1))goptClose();
+        gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;requestAnimationFrame(pad);return;}
+      if(tap(15))moveFoc(1);if(tap(14))moveFoc(-1);if(tap(13))moveFoc(4);if(tap(12))moveFoc(-4);
+      if(tap(5))moveCat(1);if(tap(4))moveCat(-1);if(tap(0))launch();if(tap(3))openOptions();
+      if(tap(1)){location.href="gose-home.html";}
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  paint();
+  Promise.all([
+    fetch("/games.json").then(r=>r.json()).catch(()=>({})),
+    fetch("/recent.json").then(r=>r.json()).catch(()=>({}))
+  ]).then(([d,rc])=>{
+    SYS=(d.systems||[]);
+    const recent=((rc&&rc.games)||[]).map(r=>({name:r.game,img:r.img,system:r.system,plays:r.plays,secs:r.secs}));
+    if(recent.length) SYS.unshift({name:"★ Recent",system:"__recent",games:recent});
+    $("sub").textContent=d.ok?`${d.total||0} games · ${(d.systems||[]).length} systems${recent.length?" · "+recent.length+" recent":""}`:"couldn't read games";
+    render();
+  }).catch(e=>{$("sub").textContent="library offline";render();});
+</script>
+</body></html>

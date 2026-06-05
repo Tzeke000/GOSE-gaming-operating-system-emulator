@@ -45,6 +45,7 @@ class VmConfig:
     share_dir: str | None = None           # host folder shared as ROMs/saves (9p)
     usb_controllers: list = field(default_factory=list)  # ["046d:c21d", ...]
     headless: bool = False
+    cpu: str | None = None                 # override CPU model; None = auto per accel
 
 
 def build_qemu_cmd(cfg, accel):
@@ -53,12 +54,19 @@ def build_qemu_cmd(cfg, accel):
         "qemu-system-x86_64",
         "-name", "GOSE-PC",
         "-machine", f"q35,accel={accel}",
-        "-cpu", "host" if accel != "tcg" else "qemu64",
+        # `-cpu host` passes modern host features (e.g. APX) that WHPX on Windows
+        # can't virtualize -> "WHPX: Unexpected VP exit code 4". Allow an override;
+        # default stays host for kvm/hvf, qemu64 for tcg.
+        "-cpu", cfg.cpu or ("host" if accel != "tcg" else "qemu64"),
         "-smp", str(cfg.cpus),
         "-m", cfg.memory,
         "-drive", f"file={cfg.image},if=virtio,format=raw",
-        # user-mode net so the GOSE agent is reachable over TCP (Wi-Fi-like)
-        "-netdev", "user,id=net0,hostfwd=tcp::5555-:5555",
+        # user-mode net so the GOSE agent is reachable over TCP (Wi-Fi-like).
+        # host 8731 -> guest 8731: the agent binds 8731 by default (config.py;
+        # GOSE_AGENT_PORT), which is also where Wren's MCP server
+        # (D:\Wren\.mcp.json) connects. host 2222 -> guest 22 lets the GOSE layer
+        # be pushed in over SSH on Windows (no Linux loop-mount).
+        "-netdev", "user,id=net0,hostfwd=tcp::8731-:8731,hostfwd=tcp::2222-:22",
         "-device", "virtio-net-pci,netdev=net0",
         "-device", "intel-hda", "-device", "hda-output",
     ]
@@ -84,6 +92,8 @@ def _cli(argv=None):
     ap.add_argument("--image", default="gose-pc-x86_64.img")
     ap.add_argument("--memory", default="6G")
     ap.add_argument("--cpus", type=int, default=4)
+    ap.add_argument("--cpu", default=None,
+                    help="QEMU CPU model override (e.g. qemu64 for Windows/WHPX; default: host on kvm/hvf)")
     ap.add_argument("--no-gpu", action="store_true")
     ap.add_argument("--share", default=None, help="host folder to share as gose-share (ROMs/saves)")
     ap.add_argument("--controller", action="append", default=[], metavar="VID:PID",
@@ -107,7 +117,7 @@ def _cli(argv=None):
         return 0
 
     cfg = VmConfig(image=a.image, memory=a.memory, cpus=a.cpus, gpu=not a.no_gpu,
-                   share_dir=a.share, usb_controllers=a.controller, headless=a.headless)
+                   share_dir=a.share, usb_controllers=a.controller, headless=a.headless, cpu=a.cpu)
     accel = detect_accel()
     cmd = build_qemu_cmd(cfg, accel)
 

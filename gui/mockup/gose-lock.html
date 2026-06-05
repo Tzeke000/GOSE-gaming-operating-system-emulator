@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Lock</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:#eaf0ff;background:#07070f;display:flex;
+    flex-direction:column;align-items:center;justify-content:center;cursor:none}
+  canvas#bg{position:fixed;inset:0;z-index:0}
+  .clock{position:relative;z-index:2;font-size:96px;font-weight:700;letter-spacing:-2px;text-shadow:0 2px 24px #000a}
+  .date{position:relative;z-index:2;color:#aeb4d2;font-size:20px;margin-top:-6px}
+  .user{position:relative;z-index:2;margin-top:54px;display:flex;flex-direction:column;align-items:center;gap:12px}
+  .av{width:78px;height:78px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:30px;font-weight:700;color:#06121a;box-shadow:0 0 26px var(--accent)}
+  .name{font-size:19px;font-weight:600}
+  .pin{display:flex;gap:12px;margin-top:6px}
+  .pin .d{width:14px;height:14px;border-radius:50%;border:2px solid #ffffff55}
+  .pin .d.on{background:var(--accent);border-color:var(--accent)}
+  .hint{position:fixed;bottom:46px;z-index:2;color:#8b92b0;font-size:14px;animation:pulse 2.4s infinite}
+  @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+  .logo{position:fixed;top:30px;z-index:2;display:flex;align-items:center;gap:10px;color:#aeb4d2;font-weight:600;letter-spacing:.5px}
+  .logo img{width:26px;height:26px}
+</style></head>
+<body>
+  <canvas id="bg"></canvas>
+  <div class="logo"><img src="assets/brand/gose-core-mark.png" alt="GOSE"><span>GOSE</span></div>
+  <div class="clock" id="clock">--:--</div>
+  <div class="date" id="date"></div>
+  <div class="user">
+    <div class="av" id="av">Z</div>
+    <div class="name" id="name">Zeke</div>
+    <div class="pin" id="pin" style="display:none"><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span></div>
+  </div>
+  <div class="hint" id="hint">Press any key or click to unlock</div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  // clock honors the OS timezone + format
+  function tick(){const fmt=localStorage.getItem("gose-clockfmt"),tz=localStorage.getItem("gose-tz");
+    const o={hour:'numeric',minute:'2-digit',hour12:fmt!=="24"}; if(tz)o.timeZone=tz;
+    try{$("clock").textContent=new Date().toLocaleTimeString('en-US',o);}catch(e){$("clock").textContent=new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+    const d={weekday:'long',month:'long',day:'numeric'}; if(tz)d.timeZone=tz;
+    try{$("date").textContent=new Date().toLocaleDateString('en-US',d);}catch(e){$("date").textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}}
+  tick(); setInterval(tick,10000);
+  // accent for the avatar
+  const acc=localStorage.getItem("gose-accent")||"#5cd0ff";
+  $("av").style.background=acc; document.documentElement.style.setProperty("--accent",acc);
+  // ambient nebula background
+  const cv=$("bg"),ctx=cv.getContext("2d");let W,H;function size(){W=cv.width=innerWidth;H=cv.height=innerHeight;}size();addEventListener("resize",size);
+  const ps=[];for(let i=0;i<6;i++)ps.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*240+140,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,hue:[200,250,275,190][i%4]});
+  (function frame(){ctx.fillStyle="rgba(7,7,15,.2)";ctx.fillRect(0,0,W,H);
+    ps.forEach(p=>{p.x+=p.vx;p.y+=p.vy;if(p.x<-p.r)p.x=W+p.r;if(p.x>W+p.r)p.x=-p.r;if(p.y<-p.r)p.y=H+p.r;if(p.y>H+p.r)p.y=-p.r;
+      const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);g.addColorStop(0,`hsla(${p.hue},70%,55%,.09)`);g.addColorStop(1,"transparent");
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();});requestAnimationFrame(frame);})();
+  // unlock: PIN if set, else any key/click
+  const signin=localStorage.getItem("gose-signin"); // "PIN" | "Password" | null
+  let entered="";
+  function unlock(){location.href="gose-home.html";}
+  if(signin==="PIN"){$("pin").style.display="flex";$("hint").textContent="Enter your PIN";
+    addEventListener("keydown",e=>{if(/^[0-9]$/.test(e.key)){entered+=e.key;
+      [...$("pin").children].forEach((d,i)=>d.classList.toggle("on",i<entered.length));
+      if(entered.length>=4)setTimeout(unlock,180);}else if(e.key==="Backspace"){entered=entered.slice(0,-1);
+      [...$("pin").children].forEach((d,i)=>d.classList.toggle("on",i<entered.length));}});
+  } else {
+    addEventListener("keydown",unlock); addEventListener("click",unlock);
+  }
+</script>
+</body></html>

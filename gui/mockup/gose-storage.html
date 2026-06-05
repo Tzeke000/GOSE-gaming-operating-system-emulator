@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Storage</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 38px 4px}
+  .top img{width:34px;height:34px}.top h1{font-size:20px;margin:0}
+  .top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .wrap{flex:1;display:flex;flex-direction:column;gap:14px;padding:8px 38px 0;min-height:0}
+  .disk{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .disk .nums{display:flex;gap:24px;align-items:baseline;margin-bottom:10px}
+  .disk .big{font-size:26px;font-weight:700}.disk .lbl{color:var(--muted);font-size:13px}
+  .bar{height:16px;border-radius:8px;background:#ffffff12;overflow:hidden;display:flex}
+  .bar .u{background:linear-gradient(90deg,var(--accent),#7d8cff);height:100%}
+  .tm{display:flex;gap:4px;height:120px;margin-top:4px}
+  .tm .cell{border-radius:8px;min-width:6px;display:flex;align-items:flex-end;padding:8px;overflow:hidden;
+    color:#fff;font-weight:700;font-size:12px;text-shadow:0 1px 3px #000a;white-space:nowrap}
+  .pane{flex:1;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px 10px;overflow:auto}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:8px 8px 6px}
+  .item{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:10px;border:2px solid transparent}
+  .item.focus{border-color:var(--accent);background:#5cd0ff14}
+  .item .sw{width:12px;height:12px;border-radius:3px;flex:none}
+  .item .nm{font-weight:600;min-width:120px}
+  .item .mb{flex:1;height:8px;border-radius:5px;background:#ffffff10;overflow:hidden}
+  .item .mb i{display:block;height:100%;background:var(--accent)}
+  .item .sz{width:90px;text-align:right;font-weight:600}
+  .item .pc{width:54px;text-align:right;color:var(--muted);font-size:12px}
+  .foot{margin:10px 38px 14px;display:flex;gap:10px;color:var(--muted);font-size:13px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <div><h1>Storage</h1><div class="s" id="sub">scanning…</div></div>
+    <div class="home"><span class="ic" data-i="hard-drive"></span> B / Esc — home</div>
+  </div>
+  <div class="wrap">
+    <div class="disk">
+      <div class="nums"><span class="big" id="free">—</span><span class="lbl">free</span>
+        <span class="lbl">of <b id="total">—</b> · <span id="used">—</span> used</span></div>
+      <div class="bar"><div class="u" id="ubar" style="width:0%"></div></div>
+      <div class="tm" id="tm"></div>
+    </div>
+    <div class="pane"><div class="ph">WHAT'S USING YOUR STORAGE — /userdata</div><div id="list"></div></div>
+  </div>
+  <div class="foot"><span class="ic" data-i="hard-drive"></span> GOSE Storage
+    <span class="h">live disk map · <b>↑↓</b> browse · <b>B</b> home</span></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const PAL=["#6a4dff","#3a86b0","#37d39b","#ffce5c","#ff7a9c","#b388ff","#5a6b3a","#b0683a","#3a5fb0"];
+  const $=id=>document.getElementById(id);
+  function fmt(b){if(b==null)return "—";const u=["B","KB","MB","GB","TB"];let i=0,n=b;while(n>=1024&&i<4){n/=1024;i++;}return (n>=100||i==0?Math.round(n):n.toFixed(1))+" "+u[i];}
+  let items=[],foc=0,total=1;
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function renderList(){
+    const max=items.length?items[0].bytes:1;
+    $("list").innerHTML=items.map((it,i)=>`<div class="item ${i===foc?'focus':''}" data-i2="${i}">
+      <span class="sw" style="background:${PAL[i%PAL.length]}"></span>
+      <span class="nm">${it.name}</span>
+      <span class="mb"><i style="width:${Math.max(2,it.bytes/max*100)}%;background:${PAL[i%PAL.length]}"></i></span>
+      <span class="sz">${fmt(it.bytes)}</span>
+      <span class="pc">${(it.bytes/total*100).toFixed(it.bytes/total<0.01?2:1)}%</span></div>`).join("");
+    const f=$("list").querySelector(".item.focus"); if(f)f.scrollIntoView({block:"nearest"});
+  }
+  function renderTm(){
+    const sum=items.reduce((a,b)=>a+b.bytes,0)||1;
+    $("tm").innerHTML=items.map((it,i)=>`<div class="cell" title="${it.name} — ${fmt(it.bytes)}"
+      style="flex:${Math.max(0.02,it.bytes/sum)};background:linear-gradient(135deg,${PAL[i%PAL.length]},#0c0c1e)">${it.bytes/sum>0.06?it.name:''}</div>`).join("");
+  }
+  function move(d){if(!items.length)return;foc=(foc+d+items.length)%items.length;renderList();}
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
+    else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
+    else return;e.preventDefault();});
+  let prev={};(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const tap=i=>gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(tap(13))move(1);if(tap(12))move(-1);if(tap(1)){location.href="gose-home.html";}
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);}requestAnimationFrame(pad);})();
+  paint();
+  fetch("/storage.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    if(!d.ok){$("sub").textContent="couldn't read disk";return;}
+    total=d.total||1; items=d.items||[];
+    $("total").textContent=fmt(d.total); $("free").textContent=fmt(d.free); $("used").textContent=fmt(d.used);
+    $("ubar").style.width=(d.used/d.total*100).toFixed(1)+"%";
+    $("sub").textContent=`${fmt(d.free)} free of ${fmt(d.total)}`;
+    renderTm(); renderList(); paint();
+  }).catch(e=>{$("sub").textContent="storage offline";});
+</script>
+</body></html>

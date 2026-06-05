@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Widgets</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 4px}
+  .top img{width:32px;height:32px}.top h1{font-size:20px;margin:0}.top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .wrap{flex:1;overflow:auto;padding:14px 36px}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:6px 4px 10px}
+  .w{display:flex;align-items:center;gap:14px;background:var(--surface);border:2px solid transparent;
+    border-radius:13px;padding:14px 16px;margin-bottom:10px}
+  .w.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .w .ai{width:42px;height:42px;border-radius:11px;flex:none;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#6a4dff44,#3a86b044);border:1px solid var(--line)}
+  .w .ai .ic{font-size:22px;color:#dfe5f5}
+  .w .mid{flex:1;min-width:0}.w .nm{font-weight:700;font-size:15px}.w .ds{color:var(--muted);font-size:12px;margin-top:2px}
+  .sw{width:50px;height:28px;border-radius:15px;background:#3a3e4c;position:relative;cursor:pointer;transition:background .15s}
+  .sw.on{background:var(--accent)}
+  .sw i{position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:left .15s}
+  .sw.on i{left:25px}
+  .note{color:var(--muted);font-size:12px;margin:6px 4px 0}
+  .foot{margin:8px 36px 16px;display:flex;gap:10px;color:var(--muted);font-size:13px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <div><h1>Widgets</h1><div class="s">Enable or disable the panels on your desktop</div></div>
+    <div class="home"><span class="ic" data-i="palette"></span> Esc — desktop</div>
+  </div>
+  <div class="wrap">
+    <div class="ph">DESKTOP WIDGETS</div>
+    <div id="list"></div>
+    <div class="note">New widgets we build automatically show up here to turn on or off. Changes apply when you return to the desktop.</div>
+  </div>
+  <div class="foot"><span class="ic" data-i="palette"></span> GOSE Widgets
+    <span class="h"><b>↑↓</b> move · <b>Enter</b> toggle · <b>Esc</b> desktop</span></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  // registry of desktop widgets (new ones get added here as we build them)
+  const DEFON={appsgames:1, system:1};   // on by default; the rest are opt-in
+  const WIDGETS=[
+    {id:"appsgames",  name:"Apps & Games",         desc:"All apps & games, plus your most recent", icon:"layout-grid"},
+    {id:"system",     name:"System",               desc:"Live CPU / GPU / RAM / temp monitor",     icon:"cpu"},
+    {id:"controllers",name:"Connected Controllers",desc:"Shows the gamepads plugged in",           icon:"gamepad-2"},
+    {id:"notifs",     name:"Notifications",         desc:"Recent notifications on the desktop",     icon:"bell"},
+    {id:"aiplayers",  name:"AI Players",            desc:"Wren, Ava, Iris — status & join",         icon:"sparkles"},
+    {id:"hub",        name:"Hub",                   desc:"Clock, date & quick shortcuts",           icon:"layout-grid"},
+    {id:"wterminal",  name:"Terminal",              desc:"Quick-launch the terminal",               icon:"terminal"},
+    {id:"wlibrary",   name:"Library",               desc:"Quick-launch your game library",          icon:"layout-grid"},
+    {id:"wstore",     name:"Store",                 desc:"Quick-launch the app store",              icon:"download"},
+    {id:"wemulators", name:"Emulators",             desc:"Game systems & cores",                    icon:"cpu"},
+  ];
+  let en={}; try{en=JSON.parse(localStorage.getItem("gose-wenabled")||"{}");}catch(e){}
+  function isOn(id){ return en[id]!==undefined ? !!en[id] : !!DEFON[id]; }
+  let foc=0;
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function render(){
+    $("list").innerHTML=WIDGETS.map((w,i)=>`<div class="w ${i===foc?'focus':''}" data-i2="${i}">
+      <div class="ai"><span class="ic" data-i="${w.icon}"></span></div>
+      <div class="mid"><div class="nm">${w.name}</div><div class="ds">${w.desc}</div></div>
+      <div class="sw ${isOn(w.id)?'on':''}" data-sw="${w.id}"><i></i></div></div>`).join("");
+    [...$("list").querySelectorAll(".w")].forEach(el=>el.onclick=()=>{foc=+el.dataset.i2;toggle();});
+    paint();
+  }
+  function toggle(){const w=WIDGETS[foc];en[w.id]=!isOn(w.id);localStorage.setItem("gose-wenabled",JSON.stringify(en));render();}
+  function move(d){foc=(foc+d+WIDGETS.length)%WIDGETS.length;render();}
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
+    else if(k==="Enter"||k===" ")toggle();
+    else if(k==="Escape")location.href="gose-home.html";
+    else return;e.preventDefault();});
+  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const t=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(t(13))move(1);if(t(12))move(-1);if(t(0))toggle();if(t(1))location.href="gose-home.html";
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  paint();render();
+</script>
+</body></html>

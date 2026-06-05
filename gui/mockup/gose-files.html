@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Files</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:16px 30px 4px}
+  .top img{width:30px;height:30px}.top h1{font-size:18px;margin:0}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .barrow{display:flex;align-items:center;gap:8px;padding:6px 30px}
+  .crumb{flex:1;display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--line);
+    border-radius:10px;padding:8px 12px;font-size:13px;color:var(--muted);overflow:hidden;white-space:nowrap}
+  .crumb b{color:var(--text)}
+  .tb{display:flex;gap:6px}
+  .tb button{background:var(--surface);border:1px solid var(--line);color:var(--text);border-radius:9px;
+    padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px}
+  .tb button:hover{border-color:var(--accent)}.tb button[disabled]{opacity:.4;cursor:default}
+  .map{display:flex;gap:3px;height:64px;margin:4px 30px 0}
+  .map .c{border-radius:6px;min-width:4px;display:flex;align-items:flex-end;padding:6px;overflow:hidden;
+    color:#fff;font-weight:700;font-size:11px;text-shadow:0 1px 3px #000a;white-space:nowrap;cursor:pointer}
+  .wrap{flex:1;margin:8px 30px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    overflow:auto;min-height:0}
+  .row{display:flex;align-items:center;gap:12px;padding:9px 16px;border:2px solid transparent;cursor:pointer}
+  .row:hover{background:#ffffff08}.row.focus{border-color:var(--accent);background:#5cd0ff14}
+  .row .g{font-size:19px;width:24px;flex:none;display:inline-flex;align-items:center;justify-content:center}
+  .row .nm{flex:1;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .knd{color:var(--muted);font-size:12px;width:70px}
+  .row .sz{width:90px;text-align:right;color:var(--muted);font-size:13px}
+  .row.cut{opacity:.5}
+  .sec{color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:13px 16px 4px}
+  .sec:first-child{padding-top:8px}
+  .empty{color:var(--muted);padding:30px;text-align:center}
+  .foot{margin:8px 30px 12px;display:flex;gap:10px;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:9px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  /* viewer overlay */
+  .ov{position:fixed;inset:0;background:#06060ce8;display:none;flex-direction:column;z-index:40;backdrop-filter:blur(8px)}
+  .ov.on{display:flex}
+  .ov .vt{display:flex;align-items:center;gap:10px;padding:16px 30px;font-weight:700}
+  .ov .vt #ov-actions{margin-left:auto;display:flex;gap:8px}
+  .ov .vt .x{color:var(--muted);font-size:13px;font-weight:400;margin-left:14px}
+  .vbtn{background:var(--surface2);border:1px solid var(--accent);color:var(--text);border-radius:8px;
+    padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer}
+  .ov .body{flex:1;overflow:auto;margin:0 30px 24px;background:var(--surface);border:1px solid var(--line);
+    border-radius:12px;display:flex;align-items:center;justify-content:center}
+  .ov img{max-width:100%;max-height:100%;object-fit:contain}
+  .ov video{max-width:100%;max-height:100%}
+  .ov audio{width:560px;max-width:80vw}
+  .ov pre{margin:0;padding:18px 22px;width:100%;height:100%;overflow:auto;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;
+    color:#cdd2ea;white-space:pre-wrap;word-break:break-word}
+  .ov textarea{width:100%;height:100%;border:0;background:transparent;color:#dfe5f5;resize:none;outline:none;
+    font:13px/1.55 ui-monospace,Menlo,Consolas,monospace;padding:18px 22px}
+  .ov .mdview{width:100%;height:100%;overflow:auto;padding:18px 28px;line-height:1.6;color:#dfe5f5}
+  .ov .mdview h1,.ov .mdview h2,.ov .mdview h3{margin:.7em 0 .35em;line-height:1.25}
+  .ov .mdview code{background:#ffffff16;padding:1px 6px;border-radius:5px;font-family:ui-monospace,monospace;font-size:.92em}
+  .ov .mdview a{color:var(--accent)} .ov .mdview ul{margin:.4em 0;padding-left:1.4em}
+  .ov .audwrap{text-align:center}.ov .audwrap .big{font-size:72px;margin-bottom:14px}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
+  .toast.show{opacity:1}
+  .ctx{position:fixed;z-index:60;background:#11131c;border:1px solid #ffffff22;border-radius:10px;padding:5px;
+    min-width:166px;box-shadow:0 12px 34px #000b;display:none}
+  .ctx.on{display:block}
+  .ctx button{display:flex;width:100%;gap:10px;align-items:center;background:none;border:0;color:#dfe5f5;
+    text-align:left;padding:9px 12px;border-radius:7px;font-size:13px;font-family:inherit}
+  .ctx button:hover{background:#5cd0ff22}.ctx button.danger{color:#ff8e8e}
+  .ctx .sep{height:1px;background:#ffffff14;margin:4px 6px}
+  .rn{position:fixed;inset:0;background:#06060cc8;display:none;align-items:center;justify-content:center;z-index:70}
+  .rn.on{display:flex}
+  .rn .box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 22px;width:420px;max-width:90vw}
+  .rn h3{margin:0 0 12px;font-size:16px}
+  .rn input{width:100%;background:var(--surface2);border:1px solid var(--accent);border-radius:9px;padding:10px 12px;color:#eaf0ff;font-size:15px;outline:none}
+  .rn .btns{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+  .rn .btns button{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:8px 16px;font-weight:600}
+  .rn .btns .ok{background:var(--accent);color:#06121a;border:none}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <h1>Files</h1>
+    <div class="home"><span class="ic" data-i="folder"></span> B — back · Esc — exit</div>
+  </div>
+  <div class="barrow">
+    <div class="crumb" id="crumb">/userdata</div>
+    <div class="tb">
+      <button id="b-up"><span class="ic" data-i="folder"></span>Up</button>
+      <button id="b-new">New folder</button>
+      <button id="b-copy">Copy</button>
+      <button id="b-cut">Cut</button>
+      <button id="b-paste" disabled>Paste</button>
+      <button id="b-del">Delete</button>
+    </div>
+  </div>
+  <div class="map" id="map"></div>
+  <div class="wrap" id="wrap"><div class="empty">loading…</div></div>
+  <div class="foot"><span class="ic" data-i="folder"></span> GOSE Files — This PC
+    <span class="h"><b>↑↓</b> move · <b>Enter/A</b> open · <b>B</b> back · <b>L1</b> copy · <b>L2</b> cut · <b>R1</b> paste · <b>R2</b> delete · <b>Esc</b> exit</span></div>
+  <div class="ov" id="ov"><div class="vt"><span id="ov-name"></span><span id="ov-actions"></span><span class="x">Esc — close</span></div>
+    <div class="body" id="ov-body"></div></div>
+  <div class="ctx" id="ctx"></div>
+  <div class="rn" id="rn"><div class="box"><h3 id="rn-t">Rename</h3><input id="rn-in" spellcheck="false">
+    <div class="btns"><button id="rn-cancel">Cancel</button><button class="ok" id="rn-ok">Rename</button></div></div></div>
+  <div class="toast" id="toast"></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const ROOT="/userdata", HOMEDIR="/userdata/home", GAMESDIR="/userdata/roms";
+  const PAL=["#6a4dff","#3a86b0","#37d39b","#ffce5c","#ff7a9c","#b388ff","#5a6b3a","#b0683a","#3a5fb0"];
+  // crisp line-icons (same Lucide set as the rest of the OS) instead of thin emoji
+  const KICON={dir:"folder",image:"image",text:"file-text",audio:"music",video:"film",run:"terminal",file:"file-text"};
+  const PLACE_ICON={Desktop:"monitor",Documents:"file-text",Downloads:"download",Pictures:"image",
+    Music:"music",Videos:"film",Games:"gamepad-2",drive:"hard-drive"};
+  const ICON=(name,color)=>`<span class="g"><span class="ic" data-i="${name}" style="color:${color||'#7cc4ff'}"></span></span>`;
+  const $=id=>document.getElementById(id);
+  function fmt(b){if(b==null)return"";const u=["B","KB","MB","GB","TB"];let i=0,n=b;while(n>=1024&&i<4){n/=1024;i++;}return (n>=100||i==0?Math.round(n):n.toFixed(1))+" "+u[i];}
+  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1700);}
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  let cur="THISPC", entries=[], foc=0, parent=null, clip=null, viewing=false, drive=null, quickCount=6;
+
+  // friendly Windows-style breadcrumb: This PC › Documents (not /userdata/home/Documents)
+  function crumbParts(d){
+    if(d===GAMESDIR||d.startsWith(GAMESDIR+"/")) return ["Games"].concat(d.slice(GAMESDIR.length).split("/").filter(Boolean));
+    if(d===HOMEDIR) return [];
+    if(d.startsWith(HOMEDIR+"/")) return d.slice(HOMEDIR.length).split("/").filter(Boolean);
+    if(d===ROOT) return ["GOSE (C:)"];
+    if(d.startsWith(ROOT+"/")) return ["GOSE (C:)"].concat(d.slice(ROOT.length).split("/").filter(Boolean));
+    return d.split("/").filter(Boolean);
+  }
+  function effParent(d,sp){   // hide the plumbing: top-level user folders + drive root → This PC
+    if(d===ROOT||d===HOMEDIR||sp===HOMEDIR||d===GAMESDIR) return "THISPC";
+    return sp;
+  }
+
+  function renderThisPC(){
+    $("crumb").innerHTML='<b>This PC</b>';
+    if(drive&&drive.total){
+      const pct=Math.round(drive.used/drive.total*100);
+      $("map").innerHTML=`<div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:6px;padding:0 4px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
+          <span>💽 ${drive.name} — ${fmt(drive.free)} free of ${fmt(drive.total)}</span><span>${pct}% used</span></div>
+        <div style="height:11px;border-radius:6px;background:#ffffff14;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#5cd0ff,#6a4dff)"></div></div></div>`;
+    } else $("map").innerHTML="";
+    let html='<div class="sec">Quick access</div>';
+    entries.forEach((e,i)=>{
+      if(i===quickCount) html+='<div class="sec">Drives &amp; library</div>';
+      const ic=PLACE_ICON[e.gkey||e.name]||"folder";
+      html+=`<div class="row ${i===foc?'focus':''}" data-i2="${i}">
+        ${ICON(ic, e.kind==='drive'?'#5cd0ff':'#7cc4ff')}<span class="nm">${e.name}</span>
+        <span class="knd">${e.kind==='drive'?'Local Disk':'Folder'}</span><span class="sz"></span></div>`;
+    });
+    $("wrap").innerHTML=html;
+    [...$("wrap").querySelectorAll(".row")].forEach(el=>{
+      el.onclick=()=>{foc=+el.dataset.i2;render();};
+      el.ondblclick=()=>{foc=+el.dataset.i2;openFocus();};});
+    const f=$("wrap").querySelector(".row.focus"); if(f)f.scrollIntoView({block:"nearest"});
+    $("b-paste").disabled=!clip; $("b-up").disabled=true; paint();
+  }
+  function loadPlaces(){
+    fetch("/fs/places",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      if(!d.ok){say("Can't load This PC");return;}
+      drive=d.drive;
+      const q=(d.quick||[]).map(p=>({name:p.name,path:p.path,isdir:true,kind:"dir"}));
+      quickCount=q.length;
+      entries=q.concat([
+        {name:d.games.name,path:d.games.path,isdir:true,kind:"dir",gkey:"Games"},
+        {name:d.drive.name,path:d.drive.path,isdir:true,kind:"drive",gkey:"drive"}]);
+      cur="THISPC"; parent=null; foc=0; render();
+    }).catch(e=>say("Files offline"));
+  }
+
+  function render(){
+    if(cur==="THISPC"){renderThisPC();return;}
+    const parts=crumbParts(cur);
+    $("crumb").innerHTML='<b id="crumb-pc" style="cursor:pointer">This PC</b>'+
+      parts.map(p=>' <span style="opacity:.45">›</span> '+p).join('');
+    const cp=$("crumb-pc"); if(cp)cp.onclick=loadPlaces;
+    // storage map of current folder
+    const sum=entries.reduce((a,e)=>a+(e.bytes||0),0)||1;
+    $("map").innerHTML=entries.length?entries.map((e,i)=>`<div class="c" data-m="${i}" title="${e.name} — ${fmt(e.bytes)}"
+      style="flex:${Math.max(0.02,(e.bytes||0)/sum)};background:linear-gradient(135deg,${PAL[i%PAL.length]},#0c0c1e)">${(e.bytes||0)/sum>0.07?e.name:''}</div>`).join(""):"";
+    [...$("map").children].forEach(el=>el.onclick=()=>{foc=+el.dataset.m;openFocus();});
+    // file list
+    $("wrap").innerHTML=entries.length?entries.map((e,i)=>`<div class="row ${i===foc?'focus':''} ${clip&&clip.op==='move'&&clip.path===cur+'/'+e.name?'cut':''}" data-i2="${i}">
+      ${ICON(KICON[e.kind]||"file-text", e.isdir?'#7cc4ff':'#9aa0b4')}<span class="nm">${e.name}</span>
+      <span class="knd">${e.isdir?'Folder':e.kind}</span><span class="sz">${fmt(e.bytes)}</span></div>`).join("")
+      :'<div class="empty">Empty folder</div>';
+    [...$("wrap").querySelectorAll(".row")].forEach(el=>{
+      el.onclick=()=>{foc=+el.dataset.i2;render();};
+      el.ondblclick=()=>{foc=+el.dataset.i2;openFocus();};
+      el.oncontextmenu=(ev)=>{ev.preventDefault();foc=+el.dataset.i2;render();showCtx(ev.clientX,ev.clientY);};
+      let lp; el.ontouchstart=()=>{lp=setTimeout(()=>{foc=+el.dataset.i2;render();const r=el.getBoundingClientRect();showCtx(r.left+40,r.top+30);},550);};
+      el.ontouchend=()=>clearTimeout(lp);});
+    const f=$("wrap").querySelector(".row.focus"); if(f)f.scrollIntoView({block:"nearest"});
+    $("b-paste").disabled=!clip; $("b-up").disabled=!parent;
+    paint();
+  }
+  let pendingOpen=(location.hash.match(/open=([^&]+)/)||[])[1];
+  pendingOpen=pendingOpen?decodeURIComponent(pendingOpen):null;
+  let pendingCtx=location.hash.indexOf("ctx")>=0;
+  let pendingGo=(location.hash.match(/go=([^&]+)/)||[])[1];
+  pendingGo=pendingGo?decodeURIComponent(pendingGo):null;   // deep-link straight to a folder
+  function load(path){
+    fetch("/fs/list?path="+encodeURIComponent(path),{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      if(!d.ok){say("Can't open: "+(d.error||"?"));return;}
+      cur=d.path; entries=d.entries||[]; parent=effParent(d.path,d.parent); foc=0; render();
+      if(pendingOpen){const i=entries.findIndex(e=>cur+"/"+e.name===pendingOpen);
+        if(i>=0){foc=i;render();openFocus();} pendingOpen=null;}
+      if(pendingCtx&&entries.length){pendingCtx=false;foc=0;render();showCtx(360,210);}
+      // folder sizes are computed lazily so the list shows instantly; fill them in
+      // when they arrive (ignore if the user already navigated elsewhere)
+      const tok=cur;
+      if(entries.some(e=>e.isdir))
+        fetch("/fs/sizes?path="+encodeURIComponent(tok),{cache:"no-store"}).then(r=>r.json()).then(s=>{
+          if(!s.ok||cur!==tok)return; let changed=false;
+          entries.forEach(e=>{if(e.isdir&&s.sizes[e.name]!=null){e.bytes=s.sizes[e.name];changed=true;}});
+          if(changed&&!viewing)render();
+        }).catch(()=>{});
+    }).catch(e=>say("Files offline"));
+  }
+  function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  function md(t){ // minimal markdown → HTML
+    let h=esc(t)
+      .replace(/^### (.*)$/gm,"<h3>$1</h3>").replace(/^## (.*)$/gm,"<h2>$1</h2>").replace(/^# (.*)$/gm,"<h1>$1</h1>")
+      .replace(/`([^`]+)`/g,"<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\*([^*]+)\*/g,"<i>$1</i>")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2">$1</a>')
+      .replace(/^[-*] (.*)$/gm,"<li>$1</li>");
+    return h.replace(/(<li>[\s\S]*?<\/li>)/g,"<ul>$1</ul>").replace(/\n{2,}/g,"<br><br>").replace(/\n/g,"<br>");
+  }
+  function openFocus(){const e=entries[foc]; if(!e)return;
+    if(e.path){load(e.path);return;}   // This PC place → jump to its real folder
+    if(e.isdir){load(cur+"/"+e.name);return;}
+    const p=cur+"/"+e.name, url="/fs/file?path="+encodeURIComponent(p);
+    if(e.kind==="image") openViewer(e.name,`<img src="${url}">`);
+    else if(e.kind==="audio") openViewer(e.name,`<div class="audwrap"><div class="big">🎵</div><audio src="${url}" controls autoplay></audio></div>`);
+    else if(e.kind==="video") openViewer(e.name,`<video src="${url}" controls autoplay></video>`);
+    else if(e.kind==="text") openEditor(e.name,p);
+    else if(e.kind==="run"){ say("Running "+e.name+"…");
+      fetch("/launch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({file:p})})
+        .then(r=>r.json()).then(d=>say(d.ok?("Running "+e.name):(d.error||"Couldn't run")));}
+    else say("No built-in viewer for ."+ (e.name.split(".").pop()) +" yet");
+  }
+  function openEditor(name,path){
+    fetch("/fs/read?path="+encodeURIComponent(path)).then(r=>r.json()).then(d=>{
+      if(!d.ok){say("Can't read: "+d.error);return;}
+      const isMd=/\.md$/i.test(name);
+      const actions=`<button class="vbtn" id="ed-save">Save</button>`+(isMd?`<button class="vbtn" id="ed-rend">Render</button>`:"");
+      openViewer(name,`<textarea id="ed" spellcheck="false">${esc(d.text)}</textarea><div class="mdview" id="mdview" style="display:none"></div>`,actions);
+      const ta=$("ov-body").querySelector("#ed"), mv=$("ov-body").querySelector("#mdview");
+      $("ed-save").onclick=()=>fetch("/fs/op",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({op:"write",path,text:ta.value})}).then(r=>r.json()).then(x=>{say(x.ok?"Saved "+name:"Save failed: "+x.error);});
+      if(isMd){let on=false;$("ed-rend").onclick=()=>{on=!on;if(on){mv.innerHTML=md(ta.value);mv.style.display="";ta.style.display="none";$("ed-rend").textContent="Edit";}
+        else{mv.style.display="none";ta.style.display="";$("ed-rend").textContent="Render";}};}
+      if(d.truncated)say("Large file — showing first 256 KB");
+    });
+  }
+  function openViewer(name,html,actions){viewing=true;$("ov-name").textContent=name;$("ov-actions").innerHTML=actions||"";$("ov-body").innerHTML=html;$("ov").classList.add("on");}
+  function closeViewer(){viewing=false;$("ov").classList.remove("on");$("ov-body").innerHTML="";$("ov-actions").innerHTML="";}
+  function atPC(){return cur==="THISPC";}
+  function up(){if(parent==="THISPC")loadPlaces();else if(parent)load(parent);}
+  function op(body,after){fetch("/fs/op",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(d=>{if(d.ok){after&&after();}else say("Failed: "+(d.error||"?"));}).catch(e=>say("op failed"));}
+  function del(){if(atPC())return;const e=entries[foc];if(!e)return;
+    say("Deleting "+e.name+"…");op({op:"delete",path:cur+"/"+e.name},()=>{say("Deleted "+e.name);load(cur);});}
+  function copy(cut){if(atPC())return;const e=entries[foc];if(!e)return;clip={op:cut?"move":"copy",path:cur+"/"+e.name,name:e.name};
+    say((cut?"Cut ":"Copied ")+e.name);render();}
+  function paste(){if(!clip)return;if(atPC()){say("Open a folder to paste into");return;}say("Pasting "+clip.name+"…");
+    op({op:clip.op,path:clip.path,dest:cur},()=>{say(clip.name+" pasted");clip=null;load(cur);});}
+  function mkdir(){if(atPC()){say("Open a folder first");return;}op({op:"mkdir",path:cur,name:"New folder"},()=>{say("Folder created");load(cur);});}
+  function move(d){if(!entries.length)return;foc=(foc+d+entries.length)%entries.length;render();}
+
+  $("b-up").onclick=up; $("b-new").onclick=mkdir; $("b-copy").onclick=()=>copy(false);
+  $("b-cut").onclick=()=>copy(true); $("b-paste").onclick=paste; $("b-del").onclick=del;
+
+  // right-click / long-press context menu
+  const ctx=$("ctx");
+  function showCtx(x,y){const e=entries[foc]; if(!e||atPC())return;   // no file ops on the This PC landing
+    ctx.innerHTML=`<button data-a="open">${e.isdir?"Open":(e.kind==="run"?"Run":"Open")}</button>`+
+      `<button data-a="copy">Copy</button><button data-a="cut">Cut</button>`+
+      (clip?`<button data-a="paste">Paste into folder</button>`:"")+
+      `<button data-a="rename">Rename</button><div class="sep"></div>`+
+      `<button class="danger" data-a="delete">Delete</button>`;
+    ctx.style.left=Math.min(x,innerWidth-180)+"px"; ctx.style.top=Math.min(y,innerHeight-230)+"px"; ctx.classList.add("on");
+    [...ctx.querySelectorAll("button")].forEach(b=>b.onclick=()=>{hideCtx();doCtx(b.dataset.a);});}
+  function hideCtx(){ctx.classList.remove("on");}
+  function doCtx(a){ if(a==="open")openFocus(); else if(a==="copy")copy(false); else if(a==="cut")copy(true);
+    else if(a==="paste")paste(); else if(a==="delete")del(); else if(a==="rename")startRename(); }
+  addEventListener("click",e=>{ if(!ctx.contains(e.target))hideCtx(); });
+  addEventListener("scroll",hideCtx,true);
+  function startRename(){if(atPC())return;const e=entries[foc]; if(!e)return; const rn=$("rn"),inp=$("rn-in");
+    $("rn-t").textContent="Rename "+(e.isdir?"folder":"file"); inp.value=e.name; rn.classList.add("on");
+    setTimeout(()=>{inp.focus();inp.select();},60);
+    function done(ok){ rn.classList.remove("on"); inp.onkeydown=null;
+      if(ok){const nn=inp.value.trim(); if(nn&&nn!==e.name) op({op:"move",path:cur+"/"+e.name,dest:cur+"/"+nn},()=>{say("Renamed to "+nn);load(cur);}); }}
+    $("rn-ok").onclick=()=>done(true); $("rn-cancel").onclick=()=>done(false);
+    inp.onkeydown=(ev)=>{ ev.stopPropagation(); if(ev.key==="Enter")done(true); else if(ev.key==="Escape")done(false); };}
+
+  addEventListener("keydown",e=>{
+    if(viewing){if(e.key==="Escape"){closeViewer();e.preventDefault();}return;}  // editor: don't hijack typing
+    const k=e.key;
+    if(k==="ArrowDown")move(1); else if(k==="ArrowUp")move(-1);
+    else if(k==="Enter")openFocus();
+    else if(k==="Backspace")up();                   // B / numpad-0 = back one folder (never exit)
+    else if(k==="Delete")del();
+    else if(k==="Escape")location.href="gose-home.html";   // Esc = exit Files
+    else if(k==="GoseL1"||(e.ctrlKey&&k==="c"))copy(false);   // L1 = copy
+    else if(k==="GoseL2"||(e.ctrlKey&&k==="x"))copy(true);    // L2 = cut
+    else if(k==="GoseR1"||(e.ctrlKey&&k==="v"))paste();       // R1 = paste
+    else if(k==="GoseR2")del();                               // R2 = delete
+    else return; e.preventDefault();});
+  let prev={}, primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(viewing){if(tap(0)||tap(1))closeViewer();}
+      else{ if(tap(13))move(1); if(tap(12))move(-1); if(tap(0))openFocus();
+        if(tap(1))up();                                  // B = back one folder (never exit)
+        if(tap(4))copy(false); if(tap(6))copy(true);     // L1 = copy, L2 = cut
+        if(tap(5))paste();     if(tap(7))del(); }        // R1 = paste, R2 = delete
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed); primed=true;}  // first frame only records state, never acts
+    requestAnimationFrame(pad);})();
+  paint(); if(pendingOpen) load(pendingOpen.replace(/\/[^/]+$/,"")); else if(pendingGo) load(pendingGo); else loadPlaces();
+</script>
+</body></html>

@@ -28,7 +28,8 @@ class QemuCommand(unittest.TestCase):
         self.assertEqual(cmd[0], "qemu-system-x86_64")
         joined = " ".join(cmd)
         self.assertIn("accel=kvm", joined)
-        self.assertIn("hostfwd=tcp::5555-:5555", joined)  # agent reachable
+        self.assertIn("hostfwd=tcp::8731-:8731", joined)  # host 8731 -> guest agent 8731 (agent default; matches Wren MCP)
+        self.assertIn("hostfwd=tcp::2222-:22", joined)     # host 2222 -> guest ssh (layer injection on Windows)
 
     def test_cpu_host_only_when_accelerated(self):
         self.assertIn("host", vm.build_qemu_cmd(vm.VmConfig(), "kvm"))

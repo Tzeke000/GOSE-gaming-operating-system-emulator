@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Apps</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:rgba(7,7,15,.78);
+    backdrop-filter:blur(18px);display:flex;flex-direction:column;align-items:center}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .wrap{width:920px;max-width:94vw;margin-top:6vh;display:flex;flex-direction:column;flex:1;min-height:0}
+  .head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+  .head img{width:30px;height:30px}.head h1{font-size:18px;margin:0}
+  .head .x{margin-left:auto;color:var(--muted);font-size:13px}
+  .search{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);
+    border-radius:12px;padding:12px 16px;margin-bottom:18px}
+  .search input{flex:1;background:transparent;border:0;outline:none;color:var(--text);font-size:15px}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);margin:0 0 10px 2px}
+  .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;overflow:auto;padding-bottom:8px}
+  .app{background:var(--surface);border:2px solid transparent;border-radius:14px;padding:18px 16px;cursor:pointer;
+    display:flex;flex-direction:column;gap:8px;min-height:120px}
+  .app:hover{background:var(--surface2)}
+  .app.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .app .ai{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#6a4dff44,#3a86b044);border:1px solid var(--line)}
+  .app .ai .ic{font-size:22px;color:#dfe5f5}
+  .app .nm{font-weight:700;font-size:15px}
+  .app .ds{color:var(--muted);font-size:12px;line-height:1.4}
+  .app .soon{align-self:flex-start;font-size:10px;font-weight:700;color:var(--accent);background:#5cd0ff1c;
+    border:1px solid var(--line);border-radius:8px;padding:2px 7px;margin-top:auto}
+  .power{display:flex;gap:10px;margin-top:16px;justify-content:center}
+  .power button{background:var(--surface);border:1px solid var(--line);color:var(--text);border-radius:11px;
+    padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:7px}
+  .power button:hover{border-color:var(--accent)}
+  .foot{margin:10px 0 16px;color:var(--muted);font-size:13px}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="wrap">
+    <div class="head"><img src="assets/brand/gose-core-mark.png" alt="GOSE"><h1>Apps</h1>
+      <span class="x"><span class="ic" data-i="layout-grid"></span> Esc — desktop</span></div>
+    <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search apps…" autofocus></div>
+    <div class="ph" id="ph">ALL APPS</div>
+    <div class="grid" id="grid"></div>
+    <div class="power">
+      <button data-pw="sleep"><span class="ic" data-i="moon"></span>Sleep</button>
+      <button data-pw="restart"><span class="ic" data-i="rotate-ccw"></span>Restart</button>
+      <button data-pw="shutdown"><span class="ic" data-i="power"></span>Shut down</button>
+    </div>
+  </div>
+  <div class="foot"><b>↑↓←→</b> move · <b>Enter</b> open · type to search · <b>Esc</b> desktop</div>
+  <div class="toast" id="toast"></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  const APPS=[
+    {nm:"Library",  ds:"Your games, by system",        ic:"layout-grid", href:"gose-library.html"},
+    {nm:"Files",    ds:"Browse, open & edit files + storage map", ic:"folder", href:"gose-files.html"},
+    {nm:"Task Manager", ds:"Processes, performance, kill tasks", ic:"cpu", href:"gose-taskman.html"},
+    {nm:"Settings", ds:"Personalize the whole OS",      ic:"settings",   href:"gose-settings.html"},
+    {nm:"Splice",   ds:"Lossless video trim",           ic:"scissors", href:"gose-splice.html"},
+    {nm:"Store",    ds:"Get more apps from Flathub",     ic:"download", href:"gose-store.html"},
+    {nm:"Terminal", ds:"Command line — the real shell",  ic:"terminal", href:"gose-term.html"},
+    {nm:"Beam",     ds:"Send files to phone & devices", ic:"send",     soon:true},
+    {nm:"AI Players", ds:"Wren, Ava, Iris — join & play", ic:"sparkles", soon:true},
+    {nm:"Emulators", ds:"Cores & systems",              ic:"gamepad-2",  soon:true},
+  ];
+  let shown=APPS.slice(), foc=0;
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1800);}
+  function render(){
+    $("grid").innerHTML=shown.length?shown.map((a,i)=>`<div class="app ${i===foc?'focus':''}" data-i2="${i}">
+      <div class="ai">${a.iconUrl
+        ? `<img src="${a.iconUrl}" style="width:34px;height:34px;border-radius:8px;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block'"><span class="ic" data-i="${a.ic}" style="display:none"></span>`
+        : `<span class="ic" data-i="${a.ic}"></span>`}</div>
+      <div class="nm">${a.nm}</div><div class="ds">${a.ds}</div>${a.soon?'<span class="soon">SOON</span>':''}</div>`).join("")
+      :'<div class="ds" style="padding:20px">No apps match.</div>';
+    [...$("grid").children].forEach(el=>el.dataset.i2!==undefined&&(el.onclick=()=>{foc=+el.dataset.i2;launch();}));
+    const f=$("grid").querySelector(".app.focus");if(f)f.scrollIntoView({block:"nearest"});
+    paint();
+  }
+  function launch(){const a=shown[foc];if(!a)return;
+    if(a.soon){say(a.nm+" — coming soon");return;}
+    if(a.cmd){say("Opening "+a.nm+"…");
+      fetch("/launch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd:a.cmd})})
+        .then(r=>r.json()).then(d=>say(d.ok?("Opening "+a.nm):("Couldn't open: "+(d.error||"?"))));return;}
+    location.href=a.href;}
+  const ICONMAP={"com.valvesoftware.Steam":"gamepad-2","org.gimp.GIMP":"palette","org.videolan.VLC":"play",
+    "net.lutris.Lutris":"gamepad-2","com.usebottles.bottles":"wrench","com.google.Chrome":"globe",
+    "org.chromium.Chromium":"globe","org.mozilla.firefox":"globe","com.heroicgameslauncher.hgl":"gamepad-2",
+    "com.discordapp.Discord":"users","com.spotify.Client":"volume-2","org.kde.kdenlive":"scissors",
+    "com.obsproject.Studio":"monitor","org.blender.Blender":"sparkles"};
+  const NAMEMAP={"com.valvesoftware.Steam":"Steam","org.gimp.GIMP":"GIMP","org.videolan.VLC":"VLC",
+    "net.lutris.Lutris":"Lutris","com.usebottles.bottles":"Bottles","com.google.Chrome":"Google Chrome",
+    "org.chromium.Chromium":"Chromium","org.mozilla.firefox":"Firefox","com.heroicgameslauncher.hgl":"Heroic",
+    "com.discordapp.Discord":"Discord","com.spotify.Client":"Spotify","org.kde.kdenlive":"Kdenlive",
+    "com.obsproject.Studio":"OBS Studio","org.blender.Blender":"Blender"};
+  function loadInstalled(){fetch("/apps.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    (d.apps||[]).forEach(a=>{ if(APPS.some(x=>x.cmd==="flatpak run "+a.id))return;
+      APPS.push({nm:NAMEMAP[a.id]||a.name||a.id, ds:"Installed app", ic:ICONMAP[a.id]||"layout-grid",
+        cmd:"flatpak run "+a.id, iconUrl:"/appicon?id="+a.id});});
+    filter();
+  }).catch(()=>{});}
+  // Windows-Start-style search: apps + Settings pages + a Files search action
+  const SETTINGS=[["Display","display"],["Sound & audio","sound"],["Network & Wi-Fi","net"],
+    ["Wallpaper & Personalization","personalize"],["Time & Language","time"],["Power & Battery","power"],
+    ["Privacy & Security","privacy"],["Accounts","accounts"],["About this device","about"],["Live wallpaper","personalize"]];
+  function filter(){const raw=$("q").value.trim(), q=raw.toLowerCase();
+    if(!q){shown=APPS.slice();foc=0;$("ph").textContent="ALL APPS";render();return;}
+    const apps=APPS.filter(a=>a.nm.toLowerCase().includes(q)||a.ds.toLowerCase().includes(q));
+    const sets=SETTINGS.filter(s=>s[0].toLowerCase().includes(q)||("settings".includes(q)))
+      .map(s=>({nm:s[0],ds:"Settings",ic:"settings",href:"gose-settings.html#"+s[1]}));
+    const files=[{nm:'Search Files for "'+raw+'"',ds:"Open in Files",ic:"folder",href:"gose-files.html"}];
+    shown=apps.concat(sets).concat(files);foc=0;
+    $("ph").textContent="RESULTS — "+(apps.length+sets.length);render();}
+  function move(d){if(!shown.length)return;foc=(foc+d+shown.length)%shown.length;render();}
+  $("q").addEventListener("input",filter);
+  document.querySelectorAll("[data-pw]").forEach(b=>b.onclick=()=>{
+    if(b.dataset.pw==="sleep"){location.href="gose-lock.html";return;}
+    say(b.dataset.pw[0].toUpperCase()+b.dataset.pw.slice(1)+" — hold to confirm (wired to the agent next)");});
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="Escape"){location.href="gose-home.html";}
+    else if(k==="ArrowRight")move(1);
+    else if(k==="ArrowLeft")move(-1);
+    else if(k==="ArrowDown")move(4);
+    else if(k==="ArrowUp")move(-4);
+    else if(k==="Enter")launch();
+    else return; e.preventDefault();});
+  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(tap(15))move(1);if(tap(14))move(-1);if(tap(13))move(4);if(tap(12))move(-4);
+      if(tap(0))launch();if(tap(1))location.href="gose-home.html";
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  render(); loadInstalled(); setInterval(loadInstalled, 8000);
+  (function(){const hq=(location.hash.match(/q=([^&]+)/)||[])[1]; if(hq){$("q").value=decodeURIComponent(hq);filter();}})();
+</script>
+</body></html>

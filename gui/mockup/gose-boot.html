@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#07070f}
+  body{font-family:Inter,system-ui,sans-serif;color:#eef1f8;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:22px;
+    background:radial-gradient(120% 90% at 50% 38%, #14193a 0%, #0b0c1e 55%, #07070f 100%)}
+  .logo{width:132px;height:132px;object-fit:contain;
+    filter:drop-shadow(0 0 26px #6a4dffaa);
+    animation:rise 1.1s cubic-bezier(.2,.8,.2,1) both, glow 2.4s ease-in-out .9s infinite}
+  @keyframes rise{0%{opacity:0;transform:scale(.7) translateY(14px)}100%{opacity:1;transform:scale(1) translateY(0)}}
+  @keyframes glow{0%,100%{filter:drop-shadow(0 0 18px #6a4dff88)}50%{filter:drop-shadow(0 0 34px #5cd0ffcc)}}
+  .word{font-size:34px;font-weight:700;letter-spacing:.14em;opacity:0;animation:fadein .7s ease .55s both}
+  .word b{background:linear-gradient(90deg,#5cd0ff,#9a5bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{font-size:12.5px;letter-spacing:.22em;text-transform:uppercase;color:#8a90c0;opacity:0;animation:fadein .7s ease .85s both}
+  @keyframes fadein{to{opacity:1}}
+  .bar{position:fixed;bottom:64px;width:200px;height:3px;border-radius:3px;background:#ffffff14;overflow:hidden;opacity:0;animation:fadein .5s ease 1.1s both}
+  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#5cd0ff,#6a4dff);animation:load 1.9s ease .9s forwards}
+  @keyframes load{to{width:100%}}
+  body.out{animation:bye .35s ease forwards}
+  @keyframes bye{to{opacity:0}}
+</style></head>
+<body>
+  <img class="logo" src="assets/brand/gose-core-mark.png" alt="">
+  <div class="word"><b>GOSE</b></div>
+  <div class="sub">Game Operating System Emulator</div>
+  <div class="bar"><i></i></div>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  // animate, then hand off to the desktop
+  setTimeout(function(){ document.body.classList.add("out"); }, 3000);
+  setTimeout(function(){ location.href="gose-home.html"; }, 3350);
+</script>
+</body></html>

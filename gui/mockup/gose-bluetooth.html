@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Bluetooth</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 6px}
+  .top img{width:30px;height:30px}.top h1{font-size:19px;margin:0}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .bar{display:flex;align-items:center;gap:12px;padding:8px 36px}
+  .pwr{display:flex;align-items:center;gap:12px;background:var(--surface);border:2px solid transparent;
+    border-radius:12px;padding:12px 16px;flex:1;cursor:pointer}
+  .pwr.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .pwr .ic{font-size:20px;color:var(--accent)}
+  .pwr .nm{font-weight:700}.pwr .sub{color:var(--muted);font-size:12px}
+  .tog{margin-left:auto;width:46px;height:26px;border-radius:14px;background:#3a3e4c;position:relative;transition:background .15s}
+  .tog.on{background:var(--accent)}.tog>i{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s}
+  .tog.on>i{left:23px}
+  .scan{display:flex;align-items:center;gap:8px;background:var(--surface);border:2px solid transparent;color:var(--text);
+    border-radius:12px;padding:12px 18px;font-weight:600;font-size:14px;cursor:pointer;white-space:nowrap}
+  .scan.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .scan.busy{opacity:.6}
+  .wrap{flex:1;margin:10px 36px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:auto;min-height:0}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:12px 16px 4px}
+  .dev{display:flex;align-items:center;gap:13px;padding:11px 16px;border:2px solid transparent;cursor:pointer}
+  .dev.focus{border-color:var(--accent);background:#5cd0ff14}
+  .dev .ic{font-size:19px;color:#9fb8e8;flex:none}
+  .dev .nm{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dev .st{color:var(--muted);font-size:12px}.dev .st.cn{color:#3fe0a0}
+  .empty{color:var(--muted);padding:34px;text-align:center}
+  .foot{margin:10px 36px 14px;display:flex;gap:10px;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <h1>Bluetooth</h1>
+    <div class="home"><span class="ic" data-i="bluetooth"></span> B / Esc — back to Settings</div>
+  </div>
+  <div class="bar">
+    <div class="pwr" id="pwr"><span class="ic" data-i="bluetooth"></span>
+      <div><div class="nm">Bluetooth</div><div class="sub" id="pwr-sub">…</div></div>
+      <div class="tog" id="tog"><i></i></div></div>
+    <div class="scan" id="scan"><span class="ic" data-i="search"></span><span id="scan-t">Scan</span></div>
+  </div>
+  <div class="wrap" id="wrap"><div class="empty">Loading…</div></div>
+  <div class="foot"><span class="ic" data-i="bluetooth"></span> Pair controllers, headsets &amp; accessories
+    <span class="h"><b>↑↓</b> move · <b>Enter/A</b> connect/pair · <b>X</b> forget · <b>Esc</b> back</span></div>
+  <div class="toast" id="toast"></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  const GICON={audio:"volume-2",input:"gamepad-2",other:"bluetooth"};
+  let state={adapter:false,powered:false,devices:[]}, foc=0, busy=false;
+  // focus model: index 0 = power toggle, 1 = scan, 2.. = devices
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1900);}
+  function nItems(){return 2+state.devices.length;}
+  function render(){
+    $("tog").className="tog"+(state.powered?" on":"");
+    $("pwr-sub").textContent = !state.adapter ? "No adapter on this device" : (state.powered?"On — discoverable":"Off");
+    $("pwr").className="pwr"+(foc===0?" focus":"");
+    $("scan").className="scan"+(foc===1?" focus":"")+(busy?" busy":"");
+    $("scan-t").textContent=busy?"Scanning…":"Scan";
+    if(!state.adapter){
+      $("wrap").innerHTML='<div class="empty">No Bluetooth adapter detected.<br><span style="font-size:12px">This VM has no Bluetooth radio — pairing will work on the Odin 2 / real hardware. The controls above are live and ready.</span></div>';
+      paint(); return;
+    }
+    const ds=state.devices;
+    $("wrap").innerHTML='<div class="ph">DEVICES</div>'+(ds.length?ds.map((d,i)=>{
+      const st=d.connected?'<span class="st cn">Connected</span>':(d.paired?'<span class="st">Paired</span>':'<span class="st">Available</span>');
+      return `<div class="dev ${foc===i+2?'focus':''}" data-i2="${i+2}"><span class="ic" data-i="${GICON[d.kind]||'bluetooth'}"></span>
+        <span class="nm">${d.name}</span>${st}</div>`;
+    }).join(""):'<div class="empty">No devices yet — press Scan with a controller/headset in pairing mode.</div>');
+    [...$("wrap").querySelectorAll(".dev")].forEach(el=>{el.onclick=()=>{foc=+el.dataset.i2;render();act();};});
+    $("pwr").onclick=()=>{foc=0;render();togglePwr();};
+    $("scan").onclick=()=>{foc=1;render();scan();};
+    const f=$("wrap").querySelector(".dev.focus"); if(f)f.scrollIntoView({block:"nearest"});
+    paint();
+  }
+  function load(){fetch("/bt/status",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    if(d&&d.ok){state=d;} render();
+  }).catch(e=>say("Bluetooth offline"));}
+  function post(body,after){busy=true;render();
+    fetch("/bt",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+      .then(r=>r.json()).then(d=>{busy=false;if(d&&d.ok&&d.devices!==undefined){state=d;}render();after&&after(d);})
+      .catch(e=>{busy=false;render();say("Action failed");});}
+  function togglePwr(){if(!state.adapter){say("No Bluetooth adapter");return;}
+    post({action:"power",on:!state.powered},()=>say("Bluetooth "+(state.powered?"on":"off")));}
+  function scan(){if(!state.adapter){say("No Bluetooth adapter");return;}
+    if(!state.powered){say("Turn Bluetooth on first");return;}
+    say("Scanning for 8s…");post({action:"scan"},()=>say("Scan complete"));}
+  function act(){const d=state.devices[foc-2];if(!d)return;
+    if(d.connected)post({action:"disconnect",mac:d.mac},()=>say("Disconnected "+d.name));
+    else if(d.paired)post({action:"connect",mac:d.mac},()=>say("Connecting "+d.name+"…"));
+    else post({action:"pair",mac:d.mac},()=>say("Pairing "+d.name+"…"));}
+  function forget(){const d=state.devices[foc-2];if(!d)return;post({action:"remove",mac:d.mac},()=>say("Forgot "+d.name));}
+  function move(n){foc=(foc+n+nItems())%nItems();render();}
+  function activate(){if(foc===0)togglePwr();else if(foc===1)scan();else act();}
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
+    else if(k==="Enter"||k===" ")activate();
+    else if(k==="x"||k==="X"||k==="GoseR2"||k==="Delete")forget();
+    else if(k==="Escape"||k==="Backspace")location.href="gose-settings.html#net";
+    else return;e.preventDefault();});
+  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const t=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(t(13))move(1);if(t(12))move(-1);if(t(0))activate();if(t(2))forget();
+      if(t(1))location.href="gose-settings.html#net";
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  paint();load();
+</script>
+</body></html>

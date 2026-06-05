@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — AI Players</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 4px}
+  .top img{width:32px;height:32px}.top h1{font-size:20px;margin:0}.top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .wrap{flex:1;overflow:auto;padding:14px 36px;display:grid;grid-template-columns:repeat(2,1fr);gap:16px;align-content:start}
+  .card{background:var(--surface);border:2px solid transparent;border-radius:16px;padding:18px 20px}
+  .card.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .card .row1{display:flex;align-items:center;gap:14px}
+  .av{width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#06121a;flex:none}
+  .card .nm{font-size:18px;font-weight:700}
+  .card .st{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:3px}
+  .card .st .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .card .role{margin-left:auto;font-size:11px;font-weight:700;color:var(--accent);background:#5cd0ff1c;border:1px solid var(--line);border-radius:9px;padding:3px 9px}
+  .card .sub{color:var(--muted);font-size:13px;line-height:1.5;margin:12px 0 14px}
+  .acts{display:flex;gap:10px;flex-wrap:wrap}
+  .acts button{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:8px 14px;font-weight:600;font-size:13px;cursor:pointer}
+  .acts button:hover{border-color:var(--accent)} .acts .primary{background:var(--accent);color:#06121a;border:none}
+  .acts button[disabled]{opacity:.4}
+  .foot{margin:8px 36px 16px;display:flex;gap:10px;color:var(--muted);font-size:13px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <div><h1>AI Players</h1><div class="s">Your family of players — join a game solo, together, or hand them control</div></div>
+    <div class="home"><span class="ic" data-i="sparkles"></span> Esc — desktop</div>
+  </div>
+  <div id="banner" style="margin:8px 36px 0;background:var(--surface2);border:1px solid var(--accent);border-radius:11px;padding:10px 16px;font-size:13px;color:#cdd2ea">
+    <span id="banner-txt"><b style="color:var(--accent)">AI Players</b> — an AI can watch this screen live and drive the device. Connect over MCP and you'll see them appear here.</span>
+  </div>
+  <div class="wrap" id="wrap"></div>
+  <div class="foot"><span class="ic" data-i="sparkles"></span> AI Players · connect over MCP / SSH / Console
+    <span class="h"><b>↑↓←→</b> move · <b>Enter</b> select · <b>Esc</b> desktop</span></div>
+  <div class="toast" id="toast"></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  const PLAYERS=[
+    {nm:"Zeke", k:null,  acc:"#ffce5c", on:true,  role:"Owner", sub:"You — host of this device.", mode:null},
+    {nm:"Wren", k:"Wren",acc:"#5cd0ff", on:false, role:"AI",    sub:"Reachable over MCP — can watch the live feed and drive the device.", mode:null},
+    {nm:"Ava",  k:"Ava", acc:"#7d8cff", on:false, role:"AI",    sub:"Voice + MCP capable. Joins as a player when connected.", mode:null},
+    {nm:"Iris", k:"Iris",acc:"#37d39b", on:false, role:"AI",    sub:"Sister session on the tower — joins when reachable.", mode:null},
+  ];
+  let foc=0;
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1900);}
+  function stText(p){ if(!p.on) return "Not connected";
+    return "Online · "+(p.mode==="playing"?"playing":p.mode==="controlling"?"in control":"watching"); }
+  function render(){
+    $("wrap").innerHTML=PLAYERS.map((p,i)=>`<div class="card ${i===foc?'focus':''}" data-i2="${i}">
+      <div class="row1"><div class="av" style="background:${p.acc}">${p.nm[0]}</div>
+        <div><div class="nm">${p.nm}</div><div class="st"><span class="dot" style="background:${p.on?'#3fe0a0':'#3a3e4c'}"></span>${stText(p)}</div></div>
+        <div class="role">${p.role}</div></div>
+      <div class="sub">${p.sub}</div>
+      <div class="acts">${p.on
+        ? '<span style="font-size:12px;font-weight:700;color:#3fe0a0;background:#3fe0a01c;border:1px solid var(--line);border-radius:9px;padding:5px 11px">● Live · '+(p.mode==="playing"?"playing":"watching the screen")+'</span>'
+        : (p.role==="Owner" ? '' : '<span style="font-size:12px;font-weight:700;color:var(--muted);background:#ffffff10;border:1px solid var(--line);border-radius:9px;padding:5px 11px">Offline — connect over MCP to join</span>')}</div></div>`).join("");
+    [...$("wrap").querySelectorAll(".card")].forEach(el=>el.onclick=()=>{foc=+el.dataset.i2;render();});
+    paint();
+  }
+  function poll(){fetch("/ai/players",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    const live=(d&&d.players)||[];
+    PLAYERS.forEach(p=>{ if(!p.k)return; const m=live.find(x=>x.name===p.k);
+      p.on=!!(m&&m.online); p.mode=m?m.mode:null; });
+    const onAis=PLAYERS.filter(p=>p.k&&p.on);
+    $("banner-txt").innerHTML = onAis.length
+      ? '<b style="color:#3fe0a0">● Live</b> — '+onAis.map(p=>p.nm+" is "+(p.mode==="playing"?"playing":"watching")).join(", ")+" on this device."
+      : '<b style="color:var(--accent)">AI Players</b> — an AI can watch this screen live and drive the device. They appear here once connected over MCP.';
+    render();
+  }).catch(()=>{});}
+  function move(d){foc=(foc+d+PLAYERS.length)%PLAYERS.length;render();}
+  function activate(){const p=PLAYERS[foc];
+    if(p.on)say(p.nm+" is live — "+(p.mode==="playing"?"playing":"watching the screen"));
+    else if(p.role==="Owner")say("That's you — the owner.");
+    else say(p.nm+" — offline. Connect over MCP to join as a player.");}
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="ArrowRight")move(1);else if(k==="ArrowLeft")move(-1);
+    else if(k==="ArrowDown")move(2);else if(k==="ArrowUp")move(-2);
+    else if(k==="Enter"||k===" ")activate();
+    else if(k==="Escape")location.href="gose-home.html";
+    else return;e.preventDefault();});
+  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const t=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(t(15))move(1);if(t(14))move(-1);if(t(13))move(2);if(t(12))move(-2);
+      if(t(0))activate();if(t(1))location.href="gose-home.html";
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  paint();render();poll();setInterval(poll,5000);
+</script>
+</body></html>

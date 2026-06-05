@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="GOSE Core">
+  <defs>
+    <radialGradient id="halo" cx="0.5" cy="0.46" r="0.55">
+      <stop offset="0" stop-color="#6a4dff" stop-opacity="0.55"/><stop offset="1" stop-color="#6a4dff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="0.4" stop-color="#9fe6ff"/><stop offset="1" stop-color="#7fc8ff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="3.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="-90%" y="-90%" width="280%" height="280%"><feGaussianBlur stdDeviation="8"/></filter>
+  </defs>
+
+  <ellipse cx="128" cy="118" rx="96" ry="116" fill="url(#halo)"/>
+
+  <!-- holographic base ring -->
+  <g stroke="#5fd0ff" fill="none">
+    <ellipse cx="128" cy="232" rx="60" ry="13" stroke-width="1.5" opacity="0.55"/>
+    <ellipse cx="128" cy="232" rx="38" ry="8" stroke-width="1" opacity="0.45"/>
+    <ellipse cx="128" cy="232" rx="82" ry="18" stroke-width="0.75" opacity="0.3" stroke-dasharray="2 7"/>
+  </g>
+  <ellipse cx="128" cy="232" rx="20" ry="4" fill="#7fe0ff" opacity="0.55" filter="url(#soft)"/>
+
+  <!-- the Core crystal: 8 tonal facets fanning from a bright central spine -->
+  <g filter="url(#glow)">
+    <!-- right side (blue), top→bottom -->
+    <polygon points="128,30 164,82 128,130" fill="#6fb2ff"/>
+    <polygon points="164,82 198,130 128,130" fill="#3f86f5"/>
+    <polygon points="198,130 160,182 128,130" fill="#2a5fcf"/>
+    <polygon points="160,182 128,226 128,130" fill="#1d3c98"/>
+    <!-- left side (purple), top→bottom -->
+    <polygon points="128,30 128,130 92,82" fill="#c79dff"/>
+    <polygon points="92,82 128,130 58,130" fill="#9a63f0"/>
+    <polygon points="58,130 128,130 96,182" fill="#6a3ad0"/>
+    <polygon points="96,182 128,130 128,226" fill="#4a2596"/>
+    <!-- bright central spine lens -->
+    <polygon points="128,30 120,130 128,226 136,130" fill="#dcecff" opacity="0.45"/>
+    <!-- facet seams -->
+    <g stroke="#8fd0ff" stroke-width="0.9" opacity="0.45">
+      <line x1="128" y1="130" x2="164" y2="82"/><line x1="128" y1="130" x2="198" y2="130"/>
+      <line x1="128" y1="130" x2="160" y2="182"/><line x1="128" y1="130" x2="92" y2="82"/>
+      <line x1="128" y1="130" x2="58" y2="130"/><line x1="128" y1="130" x2="96" y2="182"/>
+    </g>
+    <!-- silhouette + spine glowing edges -->
+    <polygon points="128,30 164,82 198,130 160,182 128,226 96,182 58,130 92,82"
+             fill="none" stroke="#a6e8ff" stroke-width="2.4" stroke-linejoin="round"/>
+    <line x1="128" y1="30" x2="128" y2="226" stroke="#e8f6ff" stroke-width="1.1" opacity="0.85"/>
+  </g>
+
+  <!-- bright energy core + plus -->
+  <circle cx="128" cy="128" r="27" fill="url(#core)"/>
+  <g stroke="#ffffff" stroke-width="3.4" stroke-linecap="round" filter="url(#glow)">
+    <line x1="128" y1="117" x2="128" y2="139"/><line x1="117" y1="128" x2="139" y2="128"/>
+  </g>
+
+  <!-- floating particles -->
+  <g fill="#aee9ff">
+    <circle cx="200" cy="62" r="2.2" opacity="0.9"/><circle cx="210" cy="88" r="1.4" opacity="0.65"/>
+    <circle cx="190" cy="42" r="1.2" opacity="0.6"/><circle cx="54" cy="156" r="1.8" opacity="0.7"/>
+    <circle cx="46" cy="96" r="1.3" opacity="0.5"/><circle cx="206" cy="160" r="1.5" opacity="0.6"/>
+    <circle cx="70" cy="56" r="1.2" opacity="0.5"/>
+  </g>
+</svg>

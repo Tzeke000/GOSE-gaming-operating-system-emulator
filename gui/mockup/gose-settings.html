@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Settings</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:14px;padding:20px 40px 8px}
+  .lg{width:40px;height:40px;object-fit:contain;filter:drop-shadow(0 0 8px #9a5bff55)}
+  .top h1{font-size:21px;margin:0}.top .s{color:var(--muted);font-size:12px}
+  .home{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--surface);
+    border:1px solid var(--line);border-radius:11px;padding:8px 14px;font-size:13px;color:var(--muted)}
+  .wrap{flex:1;display:flex;gap:18px;padding:8px 40px 0;min-height:0}
+  .rail{width:230px;flex:none;display:flex;flex-direction:column;gap:6px;padding-top:6px}
+  .cat{display:flex;align-items:center;gap:12px;height:46px;padding:0 14px;border-radius:11px;
+    border:2px solid transparent;color:var(--muted);cursor:pointer}
+  .cat .ic{font-size:20px}.cat .nm{font-weight:600;font-size:14px}
+  .cat.on{background:var(--surface2);color:var(--text)}
+  .cat.on .ic{color:var(--accent)}
+  .cat.kf{border-color:var(--accent)!important;box-shadow:var(--focusglow)}
+  .pane{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);
+    border-radius:14px;padding:10px 12px;overflow:auto}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:10px 10px 6px}
+  .set{display:flex;align-items:center;gap:14px;min-height:54px;padding:8px 14px;border-radius:11px;
+    border:2px solid transparent;cursor:pointer}
+  .set .ic{font-size:20px;color:#b8becc;flex:none}
+  .set .lbl{min-width:0}.set .nm{font-weight:600}.set .sub{color:var(--muted);font-size:12px}
+  .set .val{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--accent);
+    font-weight:600;font-size:14px;white-space:nowrap}
+  .set .val .cy{color:var(--muted);font-size:13px}
+  .set .off{color:var(--muted)}
+  .set.focus{border-color:var(--accent);background:#5cd0ff14;box-shadow:var(--focusglow)}
+  .set.focus .ic,.set.focus .nm{color:var(--accent)}
+  .agts{display:flex;gap:6px}
+  .agts b{display:inline-flex;align-items:center;gap:5px;background:var(--surface2);
+    border:1px solid var(--line);border-radius:10px;padding:2px 8px;font-size:12px;font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .foot{margin:10px 40px 16px;display:flex;align-items:center;gap:10px;color:var(--muted);
+    font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:8px 16px;font-size:13px;opacity:0;
+    transition:opacity .25s;pointer-events:none}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="top"><img class="lg" src="assets/brand/gose-core-mark.png" alt="GOSE Core">
+    <div><h1>Settings</h1><div class="s">GOSE · personalize, sound, network, time, power, privacy, accounts &amp; more</div></div>
+    <div class="home"><span class="ic" data-i="layout-grid"></span><span>B / Esc — back to desktop</span></div>
+  </div>
+  <div class="wrap">
+    <div class="rail" id="rail"></div>
+    <div class="pane" id="pane"></div>
+  </div>
+  <div class="foot"><span class="ic" data-i="settings"></span> GOSE Settings
+    <span class="h"><b>↑↓</b> move · <b>→</b> enter · <b>←</b> back to list · <b>Esc</b> desktop</span></div>
+  <div class="toast" id="toast"></div>
+<script src="assets/platform.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const THEMES=["onyx","midnight","neon","aurora"];
+  // wallpapers — gradients so no asset files needed; the desktop reads the same map
+  const WALLS=[
+    ["Aurora (default)","radial-gradient(120% 90% at 50% -10%, #1a1f3a 0%, #0c0c1e 55%, #07070f 100%)"],
+    ["Deep Space","radial-gradient(120% 90% at 70% 0%, #161033 0%, #0a0a18 60%, #050509 100%)"],
+    ["Twilight","linear-gradient(160deg, #241634 0%, #131127 50%, #0a0a16 100%)"],
+    ["Carbon","linear-gradient(160deg, #1c1c22 0%, #121216 60%, #0a0a0c 100%)"],
+    ["Sunset","linear-gradient(165deg, #2a1730 0%, #1a1330 45%, #0c0c1e 100%)"],
+    ["Forest","linear-gradient(160deg, #122318 0%, #0d1820 55%, #080c10 100%)"],
+  ];
+  // time zones — display label -> IANA id (drives the real desktop clock)
+  const TZONES=[
+    ["Eastern — New York","America/New_York"],["Central — Chicago","America/Chicago"],
+    ["Mountain — Denver","America/Denver"],["Pacific — Los Angeles","America/Los_Angeles"],
+    ["UTC","UTC"],["London — GMT","Europe/London"],["Helsinki — EET","Europe/Helsinki"],
+    ["Tokyo — JST","Asia/Tokyo"],
+  ];
+  const CATS=[
+    {id:"personalize", ic:"palette", nm:"Personalization", rows:[
+      {ic:"monitor", nm:"Wallpaper", sub:"Desktop background — applies to the GOSE home", t:"cycle", v:WALLS.map(w=>w[0]), apply:"wp"},
+      {ic:"sparkles", nm:"Live wallpaper", sub:"Animated background — overrides the static wallpaper when on", t:"cycle", v:["Off","Aurora","Starfield","Particles","Nebula"], apply:"live"},
+      {ic:"palette", nm:"Theme & accent", sub:"Color scheme, applied live across the whole UI", t:"theme", v:["Onyx","Midnight","Neon","Aurora"]},
+      {ic:"sparkles", nm:"Core glow", sub:"Glow around the GOSE Core centerpiece", t:"cycle", v:["Soft","Bright","Off"]},
+      {ic:"moon", nm:"Appearance", sub:"GOSE is dark-first; light mode is experimental", t:"cycle", v:["Dark","Light (beta)"]},
+    ]},
+    {id:"display", ic:"monitor", nm:"Display", rows:[
+      {ic:"monitor", nm:"Mode", sub:"PC desktop, or Odin 2 handheld-console feel (VM default: PC)", t:"cycle", v:["PC desktop","Console (handheld)"]},
+      {ic:"monitor", nm:"Resolution", sub:"Internal panel / VM window", t:"cycle", v:["1280 x 720","1920 x 1080","1280 x 800"], i:1},
+      {ic:"smartphone", nm:"Output", sub:"Where the picture goes", t:"cycle", v:["Auto","Internal","HDMI (dock)"]},
+      {ic:"sun", nm:"VSync", sub:"Tear-free at a small latency cost", t:"cycle", v:["On","Off"]},
+      {ic:"sun", nm:"Brightness", sub:"Panel backlight (handheld only)", t:"cycle", v:["40%","60%","80%","100%"], i:2},
+    ]},
+    {id:"sound", ic:"volume-2", nm:"Sound", rows:[
+      {ic:"volume-2", nm:"Output device", sub:"Where audio plays", t:"cycle", v:["Auto","Speakers","HDMI","Headphones","Bluetooth"]},
+      {ic:"volume-2", nm:"Master volume", sub:"System-wide level", t:"cycle", v:["25%","50%","75%","100%"], i:2},
+      {ic:"bluetooth", nm:"Bluetooth audio", sub:"Pair wireless headphones / earbuds", t:"cycle", v:["On","Off"]},
+      {ic:"bell", nm:"UI sounds", sub:"Clicks and navigation feedback", t:"cycle", v:["On","Off"], apply:"sounds"},
+    ]},
+    {id:"net", ic:"wifi", nm:"Network", rows:[
+      {ic:"globe", nm:"Connection", sub:"Active network (live, via connman)", t:"info", val:"—", live:"net"},
+      {ic:"wifi", nm:"Wi-Fi", sub:"Scan & join your laptop's networks", t:"link", go:"gose-wifi.html"},
+      {ic:"bluetooth", nm:"Bluetooth", sub:"Pair controllers, headsets & accessories", t:"link", go:"gose-bluetooth.html"},
+      {ic:"globe", nm:"Hostname", sub:"How the device is named on the network", t:"info", val:"gose"},
+      {ic:"usb", nm:"SSH access", sub:"Console + file push over the network", t:"cycle", v:["Enabled","Disabled"]},
+    ]},
+    {id:"input", ic:"gamepad-2", nm:"Input", rows:[
+      {ic:"gamepad-2", nm:"Default input mode", sub:"PC default is Keyboard; device is Native", t:"cycle", v:["Keyboard","Controller","Native"]},
+      {ic:"target", nm:"Controller layout & remap", sub:"Pick your controller and remap buttons", t:"link", go:"gose-remap.html"},
+      {ic:"mouse", nm:"Stick deadzone", sub:"Ignore tiny stick drift", t:"cycle", v:["Low","Medium","High"], i:1},
+      {ic:"keyboard", nm:"On-screen keyboard", sub:"For Wi-Fi passwords / search", t:"cycle", v:["On","Off"]},
+    ]},
+    {id:"time", ic:"clock", nm:"Time & Language", rows:[
+      {ic:"globe", nm:"Set time zone automatically", sub:"From your location when online; else keep the last zone", t:"cycle", v:["On","Off"]},
+      {ic:"clock", nm:"Time zone", sub:"Used by the desktop clock", t:"cycle", v:TZONES.map(z=>z[0]), apply:"tz"},
+      {ic:"clock", nm:"Time format", sub:"How the clock reads", t:"cycle", v:["12-hour","24-hour"], apply:"clockfmt"},
+      {ic:"globe", nm:"Region & language", sub:"Formats and on-screen language", t:"cycle", v:["English (US)","English (UK)","Suomi","日本語"]},
+    ]},
+    {id:"power", ic:"battery", nm:"Power & Battery", rows:[
+      {ic:"battery", nm:"Battery", sub:"Live from the host laptop (hidden on a desktop PC)", t:"info", val:"—", live:"bat"},
+      {ic:"power", nm:"Power mode", sub:"Trade performance vs battery life", t:"cycle", v:["Balanced","Performance","Battery saver"]},
+      {ic:"clock", nm:"Sleep after", sub:"Idle time before the screen sleeps", t:"cycle", v:["Never","5 min","10 min","30 min"], i:2},
+      {ic:"sun", nm:"Dim on battery", sub:"Lower brightness when unplugged", t:"cycle", v:["On","Off"]},
+    ]},
+    {id:"privacy", ic:"shield", nm:"Privacy & Security", rows:[
+      {ic:"shield", nm:"Require approval to join", sub:"Ask you before an agent takes control", t:"cycle", v:["On","Off"]},
+      {ic:"lock", nm:"Lock on idle", sub:"Require unlock after sleep", t:"cycle", v:["On","Off"]},
+      {ic:"monitor", nm:"Allow screen capture", sub:"Let agents see the screen to assist", t:"cycle", v:["Ask","Always","Never"]},
+      {ic:"sparkles", nm:"Usage diagnostics", sub:"Anonymous data to improve GOSE", t:"cycle", v:["On","Off"], i:1},
+      {ic:"hard-drive", nm:"Clear local data", sub:"Saves, cache, pairing tokens", t:"action", val:"clear", act:"Local data cleared (demo)"},
+    ]},
+    {id:"accounts", ic:"users", nm:"Accounts", rows:[
+      {ic:"user", nm:"You", sub:"Primary account on this device", t:"info", val:"Zeke"},
+      {ic:"sparkles", nm:"AI players", sub:"Wren, Ava, Iris — manage in the AI Hub", t:"agents"},
+      {ic:"users", nm:"Add account", sub:"A person or an AI can have their own account", t:"action", val:"add", act:"Opens first-time account setup (OOBE)"},
+      {ic:"lock", nm:"Sign-in", sub:"How accounts unlock this device", t:"cycle", v:["None","PIN","Password"]},
+    ]},
+    {id:"ai", ic:"sparkles", nm:"AI & Remote", rows:[
+      {ic:"plug-zap", nm:"Remote agent control", sub:"Let agents drive this device over the network", t:"cycle", v:["Enabled","Disabled"]},
+      {ic:"users", nm:"Allowed agents", sub:"Who may join your session", t:"agents"},
+      {ic:"shield", nm:"Require approval to join", sub:"Ask you before an agent takes control", t:"cycle", v:["On","Off"]},
+      {ic:"lock", nm:"Pairing token", sub:"Secret agents present to connect", t:"action", val:"reveal", act:"Pairing token shown (demo)"},
+      {ic:"volume-2", nm:"Voice", sub:"Agents may speak / listen in-session", t:"cycle", v:["On","Off"]},
+    ]},
+    {id:"about", ic:"info", nm:"About", rows:[
+      {ic:"info", nm:"GOSE", sub:"Gaming Operating System Emulator", t:"info", val:"v0.4 (dev)"},
+      {ic:"hard-drive", nm:"Base", sub:"Linux platform under the GOSE shell", t:"info", val:"Batocera 43.1 (x86_64)"},
+      {ic:"monitor", nm:"Graphics", sub:"How the picture is rendered", t:"info", val:"virtio-vga-gl · host GPU (virgl)"},
+      {ic:"cpu", nm:"Processor", sub:"Cores allocated to the VM", t:"info", val:"—", live:"cpu"},
+      {ic:"cpu", nm:"Memory", sub:"RAM in use", t:"info", val:"—", live:"mem"},
+    ]},
+  ];
+  const AGENTS=[{n:"Wren",c:"var(--accent)",on:true},{n:"Ava",c:"var(--accent)",on:true},{n:"Iris",c:"#3a3e4c",on:false}];
+
+  const rail=document.getElementById("rail"), pane=document.getElementById("pane"), toast=document.getElementById("toast");
+  let cat=0, foc=0, zone="rail";   // two-pane: zone is "rail" (categories) or "pane" (settings)
+  const _ci=CATS.findIndex(c=>c.id===(location.hash||"").replace("#",""));
+  if(_ci>=0){ cat=_ci; zone="pane"; }   // deep-linked → land in the pane
+
+  function buildRail(){
+    rail.innerHTML="";
+    CATS.forEach((c,ci)=>{
+      const el=document.createElement("div");
+      el.className="cat"+(ci===cat?" on":"")+(ci===cat&&zone==="rail"?" kf":"");
+      el.innerHTML=`<span class="ic" data-i="${c.ic}"></span><span class="nm">${c.nm}</span>`;
+      el.onclick=()=>{cat=ci;foc=0;zone="pane";render();};
+      rail.appendChild(el);
+    });
+  }
+  function valHtml(r){
+    if(r.t==="info") return `<span class="val">${r.val}</span>`;
+    if(r.t==="link") return `<span class="val">Open <span class="ic" data-i="chevron-right"></span></span>`;
+    if(r.t==="action") return `<span class="val">${r.val} <span class="ic" data-i="chevron-right"></span></span>`;
+    if(r.t==="agents") return `<span class="val agts">`+AGENTS.map(a=>
+      `<b><span class="dot" style="background:${a.c}"></span>${a.n}${a.on?"":" <span class='off'>(off)</span>"}</b>`).join("")+`</span>`;
+    const i=r.i||0, cur=r.v[i];
+    const isOff=/^(off|disabled)$/i.test(cur);
+    return `<span class="val"><span class="cy ic" data-i="chevron-left"></span>`+
+      `<span class="${isOff?"off":""}">${cur}</span><span class="cy ic" data-i="chevron-right"></span></span>`;
+  }
+  function buildPane(){
+    const c=CATS[cat];
+    pane.innerHTML=`<div class="ph">${c.nm.toUpperCase()}</div>`;
+    c.rows.forEach((r,ri)=>{
+      const el=document.createElement("div");
+      el.className="set"+(ri===foc&&zone==="pane"?" focus":"");
+      el.innerHTML=`<span class="ic" data-i="${r.ic}"></span>`+
+        `<div class="lbl"><div class="nm">${r.nm}</div><div class="sub">${r.sub}</div></div>`+valHtml(r);
+      el.onclick=()=>{foc=ri;zone="pane";render();change();};
+      pane.appendChild(el);
+    });
+  }
+  function paintIcons(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function render(){buildRail();buildPane();paintIcons();}
+  function showToast(m){toast.textContent=m;toast.classList.add("show");clearTimeout(showToast._t);
+    showToast._t=setTimeout(()=>toast.classList.remove("show"),1600);}
+  function change(dir){
+    const r=CATS[cat].rows[foc];
+    if(r.t==="cycle"){r.i=((r.i||0)+(dir||1)+r.v.length)%r.v.length;buildPane();paintIcons();
+      if(r.apply)applyRow(r); else showToast(r.nm+": "+r.v[r.i]);}
+    else if(r.t==="theme"){r.i=((r.i||0)+(dir||1)+r.v.length)%r.v.length;
+      const t=THEMES[r.i];document.documentElement.dataset.theme=t;localStorage.setItem("gose-theme",t);
+      buildPane();paintIcons();showToast("Theme: "+r.v[r.i]);}
+    else if(r.t==="link"){location.href=r.go;}
+    else if(r.t==="agents"){showToast("Manage who can join (demo)");}
+    else if(r.t==="action"){showToast(r.act||"OK");}
+    else if(r.t==="info"){showToast(r.nm+": "+r.val);}
+  }
+  // wallpaper / timezone / clock-format actually persist + apply (desktop reads these)
+  function applyRow(r){
+    if(r.apply==="wp"){const i=r.i||0;localStorage.setItem("gose-wp",i);
+      document.body.style.background=WALLS[i][1];document.body.style.backgroundAttachment="fixed";
+      showToast("Wallpaper: "+WALLS[i][0]+" — applied to desktop");}
+    else if(r.apply==="tz"){const i=r.i||0;localStorage.setItem("gose-tz",TZONES[i][1]);
+      showToast("Time zone: "+TZONES[i][0]);}
+    else if(r.apply==="clockfmt"){const f=(r.i===1)?"24":"12";localStorage.setItem("gose-clockfmt",f);
+      showToast("Clock: "+(f==="24"?"24-hour":"12-hour"));}
+    else if(r.apply==="live"){const names=["off","aurora","starfield","particles","nebula"];
+      localStorage.setItem("gose-live",names[r.i||0]);showToast("Live wallpaper: "+r.v[r.i]);}
+    else if(r.apply==="sounds"){const off=(r.i===1);localStorage.setItem("gose-sounds",off?"off":"on");
+      showToast("UI sounds: "+(off?"Off":"On"));if(!off&&window.GOSE&&GOSE.sound)GOSE.sound("select");}
+  }
+  function findRow(tag,key){for(const c of CATS)for(const r of c.rows)if(r[key]===tag)return r;return null;}
+  (function initPersist(){
+    const wp=parseInt(localStorage.getItem("gose-wp")||"0",10), wi=isNaN(wp)?0:wp;
+    const rw=findRow("wp","apply"); if(rw)rw.i=wi;
+    document.body.style.background=WALLS[wi][1]; document.body.style.backgroundAttachment="fixed";
+    const tz=localStorage.getItem("gose-tz"), rt=findRow("tz","apply");
+    if(rt&&tz){const k=TZONES.findIndex(z=>z[1]===tz); if(k>=0)rt.i=k;}
+    const rc=findRow("clockfmt","apply"); if(rc)rc.i=(localStorage.getItem("gose-clockfmt")==="24")?1:0;
+    const rl=findRow("live","apply"); const lv=["off","aurora","starfield","particles","nebula"].indexOf(localStorage.getItem("gose-live"));
+    if(rl&&lv>=0)rl.i=lv;
+    const rsnd=findRow("sounds","apply"); if(rsnd)rsnd.i=(localStorage.getItem("gose-sounds")==="off")?1:0;
+  })();
+  // live readouts in Network / Power / About, pulled from the same /status.json the desktop uses
+  function setLive(tag,val){let chg=false;
+    for(const c of CATS)for(const r of c.rows)if(r.live===tag&&r.val!==val){r.val=val;chg=true;}
+    if(chg&&CATS[cat].rows.some(r=>r.live===tag)){buildPane();paintIcons();}}
+  async function pollLive(){
+    try{const d=await(await fetch("/status.json",{cache:"no-store"})).json();
+      try{const n=await(await fetch("/net.json",{cache:"no-store"})).json();
+        setLive("net", n.connection?(n.connection+(n.online?" — online":" — connected")):(d.online?"Connected":"No internet"));
+        setLive("wifi", n.has_wifi?"Adapter present — open to scan":"No Wi-Fi adapter (wired via host)");
+      }catch(e){ setLive("net", d.online?"Connected":"No internet"); }
+      setLive("bat", d.has_battery?(d.battery_pct+"%"+(d.charging?" · charging":" · on battery")):"No battery (desktop PC)");
+      setLive("cpu", d.ok?(d.cpu_pct+"% load"):"—");
+      setLive("mem", d.ok?(d.mem_used_gb+" / "+d.mem_total_gb+" GB ("+d.mem_pct+"%)"):"—");
+    }catch(e){}
+  }
+  pollLive(); setInterval(pollLive, 3000);
+  function moveCat(d){cat=(cat+d+CATS.length)%CATS.length;foc=0;render();}
+  function moveFoc(d){const n=CATS[cat].rows.length;foc=(foc+d+n)%n;buildPane();paintIcons();
+    const f=pane.querySelector(".set.focus"); if(f)f.scrollIntoView({block:"nearest"});}
+
+  function enterPane(){zone="pane";foc=0;render();}
+  function toRail(){zone="rail";render();}
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="Escape"){location.href="gose-home.html";}
+    else if(k==="["||k==="PageUp"){zone="rail";moveCat(-1);}      // global category prev
+    else if(k==="]"||k==="PageDown"){zone="rail";moveCat(1);}      // global category next
+    else if(k==="Tab"){zone="rail";moveCat(e.shiftKey?-1:1);}
+    else if(zone==="rail"){
+      if(k==="ArrowDown")moveCat(1);
+      else if(k==="ArrowUp")moveCat(-1);
+      else if(k==="ArrowRight"||k==="Enter"||k===" ")enterPane();
+      else return;
+    } else {  // pane
+      if(k==="ArrowDown")moveFoc(1);
+      else if(k==="ArrowUp")moveFoc(-1);
+      else if(k==="ArrowLeft")toRail();                            // ← always escapes back to the category list
+      else if(k==="ArrowRight"||k==="Enter"||k===" ")change(1);
+      else return;
+    }
+    e.preventDefault();});
+
+  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(tap(5)){zone="rail";moveCat(1);} if(tap(4)){zone="rail";moveCat(-1);}   // L1/R1 category
+      if(zone==="rail"){
+        if(tap(13))moveCat(1); if(tap(12))moveCat(-1);
+        if(tap(15)||tap(0))enterPane();
+        if(tap(1))location.href="gose-home.html";
+      } else {
+        if(tap(13))moveFoc(1); if(tap(12))moveFoc(-1);
+        if(tap(15)||tap(0))change(1); if(tap(14))toRail();
+        if(tap(1))toRail();
+      }
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}
+    requestAnimationFrame(pad);})();
+
+  render();
+</script>
+</body></html>

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Terminal</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:14px 28px 4px}
+  .top img{width:28px;height:28px}.top h1{font-size:17px;margin:0}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .term{flex:1;margin:8px 28px 14px;background:#07080e;border:1px solid var(--line);border-radius:12px;
+    padding:14px 16px;overflow:auto;font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe3d0}
+  .term .cmd{color:#5cd0ff}.term .cmd .p{color:#7d8cff}
+  .term pre{margin:2px 0 10px;white-space:pre-wrap;word-break:break-word}
+  .inp{display:flex;align-items:center;gap:8px;margin:6px 28px 16px;background:#07080e;border:1px solid var(--line);
+    border-radius:12px;padding:10px 14px;font:14px/1 ui-monospace,Menlo,Consolas,monospace}
+  .inp .p{color:#7d8cff;white-space:nowrap}
+  .inp input{flex:1;background:transparent;border:0;outline:none;color:#eaf0ff;font:inherit}
+  .foot{margin:0 28px 12px;color:var(--muted);font-size:12px}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE"><h1>Terminal</h1>
+    <div class="home"><span class="ic" data-i="terminal"></span> Esc — desktop · ⌨ on-screen keyboard</div>
+  </div>
+  <div class="term" id="term"></div>
+  <div class="inp"><span class="p" id="prompt">/userdata $</span><input id="cmd" autofocus spellcheck="false" autocomplete="off"></div>
+  <div class="foot">Real shell in the GOSE VM · <b>Enter</b> run · <b>↑/↓</b> history · type <b>clear</b> to reset</div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));
+  const term=$("term"), inp=$("cmd"); let cwd="/userdata", hist=[], hi=0;
+  function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  function echo(cmd,out){
+    const d=document.createElement("div");
+    d.innerHTML=`<div class="cmd"><span class="p">${esc(cwd)} $</span> ${esc(cmd)}</div>`+(out?`<pre>${esc(out)}</pre>`:"");
+    term.appendChild(d); term.scrollTop=term.scrollHeight;
+  }
+  function run(cmd){
+    if(cmd==="clear"||cmd==="cls"){term.innerHTML="";return;}
+    fetch("/term/exec",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd})})
+      .then(r=>r.json()).then(d=>{ echo(cmd, (d.out||"").replace(/\n$/,"")); if(d.cwd){cwd=d.cwd;$("prompt").textContent=cwd+" $";} })
+      .catch(e=>echo(cmd,"(terminal offline)"));
+  }
+  inp.addEventListener("keydown",e=>{
+    if(e.key==="Enter"){const c=inp.value.trim(); if(c){hist.push(c);hi=hist.length;run(c);} inp.value=""; e.preventDefault();}
+    else if(e.key==="ArrowUp"){if(hi>0){hi--;inp.value=hist[hi]||"";} e.preventDefault();}
+    else if(e.key==="ArrowDown"){if(hi<hist.length-1){hi++;inp.value=hist[hi]||"";}else{hi=hist.length;inp.value="";} e.preventDefault();}
+  });
+  addEventListener("keydown",e=>{ if(e.key==="Escape"){location.href="gose-home.html";} });
+  inp.focus();
+  echo("", "GOSE Terminal — type a command (ls, df -h, free, uname -a, flatpak list …)");
+</script>
+</body></html>

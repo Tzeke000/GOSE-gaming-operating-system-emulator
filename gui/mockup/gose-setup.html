@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Setup (BIOS)</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  /* header */
+  .top{display:flex;align-items:center;gap:14px;padding:20px 40px 8px}
+  .lg{width:44px;height:44px;object-fit:contain;filter:drop-shadow(0 0 8px #9a5bff55)}
+  .top h1{font-size:21px;margin:0}.top .s{color:var(--muted);font-size:12px}
+  .save{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--surface);
+    border:1px solid var(--line);border-radius:11px;padding:8px 14px;font-size:13px;color:var(--muted)}
+  /* body: category rail + settings pane */
+  .wrap{flex:1;display:flex;gap:18px;padding:8px 40px 0;min-height:0}
+  .rail{width:230px;flex:none;display:flex;flex-direction:column;gap:6px;padding-top:6px}
+  .cat{display:flex;align-items:center;gap:12px;height:46px;padding:0 14px;border-radius:11px;
+    border:2px solid transparent;color:var(--muted);cursor:pointer}
+  .cat .ic{font-size:20px}.cat .nm{font-weight:600;font-size:14px}
+  .cat.on{background:var(--surface2);color:var(--text)}
+  .cat.on .ic{color:var(--accent)}
+  .pane{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);
+    border-radius:14px;padding:10px 12px;overflow:auto}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);
+    padding:10px 10px 6px}
+  .set{display:flex;align-items:center;gap:14px;min-height:54px;padding:8px 14px;border-radius:11px;
+    border:2px solid transparent;cursor:pointer}
+  .set .ic{font-size:20px;color:#b8becc;flex:none}
+  .set .lbl{min-width:0}.set .nm{font-weight:600}.set .sub{color:var(--muted);font-size:12px}
+  .set .val{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--accent);
+    font-weight:600;font-size:14px;white-space:nowrap}
+  .set .val .cy{color:var(--muted);font-size:13px}
+  .set .pill{background:var(--surface2);border:1px solid var(--line);border-radius:10px;
+    padding:2px 9px;font-size:12px;color:var(--accent);font-weight:600}
+  .set .off{color:var(--muted)}
+  .set.focus{border-color:var(--accent);background:#5cd0ff14;box-shadow:var(--focusglow)}
+  .set.focus .ic,.set.focus .nm{color:var(--accent)}
+  .set.danger .ic,.set.danger .val{color:#ff7a6e}
+  .agts{display:flex;gap:6px}
+  .agts b{display:inline-flex;align-items:center;gap:5px;background:var(--surface2);
+    border:1px solid var(--line);border-radius:10px;padding:2px 8px;font-size:12px;font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  /* footer */
+  .foot{margin:10px 40px 16px;display:flex;align-items:center;gap:10px;color:var(--muted);
+    font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:8px 16px;font-size:13px;
+    opacity:0;transition:opacity .25s;pointer-events:none}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="top"><img class="lg" src="assets/brand/gose-core-mark.png" alt="GOSE Core">
+    <div><h1>GOSE Setup</h1><div class="s">BIOS · AYN Odin 2 · firmware v0.1</div></div>
+    <div class="save"><span class="ic" data-i="info"></span><span id="savehint">Start to save &amp; exit · B to back out</span></div>
+  </div>
+  <div class="wrap">
+    <div class="rail" id="rail"></div>
+    <div class="pane" id="pane"></div>
+  </div>
+  <div class="foot"><span class="ic" data-i="hard-drive"></span> AYN Odin 2 · 256 GB · Battery 82%
+    <span class="h">D-pad move · <b>A</b> change · <b>L1/R1</b> category · <b>B</b> back · <b>Start</b> save</span></div>
+  <div class="toast" id="toast"></div>
+<script src="assets/platform.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+
+  // --- settings model: each category has rows; a row is info | cycle | theme | action | agents
+  const THEMES=["onyx","midnight","neon","aurora"];
+  const CATS=[
+    {id:"boot", ic:"power", nm:"Boot", rows:[
+      {ic:"play", nm:"Default boot device", sub:"What boots when nothing is held", t:"cycle", v:["ROCKNIX (microSD)","Android (internal)"]},
+      {ic:"clock", nm:"Boot menu timeout", sub:"Countdown before auto-boot", t:"cycle", v:["3 s","5 s","10 s","Off"], i:1},
+      {ic:"gamepad-2", nm:"Boot menu trigger", sub:"Held at power-on to open the menu", t:"cycle", v:["L1 + R1","Volume Down","Select + Start"]},
+      {ic:"monitor", nm:"Boot splash", sub:"Show the GOSE brand screen", t:"cycle", v:["On","Off"]},
+      {ic:"terminal", nm:"Quiet boot", sub:"Hide kernel log on startup", t:"cycle", v:["On","Off"], i:1},
+    ]},
+    {id:"security", ic:"shield", nm:"Security", rows:[
+      {ic:"plug-zap", nm:"Remote agent control", sub:"Allow agents to connect at all (the OS-level switch lives in Settings)", t:"cycle", v:["Enabled","Disabled"]},
+      {ic:"lock", nm:"Supervisor password", sub:"Require a password to enter Setup", t:"cycle", v:["Off","On"]},
+    ]},
+    {id:"system", ic:"cpu", nm:"System", rows:[
+      {ic:"smartphone", nm:"Device", sub:"Detected hardware", t:"info", val:"AYN Odin 2"},
+      {ic:"hard-drive", nm:"Storage", sub:"Internal", t:"info", val:"256 GB"},
+      {ic:"info", nm:"Firmware", sub:"GOSE layer over the base OS", t:"info", val:"GOSE v0.1"},
+      {ic:"rotate-ccw", nm:"Factory reset", sub:"Erase userdata and start fresh", t:"action", val:"Reset…", danger:true, act:"Factory reset — confirm (demo)"},
+    ]},
+  ];
+  const AGENTS=[{n:"Wren",c:"var(--accent)",on:true},{n:"Ava",c:"var(--accent)",on:true},{n:"Iris",c:"#3a3e4c",on:false}];
+
+  const rail=document.getElementById("rail"), pane=document.getElementById("pane"), toast=document.getElementById("toast");
+  let cat=0, foc=0;
+  // deep-link to a category, e.g. gose-setup.html#display
+  const _ci=CATS.findIndex(c=>c.id===(location.hash||"").replace("#",""));
+  if(_ci>=0) cat=_ci;
+
+  function buildRail(){
+    rail.innerHTML="";
+    CATS.forEach((c,ci)=>{
+      const el=document.createElement("div");
+      el.className="cat"+(ci===cat?" on":"");
+      el.innerHTML=`<span class="ic" data-i="${c.ic}"></span><span class="nm">${c.nm}</span>`;
+      el.onclick=()=>{cat=ci;foc=0;render();};
+      rail.appendChild(el);
+    });
+  }
+  function valHtml(r){
+    if(r.t==="info") return `<span class="val">${r.val}</span>`;
+    if(r.t==="action") return `<span class="val">${r.val} <span class="ic" data-i="chevron-right"></span></span>`;
+    if(r.t==="agents") return `<span class="val agts">`+AGENTS.map(a=>
+      `<b><span class="dot" style="background:${a.c}"></span>${a.n}${a.on?"":" <span class='off'>(off)</span>"}</b>`).join("")+`</span>`;
+    // cycle / theme
+    const i=r.i||0, cur=r.v[i];
+    const isOff=/^(off|disabled)$/i.test(cur);
+    return `<span class="val"><span class="cy ic" data-i="chevron-left"></span>`+
+      `<span class="${isOff?"off":""}">${cur}</span><span class="cy ic" data-i="chevron-right"></span></span>`;
+  }
+  function buildPane(){
+    const c=CATS[cat];
+    pane.innerHTML=`<div class="ph">${c.nm.toUpperCase()}</div>`;
+    c.rows.forEach((r,ri)=>{
+      const el=document.createElement("div");
+      el.className="set"+(ri===foc?" focus":"")+(r.danger?" danger":"");
+      el.innerHTML=`<span class="ic" data-i="${r.ic}"></span>`+
+        `<div class="lbl"><div class="nm">${r.nm}</div><div class="sub">${r.sub}</div></div>`+valHtml(r);
+      el.onclick=()=>{foc=ri;render();change();};
+      pane.appendChild(el);
+    });
+  }
+  function paintIcons(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function render(){buildRail();buildPane();paintIcons();}
+
+  function showToast(m){toast.textContent=m;toast.classList.add("show");clearTimeout(showToast._t);
+    showToast._t=setTimeout(()=>toast.classList.remove("show"),1600);}
+
+  function change(dir){
+    const r=CATS[cat].rows[foc];
+    if(r.t==="cycle"){r.i=((r.i||0)+(dir||1)+r.v.length)%r.v.length;buildPane();paintIcons();}
+    else if(r.t==="theme"){r.i=((r.i||0)+(dir||1)+r.v.length)%r.v.length;
+      const t=THEMES[r.i];document.documentElement.dataset.theme=t;localStorage.setItem("gose-theme",t);
+      buildPane();paintIcons();showToast("Theme: "+r.v[r.i]);}
+    else if(r.t==="agents"){const a=AGENTS[0];/* demo: toggle nothing destructive */ showToast("Manage who can join (demo)");}
+    else if(r.t==="action"){showToast(r.act||"OK");}
+    else if(r.t==="info"){showToast(r.nm+": "+r.val);}
+  }
+
+  function moveCat(d){cat=(cat+d+CATS.length)%CATS.length;foc=0;render();}
+  function moveFoc(d){const n=CATS[cat].rows.length;foc=(foc+d+n)%n;buildPane();paintIcons();
+    pane.querySelector(".set.focus").scrollIntoView({block:"nearest"});}
+
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="ArrowDown")moveFoc(1);
+    else if(k==="ArrowUp")moveFoc(-1);
+    else if(k==="ArrowRight")change(1);
+    else if(k==="ArrowLeft")change(-1);
+    else if(k==="Tab"){moveCat(e.shiftKey?-1:1);}
+    else if(k==="["||k==="PageUp")moveCat(-1);
+    else if(k==="]"||k==="PageDown")moveCat(1);
+    else if(k==="Enter")change(1);
+    else if(k==="Escape"){showToast("Back to Boot Menu (demo)");setTimeout(()=>location.href="bootmenu.html",600);}
+    else if(k==="s"||k==="S"){showToast("Saved — settings stored to /userdata");}
+    else return; e.preventDefault();});
+
+  // gamepad: D-pad move (12/13), left/right change (14/15), A change (0), B back (1), L1/R1 category (4/5), Start save (9)
+  let prev={};(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const tap=i=>gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(tap(13))moveFoc(1); if(tap(12))moveFoc(-1);
+      if(tap(15))change(1);  if(tap(14))change(-1);
+      if(tap(0))change(1);
+      if(tap(5))moveCat(1);  if(tap(4))moveCat(-1);
+      if(tap(9))showToast("Saved — settings stored to /userdata");
+      if(tap(1)){showToast("Back to Boot Menu (demo)");setTimeout(()=>location.href="bootmenu.html",600);}
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);}
+    requestAnimationFrame(pad);})();
+
+  render();
+</script>
+</body></html>

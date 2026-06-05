@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Splice</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:16px 30px 4px}
+  .top img{width:30px;height:30px}.top h1{font-size:18px;margin:0}.top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .wrap{flex:1;display:flex;gap:16px;padding:10px 30px 0;min-height:0}
+  .rail{width:240px;flex:none;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:8px}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);padding:6px 8px}
+  .vid{padding:9px 10px;border-radius:9px;border:2px solid transparent;cursor:pointer}
+  .vid:hover{background:#ffffff08}.vid.on{border-color:var(--accent);background:#5cd0ff14}
+  .vid .nm{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vid .sub{color:var(--muted);font-size:11px}
+  .stage{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+  .player{flex:1;min-height:0;background:#000;border:1px solid var(--line);border-radius:13px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .player video{max-width:100%;max-height:100%}
+  .player .none{color:var(--muted)}
+  .ctrl{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:12px 16px}
+  .track{position:relative;height:14px;border-radius:7px;background:#ffffff12;margin:6px 0 12px;cursor:pointer}
+  .track .sel{position:absolute;top:0;bottom:0;background:linear-gradient(90deg,var(--accent),#7d8cff);opacity:.5;border-radius:7px}
+  .track .ph{position:absolute;top:-3px;width:3px;height:20px;background:#fff;border-radius:2px}
+  .track .mk{position:absolute;top:-4px;width:2px;height:22px;background:#37d39b}
+  .btns{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .btns button{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:10px;
+    padding:9px 14px;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px}
+  .btns button:hover{border-color:var(--accent)}
+  .btns .exp{background:var(--accent);color:#06121a;border:none}
+  .btns .sp{margin-left:auto;color:var(--muted);font-size:13px}
+  .btns b{color:var(--accent)}
+  .foot{margin:8px 30px 12px;display:flex;gap:10px;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:9px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <div><h1>Splice</h1><div class="s">lossless video trim — no re-encode</div></div>
+    <div class="home"><span class="ic" data-i="scissors"></span> Esc — home</div>
+  </div>
+  <div class="wrap">
+    <div class="rail"><div class="ph">VIDEOS</div><div id="list"></div></div>
+    <div class="stage">
+      <div class="player" id="player"><div class="none">Pick a video on the left</div></div>
+      <div class="ctrl">
+        <div class="track" id="track"><div class="sel" id="sel"></div><div class="mk" id="mkin" style="left:0"></div><div class="mk" id="mkout" style="left:100%"></div><div class="ph" id="ph" style="left:0"></div></div>
+        <div class="btns">
+          <button id="b-in"><span class="ic" data-i="chevron-right"></span>Set In <b id="t-in">0:00</b></button>
+          <button id="b-out">Set Out <b id="t-out">0:00</b></button>
+          <button id="b-play">Play/Pause</button>
+          <span class="sp">selection <b id="t-len">0:00</b> · keyframe-snapped</span>
+          <button class="exp" id="b-exp"><span class="ic" data-i="scissors"></span>Export clip</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span class="ic" data-i="scissors"></span> GOSE Splice
+    <span class="h"><b>Space</b> play · <b>I</b> set in · <b>O</b> set out · <b>E</b> export · <b>Esc</b> home</span></div>
+  <div class="toast" id="toast"></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  function fmtB(b){const u=["B","KB","MB","GB"];let i=0,n=b;while(n>=1024&&i<3){n/=1024;i++;}return (n>=100||i==0?Math.round(n):n.toFixed(1))+u[i];}
+  function fmtT(s){s=Math.max(0,s||0);const m=Math.floor(s/60),sec=Math.floor(s%60),f=Math.floor((s%1)*100);return `${m}:${sec<10?'0':''}${sec}.${f<10?'0':''}${f}`;}
+  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),2400);}
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  let videos=[], cur=null, vid=null, IN=0, OUT=0, dur=0;
+
+  function loadList(){fetch("/splice/videos",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    videos=d.videos||[];
+    $("list").innerHTML=videos.length?videos.map((v,i)=>`<div class="vid ${cur===v.path?'on':''}" data-i2="${i}">
+      <div class="nm">${v.name}</div><div class="sub">${fmtB(v.bytes)}</div></div>`).join("")
+      :'<div class="sub" style="padding:10px">No videos in /userdata yet.</div>';
+    [...$("list").children].forEach(el=>el.dataset.i2!==undefined&&(el.onclick=()=>open(videos[+el.dataset.i2])));
+    paint();
+  });}
+  function open(v){cur=v.path;
+    $("player").innerHTML=`<video id="v" src="/fs/file?path=${encodeURIComponent(v.path)}" controls></video>`;
+    vid=$("v"); IN=0;OUT=0;dur=0;
+    vid.addEventListener("loadedmetadata",()=>{dur=vid.duration;OUT=dur;updateMarks();});
+    vid.addEventListener("timeupdate",()=>{if(dur)$("ph").style.left=(vid.currentTime/dur*100)+"%";});
+    loadList();
+  }
+  function updateMarks(){
+    $("t-in").textContent=fmtT(IN);$("t-out").textContent=fmtT(OUT);$("t-len").textContent=fmtT(OUT-IN);
+    if(dur){$("mkin").style.left=(IN/dur*100)+"%";$("mkout").style.left=(OUT/dur*100)+"%";
+      $("sel").style.left=(IN/dur*100)+"%";$("sel").style.width=((OUT-IN)/dur*100)+"%";}
+  }
+  $("b-in").onclick=()=>{if(vid){IN=vid.currentTime;if(OUT<IN)OUT=dur;updateMarks();}};
+  $("b-out").onclick=()=>{if(vid){OUT=vid.currentTime;if(OUT<IN)IN=0;updateMarks();}};
+  $("b-play").onclick=()=>{if(vid)vid.paused?vid.play():vid.pause();};
+  $("track").onclick=e=>{if(!vid||!dur)return;const r=e.currentTarget.getBoundingClientRect();vid.currentTime=(e.clientX-r.left)/r.width*dur;};
+  $("b-exp").onclick=()=>{if(!cur)return say("Pick a video first");
+    if(OUT-IN<=0)return say("Set an In before Out");
+    say("Exporting clip ("+fmtT(OUT-IN)+")…");
+    fetch("/splice/cut",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({path:cur,start:IN,end:OUT})}).then(r=>r.json()).then(d=>{
+        if(d.ok){say("Saved "+d.name+" ("+fmtB(d.bytes)+")");loadList();}else say("Export failed: "+(d.error||"?"));});};
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="Escape"){location.href="gose-home.html";}
+    else if(!vid)return;
+    else if(k===" "){vid.paused?vid.play():vid.pause();}
+    else if(k==="i"||k==="I"){IN=vid.currentTime;if(OUT<IN)OUT=dur;updateMarks();}
+    else if(k==="o"||k==="O"){OUT=vid.currentTime;if(OUT<IN)IN=0;updateMarks();}
+    else if(k==="e"||k==="E"){$("b-exp").click();}
+    else if(k==="ArrowRight"){vid.currentTime+=2;}
+    else if(k==="ArrowLeft"){vid.currentTime-=2;}
+    else return; e.preventDefault();});
+  paint(); loadList();
+</script>
+</body></html>

@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Task Manager</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:16px 30px 4px}
+  .top img{width:30px;height:30px}.top h1{font-size:18px;margin:0}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .tiles{display:flex;gap:12px;padding:8px 30px 0}
+  .tile{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:12px 14px}
+  .tile .k{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.5px}
+  .tile .v{font-size:22px;font-weight:700;margin-top:2px}
+  .tile .sub{color:var(--muted);font-size:11px}
+  .tile .bar{height:6px;border-radius:4px;background:#ffffff12;margin-top:7px;overflow:hidden}
+  .tile .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#7d8cff)}
+  .tabs{display:flex;gap:6px;padding:10px 30px 0}
+  .tab{background:var(--surface);border:1px solid var(--line);color:var(--muted);border-radius:10px 10px 0 0;
+    padding:8px 18px;font-weight:600;font-size:13px;cursor:pointer;border-bottom:none}
+  .tab.on{background:var(--surface2);color:var(--text);box-shadow:inset 0 -2px 0 var(--accent)}
+  .perf{flex:1;margin:12px 30px 0;display:grid;grid-template-columns:1fr 1fr;gap:14px;overflow:auto;min-height:0;align-content:start}
+  .gcard{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 16px;display:flex;flex-direction:column}
+  .gcard .gh{display:flex;justify-content:space-between;align-items:baseline}
+  .gcard .gh .gk{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted)}
+  .gcard .gh .gv{font-size:24px;font-weight:700}
+  .gcard canvas{width:100%;height:130px;margin-top:8px;display:block}
+  .gcard .gs{color:var(--muted);font-size:12px;margin-top:6px}
+  .memrow{margin:12px 30px 0;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:12px 14px}
+  .memrow .hd{display:flex;justify-content:space-between;font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted)}
+  .membar{height:18px;border-radius:6px;overflow:hidden;display:flex;margin-top:8px;background:#ffffff10}
+  .membar div{height:100%}
+  .legend{display:flex;gap:16px;margin-top:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+  .legend b{color:var(--text)}.legend .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  .pane{flex:1;margin:12px 30px 0;background:var(--surface);border:1px solid var(--line);border-radius:13px;overflow:auto;min-height:0}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{position:sticky;top:0;background:var(--surface);text-align:left;color:var(--muted);font-size:11px;
+    font-weight:700;letter-spacing:.5px;padding:10px 14px;border-bottom:1px solid var(--line)}
+  th.r,td.r{text-align:right}
+  tbody tr{border-bottom:1px solid #ffffff08;cursor:pointer}
+  tbody tr.focus{background:#5cd0ff18;box-shadow:inset 3px 0 0 var(--accent)}
+  td{padding:8px 14px;white-space:nowrap}
+  td.nm{font-weight:600}
+  td.cpu b{color:var(--accent)} .hot{color:#ff9e6e!important}
+  .pid{color:var(--muted);font-variant-numeric:tabular-nums}
+  .foot{margin:10px 30px 12px;display:flex;gap:10px;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:9px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
+  .toast.show{opacity:1}.toast.warn{border-color:#ff9e6e;color:#ffd9c8}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <h1>Task Manager</h1>
+    <div class="home"><span class="ic" data-i="cpu"></span> B / Esc — home</div>
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="k">CPU</div><div class="v" id="t-cpu">—</div><div class="sub" id="t-cpus">—</div><div class="bar"><i id="t-cpub" style="width:0%"></i></div></div>
+    <div class="tile"><div class="k">GPU</div><div class="v" id="t-gpu">—</div><div class="sub" id="t-gpus">—</div><div class="bar"><i id="t-gpub" style="width:0%"></i></div></div>
+    <div class="tile"><div class="k">MEMORY</div><div class="v" id="t-mem">—</div><div class="sub" id="t-mems">—</div><div class="bar"><i id="t-memb" style="width:0%"></i></div></div>
+    <div class="tile"><div class="k">PROCESSES</div><div class="v" id="t-proc">—</div><div class="sub" id="t-procs">running</div></div>
+  </div>
+  <div class="tabs">
+    <button class="tab on" data-tab="proc">Processes</button>
+    <button class="tab" data-tab="perf">Performance</button>
+  </div>
+  <div class="memrow" id="memrow"><div class="hd"><span>PHYSICAL MEMORY</span><span id="m-tot"></span></div>
+    <div class="membar" id="membar"></div>
+    <div class="legend" id="legend"></div>
+  </div>
+  <div class="pane" id="procpane"><table>
+    <thead><tr><th class="r" style="width:80px">PID</th><th>Name</th><th class="r" style="width:100px">CPU</th>
+      <th class="r" style="width:120px">Memory</th><th style="width:70px">State</th></tr></thead>
+    <tbody id="rows"></tbody></table></div>
+  <div class="perf" id="perf" style="display:none">
+    <div class="gcard"><div class="gh"><span class="gk">CPU</span><span class="gv" id="g-cpu">—</span></div><canvas id="cv-cpu"></canvas><div class="gs" id="gs-cpu"></div></div>
+    <div class="gcard"><div class="gh"><span class="gk">GPU</span><span class="gv" id="g-gpu">—</span></div><canvas id="cv-gpu"></canvas><div class="gs" id="gs-gpu"></div></div>
+    <div class="gcard"><div class="gh"><span class="gk">MEMORY</span><span class="gv" id="g-mem">—</span></div><canvas id="cv-mem"></canvas><div class="gs" id="gs-mem"></div></div>
+    <div class="gcard"><div class="gh"><span class="gk">GPU MEMORY</span><span class="gv" id="g-gmem">—</span></div><canvas id="cv-gmem"></canvas><div class="gs" id="gs-gmem"></div></div>
+  </div>
+  <div class="foot"><span class="ic" data-i="cpu"></span> GOSE Task Manager — live from /proc
+    <span class="h"><b>Tab</b> switch view · <b>↑↓</b> select · <b>X</b> end task · <b>F</b> force · <b>B</b> home</span></div>
+  <div class="toast" id="toast"></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  const STATE={R:"running",S:"sleeping",D:"disk",Z:"zombie",T:"stopped",I:"idle"};
+  function fmt(b){if(b==null)return"—";const u=["B","KB","MB","GB","TB"];let i=0,n=b;while(n>=1024&&i<4){n/=1024;i++;}return (n>=100||i==0?Math.round(n):n.toFixed(1))+" "+u[i];}
+  function say(m,warn){const t=$("toast");t.textContent=m;t.className="toast show"+(warn?" warn":"");clearTimeout(say._t);say._t=setTimeout(()=>t.className="toast",2200);}
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  let procs=[], focPid=null, armPid=null, armSig=15, armT=0;
+  const HIST={cpu:[],gpu:[],mem:[],gmem:[]}; let curTab="proc", lastS={};
+
+  function renderHeader(d){
+    if(d.cpu_pct!=null){$("t-cpu").textContent=d.cpu_pct+"%";$("t-cpub").style.width=d.cpu_pct+"%";$("t-cpus").textContent="load";}
+    if(d.gpu_pct!=null){$("t-gpu").textContent=d.gpu_pct+"%";$("t-gpub").style.width=d.gpu_pct+"%";
+      $("t-gpus").textContent=(d.gpu_name?d.gpu_name.replace("NVIDIA GeForce ",""):"")+(d.gpu_temp_c!=null?" · "+d.gpu_temp_c+"°C":"");}
+    if(d.mem_total_gb){$("t-mem").textContent=d.mem_pct+"%";$("t-memb").style.width=d.mem_pct+"%";$("t-mems").textContent=d.mem_used_gb+" / "+d.mem_total_gb+" GB";}
+  }
+  function renderMem(m){
+    if(!m||!m.MemTotal){return;}
+    const tot=m.MemTotal, free=m.MemFree||0, buf=m.Buffers||0, cache=m.Cached||0;
+    const used=Math.max(0,tot-free-buf-cache);
+    $("m-tot").textContent=fmt(tot);
+    const seg=[["Used",used,"var(--accent)"],["Cached",cache,"#7d8cff"],["Buffers",buf,"#37d39b"],["Free",free,"#2a2e3c"]];
+    $("membar").innerHTML=seg.map(s=>`<div style="width:${s[1]/tot*100}%;background:${s[2]}"></div>`).join("");
+    $("legend").innerHTML=seg.map(s=>`<span><span class="sw" style="background:${s[2]}"></span>${s[0]} <b>${fmt(s[1])}</b></span>`).join("")
+      +(m.SwapTotal?`<span><span class="sw" style="background:#b0683a"></span>Swap <b>${fmt((m.SwapTotal-(m.SwapFree||0)))} / ${fmt(m.SwapTotal)}</b></span>`:"");
+  }
+  function renderRows(){
+    $("t-proc").textContent=procs.length;
+    if(focPid==null&&procs.length)focPid=procs[0].pid;
+    $("rows").innerHTML=procs.map(p=>`<tr class="${p.pid===focPid?'focus':''}" data-pid="${p.pid}">
+      <td class="r pid">${p.pid}</td><td class="nm">${p.name}</td>
+      <td class="r cpu"><b class="${p.cpu>=50?'hot':''}">${p.cpu.toFixed(1)}%</b></td>
+      <td class="r">${fmt(p.rss)} <span class="pid">(${p.mem_pct}%)</span></td>
+      <td>${STATE[p.state]||p.state}</td></tr>`).join("");
+    [...$("rows").children].forEach(tr=>{tr.onclick=()=>{focPid=+tr.dataset.pid;renderRows();};
+      tr.ondblclick=()=>{focPid=+tr.dataset.pid;endTask(15);};});
+    const f=$("rows").querySelector("tr.focus");if(f)f.scrollIntoView({block:"nearest"});
+  }
+  function pushHist(s){const cap=60;
+    HIST.cpu.push(s.cpu_pct||0); HIST.gpu.push(s.gpu_pct||0); HIST.mem.push(s.mem_pct||0);
+    HIST.gmem.push(s.gpu_mem_total_mb?Math.round((s.gpu_mem_used_mb||0)/s.gpu_mem_total_mb*100):0);
+    for(const k in HIST)if(HIST[k].length>cap)HIST[k].shift();}
+  function drawGraph(id,data,color){const cv=$(id);if(!cv)return;
+    const r=cv.getBoundingClientRect();cv.width=r.width;cv.height=r.height;
+    const x=cv.getContext("2d"),W=cv.width,Hh=cv.height;x.clearRect(0,0,W,Hh);
+    x.strokeStyle="#ffffff10";x.lineWidth=1;for(let i=1;i<4;i++){const y=Hh*i/4;x.beginPath();x.moveTo(0,y);x.lineTo(W,y);x.stroke();}
+    if(data.length<2)return;const step=W/59;
+    x.beginPath();data.forEach((v,i)=>{const px=i*step,py=Hh-(Math.min(100,v)/100*Hh);i?x.lineTo(px,py):x.moveTo(px,py);});
+    x.strokeStyle=color;x.lineWidth=2;x.stroke();
+    x.lineTo((data.length-1)*step,Hh);x.lineTo(0,Hh);x.closePath();x.fillStyle=color+"22";x.fill();}
+  function drawAll(s){s=s||{};
+    $("g-cpu").textContent=(s.cpu_pct!=null?s.cpu_pct:"—")+"%"; $("gs-cpu").textContent="utilization · last 2 min";
+    $("g-gpu").textContent=(s.gpu_pct!=null?s.gpu_pct:"—")+"%"; $("gs-gpu").textContent=(s.gpu_name?s.gpu_name.replace("NVIDIA GeForce ",""):"")+(s.gpu_temp_c!=null?" · "+s.gpu_temp_c+"°C":"");
+    $("g-mem").textContent=(s.mem_pct!=null?s.mem_pct:"—")+"%"; $("gs-mem").textContent=(s.mem_used_gb||"?")+" / "+(s.mem_total_gb||"?")+" GB";
+    $("g-gmem").textContent=(HIST.gmem[HIST.gmem.length-1]||0)+"%"; $("gs-gmem").textContent=s.gpu_mem_total_mb?fmt((s.gpu_mem_used_mb||0)*1048576)+" / "+fmt(s.gpu_mem_total_mb*1048576):"";
+    drawGraph("cv-cpu",HIST.cpu,"#5cd0ff");drawGraph("cv-gpu",HIST.gpu,"#37d39b");
+    drawGraph("cv-mem",HIST.mem,"#7d8cff");drawGraph("cv-gmem",HIST.gmem,"#ffce5c");}
+  function setTab(t){curTab=t;
+    document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
+    const proc=t==="proc";$("memrow").style.display=proc?"":"none";$("procpane").style.display=proc?"":"none";$("perf").style.display=proc?"none":"";
+    if(t==="perf")drawAll(lastS);}
+  document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
+  async function poll(){
+    try{
+      const s=await(await fetch("/status.json",{cache:"no-store"})).json(); lastS=s; renderHeader(s); pushHist(s);
+      if(curTab==="perf")drawAll(s);
+      const d=await(await fetch("/procs.json",{cache:"no-store"})).json();
+      if(d.ok){procs=d.procs;renderMem(d.mem);if(curTab==="proc")renderRows();}
+    }catch(e){}
+  }
+  function curName(){const p=procs.find(x=>x.pid===focPid);return p?p.name:focPid;}
+  function endTask(sig){
+    if(focPid==null)return;
+    if(armPid===focPid&&armSig===sig&&Date.now()-armT<3500){
+      const nm=curName();
+      fetch("/proc/kill",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pid:focPid,sig})})
+        .then(r=>r.json()).then(d=>{say(d.ok?(`Ended ${nm} (PID ${focPid})`):("Couldn't end: "+(d.error||"?")),!d.ok);armPid=null;poll();});
+    }else{armPid=focPid;armSig=sig;armT=Date.now();
+      say(`${sig===9?'Force-kill':'End'} ${curName()} (PID ${focPid})? Press ${sig===9?'F':'X'} again to confirm`,true);}
+  }
+  function move(d){if(!procs.length)return;let i=procs.findIndex(p=>p.pid===focPid);i=(i+d+procs.length)%procs.length;focPid=procs[i].pid;renderRows();}
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="Tab"){setTab(curTab==="proc"?"perf":"proc");}
+    else if(k==="Escape"||k==="Backspace")location.href="gose-home.html";
+    else if(curTab==="perf")return;   // graphs view: no row actions
+    else if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
+    else if(k==="x"||k==="X"||k==="Delete")endTask(15);
+    else if(k==="f"||k==="F")endTask(9);
+    else return;e.preventDefault();});
+  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(tap(13))move(1);if(tap(12))move(-1);if(tap(2))endTask(15);if(tap(3))endTask(9);
+      if(tap(1))location.href="gose-home.html";
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  paint(); if(/tab=perf/.test(location.hash))setTab("perf"); poll(); setInterval(poll,2000);
+</script>
+</body></html>

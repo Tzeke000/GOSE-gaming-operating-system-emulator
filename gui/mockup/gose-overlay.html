@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE Overlay</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#07070f}
+  body{font-family:Inter,system-ui,sans-serif;color:#eef1f8}
+  /* frozen screen, lightly blurred + dimmed = the game shows through (Game Bar style) */
+  .bg{position:fixed;inset:-30px;background-size:cover;background-position:center;
+    filter:blur(7px) brightness(.78) saturate(1.1);transform:scale(1.04);z-index:0}
+  .scrim{position:fixed;inset:0;z-index:1;background:rgba(6,8,16,.34)}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .stage{position:fixed;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;
+    gap:16px;padding:30px 24px;overflow:auto}
+  /* glass material used by the toolbar + cards */
+  .glass{background:rgba(22,24,33,.74);backdrop-filter:blur(26px) saturate(1.25);
+    -webkit-backdrop-filter:blur(26px) saturate(1.25);border:1px solid rgba(255,255,255,.10);
+    box-shadow:0 18px 50px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.06)}
+  /* top toolbar pill */
+  .bar{display:flex;align-items:center;gap:14px;border-radius:16px;padding:10px 18px}
+  .bar img{width:26px;height:26px}
+  .bar .ttl{font-weight:700;font-size:15px}
+  .bar .sep{width:1px;height:22px;background:rgba(255,255,255,.14)}
+  .bar .meta{font-size:12.5px;color:#aeb6d4;line-height:1.3}
+  .bar .meta b{color:#eef1f8;font-weight:700}
+  /* widget cards row */
+  .cards{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:1040px}
+  .card{width:330px;border-radius:18px;padding:16px 18px}
+  .card h3{margin:0 0 12px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#aeb6d4;
+    display:flex;align-items:center;gap:8px}
+  .card h3 .ic{font-size:15px;color:var(--accent)}
+  /* perf widget */
+  .stat{display:flex;align-items:center;gap:10px;margin:9px 0}
+  .stat .k{width:54px;font-size:12px;color:#aeb6d4}
+  .stat .track{flex:1;height:7px;border-radius:4px;background:rgba(255,255,255,.12);overflow:hidden}
+  .stat .track>i{display:block;height:100%;background:linear-gradient(90deg,#5cd0ff,#6a4dff)}
+  .stat .v{width:78px;text-align:right;font-size:12.5px;font-weight:700}
+  /* control rows */
+  .row{border:2px solid transparent;border-radius:12px;padding:10px 12px;margin:7px 0;background:rgba(255,255,255,.05)}
+  .row.focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 30%,transparent);background:rgba(92,208,255,.14)}
+  .row.danger.focus{border-color:#ff8e8e;box-shadow:0 0 0 3px #ff8e8e33}
+  .lab{display:flex;align-items:center;gap:9px;font-size:13.5px;font-weight:600}
+  .lab .ic{font-size:16px;color:var(--accent)}.lab .v{margin-left:auto;color:#aeb6d4;font-weight:700}
+  .bar2{height:7px;border-radius:4px;background:rgba(255,255,255,.14);margin-top:9px;overflow:hidden}
+  .bar2>i{display:block;height:100%;background:var(--accent)}
+  .seg{display:flex;gap:6px;margin-top:9px}
+  .seg>span{flex:1;text-align:center;font-size:11px;font-weight:700;padding:6px 0;border-radius:8px;background:rgba(255,255,255,.10);color:#aeb6d4}
+  .seg>span.sel{background:var(--accent);color:#06121a}
+  .hint{z-index:2;position:fixed;bottom:16px;left:0;right:0;text-align:center;color:#aeb6d4;font-size:12px}
+  .hint b{color:#eef1f8}
+  .toast{z-index:3;position:fixed;bottom:46px;left:50%;transform:translateX(-50%);background:rgba(22,24,33,.94);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="bg" id="bg"></div>
+  <div class="scrim"></div>
+  <div class="stage">
+    <div class="bar glass"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+      <span class="ttl">Game Bar</span><span class="sep"></span>
+      <div class="meta" id="meta">—</div></div>
+    <div class="cards">
+      <div class="card glass"><h3><span class="ic" data-i="cpu"></span>Performance</h3><div id="perf"></div></div>
+      <div class="card glass"><h3><span class="ic" data-i="volume-2"></span>Audio &amp; Display</h3><div id="av"></div></div>
+      <div class="card glass"><h3><span class="ic" data-i="image"></span>Capture</h3><div id="cap"></div></div>
+      <div class="card glass"><h3><span class="ic" data-i="settings"></span>System</h3><div id="sys"></div></div>
+    </div>
+  </div>
+  <div class="hint"><b>↑↓</b> move · <b>←→</b> adjust · <b>A</b> select · <b>5</b>/<b>B</b> to resume</div>
+  <div class="toast" id="toast"></div>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  var bgn=(location.search.match(/bg=(\d+)/)||[])[1]||"0";
+  var IN_GAME=/[?&]game=1/.test(location.search);   // a game is paused behind us → show save/load state
+  $("bg").style.backgroundImage="url(_gbg.jpg?"+bgn+")";
+  function api(p,b){return fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{cache:"no-store"}).then(r=>r.json()).catch(()=>({ok:false}));}
+  function ico(n){return '<span class="ic" style="-webkit-mask:url(assets/icons/'+n+'.svg) center/contain no-repeat;mask:url(assets/icons/'+n+'.svg) center/contain no-repeat;background:currentColor;display:inline-block"></span>';}
+  let S={vol:50,mute:false,bri:null,briHas:true,perf:"balanced",batt:null,charging:false,net:"—",
+         cpu:null,gpu:null,ram:null,temp:null,powerMode:false,buffer:false};
+  let foc=0, items=[];
+  function say(m){var t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(function(){t.classList.remove("show");},1800);}
+  function build(){
+    items=[{k:"vol",type:"slider"},{k:"bri",type:"slider"},{k:"perf",type:"seg"}];
+    items.push({k:"shot",type:"act",ic:"image",lab:"Screenshot",shot:true,card:"cap"});
+    items.push({k:"buffer",type:"act",ic:"rotate-ccw",lab:"Replay buffer",buffer:true,card:"cap"});
+    if(S.buffer){
+      items.push({k:"c30",type:"act",ic:"scissors",lab:"Clip last 30s",clip:30,card:"cap"});
+      items.push({k:"c60",type:"act",ic:"scissors",lab:"Clip last 1m",clip:60,card:"cap"});
+      items.push({k:"c120",type:"act",ic:"scissors",lab:"Clip last 2m",clip:120,card:"cap"});
+    }
+    // (save/load state intentionally NOT here — each game/emulator owns its own save system)
+    if(S.powerMode){
+      items.push({k:"sleep",type:"act",ic:"moon",lab:"Sleep",act:"sleep"});
+      items.push({k:"restart",type:"act",ic:"rotate-ccw",lab:"Restart",act:"restart"});
+      items.push({k:"shutdown",type:"act",ic:"power",lab:"Shut down",act:"shutdown",danger:true});
+    } else {
+      items.push({k:"power",type:"act",ic:"power",lab:"Power",sub:"›",power:true});
+    }
+    items.push({k:"exit",type:"act",ic:"layout-grid",lab:"Exit to Desktop",exit:true,danger:true});
+    if(foc>=items.length)foc=items.length-1;
+    render();
+  }
+  function bar(pct){return '<div class="bar2"><i style="width:'+(pct||0)+'%"></i></div>';}
+  function statRow(k,val,pct){return '<div class="stat"><span class="k">'+k+'</span><span class="track"><i style="width:'+(pct||0)+'%"></i></span><span class="v">'+val+'</span></div>';}
+  function render(){
+    var now=new Date(),hh=now.getHours(),mm=now.getMinutes(),ap=hh>=12?"PM":"AM",h12=((hh+11)%12)+1;
+    var batt=S.batt==null?"":(" · "+S.batt+"%"+(S.charging?" ⚡":""));
+    $("meta").innerHTML='<b>'+h12+':'+(mm<10?"0":"")+mm+' '+ap+'</b> &nbsp; '+(S.net||"—")+batt;
+    // Performance widget (live, read-only)
+    $("perf").innerHTML=
+      statRow("CPU", S.cpu==null?"—":S.cpu+"%", S.cpu)+
+      statRow("GPU", S.gpu==null?"—":S.gpu+"%", S.gpu)+
+      statRow("RAM", S.ram==null?"—":S.ram+"%", S.ram)+
+      statRow("Temp", S.temp==null?"—":S.temp+"°C", S.temp);
+    // Audio & Display card
+    var av="";[{k:"vol"},{k:"bri"}].forEach(function(o){var it=items.find(x=>x.k===o.k);var i=items.indexOf(it);
+      var val=o.k==="vol"?S.vol:S.bri, dis=o.k==="bri"&&!S.briHas;
+      var label=o.k==="vol"?(S.mute?"Volume (muted)":"Volume"):"Brightness";
+      av+='<div class="row '+(foc===i?"focus":"")+'"><div class="lab">'+ico(o.k==="vol"?"volume-2":"sun")+label+
+        '<span class="v">'+(dis?"n/a":(val==null?"…":val+"%"))+'</span></div>'+bar(dis?0:(val||0))+'</div>';});
+    $("av").innerHTML=av;
+    // System card: perf segment + power/exit
+    var sys="";var seg=items.find(x=>x.k==="perf");var si=items.indexOf(seg);
+    var modes=[["battery","Battery"],["balanced","Balanced"],["performance","Perf"]];
+    sys+='<div class="row '+(foc===si?"focus":"")+'"><div class="lab">'+ico("cpu")+'Performance mode</div><div class="seg">'+
+      modes.map(m=>'<span class="'+(S.perf===m[0]?"sel":"")+'">'+m[1]+'</span>').join("")+'</div></div>';
+    var cap="";
+    items.forEach(function(it,i){ if(it.type!=="act")return;
+      var sub=it.sub; if(it.buffer) sub=S.buffer?"On":"Off";
+      var html='<div class="row '+(foc===i?"focus":"")+(it.danger?" danger":"")+'"><div class="lab">'+ico(it.ic)+it.lab+
+        (sub?'<span class="v">'+sub+'</span>':"")+'</div></div>';
+      if(it.card==="cap") cap+=html; else sys+=html;});
+    $("sys").innerHTML=sys; $("cap").innerHTML=cap;
+  }
+  function refresh(){
+    api("/status.json").then(d=>{if(d){if(d.battery_pct!=null)S.batt=d.battery_pct;S.charging=!!d.charging;
+      if(d.cpu_pct!=null)S.cpu=d.cpu_pct; if(d.gpu_pct!=null)S.gpu=d.gpu_pct; if(d.mem_pct!=null)S.ram=d.mem_pct;
+      if(d.gpu_temp_c!=null)S.temp=d.gpu_temp_c;}render();});
+    api("/net.json").then(d=>{if(d&&d.ok)S.net=d.connection||(d.online?"Online":"Offline");render();});
+    api("/sys/audio").then(d=>{if(d&&d.ok){S.vol=d.volume==null?S.vol:d.volume;S.mute=!!d.mute;}render();});
+    api("/sys/brightness").then(d=>{if(d){S.briHas=d.has!==false;if(d.ok)S.bri=d.value;}render();});
+  }
+  function setVol(v){v=Math.max(0,Math.min(100,v));S.vol=v;render();clearTimeout(setVol._t);setVol._t=setTimeout(()=>api("/sys/audio",{volume:v}),110);}
+  function setBri(v){if(!S.briHas)return;v=Math.max(0,Math.min(100,v));S.bri=v;render();clearTimeout(setBri._t);setBri._t=setTimeout(()=>api("/sys/brightness",{value:v}),110);}
+  function setPerf(d){var m=["battery","balanced","performance"],i=Math.max(0,Math.min(2,m.indexOf(S.perf)+d));S.perf=m[i];render();api("/sys/perf",{mode:S.perf});}
+  function move(d){foc=(foc+d+items.length)%items.length;render();}
+  function adjust(d){var it=items[foc];if(!it)return;if(it.k==="vol")setVol(S.vol+d*5);else if(it.k==="bri")setBri((S.bri||0)+d*5);else if(it.type==="seg")setPerf(d);}
+  function enter(){var it=items[foc];if(!it)return;
+    if(it.savestate){say(it.savestate==="save"?"Saving state…":"Loading state…");
+      api("/game/"+(it.savestate==="save"?"savestate":"loadstate"),{});return;}
+    if(it.shot){say("Saving screenshot…");api("/capture/shot",{source:"frozen"}).then(d=>say(d&&d.ok?("Saved to Pictures: "+d.name):"Screenshot failed"));return;}
+    if(it.buffer){var on=!S.buffer;say(on?"Starting replay buffer…":"Stopping replay buffer");
+      api("/capture/buffer",{on:on}).then(d=>{S.buffer=!!(d&&d.running);build();say(S.buffer?"Replay buffer ON — now recording":"Replay buffer off");});return;}
+    if(it.clip){if(!S.buffer){say("Turn on the Replay buffer first");return;}
+      var lbl=it.clip>=60?(it.clip/60)+"m":it.clip+"s";say("Saving last "+lbl+" clip…");
+      api("/capture/clip",{seconds:it.clip}).then(d=>say(d&&d.ok?("Clip saved to Videos: "+d.name):(d&&d.error||"Clip failed")));return;}
+    if(it.act){api("/sys/power",{action:it.act});return;}
+    if(it.power){S.powerMode=true;build();return;}
+    if(it.exit){api("/game/exit",{});return;}
+    if(it.k==="vol"){S.mute=!S.mute;api("/sys/audio",{mute:S.mute});render();}}
+  addEventListener("keydown",function(e){var k=e.key;
+    if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
+    else if(k==="ArrowRight")adjust(1);else if(k==="ArrowLeft")adjust(-1);
+    else if(k==="Enter"||k===" ")enter();
+    else return;e.preventDefault();});
+  build();refresh();setInterval(refresh,2000);
+  api("/capture/buffer").then(d=>{if(d){S.buffer=!!d.running;build();}});   // reflect replay-buffer state on open
+</script>
+</body></html>

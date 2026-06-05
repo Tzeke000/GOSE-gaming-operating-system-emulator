@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Controllers</title>
+<link rel="stylesheet" href="assets/themes.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 6px}
+  .top img{width:30px;height:30px}.top h1{font-size:19px;margin:0}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .chips{display:flex;gap:9px;flex-wrap:wrap;padding:8px 36px}
+  .chip{background:var(--surface);border:2px solid transparent;border-radius:11px;padding:9px 15px;font-weight:600;font-size:13.5px;cursor:pointer;color:var(--muted)}
+  .chip.sel{background:var(--surface2);color:var(--text)}
+  .chip.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .det{padding:2px 36px 6px;color:var(--muted);font-size:12.5px}
+  .det b{color:#3fe0a0}
+  .wrap{flex:1;margin:8px 36px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:auto;min-height:0}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:12px 16px 4px}
+  .map{display:flex;align-items:center;gap:13px;padding:10px 16px;border:2px solid transparent;cursor:pointer}
+  .map.focus{border-color:var(--accent);background:#5cd0ff14}
+  .map .nm{flex:1;font-weight:600}
+  .map .btn{font-weight:700;color:var(--accent);background:#5cd0ff1c;border:1px solid var(--line);border-radius:9px;padding:4px 11px;font-size:13px;min-width:96px;text-align:center}
+  .map.bind .btn{color:#06121a;background:var(--accent);animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.55}}
+  .actbar{display:flex;gap:9px;padding:10px 36px 0}
+  .ab{background:var(--surface);border:2px solid transparent;border-radius:11px;padding:10px 16px;font-weight:600;font-size:13.5px;cursor:pointer}
+  .ab.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .foot{margin:10px 36px 14px;display:flex;gap:10px;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <h1>Controllers</h1>
+    <div class="home"><span class="ic" data-i="gamepad-2"></span> B / Esc — back to Settings</div>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="det" id="det">Checking for a connected controller…</div>
+  <div class="wrap" id="wrap"></div>
+  <div class="actbar" id="actbar"></div>
+  <div class="foot"><span class="ic" data-i="gamepad-2"></span> Pick your controller, then press <b>Enter/A</b> on a row and press the button to bind it
+    <span class="h"><b>↑↓</b> move · <b>←→</b> switch controller · <b>Esc</b> back</span></div>
+  <div class="toast" id="toast"></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  // common controllers + their face-button labels (Nintendo swaps A/B and X/Y physically)
+  const CONTROLLERS=[
+    {id:"xbox",name:"Xbox",face:["A","B","X","Y"]},
+    {id:"ps",name:"PlayStation",face:["✕","○","□","△"]},
+    {id:"switch",name:"Switch Pro",face:["B","A","Y","X"]},
+    {id:"8bitdo",name:"8BitDo",face:["A","B","X","Y"]},
+    {id:"generic",name:"Generic / USB",face:["A","B","X","Y"]},
+    {id:"odin2",name:"Odin 2",face:["A","B","X","Y"]},
+  ];
+  // GOSE interface actions and the standard-gamepad button index each defaults to
+  const ACTIONS=[
+    {k:"confirm",nm:"Confirm / Select",def:0},{k:"back",nm:"Back / Cancel",def:1},
+    {k:"x",nm:"X action",def:2},{k:"y",nm:"Y action",def:3},
+    {k:"l1",nm:"L1 — previous tab",def:4},{k:"r1",nm:"R1 — next tab",def:5},
+    {k:"l2",nm:"L2",def:6},{k:"r2",nm:"R2",def:7},
+    {k:"select",nm:"Select / View",def:8},{k:"start",nm:"Start / Menu",def:9},
+    {k:"up",nm:"D-pad Up",def:12},{k:"down",nm:"D-pad Down",def:13},
+    {k:"left",nm:"D-pad Left",def:14},{k:"right",nm:"D-pad Right",def:15},
+    {k:"guide",nm:"Guide / Home (overlay)",def:16},
+  ];
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1900);}
+  // human label for a button index, using the active controller's face labels
+  function btnLabel(idx){const c=CONTROLLERS[ctrl];
+    if(idx>=0&&idx<=3)return "Face "+c.face[idx];
+    const m={4:"L1 / LB",5:"R1 / RB",6:"L2 / LT",7:"R2 / RT",8:"Select",9:"Start",
+             10:"L3",11:"R3",12:"D-Up",13:"D-Down",14:"D-Left",15:"D-Right",16:"Guide"};
+    return m[idx]||("Button "+idx);
+  }
+  let ctrl=0, foc=1, binding=false, defaultMap={};
+  ACTIONS.forEach(a=>defaultMap[a.k]=a.def);
+  function mapKey(){return "gose-remap-"+CONTROLLERS[ctrl].id;}
+  function loadMap(){try{return Object.assign({},defaultMap,JSON.parse(localStorage.getItem(mapKey())||"{}"));}catch(e){return Object.assign({},defaultMap);}}
+  function saveMap(m){localStorage.setItem(mapKey(),JSON.stringify(m));}
+  let map=loadMap();
+  // total focusables: chips(0) + actions(1..N) + reset(N+1) + save(N+2)
+  function nItems(){return 1+ACTIONS.length+2;}
+  function render(){
+    $("chips").innerHTML=CONTROLLERS.map((c,i)=>`<span class="chip ${i===ctrl?'sel':''} ${foc===0&&i===ctrl?'focus':''}" data-c="${i}">${c.name}</span>`).join("");
+    [...$("chips").children].forEach(el=>el.onclick=()=>{ctrl=+el.dataset.c;map=loadMap();foc=0;render();});
+    $("wrap").innerHTML='<div class="ph">'+CONTROLLERS[ctrl].name.toUpperCase()+' — BUTTON MAP</div>'+
+      ACTIONS.map((a,i)=>`<div class="map ${foc===i+1?'focus':''} ${(binding&&foc===i+1)?'bind':''}" data-i2="${i+1}">
+        <span class="nm">${a.nm}</span><span class="btn">${(binding&&foc===i+1)?'Press a button…':btnLabel(map[a.k])}</span></div>`).join("");
+    [...$("wrap").querySelectorAll(".map")].forEach(el=>el.onclick=()=>{foc=+el.dataset.i2;render();startBind();});
+    const reset=ACTIONS.length+1, save=ACTIONS.length+2;
+    $("actbar").innerHTML=`<span class="ab ${foc===reset?'focus':''}" id="ab-reset"><span class="ic" data-i="rotate-ccw"></span> Reset to defaults</span>`+
+      `<span class="ab ${foc===save?'focus':''}" id="ab-save"><span class="ic" data-i="check"></span> Done</span>`;
+    $("ab-reset").onclick=()=>{foc=reset;render();doReset();};
+    $("ab-save").onclick=()=>{location.href="gose-settings.html#input";};
+    const f=$("wrap").querySelector(".map.focus"); if(f)f.scrollIntoView({block:"nearest"});
+    paint();
+  }
+  function detect(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){$("det").innerHTML='Detected: <b>'+gp.id.replace(/\s*\(.*\)\s*/,'')+'</b> — press a row to rebind';
+      // best-effort auto-pick a preset from the pad id
+      var s=gp.id.toLowerCase(), guess=s.includes('xbox')?'xbox':s.includes('dualsense')||s.includes('dualshock')||s.includes('playstation')||s.includes('054c')?'ps':
+        s.includes('switch')||s.includes('nintendo')?'switch':s.includes('8bitdo')?'8bitdo':null;
+      if(guess&&!detect._did){detect._did=1;var gi=CONTROLLERS.findIndex(c=>c.id===guess);if(gi>=0&&gi!==ctrl){ctrl=gi;map=loadMap();render();}}
+    } else $("det").innerHTML='No controller connected — showing defaults. Plug one in (or pair over Bluetooth) to capture buttons.';
+  }
+  function startBind(){const ai=foc-1; if(ai<0||ai>=ACTIONS.length)return;
+    const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(!gp){say("Connect a controller to capture a button");return;}
+    binding=true;render();say("Press the button for "+ACTIONS[ai].nm); }
+  function doReset(){map=Object.assign({},defaultMap);saveMap(map);render();say(CONTROLLERS[ctrl].name+" reset to defaults");}
+  function move(n){if(binding)return;foc=(foc+n+nItems())%nItems();render();}
+  function side(n){if(binding)return;
+    if(foc===0){ctrl=(ctrl+n+CONTROLLERS.length)%CONTROLLERS.length;map=loadMap();render();}}
+  function activate(){if(binding)return;
+    if(foc===0)return; const reset=ACTIONS.length+1, save=ACTIONS.length+2;
+    if(foc===reset)doReset(); else if(foc===save)location.href="gose-settings.html#input";
+    else startBind();}
+  addEventListener("keydown",e=>{const k=e.key;
+    if(binding){if(k==="Escape"){binding=false;render();}e.preventDefault();return;}
+    if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
+    else if(k==="ArrowRight")side(1);else if(k==="ArrowLeft")side(-1);
+    else if(k==="Enter"||k===" ")activate();
+    else if(k==="Escape"||k==="Backspace")location.href="gose-settings.html#input";
+    else return;e.preventDefault();});
+  // gamepad: navigation + button capture during bind
+  let prev={},primed=false;
+  (function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){
+      if(binding){ // capture first newly-pressed button
+        for(let i=0;i<gp.buttons.length;i++){
+          if(gp.buttons[i].pressed && !prev[i] && primed){
+            const ai=foc-1; map[ACTIONS[ai].k]=i; saveMap(map); binding=false; render();
+            say(ACTIONS[ai].nm+" → "+btnLabel(i)); break;
+          }
+        }
+        gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;requestAnimationFrame(pad);return;
+      }
+      const t=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(t(13))move(1);if(t(12))move(-1);if(t(15))side(1);if(t(14))side(-1);
+      if(t(0))activate();if(t(1))location.href="gose-settings.html#input";
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;
+    }
+    requestAnimationFrame(pad);})();
+  const _active=localStorage.getItem("gose-remap-active");
+  if(_active){const ai=CONTROLLERS.findIndex(c=>c.id===_active);if(ai>=0)ctrl=ai;}
+  // remember which controller the user last configured
+  (function watch(){const id=CONTROLLERS[ctrl].id;localStorage.setItem("gose-remap-active",id);setTimeout(watch,800);})();
+  paint();map=loadMap();render();detect();setInterval(detect,1500);
+</script>
+</body></html>

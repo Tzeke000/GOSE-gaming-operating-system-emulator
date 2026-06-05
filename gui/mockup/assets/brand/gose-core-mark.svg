@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="GOSE Core">
+  <defs>
+    <linearGradient id="mL" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c08bff"/><stop offset="1" stop-color="#6f3cff"/></linearGradient>
+    <linearGradient id="mLd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7a44e6"/><stop offset="1" stop-color="#3a1f9e"/></linearGradient>
+    <linearGradient id="mR" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#56b6ff"/><stop offset="1" stop-color="#2f6cff"/></linearGradient>
+    <linearGradient id="mRd" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f7ae0"/><stop offset="1" stop-color="#1c3fb0"/></linearGradient>
+    <radialGradient id="mCore" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#eafaff"/><stop offset="0.5" stop-color="#7fe0ff"/><stop offset="1" stop-color="#7fe0ff" stop-opacity="0"/></radialGradient>
+    <filter id="mGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <g filter="url(#mGlow)">
+    <polygon points="80,22 80,80 34,80" fill="url(#mL)"/>
+    <polygon points="34,80 80,80 80,138" fill="url(#mLd)"/>
+    <polygon points="80,22 126,80 80,80" fill="url(#mR)"/>
+    <polygon points="80,80 126,80 80,138" fill="url(#mRd)"/>
+    <polygon points="80,22 80,138 71,80" fill="#d9c2ff" opacity="0.35"/>
+    <polygon points="80,22 80,138 89,80" fill="#bfe6ff" opacity="0.30"/>
+    <polygon points="80,22 126,80 80,138 34,80" fill="none" stroke="#9fe4ff" stroke-width="2.6" stroke-linejoin="round"/>
+    <line x1="80" y1="22" x2="80" y2="138" stroke="#cfeeff" stroke-width="1.2" opacity="0.8"/>
+  </g>
+  <circle cx="80" cy="80" r="19" fill="url(#mCore)"/>
+  <g stroke="#ffffff" stroke-width="2.8" stroke-linecap="round" filter="url(#mGlow)">
+    <line x1="80" y1="72" x2="80" y2="88"/><line x1="72" y1="80" x2="88" y2="80"/>
+  </g>
+</svg>
