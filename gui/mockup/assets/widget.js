@@ -233,7 +233,7 @@
       build();
       addEventListener('keydown',function(e){var k=e.key;
         if(/INPUT|TEXTAREA/.test((document.activeElement||{}).tagName||''))return;
-        if(k==='ArrowLeft')move(-1,0); else if(k==='ArrowRight'||k==='Tab')move(1,0);
+        if(k==='ArrowLeft'||k==='[')move(-1,0); else if(k==='ArrowRight'||k==='Tab'||k===']')move(1,0);
         else if(k==='ArrowUp')move(0,-1); else if(k==='ArrowDown')move(0,1);
         else if(k==='Enter'||k===' ')activate(); else return; e.preventDefault();});
       var prev={},primed=false;(function pad(){var gps=navigator.getGamepads&&[].slice.call(navigator.getGamepads()).filter(function(x){return x;});
