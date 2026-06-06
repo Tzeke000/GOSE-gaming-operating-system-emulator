@@ -370,6 +370,178 @@ def brightness_set(level):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+# ---- USB passthrough: list host USB devices + claim/release them into the GOSE VM ----
+# Each device is streamed into the VM over a usb-redir channel opened by boot-gose-vm.ps1
+# (one device per channel). 14000 = Bluetooth radio, claimed at boot (not in the free pool).
+# 14001-14004 = claim-on-demand pool. We capture a device with the SAME tool/flags as the BT
+# bridge: `usbredirect --device <vid>:<pid> --to 127.0.0.1:<port> -k` (USBDk backend).
+_USBREDIR_BIN = r"D:\gose-build\msys64\mingw64\bin\usbredirect.exe"
+if not os.path.isfile(_USBREDIR_BIN):
+    _USBREDIR_BIN = "usbredirect"
+USB_BT_VIDPID = "13d3:3607"          # Bluetooth radio — already passed through at boot
+USB_BT_PORT = 14000
+USB_POOL_PORTS = [14001, 14002, 14003, 14004]
+
+_usb_claims = {}                     # vid:pid -> {"port": int, "proc": Popen}
+_usb_lock = threading.Lock()
+
+# Never steal these from the laptop: the BT radio (already passed), the USBDk virtual device,
+# and the host's own pointer/keyboard. Built-in kbd/touchpad are I2C-HID (not USB) so they
+# don't enumerate here at all; the only USB host-input seen on this laptop is the Logitech
+# LIGHTSPEED receiver, caught by the name filter below.
+_USB_PROTECT_VIDPID = {USB_BT_VIDPID, "2b23:cafe"}
+_USB_HIDE_VIDPID = {"2b23:cafe"}     # USBDk's own filter device — infra, not a peripheral
+_USB_PROTECT_NAME_RE = re.compile(r"receiver|keyboard|mouse|touch ?pad|trackpad|usbdk", re.I)
+
+# Known game controllers — flagged specially. A DualSense enumerates as a generic "USB Input
+# Device" (HIDClass) with no controller-ish name, so the vid:pid table is the reliable signal.
+_USB_CONTROLLERS = {
+    "054c:0ce6": "Sony DualSense (PS5)",
+    "054c:0df2": "Sony DualSense Edge (PS5)",
+    "054c:05c4": "Sony DualShock 4 (v1)",
+    "054c:09cc": "Sony DualShock 4 (v2)",
+    "045e:028e": "Xbox 360 Controller",
+    "045e:02ea": "Xbox One Controller",
+    "045e:0b12": "Xbox Series Controller",
+    "045e:0b13": "Xbox Series Controller (Bluetooth)",
+    "057e:2009": "Nintendo Switch Pro Controller",
+    "28de:1142": "Steam Controller",
+    "0079:0006": "Generic USB Gamepad",
+}
+
+def _usb_class(cls, name, vidpid):
+    if vidpid in _USB_CONTROLLERS:
+        return "controller"
+    c = (cls or "").lower(); n = (name or "").lower()
+    if any(k in n for k in ("controller", "gamepad", "joystick", "dualsense", "dualshock", "xbox", "joy-con")):
+        return "controller"
+    if c in ("media", "audioendpoint", "audioprocessingobject") or \
+       any(k in n for k in ("audio", "headset", "headphone", "microphone", " mic", "speaker", "dac")):
+        return "audio"
+    if c in ("usbstor", "scsiadapter", "diskdrive", "wpd", "volume") or \
+       "mass storage" in n or "uas" in n or "flash" in n:
+        return "storage"
+    return "other"
+
+def _usb_list_raw():
+    # Enumerate USB-bus devices (present + cached) with VID/PID via PnP. ConvertTo-Json so we parse
+    # structured data, not screen-scraped tables. Status 'OK' == currently present/plugged in.
+    ps = (
+        "Get-PnpDevice | Where-Object { $_.InstanceId -match 'USB\\\\VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})' } | "
+        "ForEach-Object { $m=[regex]::Match($_.InstanceId,'VID_([0-9A-Fa-f]{4})&PID_([0-9A-Fa-f]{4})'); "
+        "[PSCustomObject]@{ vid=$m.Groups[1].Value.ToLower(); pid=$m.Groups[2].Value.ToLower(); "
+        "cls=$_.Class; name=$_.FriendlyName; present=($_.Status -eq 'OK') } } | "
+        "Sort-Object vid,pid -Unique | ConvertTo-Json -Compress"
+    )
+    out = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                         capture_output=True, text=True, timeout=15, errors="replace").stdout.strip()
+    if not out:
+        return []
+    data = json.loads(out)
+    return data if isinstance(data, list) else [data]
+
+def _usb_reap():
+    # drop claims whose usbredirect process has exited
+    for k in list(_usb_claims):
+        p = _usb_claims[k]["proc"]
+        if p.poll() is not None:
+            _usb_claims.pop(k, None)
+
+def usb_list():
+    try:
+        raw = _usb_list_raw()
+    except Exception as e:
+        return {"ok": False, "error": "USB enumeration failed: " + str(e)}
+    with _usb_lock:
+        _usb_reap()
+        used_ports = {c["port"] for c in _usb_claims.values()}
+        claimed_vp = set(_usb_claims)
+        devs = []
+        for d in raw:
+            vid = (d.get("vid") or "").lower(); pid = (d.get("pid") or "").lower()
+            if not vid or not pid:
+                continue
+            vp = vid + ":" + pid
+            if vp in _USB_HIDE_VIDPID:
+                continue
+            name = d.get("name") or "USB device"
+            klass = _usb_class(d.get("cls"), name, vp)
+            present = bool(d.get("present"))
+            protected = (vp in _USB_PROTECT_VIDPID) or bool(_USB_PROTECT_NAME_RE.search(name))
+            channel = None; reason = None
+            if vp == USB_BT_VIDPID:
+                claimed = True; channel = USB_BT_PORT
+                reason = "Bluetooth radio — already passed through to GOSE"
+            elif vp in claimed_vp:
+                claimed = True; channel = _usb_claims[vp]["port"]
+            else:
+                claimed = False
+            if protected and vp != USB_BT_VIDPID:
+                reason = "host input/system device — protected, never claimable"
+            claimable = present and not protected and not claimed
+            devs.append({"vid": vid, "pid": pid, "id": vp, "name": name, "class": klass,
+                         "is_controller": klass == "controller", "present": present,
+                         "claimed": claimed, "protected": protected, "claimable": claimable,
+                         "channel": channel, "reason": reason,
+                         "known_as": _USB_CONTROLLERS.get(vp)})
+        free = [p for p in USB_POOL_PORTS if p not in used_ports]
+    devs.sort(key=lambda x: (not x["is_controller"], not x["claimable"], not x["present"], x["name"].lower()))
+    return {"ok": True, "devices": devs,
+            "channels": {"bt": USB_BT_PORT, "pool": USB_POOL_PORTS, "free": free}}
+
+def _port_listening(port):
+    # is QEMU serving this usb-redir channel? (only true after a reboot with the channel pool)
+    try:
+        s = socket.create_connection(("127.0.0.1", port), 0.6); s.close(); return True
+    except Exception:
+        return False
+
+def usb_claim(vid, pid):
+    vid = (vid or "").lower(); pid = (pid or "").lower()
+    if not re.fullmatch(r"[0-9a-f]{4}", vid) or not re.fullmatch(r"[0-9a-f]{4}", pid):
+        return {"ok": False, "error": "vid and pid must each be 4 hex digits"}
+    vp = vid + ":" + pid
+    if vp in _USB_PROTECT_VIDPID:
+        return {"ok": False, "error": "device is protected (host input / already passed) and cannot be claimed"}
+    with _usb_lock:
+        _usb_reap()
+        if vp in _usb_claims:
+            return {"ok": True, "vidpid": vp, "channel": _usb_claims[vp]["port"], "already": True}
+        used = {c["port"] for c in _usb_claims.values()}
+        free = [p for p in USB_POOL_PORTS if p not in used]
+        if not free:
+            return {"ok": False, "error": "no free usb-redir channel (all %d in use)" % len(USB_POOL_PORTS)}
+        # The channel must actually be open (QEMU listening). It only is after a reboot with the
+        # channel-pool boot script — fail fast & clearly rather than hang if it isn't.
+        port = next((p for p in free if _port_listening(p)), None)
+        if port is None:
+            return {"ok": False, "needs_reboot": True,
+                    "error": "usb-redir pool channels (14001-14004) are not open yet — "
+                             "reboot the VM with the channel-pool boot script to open them"}
+        log = os.path.join(tempfile.gettempdir(), "gose_usbredir_%s_%s.log" % (vid, pid))
+        try:
+            lf = open(log, "ab")
+            proc = subprocess.Popen([_USBREDIR_BIN, "--device", vp, "--to", "127.0.0.1:%d" % port, "-k"],
+                                    stdout=lf, stderr=subprocess.STDOUT)
+        except Exception as e:
+            return {"ok": False, "error": "failed to launch usbredirect: " + str(e)}
+        _usb_claims[vp] = {"port": port, "proc": proc}
+    return {"ok": True, "vidpid": vp, "channel": port}
+
+def usb_release(vid, pid):
+    vid = (vid or "").lower(); pid = (pid or "").lower(); vp = vid + ":" + pid
+    with _usb_lock:
+        c = _usb_claims.pop(vp, None)
+    if not c:
+        return {"ok": True, "released": False, "note": "device was not claimed by the host bridge"}
+    try:
+        c["proc"].terminate()
+        try: c["proc"].wait(timeout=3)
+        except Exception: c["proc"].kill()
+    except Exception:
+        pass
+    return {"ok": True, "released": True, "vidpid": vp, "freed_channel": c["port"]}
+
 class H(http.server.BaseHTTPRequestHandler):
     def _send(self, obj):
         body = json.dumps(obj).encode()
@@ -430,6 +602,8 @@ class H(http.server.BaseHTTPRequestHandler):
             return
         if route == "/perf":
             return self._send(perf())
+        if route == "/usb":
+            return self._send(usb_list())
         if route == "/brightness":
             return self._send(brightness_get())
         if route == "/clip/status":
@@ -464,6 +638,10 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._send(wifi_connect(payload.get("ssid"), payload.get("password")))
         if route == "/wifi/disconnect":
             return self._send(wifi_disconnect())
+        if route == "/usb/claim":
+            return self._send(usb_claim(payload.get("vid"), payload.get("pid")))
+        if route == "/usb/release":
+            return self._send(usb_release(payload.get("vid"), payload.get("pid")))
         if route == "/brightness":
             return self._send(brightness_set(payload.get("level")))
         self._send({"ok": False, "error": "unknown"})

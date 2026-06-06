@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Peripherals</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 6px}
+  .top img{width:30px;height:30px}.top h1{font-size:19px;margin:0}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .bar{display:flex;align-items:center;gap:12px;padding:8px 36px}
+  .scan{display:flex;align-items:center;gap:8px;background:var(--surface);border:2px solid transparent;color:var(--text);
+    border-radius:12px;padding:11px 18px;font-weight:600;font-size:14px;cursor:pointer;white-space:nowrap}
+  .scan.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .scan.busy{opacity:.6}
+  .hint{color:var(--muted);font-size:12px;margin-left:auto;max-width:60%;text-align:right}
+  .wrap{flex:1;margin:8px 36px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:auto;min-height:0}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:13px 16px 4px}
+  .dev{display:flex;align-items:center;gap:13px;padding:11px 16px;border:2px solid transparent;cursor:pointer}
+  .dev.focus{border-color:var(--accent);background:#5cd0ff14}
+  .dev .ic{font-size:20px;color:#9fb8e8;flex:none}
+  .dev.ctrl .ic{color:#ffd479}
+  .dev .nm{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dev .sub{color:var(--muted);font-size:11.5px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dev .col{flex:1;min-width:0}
+  .dev .st{color:var(--muted);font-size:12px;flex:none;display:flex;align-items:center;gap:6px}
+  .dev .st.in{color:#3fe0a0}.dev .st.av{color:#5cd0ff}.dev .st.pr{color:#c8923f}.dev .st.off{color:#6b7180}
+  .dev .badge{font-size:11px;font-weight:700;border-radius:8px;padding:3px 9px;border:1px solid currentColor}
+  .empty{color:var(--muted);padding:30px;text-align:center;line-height:1.5}
+  .foot{margin:9px 36px 14px;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;
+    transition:opacity .2s;pointer-events:none;max-width:78%;text-align:center}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <h1>Peripherals</h1>
+    <div class="home"><span class="ic" data-i="usb"></span> B / Esc — back</div>
+  </div>
+  <div class="bar">
+    <div class="scan" id="scan"><span class="ic" data-i="search"></span><span id="scan-t">Refresh</span></div>
+    <div class="hint">Controllers, audio &amp; storage are handed to GOSE on demand. Wi-Fi &amp; Bluetooth are always on.</div>
+  </div>
+  <div class="wrap" id="wrap"><div class="empty">Loading…</div></div>
+  <div class="foot"><span class="ic" data-i="plug-zap"></span> Claim a device to use it inside GOSE
+    <span class="h"><b>↑↓</b> move · <b>Enter/A</b> claim / release / manage · <b>Y</b> refresh · <b>Esc</b> back</span></div>
+  <div class="toast" id="toast"></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  const CICON={controller:"gamepad-2",audio:"volume-2",storage:"hard-drive",other:"usb"};
+  // state.items is the flat focusable list: USB rows first, then the Wi-Fi + Bluetooth manage rows.
+  let usb={ok:false,devices:[]}, wifi={ok:false}, bt={ok:false}, items=[], foc=0, busy=false;
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),2400);}
+  function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+  function usbStatus(d){
+    if(d.claimed&&d.channel===14000) return {cls:"in",txt:"Passed (BT)",badge:null};
+    if(d.claimed) return {cls:"in",txt:"In GOSE",badge:"ch "+d.channel};
+    if(d.protected) return {cls:"pr",txt:"Protected",badge:null};
+    if(d.claimable) return {cls:"av",txt:"Available",badge:"Claim"};
+    if(!d.present) return {cls:"off",txt:"Not connected",badge:null};
+    return {cls:"off",txt:"Available",badge:null};
+  }
+  function build(){
+    items=[];
+    (usb.devices||[]).forEach(d=>items.push({type:"usb",d}));
+    items.push({type:"wifi"}); items.push({type:"bt"});
+    if(foc>=items.length) foc=items.length-1; if(foc<0) foc=0;
+  }
+  function wifiLine(){
+    if(!wifi||!wifi.ok) return "Wi-Fi service offline";
+    if(wifi.connected) return "Connected"+(wifi.ssid?" · "+esc(wifi.ssid):"")+(wifi.signal?" · "+esc(wifi.signal):"");
+    return "Not connected — tap to manage";
+  }
+  function btLine(){
+    if(!bt||!bt.ok) return "Bluetooth service offline";
+    if(!bt.adapter) return "No adapter on this device";
+    const n=(bt.devices||[]).filter(x=>x.connected).length;
+    if(!bt.powered) return "Adapter off — tap to manage";
+    return n? (n+" device"+(n>1?"s":"")+" connected") : "On — no devices connected";
+  }
+  function render(){
+    $("scan").className="scan"+(busy?" busy":"");
+    $("scan-t").textContent=busy?"Working…":"Refresh";
+    let h='<div class="ph">USB DEVICES</div>';
+    const ud=usb.devices||[];
+    if(!usb.ok){
+      h+='<div class="empty">USB bridge offline.<br><span style="font-size:12px">'+esc(usb.error||"host bridge unreachable")+'</span></div>';
+    }else if(!ud.length){
+      h+='<div class="empty">No USB devices detected.</div>';
+    }else{
+      ud.forEach((d,i)=>{
+        const st=usbStatus(d);
+        const sub=(d.known_as?esc(d.known_as)+" · ":"")+d.id+" · "+esc(d.class)+(d.reason?" · "+esc(d.reason):"");
+        const badge=st.badge?` <span class="badge">${esc(st.badge)}</span>`:"";
+        h+=`<div class="dev ${d.is_controller?'ctrl':''} ${foc===i?'focus':''}" data-i2="${i}">
+          <span class="ic" data-i="${CICON[d.class]||'usb'}"></span>
+          <div class="col"><div class="nm">${esc(d.name)}</div><div class="sub">${sub}</div></div>
+          <div class="st ${st.cls}">${st.txt}${badge}</div></div>`;
+      });
+    }
+    h+='<div class="ph">CONNECTIVITY</div>';
+    const wi=items.findIndex(x=>x.type==="wifi"), bi=items.findIndex(x=>x.type==="bt");
+    h+=`<div class="dev ${foc===wi?'focus':''}" data-i2="${wi}">
+      <span class="ic" data-i="wifi"></span>
+      <div class="col"><div class="nm">Wi-Fi</div><div class="sub">${wifiLine()}</div></div>
+      <div class="st ${wifi&&wifi.connected?'in':'off'}">Manage ›</div></div>`;
+    h+=`<div class="dev ${foc===bi?'focus':''}" data-i2="${bi}">
+      <span class="ic" data-i="bluetooth"></span>
+      <div class="col"><div class="nm">Bluetooth</div><div class="sub">${btLine()}</div></div>
+      <div class="st ${bt&&bt.adapter&&bt.powered?'in':'off'}">Manage ›</div></div>`;
+    $("wrap").innerHTML=h;
+    [...$("wrap").querySelectorAll(".dev")].forEach(el=>{el.onclick=()=>{foc=+el.dataset.i2;render();activate();};});
+    $("scan").onclick=()=>{load(true);};
+    const f=$("wrap").querySelector(".dev.focus"); if(f)f.scrollIntoView({block:"nearest"});
+    paint();
+  }
+  function load(announce){
+    fetch("/peripherals",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      if(d&&d.ok){usb=d.usb||usb; wifi=d.wifi||wifi; bt=d.bluetooth||bt;}
+      build(); render(); if(announce)say("Refreshed");
+    }).catch(e=>{say("Peripherals service offline"); build(); render();});
+  }
+  function postUsb(path,d,ok){
+    busy=true;render();
+    fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({vid:d.vid,pid:d.pid})})
+      .then(r=>r.json()).then(res=>{
+        busy=false;
+        if(res&&res.ok){ say(ok(res)); }
+        else if(res&&res.needs_reboot){ say("Reboot GOSE to open passthrough channels, then claim again"); }
+        else { say((res&&res.error)||"Action failed"); }
+        load(false);
+      }).catch(e=>{busy=false;render();say("Action failed");});
+  }
+  function actUsb(d){
+    if(d.claimed&&d.channel===14000){ say("Bluetooth is managed on the Bluetooth page"); return; }
+    if(d.claimed){ postUsb("/peripherals/usb/release",d,()=>"Released "+d.name); return; }
+    if(d.protected){ say(d.reason||"This device is protected"); return; }
+    if(!d.present){ say("Plug the device in first"); return; }
+    if(!d.claimable){ say("This device can't be claimed"); return; }
+    postUsb("/peripherals/usb/claim",d,r=>"Claimed "+d.name+(r.channel?" → channel "+r.channel:""));
+  }
+  function activate(){
+    const it=items[foc]; if(!it)return;
+    if(it.type==="usb") actUsb(it.d);
+    else if(it.type==="wifi") location.href="gose-wifi.html";
+    else if(it.type==="bt") location.href="gose-bluetooth.html";
+  }
+  function move(n){if(!items.length)return;foc=(foc+n+items.length)%items.length;render();}
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
+    else if(k==="Enter"||k===" ")activate();
+    else if(k==="y"||k==="Y")load(true);
+    else if(k==="Escape"||k==="Backspace")location.href="gose-settings.html#net";
+    else return;e.preventDefault();});
+  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const t=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(t(13))move(1);if(t(12))move(-1);if(t(0))activate();if(t(3))load(true);
+      if(t(1))location.href="gose-settings.html#net";
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  build();paint();load();
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>

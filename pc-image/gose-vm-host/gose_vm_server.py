@@ -1151,6 +1151,24 @@ def bt_action(payload):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+# ---- Peripherals: unified view of USB (host bridge) + Wi-Fi (host bridge) + Bluetooth (guest) ----
+def peripherals():
+    # USB list comes from the host bridge (it sees the laptop's real USB tree + drives usbredirect);
+    # Wi-Fi status likewise; Bluetooth is passed THROUGH so we read it in-guest via bluetoothctl.
+    # Tolerate the host bridge being down — the page still renders BT + a clear "USB offline".
+    usb = host_bridge("/usb", timeout=8)
+    if not (isinstance(usb, dict) and usb.get("ok")):
+        usb = {"ok": False, "devices": [],
+               "error": (usb or {}).get("error", "host bridge unreachable")}
+    wifi = host_bridge("/wifi/status", timeout=6)
+    if not isinstance(wifi, dict):
+        wifi = {"ok": False}
+    try:
+        bt = bt_status()
+    except Exception as e:
+        bt = {"ok": False, "error": str(e)}
+    return {"ok": True, "usb": usb, "wifi": wifi, "bluetooth": bt}
+
 # ---- AI players: real presence registry (an AI joins/heartbeats; the hub reflects who's live) ----
 AI_F = "/userdata/gose-ui/ai_players.json"
 _AI_LOCK = threading.Lock()
@@ -2504,6 +2522,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(host_bridge("/clip/status"))
         if route == "/bt/status":
             return self._json(bt_status())
+        if route == "/peripherals":
+            return self._json(peripherals())
         if route == "/apps.json":
             return self._json(installed_apps())
         if route == "/syslogo":
@@ -2562,6 +2582,14 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _route_post(self):
         route = self.path.split("?")[0]
+        if route in ("/peripherals/usb/claim", "/peripherals/usb/release"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}")
+            except Exception:
+                payload = {}
+            sub = "/usb/claim" if route.endswith("claim") else "/usb/release"
+            return self._json(host_bridge(sub, payload, timeout=20))
         if route in ("/store/install", "/store/uninstall"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
