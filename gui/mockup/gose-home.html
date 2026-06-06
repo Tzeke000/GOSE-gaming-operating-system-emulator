@@ -5,6 +5,7 @@
 <title>GOSE — Home</title>
 <link rel="stylesheet" href="assets/themes.css">
 <link rel="stylesheet" href="assets/a11y.css">
+<link rel="stylesheet" href="assets/widget.css">
 <style>
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
@@ -36,38 +37,18 @@
   .nav .ic{font-size:21px}.nav span{font-size:11px}
   .nav.on{background:#6a4dff2e;color:#fff}.nav.on .ic{color:var(--accent)}
   /* centerpiece core + reflection */
-  .stage{position:absolute;left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
-  .core{width:300px;height:300px;margin:0;filter:drop-shadow(0 0 40px #7b5cff66);animation:fl 6s ease-in-out infinite}
-  .refl{position:relative;transform:scaleY(-1);width:230px;height:230px;margin-top:-26px;
-    opacity:.22;filter:blur(2px);-webkit-mask:linear-gradient(#000,transparent 70%);mask:linear-gradient(#000,transparent 70%)}
+  .stage{position:absolute;left:0;right:0;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1;pointer-events:none}
+  .core{width:240px;height:240px;margin:0;filter:drop-shadow(0 0 40px #7b5cff66);animation:fl 6s ease-in-out infinite;opacity:.55}
+  .refl{position:relative;transform:scaleY(-1);width:184px;height:184px;margin-top:-22px;
+    opacity:.14;filter:blur(2px);-webkit-mask:linear-gradient(#000,transparent 70%);mask:linear-gradient(#000,transparent 70%)}
   @keyframes fl{0%,100%{transform:translateY(0)}50%{transform:translateY(-12px)}}
-  /* glass panel: pinned + recent */
-  .panel{position:absolute;left:120px;top:88px;width:300px;background:#0c0c1ec9;border:1px solid #ffffff14;
-    border-radius:16px;padding:14px;backdrop-filter:blur(10px);z-index:4}
-  .hd{color:#9aa0c0;font-size:11px;font-weight:700;letter-spacing:.7px;margin:4px 2px 8px}
-  .pin{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
-  .pin a{display:flex;align-items:center;gap:7px;font-size:12px;color:#cdd2ea;background:#ffffff0c;
-    border:1px solid #ffffff10;border-radius:9px;padding:5px 9px}.pin a .ic{font-size:14px;color:var(--accent)}
-  .game{display:flex;align-items:center;gap:11px;padding:7px 6px;border-radius:10px}
-  .game:hover{background:#ffffff0c}
-  .art{width:38px;height:38px;border-radius:8px;flex:none;box-shadow:0 1px 6px #0006}
-  .game .nm{font-size:13px;font-weight:600}.game .sy{font-size:11px;color:#9aa0c0}
-  .search{display:flex;align-items:center;gap:8px;margin-top:8px;background:#ffffff0c;border:1px solid #ffffff12;
-    border-radius:10px;padding:8px 11px;color:#9aa0c0;font-size:12px}.search .ic{font-size:14px}
   /* bottom dock */
   .dock{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;
     background:#0c0c1ed0;border:1px solid #ffffff16;border-radius:16px;padding:8px 12px;backdrop-filter:blur(10px);z-index:6}
   .dock .d{width:44px;height:44px;border-radius:12px;background:#ffffff0c;display:flex;align-items:center;justify-content:center}
   .dock .d .ic{font-size:22px;color:#cdd2ea}.dock .d.on{background:#6a4dff3a}.dock .d.on .ic{color:#fff}
   .dock img{width:26px;height:26px}
-  /* status widget */
-  .status{position:absolute;right:16px;bottom:16px;width:210px;background:#0c0c1ec9;border:1px solid #ffffff14;
-    border-radius:14px;padding:12px 14px;backdrop-filter:blur(10px);z-index:5}
-  .status .row{display:flex;justify-content:space-between;font-size:12px;color:#aeb4d2;margin:5px 0}
-  .status .row b{color:#eaf0ff;font-weight:600}
-  .status .ok{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;margin-top:8px;color:#3fe0a0}
-  .status .ok i{width:8px;height:8px;border-radius:50%;background:#3fe0a0;box-shadow:0 0 8px #3fe0a0;display:inline-block}
-  /* notifications */
+  /* notifications tray bell + slide-in center */
   .tray .bell{cursor:pointer}
   .tray .badge{display:none;background:#ff5a6e;color:#fff;font-size:10px;font-weight:700;border-radius:9px;
     padding:0 5px;margin-left:-7px;margin-right:3px;position:relative;top:-7px}
@@ -83,39 +64,13 @@
   .ncard .ni{width:30px;height:30px;border-radius:9px;flex:none;display:flex;align-items:center;justify-content:center;background:#6a4dff33;color:#dfe5f5}
   .ncard .nt{font-weight:700;font-size:14px}.ncard .nb{color:#aeb4d2;font-size:12px;line-height:1.4;margin-top:2px}
   .ncenter .empty{color:#8b92b0;font-size:13px;text-align:center;margin-top:30px}
-  /* desktop widgets */
-  .whandle{cursor:move}
-  .widget.wfocus{outline:2px solid var(--accent);outline-offset:4px;box-shadow:0 0 26px #5cd0ff66!important}
-  .wbadge{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:90;background:#161826ee;
-    border:1px solid var(--accent);border-radius:10px;padding:7px 15px;font-size:12px;color:#eaf0ff;display:none}
-  .wbadge.on{display:block}
-  #recentapps{display:flex;gap:8px;flex-wrap:wrap;padding:4px 2px 2px}
-  .rapp{width:36px;height:36px;border-radius:9px;background:#ffffff0d;border:1px solid #ffffff14;display:flex;align-items:center;justify-content:center;cursor:pointer}
-  .rapp img{width:26px;height:26px;object-fit:contain}
-  .rapp:hover{border-color:var(--accent)}
+  /* hub (focal) inner display */
+  .hub-clock{font-size:30px;font-weight:700;color:#eaf0ff;line-height:1.05}
+  .hub-date{font-size:12px;color:#aeb4d2;margin:2px 0 8px}
+  /* system widget stat rows (non-focusable display body) */
+  .sys-row{display:flex;justify-content:space-between;font-size:12px;color:#aeb4d2;margin:5px 0}
+  .sys-row b{color:#eaf0ff;font-weight:600}
   .dotw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:0}
-  /* rich-widget rows (emulators / library / store / steam) */
-  .wlist{display:flex;flex-direction:column;gap:1px}
-  .wsub{color:#7f86a6;font-size:10px;font-weight:700;letter-spacing:.5px;margin:9px 2px 3px}
-  .wsub:first-child{margin-top:2px}
-  .witem{display:flex;align-items:center;gap:9px;padding:6px 7px;border-radius:9px;cursor:pointer;color:#cdd2ea}
-  .witem:hover{background:#ffffff0c}
-  .witem.focus{box-shadow:0 0 0 2px var(--accent),0 0 18px #5cd0ff99}
-  .witem .wa{position:relative;width:30px;height:30px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;
-    background:linear-gradient(135deg,#6a4dff33,#3a86b033);font-size:14px;overflow:hidden;color:var(--accent)}
-  .witem .wa img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-  .witem .wa .ic{font-size:15px}
-  .witem .wm{min-width:0;flex:1}
-  .witem .wn{font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .witem .ws{font-size:10.5px;color:#9aa0c0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .wlaunch{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:8px;background:#6a4dff33;
-    border:1px solid var(--accent);border-radius:9px;padding:8px;font-weight:600;font-size:12.5px;cursor:pointer;color:#eaf0ff}
-  .wlaunch:hover{background:#6a4dff55}.wlaunch.focus{box-shadow:0 0 0 2px var(--accent),0 0 18px #5cd0ff99}
-  .wempty{color:#8b92b0;font-size:12px;padding:7px 4px;line-height:1.5}
-  /* widget GLOW — controller-connected (green) / pending notification (amber) */
-  @keyframes wglow{0%,100%{box-shadow:0 0 0 1px var(--gc),0 0 14px -3px var(--gc)}
-    50%{box-shadow:0 0 0 1px var(--gc),0 0 30px 1px var(--gc)}}
-  .widget.glow{animation:wglow 2.4s ease-in-out infinite;border-color:var(--gc)!important}
 </style></head>
 <body>
   <div class="horizon"></div>
@@ -133,19 +88,8 @@
     <img class="refl" src="assets/brand/gose-core.png" alt="">
   </div>
 
-  <div class="panel widget" data-wid="appsgames" data-wname="Apps &amp; Games">
-    <div class="hd whandle">APPS &amp; GAMES</div>
-    <div class="pin">
-      <a data-go="gose-apps.html"><span class="ic" data-i="layout-grid"></span>All Apps</a>
-      <a data-go="gose-library.html"><span class="ic" data-i="cpu"></span>All Games</a>
-      <a data-go="gose-gallery.html"><span class="ic" data-i="image"></span>Gallery</a>
-    </div>
-    <div class="hd" style="margin-top:12px">RECENT GAMES</div>
-    <div id="recent"></div>
-    <div class="hd" style="margin-top:10px">RECENT APPS</div>
-    <div id="recentapps"></div>
-    <div class="search" data-go="gose-apps.html"><span class="ic" data-i="search"></span>Search apps &amp; games…</div>
-  </div>
+  <!-- desktop widgets are created + placed by the widget base (assets/widget.js)
+       from the GW.define() declarations below — nothing is hand-placed here. -->
 
   <div class="ncenter" id="ncenter">
     <div class="nh"><span class="ic" data-i="bell"></span><h3>Notifications</h3><span class="clr" id="n-clear">Clear all</span></div>
@@ -154,307 +98,203 @@
 
   <div class="dock" id="dock"></div>
 
-  <div class="status widget" data-wid="system" data-wname="System">
-    <div class="hd whandle" style="margin:0 0 6px">SYSTEM <span id="d-live" style="color:#3fe0a0;font-weight:600">● live</span></div>
-    <div class="row"><span>CPU</span><b id="d-cpu">…</b></div>
-    <div class="row"><span>GPU</span><b id="d-gpu">—</b></div>
-    <div class="row"><span>Temp</span><b id="d-temp">…</b></div>
-    <div class="row"><span>Memory</span><b id="d-mem">…</b></div>
-    <div class="row"><span>Uptime</span><b id="d-up">…</b></div>
-    <div class="ok"><i></i><span id="d-status">System Status: …</span></div>
-  </div>
-
-  <!-- opt-in widgets (toggle in the Widgets app) -->
-  <div class="panel widget" data-wid="controllers" data-wname="Controllers" style="left:auto;right:18px;top:64px;width:240px">
-    <div class="hd whandle">CONTROLLERS</div>
-    <div id="w-pads" style="font-size:13px;color:#aeb4d2;padding:6px 2px;line-height:1.6">Checking…</div></div>
-  <div class="panel widget" data-wid="notifs" data-wname="Notifications" style="left:auto;right:18px;top:210px;width:262px">
-    <div class="hd whandle">NOTIFICATIONS</div><div id="w-notifs" style="max-height:200px;overflow:auto"></div></div>
-  <div class="panel widget" data-wid="aiplayers" data-wname="AI Players" style="left:448px;top:556px;width:300px">
-    <div class="hd whandle">AI PLAYERS</div>
-    <div id="w-ai" class="pin"><a data-go="gose-ai.html">Loading…</a></div></div>
-  <div class="panel widget" data-wid="hub" data-wname="Hub" style="left:776px;top:513px;width:300px">
-    <div class="hd whandle">HUB</div><div id="w-hub" style="padding:4px 2px;font-size:13px;color:#aeb4d2"></div>
-    <div class="pin"><a data-go="gose-apps.html">All Apps</a><a data-go="gose-library.html">Games</a><a data-go="gose-settings.html">Settings</a></div></div>
-  <div class="panel widget" data-wid="wterminal" data-wname="Terminal" style="left:120px;top:700px;width:300px">
-    <div class="hd whandle">TERMINAL</div><div class="pin"><a data-go="gose-term.html"><span class="ic" data-i="terminal"></span>Open Terminal</a></div></div>
-  <div class="panel widget" data-wid="wemulators" data-wname="Emulators" style="left:448px;top:88px;width:300px">
-    <div class="hd whandle">EMULATORS</div><div id="w-emulators" class="wlist"><div class="wempty">Loading…</div></div></div>
-  <div class="panel widget" data-wid="wlibrary" data-wname="Library" style="left:776px;top:88px;width:300px">
-    <div class="hd whandle">LIBRARY</div><div id="w-library" class="wlist"><div class="wempty">Loading…</div></div></div>
-  <div class="panel widget" data-wid="wstore" data-wname="Store" style="left:1104px;top:88px;width:290px">
-    <div class="hd whandle">STORE</div><div id="w-store" class="wlist"><div class="wempty">Loading…</div></div></div>
-  <div class="panel widget" data-wid="steam" data-wname="Steam" style="left:1104px;top:523px;width:290px">
-    <div class="hd whandle">STEAM</div><div id="w-steam" class="wlist"><div class="wempty">Checking…</div></div></div>
-
 <script src="assets/notify.js"></script>
 <script src="assets/cursor.js"></script>
+<script src="assets/widget.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  var esc=GW.esc, fmtPlay=GW.fmtPlay;
+
+  /* ---------- page chrome: side menu + dock (navigable as nav zones) ---------- */
   const NAV=[["layout-grid","Library","gose-library.html"],["folder","Files","gose-files.html"],
              ["terminal","Terminal","gose-term.html"],["cpu","Emulators","gose-library.html"],
              ["sparkles","AI Players","gose-ai.html"],["settings","Settings","gose-settings.html"]];
   document.getElementById("side").innerHTML=NAV.map(([i,l,h],x)=>
     `<div class="nav ${x===0?'on':''}" data-go="${h}"><span class="ic" data-i="${i}"></span><span>${l}</span></div>`).join("");
-  let GAMES=[];  // filled from /games.json (real games in the VM)
-  function renderRecent(){
-    document.getElementById("recent").innerHTML = GAMES.length ? GAMES.map(([n,s,c,img])=>
-      `<div class="game"><span class="art" style="${img?`background:#0c0c1e url('/fs/file?path=${encodeURIComponent(img)}') center/cover no-repeat`:`background:linear-gradient(135deg,${c},#0c0c1e)`}"></span>
-        <div><div class="nm">${n}</div><div class="sy">${s}</div></div></div>`).join("")
-      : '<div style="color:var(--muted);padding:14px 4px;font-size:13px">No games yet — open <b>Library</b> to browse systems and add ROMs.</div>';
-  }
-  renderRecent();
-  function renderRecentApps(){
-    fetch("/apps.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-      const apps=(d.apps||[]).slice(0,8), el=document.getElementById("recentapps"); if(!el)return;
-      el.innerHTML=apps.length? apps.map(a=>`<span class="rapp" title="${a.id}" data-cmd="flatpak run ${a.id}"><img src="/appicon?id=${a.id}" onerror="this.style.opacity=.25"></span>`).join("")
-        : '<div style="color:var(--muted);font-size:12px;padding:3px 2px">Get apps from the Store</div>';
-      if(window.__rebuildNav)window.__rebuildNav();   // make the app icons keyboard-navigable too
-    }).catch(()=>{});
-  }
-  renderRecentApps(); setInterval(renderRecentApps, 10000);
-  // dynamic content for the opt-in widgets (controllers / notifications / hub clock)
-  function renderWidgetContent(){
-    // controllers (w-pads) are driven from the real /controllers endpoint in renderControllers()
-    const ne=document.getElementById('w-notifs');
-    if(ne&&window.GOSE){const a=GOSE.notifs().slice(0,5);
-      ne.innerHTML=a.length? a.map(n=>`<div style="padding:7px 6px;border-bottom:1px solid #ffffff10"><div style="font-weight:600;font-size:13px">${n.title}</div><div style="color:#8b92b0;font-size:11px">${n.body}</div></div>`).join('')
-        : '<div style="color:#8b92b0;font-size:12px;padding:8px 4px">No notifications</div>';}
-    const he=document.getElementById('w-hub');
-    if(he){const n=new Date();
-      he.innerHTML=`<div style="font-size:24px;font-weight:700;color:#eaf0ff">${n.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}</div>`+
-        `<div style="font-size:12px">${n.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>`;}
-  }
-  renderWidgetContent(); setInterval(renderWidgetContent, 3000);
-  // AI Players widget — live tiers + a Revoke button (the widget half of the AI Hub; full controls in gose-ai.html)
-  function renderAiWidget(){
-    const el=document.getElementById('w-ai'); if(!el)return;
-    const AIS=['Wren','Ava','Iris'], TC={observe:'#9aa3b8',play:'#5cd0ff',admin:'#ffb74d'}, TL={observe:'Observe',play:'Play',admin:'Admin'};
-    Promise.all([fetch('/ai/grants',{cache:'no-store'}).then(r=>r.json()).catch(()=>({})),
-                 fetch('/ai/players',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))]).then(([g,p])=>{
-      const grants=(g&&g.grants)||{}, live=((p&&p.players)||[]);
-      el.innerHTML=AIS.map(n=>{ const tier=(grants[n]&&grants[n].tier)||'observe', on=live.some(x=>x.name===n&&x.online);
-        const rev=tier!=='observe'?`<span class="wrev" data-rev="${n}" style="margin-left:auto;font-size:10px;font-weight:700;color:#ff8a8a;background:#ff6b6b18;border:1px solid #ff6b6b44;border-radius:7px;padding:2px 7px;cursor:pointer">Revoke</span>`:'';
-        return `<a data-go="gose-ai.html" style="display:flex;align-items:center;gap:7px">
-          <span class="dotw" style="background:${on?'#3fe0a0':'#3a3e4c'}"></span>${n}
-          <span style="font-size:10px;font-weight:700;color:${TC[tier]};border:1px solid #ffffff1a;border-radius:6px;padding:1px 6px">${TL[tier]}</span>${rev}</a>`;
-      }).join('');
-      el.querySelectorAll('.wrev[data-rev]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();e.preventDefault();
-        const nm=b.dataset.rev;
-        fetch('/ai/revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm})})
-          .then(()=>{ if(window.GOSE&&GOSE.notify)GOSE.notify({title:'AI access',body:nm+' revoked → Observe only'}); renderAiWidget(); }).catch(()=>{});});
-      if(window.__rebuildNav)window.__rebuildNav();
-    });
-  }
-  renderAiWidget(); setInterval(renderAiWidget, 5000);
-
-  // ---- RICH desktop widgets: emulators / library / store / steam, fed by /widgets/* ----
-  function esc(s){return (s==null?'':(''+s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-  function fmtPlay(s){s=s||0;const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?(h+'h'+(m?' '+m+'m':'')):(m?m+'m':'<1m');}
-  function paintIcons(el){if(el)el.querySelectorAll('[data-i]').forEach(e=>e.style.setProperty('--u',`url(assets/icons/${e.dataset.i}.svg)`));}
-  function setGlow(wid,on,color){const w=document.querySelector('.widget[data-wid="'+wid+'"]'); if(!w)return;
-    if(on){w.style.setProperty('--gc',color);w.classList.add('glow');} else {w.classList.remove('glow');w.style.removeProperty('--gc');}}
-  function emuTile(e){const b=JSON.stringify(e.launch_hint||{system:e.system});
-    return `<div class="witem" data-launch='${esc(b)}' data-label="${esc(e.name)}">
-      <span class="wa"><span class="ic" data-i="cpu"></span></span>
-      <div class="wm"><div class="wn">${esc(e.name)}</div><div class="ws">${esc(e.core||e.system)} · ${fmtPlay(e.playtime_s)}</div></div></div>`;}
-  function gameTile(g){const b=JSON.stringify({system:g.system,game:g.game});
-    // always render a game-icon fallback; cover art (if any) is layered on top and removes itself if it fails to load
-    const art=`<span class="ic" data-i="gamepad-2"></span>`+(g.img?`<img src="/fs/file?path=${encodeURIComponent(g.img)}" onerror="this.remove()">`:'');
-    return `<div class="witem" data-launch='${esc(b)}' data-label="${esc(g.name)}">
-      <span class="wa">${art}</span>
-      <div class="wm"><div class="wn">${esc(g.name)}</div><div class="ws">${esc(g.sysname||g.system)} · ${fmtPlay(g.playtime_s)}</div></div></div>`;}
-  function storeTile(name,sub,tab,icon){return `<div class="witem" data-go="gose-store.html?tab=${tab}" data-label="${esc(name)}">
-    <span class="wa"><span class="ic" data-i="${icon}"></span></span>
-    <div class="wm"><div class="wn">${esc(name)}</div><div class="ws">${esc(sub||tab)}</div></div></div>`;}
-  function renderEmulators(){const el=document.getElementById('w-emulators'); if(!el)return;
-    fetch('/widgets/emulators',{cache:'no-store'}).then(r=>r.json()).then(d=>{
-      const top=(d.top||[]),rec=(d.recent||[]); let h='';
-      if(top.length)h+='<div class="wsub">MOST PLAYED</div>'+top.slice(0,5).map(emuTile).join('');
-      if(rec.length)h+='<div class="wsub">RECENT</div>'+rec.slice(0,3).map(emuTile).join('');
-      el.innerHTML=h||'<div class="wempty">No emulator history yet — play a game to populate this.</div>';
-      paintIcons(el); if(window.__rebuildNav)window.__rebuildNav();}).catch(()=>{});}
-  function renderLibrary(){const el=document.getElementById('w-library'); if(!el)return;
-    fetch('/widgets/library',{cache:'no-store'}).then(r=>r.json()).then(d=>{
-      const rec=(d.recent||[]),top=(d.top||[]); let h='';
-      if(rec.length)h+='<div class="wsub">RECENT</div>'+rec.slice(0,3).map(gameTile).join('');
-      if(top.length)h+='<div class="wsub">MOST PLAYED</div>'+top.slice(0,4).map(gameTile).join('');
-      el.innerHTML=h||'<div class="wempty">No games played yet. Open the Library to add ROMs.</div>';
-      paintIcons(el); if(window.__rebuildNav)window.__rebuildNav();}).catch(()=>{});}
-  function renderStore(){const el=document.getElementById('w-store'); if(!el)return;
-    fetch('/widgets/store',{cache:'no-store'}).then(r=>r.json()).then(d=>{ let h='';
-      if((d.apps||[]).length)h+='<div class="wsub">APPS</div>'+d.apps.slice(0,2).map(a=>storeTile(a.name,a.cat,'apps',a.icon||'download')).join('');
-      if((d.emulators||[]).length)h+='<div class="wsub">EMULATORS</div>'+d.emulators.slice(0,2).map(e=>storeTile(e.name,e.system,'emulators','cpu')).join('');
-      if((d.games||[]).length)h+='<div class="wsub">GAMES</div>'+d.games.slice(0,2).map(g=>storeTile(g.name,g.sysname||g.cat,'games','layout-grid')).join('');
-      el.innerHTML=(h||'<div class="wempty">Store unavailable.</div>')+'<div class="wlaunch" data-go="gose-store.html" data-label="Open Store"><span class="ic" data-i="download"></span>Open Store</div>';
-      paintIcons(el); if(window.__rebuildNav)window.__rebuildNav();}).catch(()=>{});}
-  function renderSteam(){const el=document.getElementById('w-steam'); if(!el)return;
-    fetch('/widgets/steam',{cache:'no-store'}).then(r=>r.json()).then(d=>{
-      if(d.running&&d.logged_in){
-        let h=`<div class="wsub">SIGNED IN${d.user?' · '+esc((''+d.user).toUpperCase()):''}</div>`;
-        const rg=(d.recent_games||[]);
-        h+= rg.length? rg.slice(0,5).map(g=>{const nm=g&&g.name?g.name:(''+g);return `<div class="witem" data-label="${esc(nm)}"><span class="wa"><span class="ic" data-i="gamepad-2"></span></span><div class="wm"><div class="wn">${esc(nm)}</div></div></div>`;}).join('')
-          : '<div class="wempty">Steam is running — open it for your library.</div>';
-        h+=`<div class="wlaunch" data-launch='{"app":"steam"}' data-label="Open Steam"><span class="ic" data-i="gamepad-2"></span>Open Steam</div>`;
-        el.innerHTML=h;
-      } else {
-        const why=!d.installed?'Steam isn’t installed':(d.running?'Steam is running — not signed in':'Steam — not running / not signed in');
-        el.innerHTML='<div class="wempty">'+esc(why)+'.</div>'+(d.installed
-          ? `<div class="wlaunch" data-launch='{"app":"steam"}' data-label="Launch Steam"><span class="ic" data-i="gamepad-2"></span>Launch Steam</div>`
-          : `<div class="witem" data-go="gose-store.html?tab=apps" data-label="Get Steam"><span class="wa"><span class="ic" data-i="download"></span></span><div class="wm"><div class="wn">Get Steam from the Store</div></div></div>`);
-      }
-      paintIcons(el); if(window.__rebuildNav)window.__rebuildNav();
-    }).catch(()=>{el.innerHTML='<div class="wempty">Steam status unavailable.</div>';});}
-  function renderControllers(){const el=document.getElementById('w-pads');
-    fetch('/controllers',{cache:'no-store'}).then(r=>r.json()).then(d=>{
-      const cs=(d.controllers||[]);
-      if(el)el.innerHTML=cs.length? cs.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
-          <span class="dotw" style="background:#3fe0a0;margin-right:0"></span>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span>
-          ${c.is_os_admin?'<span style="font-size:9px;font-weight:700;color:#ffb74d;border:1px solid #ffb74d55;border-radius:6px;padding:1px 5px">OS</span>':''}</div>`).join('')
-        : 'No controllers connected.<br><span style="font-size:11px;color:#7f86a6">Connect a pad and it shows here.</span>';
-      setGlow('controllers',cs.length>0,'#3fe0a0');     // GLOW when a controller is connected
-    }).catch(()=>{});}
-  function refreshNotifGlow(){if(!window.GOSE)return; setGlow('notifs',(GOSE.unread&&GOSE.unread()>0),'#ffb74d');}  // GLOW on pending notification
-  function renderRichWidgets(){renderEmulators();renderLibrary();renderStore();renderSteam();renderControllers();refreshNotifGlow();}
-  renderRichWidgets(); setInterval(renderRichWidgets, 6000);
-  window.addEventListener('gose-notify',refreshNotifGlow);
-
   document.getElementById("dock").innerHTML=
     `<div class="d on" data-go="gose-apps.html" title="Apps"><img src="assets/brand/gose-core-mark.png" alt="Apps"></div>`+
     [["download","Store","gose-store.html"],["cpu","Task Manager","gose-taskman.html"],["palette","Widgets","gose-widgets.html"],["power","Lock","gose-lock.html"]]
       .map(([i,l,h])=>`<div class="d" data-go="${h}" title="${l}"><span class="ic" data-i="${i}"></span></div>`).join("");
-  document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));
+  // dock items use data-go; the widget-base nav handles activation, but mouse-clicks
+  // outside the nav zones should still work, so give them a direct fallback too:
+  document.querySelectorAll('#dock .d,#side .nav').forEach(el=>{ if(el.dataset.go)el.addEventListener('click',e=>{location.href=el.dataset.go;}); });
+  GW.paintIcons(document);
 
-  // --- NAVIGATION: keyboard + mouse + gamepad (PS5 etc.) ---
-  function initNav(){
-    const st=document.createElement('style');
-    st.textContent='.nav.focus,.game.focus,.dock .d.focus,.pin a.focus,.rapp.focus{box-shadow:0 0 0 2px var(--accent),0 0 18px #5cd0ff99;border-radius:11px}'+
-      '.gtoast{position:fixed;left:50%;bottom:80px;transform:translateX(-50%);background:#161820;border:1px solid var(--accent);border-radius:11px;padding:9px 18px;font-size:13px;color:#eaf0ff;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99}.gtoast.show{opacity:1}';
-    document.head.appendChild(st);
-    const toast=document.createElement('div'); toast.className='gtoast'; document.body.appendChild(toast);
-    function say(m){toast.textContent=m;toast.classList.add('show');clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove('show'),1500);}
-    // ---- zone navigation: ←/→ between widgets, ↑/↓ within, Enter/A = select ----
-    const zlabel=document.createElement('div');
-    zlabel.style.cssText='position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:95;background:#161826ee;border:1px solid var(--accent);border-radius:10px;padding:6px 14px;font-size:12px;color:#eaf0ff;opacity:0;transition:opacity .2s;pointer-events:none';
-    document.body.appendChild(zlabel);
-    let zones=[], z=0, ii=0, lblT;
-    function curItem(){return zones[z]&&zones[z].items[ii];}
-    function esc2(s){return (s==null?'':(''+s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-    function itemLabel(it){if(!it)return''; if(it.dataset&&it.dataset.label)return it.dataset.label;
-      let t=(it.textContent||'').replace(/\s+/g,' ').trim(); if(!t)t=it.title||''; return t.slice(0,46);}
-    function highlight(){document.querySelectorAll('.focus').forEach(e=>e.classList.remove('focus'));
-      const it=curItem(); if(it){it.classList.add('focus');it.scrollIntoView({block:'nearest'});}
-      if(zones[z]){
-        // single-item (whole-widget) zone → show the widget name with arrows;
-        // inside a widget → show the hovered ITEM's name, widget name as context
-        const single=it&&it.classList&&it.classList.contains('widget');
-        if(single){zlabel.textContent='◀  '+zones[z].name+'  ▶';}
-        else{zlabel.innerHTML='<span style="color:#9aa0c0;font-size:11px">'+esc2(zones[z].name)+'</span>&nbsp;·&nbsp;<b>'+esc2(itemLabel(it))+'</b>';}
-        zlabel.style.opacity='1';clearTimeout(lblT);lblT=setTimeout(()=>zlabel.style.opacity='0',1300);}}
-    function activate(){const it=curItem(); if(!it)return;
-      if(it.dataset.go){location.href=it.dataset.go;return;}
-      if(it.dataset.launch){try{const b=JSON.parse(it.dataset.launch);
-        fetch('/launch',{method:'POST',headers:{'Content-Type':'application/json'},body:it.dataset.launch});
-        say('Launching '+(b.game||b.app||b.name||b.system||'…'));}catch(e){say('Launch failed');}return;}
-      if(it.dataset.cmd){fetch('/launch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:it.dataset.cmd})});say('Opening…');return;}
-      if(it.classList.contains('game')){say('Open Library to play this');return;}
-      if(it.click){it.click();}}
-    function buildZones(){
-      const cur=curItem(), Z=[];
-      const side=[...document.querySelectorAll('#side .nav')]; if(side.length)Z.push({name:'Menu',items:side});
-      document.querySelectorAll('.widget').forEach(w=>{ if(w.style.display==='none')return;
-        let its=[...w.querySelectorAll('.pin a, #recent .game, #recentapps .rapp, .search[data-go], .witem, .wlaunch')];
-        if(!its.length)its=[w];
-        Z.push({name:(w.dataset.wname||'Widget'),items:its}); });
-      const dock=[...document.querySelectorAll('#dock .d')]; if(dock.length)Z.push({name:'Dock',items:dock});
-      zones=Z;
-      if(cur){for(let a=0;a<zones.length;a++){const b=zones[a].items.indexOf(cur);if(b>=0){z=a;ii=b;break;}}}
-      if(z>=zones.length)z=Math.max(0,zones.length-1); if(zones[z]&&ii>=zones[z].items.length)ii=0;
-      zones.forEach((zo,za)=>zo.items.forEach((el,ib)=>{el.style.cursor='pointer';
-        el.onmouseenter=()=>{z=za;ii=ib;highlight();}; el.onclick=()=>{z=za;ii=ib;activate();};}));
-      const it=curItem(); document.querySelectorAll('.focus').forEach(e=>e.classList.remove('focus')); if(it)it.classList.add('focus');
-    }
-    window.__rebuildNav=buildZones; buildZones();
-    // selecting a widget from elsewhere = jump focus into it
-    window.__focusFirstIn=function(w){for(let a=0;a<zones.length;a++){if(zones[a].items.some(el=>el===w||w.contains(el))){z=a;ii=0;highlight();return;}}};
-    function move(dz,di){if(!zones.length)return; if(dz){z=(z+dz+zones.length)%zones.length;ii=0;} if(di){const n=zones[z].items.length;ii=(ii+di+n)%n;} highlight();}
-    window.__navHome=()=>location.href='gose-apps.html';
-    addEventListener('keydown',e=>{const k=e.key;   // numpad is translated to arrows globally in cursor.js
-      if(/INPUT|TEXTAREA/.test((document.activeElement||{}).tagName||''))return;
-      if(k==='ArrowLeft')move(-1,0); else if(k==='ArrowRight'||k==='Tab')move(1,0);
-      else if(k==='ArrowUp')move(0,-1); else if(k==='ArrowDown')move(0,1);
-      else if(k==='Enter'||k===' ')activate();
-      else return; e.preventDefault();});
-    let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-      if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-        if(tap(14)||tap(4))move(-1,0); if(tap(15)||tap(5))move(1,0);   // ← → / L1 R1 = between widgets
-        if(tap(12))move(0,-1); if(tap(13))move(0,1);                    // ↑ ↓ = within widget
-        if(tap(0))activate(); if(tap(16)||tap(8))window.__navHome();    // A = select · guide/select = Apps
-        gp.buttons.forEach((b,i)=>prev[i]=b.pressed); primed=true;}
-      requestAnimationFrame(pad);})();
-    highlight();
-  }
+  /* ===========================================================================
+     WIDGET DECLARATIONS — every desktop widget, built on the ONE base.
+     Default layout (1920×1080): Hub is the top-centre focal point; the content
+     widgets are grouped in a left/centre block; the status widgets are grouped
+     as a right-edge dock; Terminal sits under the launcher. All non-overlapping.
+     =========================================================================== */
 
-  // pull REAL games from the VM, fill Recent, then wire navigation
+  // ---- HUB (focal, top-centre): clock + date + quick shortcuts ----
+  GW.define({ id:"hub", title:"Hub", icon:"layout-grid", size:{w:320}, pos:{x:800,y:54},
+    render:()=>({ body:'<div class="hub-clock" id="gw-hub-time"></div><div class="hub-date" id="gw-hub-date"></div>',
+      pins:[ {icon:"layout-grid",label:"All Apps",go:"gose-apps.html"},
+             {icon:"cpu",label:"Games",go:"gose-library.html"},
+             {icon:"settings",label:"Settings",go:"gose-settings.html"} ] }) });
+
+  // ---- APPS & GAMES (content, tall left column): pins + recent games + recent apps ----
   const PAL=["#3a5fb0","#7a4ab0","#5a6b3a","#3a86b0","#b0683a","#c2a23a"];
-  function finishInit(){renderRecent();initNav();}
-  Promise.all([
-    fetch("/recent.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
-    fetch("/games.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}))
-  ]).then(([rc,d])=>{
-    const out=[], recent=((rc&&rc.games)||[]);
-    if(recent.length){                                   // REAL recently-played
-      recent.slice(0,6).forEach((r,ci)=>out.push([r.game,r.sysname,PAL[ci%PAL.length],r.img]));
-    } else {                                             // fallback: a sample of the library
-      let ci=0;(d.systems||[]).forEach(s=>s.games.slice(0,2).forEach(g=>{if(out.length<6)out.push([g.name,s.name,PAL[ci++%PAL.length],g.img]);}));
-    }
-    GAMES=out;
-  }).catch(()=>{}).then(finishInit);
+  GW.define({ id:"appsgames", title:"Apps & Games", icon:"layout-grid", size:{w:300}, pos:{x:110,y:180}, poll:10000,
+    load:()=>Promise.all([
+        fetch("/recent.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+        fetch("/games.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+        fetch("/apps.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}))
+      ]).then(([rc,g,ap])=>{
+        const games=[], recent=((rc&&rc.games)||[]);
+        if(recent.length) recent.slice(0,4).forEach((r,ci)=>games.push({label:r.game,sub:r.sysname,img:r.img||null,icon:"gamepad-2",color:PAL[ci%PAL.length],go:"gose-library.html"}));
+        else { let ci=0; ((g&&g.systems)||[]).forEach(s=>s.games.slice(0,2).forEach(x=>{ if(games.length<4)games.push({label:x.name,sub:s.name,img:x.img||null,icon:"gamepad-2",color:PAL[ci++%PAL.length],go:"gose-library.html"}); })); }
+        const apps=((ap&&ap.apps)||[]).slice(0,6).map(a=>({label:a.id,icon:"package",img:"/appicon?id="+a.id,cmd:"flatpak run "+a.id}));
+        return {games,apps};
+      }),
+    render:(d)=>{ d=d||{}; const secs=[];
+      if((d.games||[]).length) secs.push({label:"RECENT GAMES",items:d.games});
+      if((d.apps||[]).length)  secs.push({label:"RECENT APPS", items:d.apps});
+      return { pins:[ {icon:"layout-grid",label:"All Apps",go:"gose-apps.html"},
+                      {icon:"cpu",label:"All Games",go:"gose-library.html"},
+                      {icon:"image",label:"Gallery",go:"gose-gallery.html"} ],
+        sections:secs,
+        footer:{icon:"search",label:"Search apps & games…",go:"gose-apps.html"},
+        empty:"No games yet — open Library to add ROMs." }; } });
 
-  // --- LIVE system dials: real telemetry from the GOSE agent via /status.json ---
+  // ---- EMULATORS (content): most-played & recent systems ----
+  GW.define({ id:"wemulators", title:"Emulators", icon:"cpu", size:{w:300}, pos:{x:440,y:180}, poll:6000,
+    load:()=>fetch('/widgets/emulators',{cache:'no-store'}).then(r=>r.json()),
+    empty:"No emulator history yet — play a game to populate this.",
+    render:(d)=>{ d=d||{}; const tile=e=>({icon:"cpu",label:e.name,sub:(e.core||e.system)+" · "+fmtPlay(e.playtime_s),launch:(e.launch_hint||{system:e.system})});
+      const secs=[]; if((d.top||[]).length)secs.push({label:"MOST PLAYED",items:d.top.slice(0,5).map(tile)});
+      if((d.recent||[]).length)secs.push({label:"RECENT",items:d.recent.slice(0,3).map(tile)});
+      return {sections:secs}; } });
+
+  // ---- LIBRARY (content): recent & most-played games ----
+  GW.define({ id:"wlibrary", title:"Library", icon:"layout-grid", size:{w:300}, pos:{x:770,y:180}, poll:6000,
+    load:()=>fetch('/widgets/library',{cache:'no-store'}).then(r=>r.json()),
+    empty:"No games played yet. Open the Library to add ROMs.",
+    render:(d)=>{ d=d||{}; const tile=g=>({icon:"gamepad-2",img:g.img?("/fs/file?path="+encodeURIComponent(g.img)):null,
+        label:g.name,sub:(g.sysname||g.system)+" · "+fmtPlay(g.playtime_s),launch:{system:g.system,game:g.game}});
+      const secs=[]; if((d.recent||[]).length)secs.push({label:"RECENT",items:d.recent.slice(0,3).map(tile)});
+      if((d.top||[]).length)secs.push({label:"MOST PLAYED",items:d.top.slice(0,4).map(tile)});
+      return {sections:secs}; } });
+
+  // ---- STORE (content): sample apps / emulators / games ----
+  GW.define({ id:"wstore", title:"Store", icon:"download", size:{w:300}, pos:{x:1100,y:180}, poll:6000,
+    load:()=>fetch('/widgets/store',{cache:'no-store'}).then(r=>r.json()),
+    empty:"Store unavailable.",
+    render:(d)=>{ d=d||{}; const t=(name,sub,tab,icon)=>({icon,label:name,sub:sub||tab,go:"gose-store.html?tab="+tab});
+      const secs=[];
+      if((d.apps||[]).length)secs.push({label:"APPS",items:d.apps.slice(0,2).map(a=>t(a.name,a.cat,'apps',a.icon||'download'))});
+      if((d.emulators||[]).length)secs.push({label:"EMULATORS",items:d.emulators.slice(0,2).map(e=>t(e.name,e.system,'emulators','cpu'))});
+      if((d.games||[]).length)secs.push({label:"GAMES",items:d.games.slice(0,2).map(g=>t(g.name,g.sysname||g.cat,'games','layout-grid'))});
+      return {sections:secs, footer:{icon:"download",label:"Open Store",go:"gose-store.html"}}; } });
+
+  // ---- AI PLAYERS (content): Wren / Ava / Iris — status + tier + revoke ----
+  const AIS=['Wren','Ava','Iris'], TC={observe:'#9aa3b8',play:'#5cd0ff',admin:'#ffb74d'}, TL={observe:'Observe',play:'Play',admin:'Admin'};
+  GW.define({ id:"aiplayers", title:"AI Players", icon:"sparkles", size:{w:300}, pos:{x:770,y:440}, poll:5000,
+    load:()=>Promise.all([fetch('/ai/grants',{cache:'no-store'}).then(r=>r.json()).catch(()=>({})),
+                          fetch('/ai/players',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))])
+            .then(([g,p])=>({grants:(g&&g.grants)||{},live:((p&&p.players)||[])})),
+    render:(d)=>{ d=d||{grants:{},live:[]};
+      const items=AIS.map(n=>{ const tier=(d.grants[n]&&d.grants[n].tier)||'observe', on=d.live.some(x=>x.name===n&&x.online);
+        const it={icon:"sparkles",label:n,go:"gose-ai.html",
+          chip:{text:TL[tier],color:TC[tier]} };
+        it._dot=on; return it; });
+      // online dot is drawn into the sub line via a tiny inline marker
+      items.forEach(it=>{ it.sub=(it._dot?'● online':'○ offline'); });
+      // revoke is a second action — expose as a per-row chip when tier>observe
+      AIS.forEach((n,i)=>{ const tier=(d.grants[n]&&d.grants[n].tier)||'observe';
+        if(tier!=='observe') items[i].chip={text:'Revoke',onActivate:()=>{
+          fetch('/ai/revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})})
+            .then(()=>{ if(window.GOSE&&GOSE.notify)GOSE.notify({title:'AI access',body:n+' revoked → Observe only'}); GW.refresh('aiplayers'); }).catch(()=>{}); }};
+      });
+      const online=d.live.filter(x=>x.online).length;
+      return {items, badge: online?{text:online+' live',dot:true}:null}; } });
+
+  // ---- STEAM (content, opt-in): status + recent library ----
+  GW.define({ id:"steam", title:"Steam", icon:"gamepad-2", size:{w:300}, pos:{x:1100,y:440}, poll:6000,
+    load:()=>fetch('/widgets/steam',{cache:'no-store'}).then(r=>r.json()),
+    render:(d)=>{ d=d||{};
+      if(d.running&&d.logged_in){ const rg=(d.recent_games||[]);
+        const items=rg.slice(0,5).map(g=>{const nm=g&&g.name?g.name:(''+g);return {icon:"gamepad-2",label:nm};});
+        return {sections:[{label:"SIGNED IN"+(d.user?' · '+(''+d.user).toUpperCase():''),items}],
+          footer:{icon:"gamepad-2",label:"Open Steam",launch:{app:"steam"}},
+          empty:"Steam is running — open it for your library."}; }
+      const why=!d.installed?'Steam isn’t installed':(d.running?'Steam is running — not signed in':'Steam — not running / not signed in');
+      return { body:'<div class="gw-empty">'+esc(why)+'.</div>',
+        footer: d.installed?{icon:"gamepad-2",label:"Launch Steam",launch:{app:"steam"}}
+                           :{icon:"download",label:"Get Steam from the Store",go:"gose-store.html?tab=apps"} }; } });
+
+  // ---- TERMINAL (content): single-action quick launch ----
+  GW.define({ id:"wterminal", title:"Terminal", icon:"terminal", size:{w:300}, pos:{x:110,y:600},
+    render:()=>({items:[{icon:"terminal",label:"Open Terminal",go:"gose-term.html"}]}) });
+
+  // ---- CONTROLLERS (status dock): connected gamepads — COUNT BADGE, not a glow ----
+  GW.define({ id:"controllers", title:"Controllers", icon:"gamepad-2", size:{w:250}, pos:{x:1650,y:54}, poll:6000,
+    load:()=>fetch('/controllers',{cache:'no-store'}).then(r=>r.json()),
+    empty:"No controllers connected.",
+    render:(d)=>{ const cs=((d&&d.controllers)||[]);
+      const items=cs.map(c=>({icon:"gamepad-2",label:c.name,sub:c.source||"connected",
+        chip:c.is_os_admin?{text:"OS",color:"#ffb74d"}:null}));
+      return {items, badge: cs.length?{text:String(cs.length),dot:true}:null}; } });
+
+  // ---- NOTIFICATIONS (status dock): recent — UNREAD-COUNT BADGE, not a glow ----
+  GW.define({ id:"notifs", title:"Notifications", icon:"bell", size:{w:250}, pos:{x:1650,y:196}, poll:4000,
+    empty:"No notifications.",
+    render:()=>{ const a=(window.GOSE?GOSE.notifs():[]).slice(0,5);
+      const items=a.map(n=>({icon:n.icon||"bell",label:n.title,sub:n.body}));
+      const unread=window.GOSE&&GOSE.unread?GOSE.unread():0;
+      return {items, badge: unread?{text:unread+" new",dot:true,muted:false}:null}; } });
+
+  // ---- SYSTEM (status dock): live laptop telemetry; whole-widget opens Task Manager ----
+  GW.define({ id:"system", title:"System", icon:"cpu", size:{w:250}, pos:{x:1650,y:430}, poll:2000,
+    onActivate:()=>{ location.href='gose-taskman.html'; },
+    load:()=>fetch("/sys/perf",{cache:"no-store"}).then(r=>r.json()).catch(()=>({ok:false})),
+    render:(p)=>{ p=p||{ok:false};
+      if(!p.ok) return {body:'<div class="gw-empty">Host telemetry unreachable.</div>', badge:{text:"offline",muted:true}};
+      const gb=v=>(v/1024).toFixed(1);
+      const temp=(p.cpu_temp_c!=null?Math.round(p.cpu_temp_c)+"°C":"—")+(p.gpu_temp_c!=null?"  ·  GPU "+Math.round(p.gpu_temp_c)+"°C":"");
+      const optimal=(p.cpu_pct<85&&p.mem_pct<90);
+      const rows=[["CPU",Math.round(p.cpu_pct)+"%"],["GPU",(p.gpu_pct!=null?Math.round(p.gpu_pct)+"%":"—")],
+        ["Temp",temp],["Memory",gb(p.mem_used_mb)+" / "+gb(p.mem_total_mb)+" GB ("+p.mem_pct+"%)"],["Uptime",fmtUp(p.uptime_s)]];
+      const body='<div>'+rows.map(r=>'<div class="sys-row"><span>'+r[0]+'</span><b>'+esc(r[1])+'</b></div>').join('')+
+        '<div class="sys-row" style="margin-top:6px"><span><span class="dotw" style="background:'+(optimal?'#3fe0a0':'#ffb74d')+'"></span>Status</span><b>'+(optimal?'Optimal':'Busy')+'</b></div>'+
+        '<div style="color:#7f86a6;font-size:11px;margin-top:6px;text-align:right">A — open Task Manager ›</div></div>';
+      return {body, badge:{text:"live",dot:true}}; } });
+
   function fmtUp(s){const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${m}m`:`${m}m`;}
-  const $=id=>document.getElementById(id);
-  async function poll(){
-    // System widget: REAL laptop telemetry via /sys/perf (NOT the VM's own cpu/mem)
-    try{
-      const p=await (await fetch("/sys/perf",{cache:"no-store"})).json();
-      if(p.ok){
-        $("d-cpu").textContent=Math.round(p.cpu_pct)+"%";
-        $("d-gpu").textContent=(p.gpu_pct!=null?Math.round(p.gpu_pct)+"%":"—");
-        const g=$("d-gpu"); if(g&&p.gpu_name)g.title=p.gpu_name;                 // RTX 5060 on hover
-        $("d-temp").textContent=(p.cpu_temp_c!=null?Math.round(p.cpu_temp_c)+"°C":"—")+
-          (p.gpu_temp_c!=null?"  ·  GPU "+Math.round(p.gpu_temp_c)+"°C":"");
-        const gb=v=>(v/1024).toFixed(1);
-        $("d-mem").textContent=`${gb(p.mem_used_mb)} / ${gb(p.mem_total_mb)} GB (${p.mem_pct}%)`;
-        $("d-up").textContent=fmtUp(p.uptime_s);
-        $("d-status").textContent="System Status: "+(p.cpu_pct<85&&p.mem_pct<90?"Optimal":"Busy");
-        $("d-live").style.color="#3fe0a0"; $("d-live").textContent="● live";
-      } else { $("d-live").style.color="#ff7a6e"; $("d-live").textContent="● host offline"; $("d-status").textContent="System Status: host unreachable"; }
-    }catch(e){ $("d-live").style.color="#ff7a6e"; $("d-live").textContent="● no feed"; }
-    // tray: real battery + wifi/online from the host laptop (via /status.json bridge)
-    try{ const d=await (await fetch("/status.json",{cache:"no-store"})).json(); updateTray(d); }catch(e){}
+
+  // mount everything (creates panels, places them, starts data loops, wires nav)
+  GW.mount();
+
+  /* ---------- hub + tray clock tick (updates text only — keeps focus stable) ---------- */
+  function tick(){
+    const fmt=localStorage.getItem("gose-clockfmt"), tz=localStorage.getItem("gose-tz");
+    const opt={hour:'numeric', minute:'2-digit', hour12: fmt!=="24"}; if(tz)opt.timeZone=tz;
+    const now=new Date(); let ts;
+    try{ ts=now.toLocaleTimeString('en-US',opt); }catch(e){ ts=now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}); }
+    const tc=document.getElementById("t-clock"); if(tc)tc.textContent=ts;
+    const ht=document.getElementById("gw-hub-time"); if(ht)ht.textContent=ts;
+    const hd=document.getElementById("gw-hub-date"); if(hd)hd.textContent=now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
   }
-  // tray: real battery (from host laptop via bridge) + wifi/online, like Windows
+  tick(); setInterval(tick, 5000);
+  // keep the notifications widget fresh the moment something arrives
+  window.addEventListener('gose-notify',()=>GW.refresh('notifs'));
+
+  /* ---------- tray: real battery + wifi/online from host laptop (via /status.json) ---------- */
+  const $=id=>document.getElementById(id);
   function setIcon(el,name){el.style.setProperty("--u",`url(assets/icons/${name}.svg)`);}
   function updateTray(d){
     const wifi=$("t-wifi"); wifi.style.opacity=d.online?1:.32; wifi.title=d.online?"Connected":"No internet";
     const bat=$("t-bat"),pct=$("t-batpct");
-    if(d.has_battery){
-      bat.style.display=pct.style.display="";
-      setIcon(bat,d.charging?"plug-zap":"battery");
-      bat.title=d.charging?"Charging":"On battery";
+    if(d.has_battery){ bat.style.display=pct.style.display="";
+      setIcon(bat,d.charging?"plug-zap":"battery"); bat.title=d.charging?"Charging":"On battery";
       pct.textContent=(d.battery_pct==null?"":d.battery_pct+"%");
-    } else { bat.style.display=pct.style.display="none"; }   // desktop PC: no battery, hide it
+    } else { bat.style.display=pct.style.display="none"; }
   }
-  function tick(){const t=$("t-clock"); if(!t)return;
-    const fmt=localStorage.getItem("gose-clockfmt"), tz=localStorage.getItem("gose-tz");
-    const opt={hour:'numeric', minute:'2-digit', hour12: fmt!=="24"};
-    if(tz) opt.timeZone=tz;
-    try{ t.textContent=new Date().toLocaleTimeString('en-US', opt); }
-    catch(e){ t.textContent=new Date().toLocaleTimeString('en-US', {hour:'numeric',minute:'2-digit'}); }}
-  tick(); setInterval(tick, 15000);
-  // apply the wallpaper chosen in Settings (same gradient set)
+  async function pollTray(){ try{ const d=await (await fetch("/status.json",{cache:"no-store"})).json(); updateTray(d); }catch(e){} }
+  pollTray(); setInterval(pollTray, 2000);
+
+  /* ---------- wallpaper chosen in Settings ---------- */
   (function(){const WALLS=[
     "radial-gradient(120% 90% at 50% -10%, #1a1f3a 0%, #0c0c1e 55%, #07070f 100%)",
     "radial-gradient(120% 90% at 70% 0%, #161033 0%, #0a0a18 60%, #050509 100%)",
@@ -465,7 +305,7 @@
     const i=parseInt(localStorage.getItem("gose-wp")||"-1",10);
     if(i>=0&&i<WALLS.length){document.body.style.background=WALLS[i];document.body.style.backgroundAttachment="fixed";}
   })();
-  // live (animated) wallpaper — set in Settings → Personalization → Live wallpaper
+  /* ---------- live (animated) wallpaper ---------- */
   (function(){const mode=((location.hash.match(/live=(\w+)/)||[])[1])||localStorage.getItem("gose-live")||"off"; if(mode==="off")return;
     const cv=document.createElement("canvas"); cv.style.cssText="position:fixed;inset:0;z-index:0;pointer-events:none";
     document.body.insertBefore(cv,document.body.firstChild);
@@ -491,7 +331,8 @@
       requestAnimationFrame(frame);}
     frame();
   })();
-  // notification center (bell in the tray)
+
+  /* ---------- notification center (bell in the tray) ---------- */
   (function(){ if(!window.GOSE)return; GOSE.seed&&GOSE.seed();
     const bell=document.getElementById("t-bell"),badge=document.getElementById("t-badge"),
           center=document.getElementById("ncenter"),nlist=document.getElementById("nlist");
@@ -508,42 +349,7 @@
     addEventListener("keydown",e=>{if(e.key==="Escape"&&center.classList.contains("on")){center.classList.remove("on");e.preventDefault();}});
     window.addEventListener("gose-notify",refresh);
     refresh();
-    if(location.hash.indexOf("notif")>=0)setTimeout(toggle,300);  // deep-link to open the center
-  })();
-  poll(); setInterval(poll, 2000);
-  // the mini System panel expands into the full Task Manager
-  (function(){const s=document.querySelector('.status'); if(!s)return;
-    s.style.cursor='pointer'; s.title='Open Task Manager';
-    const hint=document.createElement('div'); hint.textContent='click to expand ›';
-    hint.style.cssText='color:#7f86a6;font-size:11px;margin-top:8px;text-align:right';
-    s.appendChild(hint);
-    s.onclick=()=>{ if(window.__wDragged)return; location.href='gose-taskman.html'; };})();
-
-  // --- DESKTOP WIDGETS: enable/disable (via Widgets app) + drag header to move (persists) ---
-  // (keyboard/controller navigation is the unified zone-nav above: ←→ between widgets, ↑↓ within)
-  (function(){
-    let en={}; try{en=JSON.parse(localStorage.getItem('gose-wenabled')||'{}');}catch(e){}
-    const defOn={appsgames:1,system:1};   // these two on by default; the rest opt-in via the Widgets app
-    const forced=((location.hash.match(/enable=([^&]+)/)||[])[1]||'').split(',').filter(Boolean);
-    document.querySelectorAll('.widget').forEach(w=>{ const id=w.dataset.wid;
-      const on=forced.includes(id) ? true : ((en[id]!==undefined)? !!en[id] : !!defOn[id]); w.style.display = on?'':'none'; });
-    const wids=[...document.querySelectorAll('.widget')].filter(w=>w.style.display!=='none'); if(!wids.length)return;
-    // layout version: the rich widgets got taller, so the old saved positions overlap.
-    // bump the version to discard stale saved POSITIONS once (enabled on/off choices are kept).
-    const LAYOUT_V='2';
-    if(localStorage.getItem('gose-wlayout-v')!==LAYOUT_V){localStorage.removeItem('gose-wpos');localStorage.setItem('gose-wlayout-v',LAYOUT_V);}
-    let pos={}; try{pos=JSON.parse(localStorage.getItem('gose-wpos')||'{}');}catch(e){}
-    wids.forEach(w=>{const p=pos[w.dataset.wid]; if(p){w.style.left=p.x+'px';w.style.top=p.y+'px';w.style.right='auto';w.style.bottom='auto';}});
-    function save(){const o={};wids.forEach(w=>{const r=w.getBoundingClientRect();o[w.dataset.wid]={x:Math.round(r.left),y:Math.round(r.top)};});localStorage.setItem('gose-wpos',JSON.stringify(o));}
-    window.__wDragged=false;
-    wids.forEach(w=>{ const h=w.querySelector('.whandle')||w; let dr=null;
-      h.addEventListener('mousedown',e=>{const r=w.getBoundingClientRect();dr={dx:e.clientX-r.left,dy:e.clientY-r.top,m:false};
-        w.style.left=r.left+'px';w.style.top=r.top+'px';w.style.right='auto';w.style.bottom='auto';e.preventDefault();});
-      addEventListener('mousemove',e=>{if(!dr)return;dr.m=true;window.__wDragged=true;
-        w.style.left=Math.max(0,Math.min(innerWidth-50,e.clientX-dr.dx))+'px';
-        w.style.top=Math.max(0,Math.min(innerHeight-30,e.clientY-dr.dy))+'px';});
-      addEventListener('mouseup',()=>{if(dr){if(dr.m)save();dr=null;setTimeout(()=>{window.__wDragged=false;},60);}});
-    });
+    if(location.hash.indexOf("notif")>=0)setTimeout(toggle,300);
   })();
 </script>
 <script src="assets/a11y.js"></script>

@@ -1,0 +1,72 @@
+/* GOSE — Desktop Widget Standard (base styling).
+   One contract for every desktop widget: header (icon+title[+badge]), a body of
+   focusable items, identical focus styling, and a single BLUE focus/hover glow
+   that is the SAME everywhere (focus only — never a state colour).
+   Behaviour lives in assets/widget.js; placement/data live in each widget's
+   declaration. See docs/21-widget-standard.md. */
+
+/* ---- panel ---- */
+.gw{position:absolute;background:#0c0c1ec9;border:1px solid #ffffff14;border-radius:16px;
+  padding:14px;backdrop-filter:blur(10px);z-index:4;display:flex;flex-direction:column;gap:2px}
+.gw[hidden]{display:none}
+
+/* ---- header (icon + title + optional subtle badge) — also the drag handle ---- */
+.gw-hd{display:flex;align-items:center;gap:8px;cursor:move;
+  color:#9aa0c0;font-size:11px;font-weight:700;letter-spacing:.7px;margin:0 2px 8px;user-select:none}
+.gw-hd .gw-hd-ic{font-size:14px;color:var(--accent)}
+.gw-hd-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* subtle in-widget state badge (count / dot) — NOT a glow */
+.gw-badge{display:none;align-items:center;gap:5px;font-size:10px;font-weight:700;
+  color:#cdd2ea;background:#ffffff12;border:1px solid #ffffff1f;border-radius:8px;padding:1px 7px}
+.gw-badge.on{display:inline-flex}
+.gw-badge .gw-dot{width:7px;height:7px;border-radius:50%;background:#3fe0a0;display:inline-block}
+.gw-badge.muted{color:#7f86a6}
+
+/* ---- body ---- */
+.gw-body{display:flex;flex-direction:column;gap:1px;min-height:0}
+.gw-sec{color:#7f86a6;font-size:10px;font-weight:700;letter-spacing:.5px;margin:9px 2px 3px}
+.gw-sec:first-child{margin-top:2px}
+
+/* ---- focusable item: icon (with fallback) + label[+sub] + action ---- */
+.gw-item{display:flex;align-items:center;gap:9px;padding:6px 7px;border-radius:9px;cursor:pointer;color:#cdd2ea}
+.gw-item:hover{background:#ffffff0c}
+.gw-ic{position:relative;width:30px;height:30px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#6a4dff33,#3a86b033);font-size:14px;overflow:hidden;color:var(--accent)}
+.gw-ic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.gw-ic .ic{font-size:15px}
+.gw-tx{min-width:0;flex:1}
+.gw-nm{font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gw-sub{font-size:10.5px;color:#9aa0c0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* trailing chip on an item (e.g. tier / OS / revoke) */
+.gw-chip{margin-left:auto;font-size:10px;font-weight:700;border:1px solid #ffffff1a;border-radius:6px;padding:1px 6px;color:#cdd2ea}
+.gw-chip.act{cursor:pointer;color:#ff8a8a;background:#ff6b6b18;border-color:#ff6b6b44}
+
+/* ---- footer action (whole-widget "open X" button) ---- */
+.gw-act{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:8px;background:#6a4dff33;
+  border:1px solid var(--accent);border-radius:9px;padding:8px;font-weight:600;font-size:12.5px;cursor:pointer;color:#eaf0ff}
+.gw-act:hover{background:#6a4dff55}
+
+/* ---- loading / empty ---- */
+.gw-empty{color:#8b92b0;font-size:12px;padding:7px 4px;line-height:1.5}
+.gw-load{color:#8b92b0;font-size:12px;padding:7px 4px}
+.gw-load::after{content:" …";animation:gwdots 1.2s steps(4,end) infinite}
+@keyframes gwdots{0%{opacity:.3}50%{opacity:1}100%{opacity:.3}}
+
+/* ---- pinned chips row (compact shortcuts inside a widget body) ---- */
+.gw-pins{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 4px}
+.gw-pin{display:flex;align-items:center;gap:7px;font-size:12px;color:#cdd2ea;background:#ffffff0c;
+  border:1px solid #ffffff10;border-radius:9px;padding:5px 9px;cursor:pointer}
+.gw-pin .ic{font-size:14px;color:var(--accent)}
+
+/* ---- THE GLOW: one blue focus/hover highlight, identical for every widget. ----
+   Reserved for FOCUS. There are NO state-coloured glows — state is shown by .gw-badge. */
+.gw-item.focus,.gw-act.focus,.gw-pin.focus{box-shadow:0 0 0 2px var(--accent),0 0 18px #5cd0ff99}
+/* single-action widgets (no inner items) glow as a whole when focused */
+.gw.wfocus{outline:2px solid var(--accent);outline-offset:3px;box-shadow:0 0 26px #5cd0ff66}
+
+/* ---- hover-item name, shown top-centre (standardised) ---- */
+.gw-name{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:95;
+  background:#161826ee;border:1px solid var(--accent);border-radius:10px;padding:6px 14px;
+  font-size:12px;color:#eaf0ff;opacity:0;transition:opacity .2s;pointer-events:none;max-width:60vw}
+.gw-name.on{opacity:1}
+.gw-name .gw-ctx{color:#9aa0c0;font-size:11px}

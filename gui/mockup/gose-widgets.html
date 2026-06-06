@@ -49,26 +49,16 @@
   <div class="foot"><span class="ic" data-i="palette"></span> GOSE Widgets
     <span class="h"><b>↑↓</b> move · <b>Enter</b> toggle · <b>Esc</b> desktop</span></div>
 <script src="assets/cursor.js"></script>
+<script src="assets/widget.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const $=id=>document.getElementById(id);
-  // registry of desktop widgets (new ones get added here as we build them)
-  const DEFON={appsgames:1, system:1};   // on by default; the rest are opt-in
-  const WIDGETS=[
-    {id:"appsgames",  name:"Apps & Games",         desc:"All apps & games, plus your most recent", icon:"layout-grid"},
-    {id:"system",     name:"System",               desc:"Live laptop CPU / GPU / RAM / temp monitor", icon:"cpu"},
-    {id:"controllers",name:"Connected Controllers",desc:"Connected gamepads — glows when one's plugged in", icon:"gamepad-2"},
-    {id:"notifs",     name:"Notifications",         desc:"Recent notifications — glows on a new one", icon:"bell"},
-    {id:"aiplayers",  name:"AI Players",            desc:"Wren, Ava, Iris — status & join",         icon:"sparkles"},
-    {id:"hub",        name:"Hub",                   desc:"Clock, date & quick shortcuts",           icon:"layout-grid"},
-    {id:"wterminal",  name:"Terminal",              desc:"Quick-launch the terminal",               icon:"terminal"},
-    {id:"wemulators", name:"Emulators",             desc:"Most-played & recent systems — start one", icon:"cpu"},
-    {id:"wlibrary",   name:"Library",               desc:"Recent & most-played games — launch one", icon:"layout-grid"},
-    {id:"wstore",     name:"Store",                 desc:"Sample apps, emulators & games to grab",  icon:"download"},
-    {id:"steam",      name:"Steam",                 desc:"Steam status & library when signed in",   icon:"gamepad-2"},
-  ];
+  // SINGLE source of the widget list + defaults: the base's catalog (assets/widget.js).
+  // Building a new widget = one GW.catalog entry + one GW.define() on the desktop;
+  // it then shows up here automatically.
+  const WIDGETS=GW.catalog;
   let en={}; try{en=JSON.parse(localStorage.getItem("gose-wenabled")||"{}");}catch(e){}
-  function isOn(id){ return en[id]!==undefined ? !!en[id] : !!DEFON[id]; }
+  function isOn(id){ return en[id]!==undefined ? !!en[id] : !!(GW.catalog.find(w=>w.id===id)||{}).def; }
   let foc=0;
   function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function render(){
