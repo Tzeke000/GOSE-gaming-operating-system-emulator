@@ -167,6 +167,9 @@
         var t=w.querySelector('.gw-hd-t'); if(t)return t.textContent;} return (zones[z]&&zones[z].name)||'';}
     function clearFocus(){document.querySelectorAll('.focus,.wfocus').forEach(function(e){e.classList.remove('focus','wfocus');});}
     function highlight(){clearFocus(); var it=curItem(); if(!it)return;
+      // let listeners (the WM's registry sync) mirror the live focus — text-first
+      // verifiability for pad-driving (docs/25 §5c)
+      try{dispatchEvent(new CustomEvent("gose-nav"));}catch(e){}
       var whole=it.classList&&it.classList.contains('gw');
       it.classList.add(whole?'wfocus':'focus'); it.scrollIntoView({block:'nearest'});
       if(whole)zlabel.innerHTML='◀&nbsp;&nbsp;'+esc(wname(it))+'&nbsp;&nbsp;▶';
@@ -182,10 +185,24 @@
       if(it.click)it.click();}
     function visibleWidgets(){
       var ws=[].slice.call(document.querySelectorAll('.gw')).filter(function(w){return !w.hidden&&w.style.display!=='none';});
-      // reading order: rows top→bottom, then left→right (so ←/→ feels natural)
-      ws.sort(function(a,a2){var ra=a.getBoundingClientRect(),rb=a2.getBoundingClientRect();
-        var row=Math.round(ra.top/90)-Math.round(rb.top/90); return row||(ra.left-rb.left);});
-      return ws;}
+      // SPATIAL order (docs/25 §5b, Zeke 2026-06-06): left→right, top→down, computed
+      // from the widgets' CURRENT live positions — never a hardcoded list. Widgets are
+      // clustered into columns by x (COL_TOL, same tolerance the auto-flow uses) so a
+      // few px of drag drift doesn't reorder; columns run left→right, and within a
+      // column focus walks top→down. Recomputed on every rebuild + whenever a widget
+      // moves (drag-end and reflow both rebuild the nav).
+      var info=ws.map(function(w){return {w:w,r:w.getBoundingClientRect()};});
+      info.sort(function(a,b){return a.r.left-b.r.left;});
+      var cols=[];
+      info.forEach(function(it){var c=null;
+        for(var i=0;i<cols.length;i++){if(Math.abs(cols[i].x-it.r.left)<COL_TOL){c=cols[i];break;}}
+        if(!c){c={x:it.r.left,items:[]};cols.push(c);}
+        c.items.push(it);});
+      var out=[];
+      cols.forEach(function(c){
+        c.items.sort(function(a,b){return (a.r.top-b.r.top)||(a.r.left-b.r.left);});
+        c.items.forEach(function(it){out.push(it.w);});});
+      return out;}
     function build(){
       var cur=curItem(), Z=[];
       var side=[].slice.call(document.querySelectorAll('#side .nav')); if(side.length)Z.push({name:'Menu',items:side});
@@ -229,6 +246,12 @@
       highlight();
     };
     nav.rebuild=function(){build();};
+    // the REAL zone walk order (docs/25 §5b verification surface): what ←/→ cycles
+    // through, as built — [Menu, ...widgets in spatial order..., Dock].
+    nav.order=function(){return zones.map(function(zo){return zo.name;});};
+    // the live focus (zone + item label) — same verification surface
+    nav.current=function(){var it=curItem();
+      return {zone:(zones[z]||{}).name||null, item:it?itemLabel(it):null};};
   })();
   /* ========================================================================= */
 
@@ -267,6 +290,8 @@
         top=top + r.el.offsetHeight + GAP; // next widget begins below this one's full height
       });
     });
+    // positions changed -> the spatial nav order (docs/25 §5b) must be recomputed
+    if(nav&&nav.rebuild)nav.rebuild();
   }
   var _rfT; function scheduleReflow(){clearTimeout(_rfT);_rfT=setTimeout(reflow,30);}
   function storedPos(){try{return JSON.parse(localStorage.getItem('gose-wpos')||'{}');}catch(e){return {};}}
@@ -284,7 +309,8 @@
     addEventListener('mousemove',function(e){if(!dr)return;dr.m=true;GW.dragged=true;
       w.style.left=Math.max(0,Math.min(innerWidth-50,e.clientX-dr.dx))+'px';
       w.style.top=Math.max(0,Math.min(innerHeight-30,e.clientY-dr.dy))+'px';});
-    addEventListener('mouseup',function(){if(dr){if(dr.m){rec._pinned=true;rec._pos=null;savePosition(rec);reflow();}
+    addEventListener('mouseup',function(){if(dr){if(dr.m){rec._pinned=true;rec._pos=null;savePosition(rec);reflow();
+        if(nav&&nav.rebuild)nav.rebuild();}   // a moved widget reorders the spatial nav (docs/25 §5b)
       dr=null;setTimeout(function(){GW.dragged=false;},60);}});}
 
   /* ---- public API ---- */

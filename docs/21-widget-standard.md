@@ -134,8 +134,11 @@ drag header             → updates and persists position (localStorage gose-wpo
   `GW.catalog`, so a new widget appears there automatically.
 - **Placement** persists per-widget; bumping `LAYOUT_V` in `widget.js` discards
   stale saved positions once so new defaults take effect.
-- **Navigation zones** = `[Menu (sidebar)] + visible widgets (reading order) + [Dock]`.
-  Reading order is top→bottom rows, then left→right, so ←/→ feels natural.
+- **Navigation zones** = `[Menu (sidebar)] + visible widgets (spatial order) + [Dock]`.
+  Spatial order (docs/25 §5b, Zeke 2026-06-06): **left→right, top→down**, computed
+  from the widgets' **current live positions** (they're drag-movable) — columns run
+  left→right, focus walks each column top→down. Recomputed whenever a widget moves;
+  never a hardcoded list.
 
 ---
 
