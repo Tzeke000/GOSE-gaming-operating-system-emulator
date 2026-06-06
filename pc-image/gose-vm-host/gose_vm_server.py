@@ -2389,6 +2389,239 @@ def sys_brightness_host(level=None):
     loc = sys_brightness(level)
     return loc if loc.get("ok") else {"ok": False}
 
+# ===================== WINDOWING SPINE — docs/23 §4 / §9 Phase 0 =====================
+# ONE merged WINDOW REGISTRY over both window kinds (docs/23 §4.1):
+#   * web windows    — iframes in WinBox frames inside the kiosk WebView. The shell-side
+#     WM (assets/gose-wm.js) is the source of truth: it POSTs its full window list to
+#     /windows/sync (on every change + a heartbeat) and this server caches it. If the
+#     heartbeat stops (kiosk navigated away / crashed) the cached web windows go stale
+#     and are dropped from GET /windows.
+#   * native windows — real X windows (Steam / emulators), discovered live from the X
+#     server. DEVIATION from docs/23 (§4.1 says `wmctrl -l` / _NET_CLIENT_LIST): wmctrl
+#     is NOT on this Batocera image — only xdotool — so discovery is `xdotool search
+#     --onlyvisible` + getwindowname/getwindowpid/getwindowgeometry. Same EWMH data,
+#     different tool. (Consequence: iconified native windows drop out of the visible
+#     list — tracking them across minimize is a Phase 2 refinement.)
+# Verb dispatch = POST /wm/<verb> (docs/23 §4.2):
+#   * native target → xdotool / signals, executed immediately;
+#   * web target    → queued; the shell WM drains the queue (piggybacked on the
+#     /windows/sync response, or GET /wm/poll) and performs the op in-page. This is the
+#     server→WebView transport: the kiosk polls, because nothing can push into it.
+#
+# The WM SEMANTIC-EVENT VOCABULARY (docs/23 §7/§9 Phase 0). The pad bridge's WM modal
+# layer (chunk B) will POST these to /wm/event as {"event": "wm.next"}; they map onto
+# the uniform verbs below. Defined now so the vocabulary is fixed even though chunk A
+# only exercises a subset (focus/min/close/open + the registry).
+WM_EVENTS = {
+    "wm.next":     ("next", {}),        # cycle focus forward (carousel step)
+    "wm.prev":     ("prev", {}),        # cycle focus backward
+    "wm.focus":    ("focus", {}),       # focus a specific window (needs id)
+    "wm.snap":     ("snap", {}),        # snap to a zone (needs id + zone)
+    "wm.min":      ("minimize", {}),    # minimize ("act out" tier 0 — still live)
+    "wm.suspend":  ("suspend", {}),     # pause: web=queued to shell, native=SIGSTOP (RAM kept)
+    "wm.free":     ("free", {}),        # release: web=teardown to descriptor, native=SIGTERM/KILL
+    "wm.overview": ("overview", {}),    # all-windows grid (chunk B)
+}
+# Uniform verbs (docs/23 §4.2) + registry/launch ops (open/winify are how web windows
+# come into being; they're shell-queue-only, not in the §4.2 table).
+WM_VERBS_WEB_ONLY = {"open", "winify", "next", "prev", "overview"}
+WM_VERBS = {"focus", "move", "resize", "maximize", "restore", "minimize", "snap",
+            "close", "suspend", "free"} | WM_VERBS_WEB_ONLY
+
+_WM_LOCK = threading.Lock()
+_WEB_WINS = {"ts": 0.0, "list": []}     # shell-side cache: the kiosk's web-window list
+_WM_QUEUE = collections.deque(maxlen=64)  # commands pending for the shell web-WM
+WEB_STALE_S = 15                        # no /windows/sync in this long => cache is stale
+
+# The kiosk + Guide overlay are SHELL SURFACES, not windows — excluded from the registry
+# (the design's "switch back to the shell" targets them by name, not through the list).
+_SHELL_WIN_TITLES = {"GOSE", "GOSE Overlay"}
+
+def _xdo(args, timeout=6):
+    """Run xdotool against the GOSE display; returns (rc, stdout, stderr)."""
+    r = subprocess.run(["/bin/sh", "-c", "DISPLAY=:0 xdotool " + args],
+                       capture_output=True, text=True, timeout=timeout)
+    return r.returncode, (r.stdout or "").strip(), (r.stderr or "").strip()
+
+def _screen_size():
+    try:
+        rc, out, _ = _xdo("getdisplaygeometry")
+        w, h = out.split()
+        return int(w), int(h)
+    except Exception:
+        return 1920, 1080
+
+def _snap_rect(zone, margin_top=0):
+    """Computed zone rects for a 16:9 screen (docs/23 §4.3): halves, quarters,
+    thirds columns, and the ChromeOS-style Partial (main ⅔ + side ⅓)."""
+    W, H = _screen_size()
+    y0, hh = margin_top, H - margin_top
+    Z = {
+        "left":   (0, y0, W // 2, hh),         "right": (W // 2, y0, W - W // 2, hh),
+        "top":    (0, y0, W, hh // 2),         "bottom": (0, y0 + hh // 2, W, hh - hh // 2),
+        "tl":     (0, y0, W // 2, hh // 2),    "tr": (W // 2, y0, W - W // 2, hh // 2),
+        "bl":     (0, y0 + hh // 2, W // 2, hh - hh // 2),
+        "br":     (W // 2, y0 + hh // 2, W - W // 2, hh - hh // 2),
+        "col-l":  (0, y0, W // 3, hh),         "col-c": (W // 3, y0, W // 3, hh),
+        "col-r":  (2 * W // 3, y0, W - 2 * W // 3, hh),
+        "main":   (0, y0, 2 * W // 3, hh),     "side": (2 * W // 3, y0, W - 2 * W // 3, hh),
+        "full":   (0, y0, W, hh),
+    }
+    return Z.get(zone)
+
+def native_windows(include_shell=False):
+    """Live native X windows via xdotool (wmctrl is not on the image — see header)."""
+    wins = []
+    try:
+        rc, out, _ = _xdo("search --onlyvisible --name '.'")
+        xids = [x for x in out.split() if x.isdigit()]
+    except Exception:
+        return wins
+    active = None
+    try:
+        rc, a, _ = _xdo("getactivewindow")
+        active = a if a.isdigit() else None
+    except Exception:
+        pass
+    for xid in xids:
+        try:
+            _, title, _ = _xdo("getwindowname %s" % xid, timeout=4)
+            _, pid_s, _ = _xdo("getwindowpid %s" % xid, timeout=4)
+            geom = {}
+            _, g, _ = _xdo("getwindowgeometry --shell %s" % xid, timeout=4)
+            for ln in g.splitlines():
+                if "=" in ln:
+                    k, v = ln.split("=", 1)
+                    if k in ("X", "Y", "WIDTH", "HEIGHT") and v.lstrip("-").isdigit():
+                        geom[{"X": "x", "Y": "y", "WIDTH": "w", "HEIGHT": "h"}[k]] = int(v)
+            shell = title in _SHELL_WIN_TITLES
+            if shell and not include_shell:
+                continue
+            wins.append({"id": "xwin-%s" % xid, "kind": "native", "xid": int(xid),
+                         "pid": int(pid_s) if pid_s.isdigit() else None,
+                         "title": title or "(untitled)", "icon": "gamepad-2",
+                         "geom": geom, "state": "normal", "group": None,
+                         "shell": shell, "focused": (xid == active)})
+        except Exception:
+            continue
+    return wins
+
+def web_windows():
+    """The kiosk shell's web-window list (cache), dropped when the heartbeat goes stale."""
+    with _WM_LOCK:
+        fresh = (time.time() - _WEB_WINS["ts"]) < WEB_STALE_S
+        return (list(_WEB_WINS["list"]) if fresh else []), fresh
+
+def windows_merged():
+    web, fresh = web_windows()
+    native = native_windows()
+    focus = next((w["id"] for w in web + native if w.get("focused")), None)
+    return {"ok": True, "windows": web + native, "web_fresh": fresh,
+            "focus": focus, "ts": round(time.time(), 2)}
+
+def windows_sync(payload):
+    """Shell WM → server: replace the web-window cache; drain pending commands back."""
+    lst = payload.get("windows")
+    cmds = []
+    with _WM_LOCK:
+        if isinstance(lst, list):
+            _WEB_WINS["list"] = [w for w in lst if isinstance(w, dict) and w.get("id")]
+            _WEB_WINS["ts"] = time.time()
+        while _WM_QUEUE:
+            cmds.append(_WM_QUEUE.popleft())
+    return {"ok": True, "commands": cmds}
+
+def wm_poll():
+    cmds = []
+    with _WM_LOCK:
+        while _WM_QUEUE:
+            cmds.append(_WM_QUEUE.popleft())
+    return {"ok": True, "commands": cmds}
+
+def _wm_queue(cmd):
+    with _WM_LOCK:
+        _WM_QUEUE.append(cmd)
+    return {"ok": True, "queued": True, "cmd": cmd}
+
+def _wm_native(verb, win, payload):
+    """Execute a §4.2 verb on a native X window (xdotool / signals; wmctrl absent)."""
+    xid, pid = win["xid"], win.get("pid")
+    try:
+        if verb == "focus":
+            _xdo("windowactivate %d" % xid)
+        elif verb == "move":
+            _xdo("windowmove %d %d %d" % (xid, int(payload.get("x", 0)), int(payload.get("y", 0))))
+        elif verb == "resize":
+            _xdo("windowsize %d %d %d" % (xid, int(payload.get("w", 800)), int(payload.get("h", 600))))
+        elif verb == "maximize":
+            _xdo("windowstate --add MAXIMIZED_VERT %d" % xid)
+            _xdo("windowstate --add MAXIMIZED_HORZ %d" % xid)
+        elif verb == "restore":
+            _xdo("windowstate --remove MAXIMIZED_VERT %d" % xid)
+            _xdo("windowstate --remove MAXIMIZED_HORZ %d" % xid)
+        elif verb == "minimize":
+            _xdo("windowminimize %d" % xid)
+        elif verb == "snap":
+            rect = _snap_rect(payload.get("zone", ""))
+            if not rect:
+                return {"ok": False, "error": "unknown zone '%s'" % payload.get("zone")}
+            _xdo("windowstate --remove MAXIMIZED_VERT %d" % xid)
+            _xdo("windowstate --remove MAXIMIZED_HORZ %d" % xid)
+            _xdo("windowmove %d %d %d" % (xid, rect[0], rect[1]))
+            _xdo("windowsize %d %d %d" % (xid, rect[2], rect[3]))
+        elif verb == "close":
+            if not pid:
+                return {"ok": False, "error": "no pid for window"}
+            os.kill(pid, 15)                       # SIGTERM — the taskman path
+        elif verb == "suspend":
+            if not pid:
+                return {"ok": False, "error": "no pid for window"}
+            os.kill(pid, 19)                       # SIGSTOP — Switch-style quick-resume tier
+        elif verb == "free":
+            if not pid:
+                return {"ok": False, "error": "no pid for window"}
+            os.kill(pid, int(payload.get("sig", 15)))   # TERM default; sig:9 for a hard free
+        else:
+            return {"ok": False, "error": "verb '%s' not supported on native windows" % verb}
+        return {"ok": True, "kind": "native", "verb": verb, "id": win["id"]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def wm_dispatch(verb, payload):
+    """POST /wm/<verb> — route a uniform window op to the right world (docs/23 §4.2)."""
+    if verb == "event":                                  # semantic event from the pad bridge
+        ev = WM_EVENTS.get(payload.get("event", ""))
+        if not ev:
+            return {"ok": False, "error": "unknown event", "events": sorted(WM_EVENTS)}
+        verb = ev[0]
+    if verb not in WM_VERBS:
+        return {"ok": False, "error": "unknown verb '%s'" % verb, "verbs": sorted(WM_VERBS)}
+    # web-only / launch / no-target verbs always go to the shell WM queue
+    if verb in WM_VERBS_WEB_ONLY:
+        cmd = {"verb": verb}
+        for k in ("id", "url", "title", "icon", "zone"):
+            if payload.get(k) is not None:
+                cmd[k] = payload[k]
+        return _wm_queue(cmd)
+    wid = payload.get("id")
+    if not wid:
+        return {"ok": False, "error": "id required for '%s'" % verb}
+    # resolve target: web cache first, then live native list
+    web, _ = web_windows()
+    if any(w.get("id") == wid for w in web):
+        cmd = {"verb": verb, "id": wid}
+        for k in ("x", "y", "w", "h", "zone", "sig"):
+            if payload.get(k) is not None:
+                cmd[k] = payload[k]
+        return _wm_queue(cmd)
+    for w in native_windows(include_shell=True):
+        if w["id"] == wid or str(w["xid"]) == str(wid):
+            if w.get("shell"):
+                return {"ok": False, "error": "'%s' is a shell surface, not a window" % w["title"]}
+            return _wm_native(verb, w, payload)
+    return {"ok": False, "error": "no window '%s'" % wid}
+# =================== end windowing spine ===================
+
 class H(http.server.SimpleHTTPRequestHandler):
     # static assets (fonts/icons/css/brand art) — only served from the static dir
     _CACHE_EXT = (".woff2", ".woff", ".ttf", ".svg", ".png", ".jpg", ".jpeg",
@@ -2492,6 +2725,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(storage_info())
         if route == "/procs.json":
             return self._json(procs_info())
+        if route == "/windows":
+            return self._json(windows_merged())
+        if route == "/wm/poll":
+            return self._json(wm_poll())
         if route == "/splice/videos":
             return self._json(splice_videos())
         if route == "/splice/probe":
@@ -2631,6 +2868,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/games/install":
                 return self._json(games_install(payload))
             return self._json(games_uninstall(payload))
+        if route == "/windows/sync" or route.startswith("/wm/"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/windows/sync":
+                return self._json(windows_sync(payload))
+            return self._json(wm_dispatch(route[4:], payload))
         if route == "/term/exec":
             try:
                 n = int(self.headers.get("Content-Length", 0))
