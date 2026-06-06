@@ -87,6 +87,23 @@ GATE_REFRESH_S = 3.0                              # re-read registry/admin/token
 # bar.  Removing the file restores the normal "game owns the pad" silence.
 GAMEBAR_FLAG = "/tmp/gose-gamebar-open"
 
+# --- WM modal layer (docs/23 §7, chunk B) -----------------------------------
+# Guide (BTN_MODE) held -> the window carousel; L2 + d-pad -> the Snap chooser.
+# While a WM modal is active the bridge POSTs SEMANTIC events to /wm/event
+# (wm.next/prev/select/cancel/...) instead of synthesizing keys; the shell's
+# long-poll picks them up in milliseconds.  The flag file mirrors the Game-Bar
+# exception so the WM layer keeps working over a native app later (phase 2).
+WM_FLAG = "/tmp/gose-wm-open"
+WM_EVENT_URL = SERVER_URL + "/wm/event"
+GUIDE_HOLD_S = 0.35      # Guide released after this long = "release selects"
+L2_THRESHOLD = 100       # ABS_Z (0-255) past this counts as L2 held
+# keysym -> semantic event while a WM modal is open (reuses map_event's output)
+WM_FROM_KEYSYM = {
+    "Left": "wm.left", "Right": "wm.right", "Up": "wm.up", "Down": "wm.down",
+    "Return": "wm.select", "Escape": "wm.cancel",
+    "bracketleft": "wm.prev", "bracketright": "wm.next",
+}
+
 
 # ---------------------------------------------------------------------------
 def log(msg):
@@ -143,6 +160,151 @@ def default_game_running():
 def default_gamebar_open():
     """True if the Game Bar overlay is open (its flag file exists)."""
     return os.path.exists(GAMEBAR_FLAG)
+
+
+def default_wm_open():
+    """True if the WM modal layer is active (its flag file exists)."""
+    return os.path.exists(WM_FLAG)
+
+
+# ---- /wm/event poster: a single worker thread so posts never block the evdev
+# loop AND arrive in order (left,left,select must not reorder). ----------------
+import queue as _queue
+import threading as _threading
+_WM_POST_Q = _queue.Queue(maxsize=64)
+
+def _wm_post_worker():
+    while True:
+        ev = _WM_POST_Q.get()
+        try:
+            req = urllib.request.Request(
+                WM_EVENT_URL, data=json.dumps({"event": ev}).encode(),
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=1.5).read()
+        except Exception as e:
+            log("wm post %s FAILED: %s" % (ev, e))
+
+def wm_post(ev):
+    try:
+        _WM_POST_Q.put_nowait(ev)
+        log("wm event %s" % ev)
+    except _queue.Full:
+        log("wm post queue full -> dropped %s" % ev)
+
+
+class WMLayer:
+    """The modal window-management layer (docs/23 §7).
+
+    States:  None (normal nav) | "carousel" (Guide) | "snap" (L2+d-pad).
+    * Guide DOWN  -> enter carousel, drop WM_FLAG, post wm.carousel.
+    * Guide UP    -> held >= GUIDE_HOLD_S: post wm.select + exit (release-selects);
+                     shorter: STICKY — the modal stays, A/B finish it.
+    * In a modal every mapped keysym becomes a semantic event (WM_FROM_KEYSYM);
+      Y -> wm.overview, X -> wm.act.  Nothing is synthesized as a key.
+    * L2 held + d-pad (outside a modal) -> enter snap, post wm.snapmode; further
+      d-pad posts directions; A places (stays for Snap-Assist); L2 release exits
+      the bridge modal (the page may keep its assist UI; keys then drive it).
+    * Admin-gated: the same gate as menu nav decides who may enter the layer.
+    The flag file mirrors the Game-Bar exception (is_suppressed honours it), so
+    the layer still works while a game/native app runs.
+    """
+
+    def __init__(self, post=None, flag_path=WM_FLAG, gate=None):
+        self.post = post or wm_post
+        self.flag_path = flag_path
+        self.gate = gate or (lambda path, name=None: (True, "no-gate"))
+        self.mode = None          # None | "carousel" | "snap"
+        self.guide_t = 0.0
+        self.l2 = {}              # dev_path -> bool (per-device trigger state)
+
+    # -- flag lifecycle ------------------------------------------------------
+    def _enter(self, mode):
+        self.mode = mode
+        try:
+            open(self.flag_path, "w").close()
+        except Exception:
+            pass
+
+    def _exit(self):
+        self.mode = None
+        try:
+            os.remove(self.flag_path)
+        except Exception:
+            pass
+
+    def _allowed(self, dev_path, dev_name):
+        try:
+            ok, why = self.gate(dev_path, dev_name)
+        except Exception:
+            ok, why = True, "gate error -> fail-open"
+        if not ok:
+            log("wm layer denied: %s %s" % (dev_name or dev_path or "?", why))
+        return ok
+
+    # -- the handler: returns True when the event was consumed by the layer ---
+    def handle(self, event, dev_path, dev_name, keysyms):
+        et, ec, val = event.type, event.code, event.value
+
+        # L2 tracking (analog ABS_Z or digital BTN_TL2); release exits snap mode
+        if et == ecodes.EV_ABS and ec == ecodes.ABS_Z:
+            held = val >= L2_THRESHOLD
+            if self.l2.get(dev_path) != held:
+                self.l2[dev_path] = held
+                if not held and self.mode == "snap":
+                    self._exit()
+            return True                       # ABS_Z never maps to nav keys anyway
+        if et == ecodes.EV_KEY and ec == ecodes.BTN_TL2:
+            self.l2[dev_path] = (val == 1)
+            if val == 0 and self.mode == "snap":
+                self._exit()
+            return True
+
+        # Guide button = the system key (SteamOS convention)
+        if et == ecodes.EV_KEY and ec == ecodes.BTN_MODE:
+            if val == 1:
+                if not self._allowed(dev_path, dev_name):
+                    return True
+                self.guide_t = time.time()
+                self._enter("carousel")
+                self.post("wm.carousel")
+            elif val == 0 and self.mode == "carousel":
+                if time.time() - self.guide_t >= GUIDE_HOLD_S:
+                    self.post("wm.select")    # release-selects (the headline gesture)
+                    self._exit()
+                # else: quick tap -> sticky modal; A/B finish it
+            return True
+
+        # WM-only buttons while a modal is open (Y=overview, X=act-out)
+        if self.mode and et == ecodes.EV_KEY and val == 1 and \
+                ec in (ecodes.BTN_NORTH, ecodes.BTN_WEST):
+            self.post("wm.overview" if ec == ecodes.BTN_NORTH else "wm.act")
+            return True
+
+        # snap entry: L2 + d-pad/stick direction outside a modal
+        if not self.mode and self.l2.get(dev_path) and keysyms and \
+                keysyms[0] in ("Left", "Right", "Up", "Down"):
+            if not self._allowed(dev_path, dev_name):
+                return True
+            self._enter("snap")
+            self.post("wm.snapmode")
+            return True
+
+        # inside a modal every mapped keysym becomes a semantic event
+        if self.mode and keysyms:
+            for k in keysyms:
+                ev = WM_FROM_KEYSYM.get(k)
+                if not ev:
+                    continue
+                self.post(ev)
+                if ev == "wm.select" and self.mode == "carousel":
+                    self._exit()
+                elif ev == "wm.cancel":
+                    self._exit()
+            return True
+        if self.mode and et == ecodes.EV_KEY:
+            return True                       # swallow everything else while modal
+
+        return False
 
 
 def xdotool_emit(keysym):
@@ -304,13 +466,16 @@ class PadNav:
     """
 
     def __init__(self, emit=None, game_check=None, deadzone=STICK_DEADZONE,
-                 gate=None, gamebar_check=None):
+                 gate=None, gamebar_check=None, wm=None, wm_check=None):
         self.emit = emit or xdotool_emit
         self.game_check = game_check or default_game_running
         self.gamebar_check = gamebar_check or default_gamebar_open
+        self.wm_check = wm_check or default_wm_open
         # gate(dev_path, dev_name) -> (allowed, reason).  Default: allow all
         # (so unit tests / un-wired use don't gate); run() wires AdminGate.allows.
         self.gate = gate or (lambda path, name=None: (True, "no-gate"))
+        # the WM modal layer (docs/23 §7); None disables it (pure-nav tests)
+        self.wm = wm
         self.deadzone = deadzone
         self.axis_dirs = {}    # ecode -> "neg"/"pos"/None  (current crossed dir)
         self.repeat = {}       # ecode -> {"key": keysym, "next": float}
@@ -329,14 +494,20 @@ class PadNav:
         return v
 
     def is_suppressed(self):
-        """Emits are suppressed only when a game runs AND the Game Bar is NOT open.
+        """Emits are suppressed only when a game runs AND no overlay layer is open.
         The Game Bar overlay (its flag file) is the exception that lets the pad
-        drive the bar even while the game process is alive."""
+        drive the bar even while the game process is alive; the WM modal layer's
+        flag (/tmp/gose-wm-open) mirrors it, so window ops work over a game too."""
         if not self.is_paused():
             return False
         try:
             if self.gamebar_check():
                 return False        # game bar open -> drive the bar, don't suppress
+        except Exception:
+            pass
+        try:
+            if self.wm_check():
+                return False        # WM layer open -> window ops over the game
         except Exception:
             pass
         return True
@@ -392,6 +563,13 @@ class PadNav:
 
     def feed(self, event, dev_path=None, dev_name=None):
         keysyms = self.map_event(event)
+        # 0) WM modal layer (chunk B): owns Guide + the L2 modifier, and while a
+        #    modal is open it owns the whole pad — semantic events are POSTed to
+        #    /wm/event instead of keys being synthesized.
+        if self.wm and self.wm.handle(event, dev_path, dev_name, keysyms):
+            if event.type == ecodes.EV_ABS:
+                self.repeat.pop(event.code, None)   # no key auto-repeat from a consumed axis
+            return
         if not keysyms:
             return
         # 1) suppression: a game owns the pad UNLESS the Game Bar overlay is open.
@@ -433,7 +611,14 @@ class PadNav:
 # ---------------------------------------------------------------------------
 def run():
     log("gose-pad-nav starting (pid %d)" % os.getpid())
-    nav = PadNav(gate=AdminGate().allows)
+    # stale WM flag from a previous crash would unsuppress keys during games
+    try:
+        os.remove(WM_FLAG)
+    except Exception:
+        pass
+    _threading.Thread(target=_wm_post_worker, daemon=True).start()
+    gate = AdminGate().allows
+    nav = PadNav(gate=gate, wm=WMLayer(gate=gate))
     devices = {}   # path -> InputDevice
     last_scan = 0.0
 
@@ -586,6 +771,98 @@ def selftest():
     nobar_nav = PadNav(emit=rec.append, game_check=lambda: True, gamebar_check=lambda: False)
     nobar_nav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1))
     check("GAMEBAR: closed during game -> suppressed", rec == [])
+
+    # ----- WM MODAL LAYER (docs/23 §7, chunk B) ------------------------------
+    import tempfile
+    flagp = os.path.join(tempfile.gettempdir(), "test-gose-wm-open")
+    try:
+        os.remove(flagp)
+    except Exception:
+        pass
+    posts = []
+
+    def wm_pair(gate_fn=None, game=False):
+        posts.clear(); rec.clear()
+        wm = WMLayer(post=posts.append, flag_path=flagp,
+                     gate=gate_fn or (lambda p, n=None: (True, "ok")))
+        n = PadNav(emit=rec.append, game_check=lambda: game, wm=wm,
+                   wm_check=lambda: os.path.exists(flagp))
+        return n, wm
+
+    DEV = "/dev/input/event20"
+    # Guide DOWN -> carousel opens (event posted, flag dropped, NO key synthesized)
+    n1, w1 = wm_pair()
+    n1.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    check("WM: Guide down -> wm.carousel posted", posts == ["wm.carousel"])
+    check("WM: Guide down -> flag file set", os.path.exists(flagp))
+    check("WM: Guide down -> no key emitted", rec == [])
+    # while held: R1/L1 cycle as semantic events, not bracket keys
+    n1.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1), DEV)
+    check("WM: R1 in modal -> wm.next (no key)", posts[-1] == "wm.next" and rec == [])
+    n1.feed(E(ecodes.EV_KEY, ecodes.BTN_TL, 1), DEV)
+    check("WM: L1 in modal -> wm.prev", posts[-1] == "wm.prev")
+    # d-pad cycles too
+    n1.feed(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, 1), DEV)
+    check("WM: d-pad right in modal -> wm.right", posts[-1] == "wm.right")
+    n1.feed(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, 0), DEV)
+    # Y -> overview, X -> act-out (stay in modal)
+    n1.feed(E(ecodes.EV_KEY, ecodes.BTN_NORTH, 1), DEV)
+    check("WM: Y in modal -> wm.overview", posts[-1] == "wm.overview")
+    n1.feed(E(ecodes.EV_KEY, ecodes.BTN_WEST, 1), DEV)
+    check("WM: X in modal -> wm.act (modal stays)", posts[-1] == "wm.act" and w1.mode == "carousel")
+    # release after a HOLD -> selects + exits + flag removed
+    w1.guide_t = time.time() - 1.0
+    n1.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 0), DEV)
+    check("WM: Guide release (held) -> wm.select + exit", posts[-1] == "wm.select" and w1.mode is None)
+    check("WM: exit removes flag", not os.path.exists(flagp))
+    # quick TAP -> sticky modal (no select on release); A then selects + exits
+    n2, w2 = wm_pair()
+    n2.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    n2.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 0), DEV)      # instant release = tap
+    check("WM: Guide tap -> sticky (no select yet)", posts == ["wm.carousel"] and w2.mode == "carousel")
+    n2.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
+    check("WM: A in sticky modal -> wm.select + exit", posts[-1] == "wm.select" and w2.mode is None)
+    # B cancels
+    n3, w3 = wm_pair()
+    n3.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    n3.feed(E(ecodes.EV_KEY, ecodes.BTN_EAST, 1), DEV)
+    check("WM: B in modal -> wm.cancel + exit", posts[-1] == "wm.cancel" and w3.mode is None)
+    check("WM: cancel removes flag", not os.path.exists(flagp))
+    # normal nav is untouched when no modal is open
+    n3.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1), DEV)
+    check("WM: normal mode still emits bracketright", rec == ["bracketright"])
+    # L2 + d-pad -> snap chooser; A places but STAYS (assist); L2 release exits
+    n4, w4 = wm_pair()
+    n4.feed(E(ecodes.EV_ABS, ecodes.ABS_Z, 255), DEV)        # L2 held
+    n4.feed(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, -1), DEV)     # + d-pad
+    check("WM: L2+d-pad -> wm.snapmode", posts == ["wm.snapmode"] and w4.mode == "snap")
+    check("WM: snap entry -> no arrow key leaked", rec == [])
+    n4.feed(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, 0), DEV)
+    n4.feed(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, -1), DEV)     # next press = direction
+    check("WM: d-pad in snap modal -> wm.left", posts[-1] == "wm.left")
+    n4.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
+    check("WM: A in snap modal -> wm.select, modal stays (assist)",
+          posts[-1] == "wm.select" and w4.mode == "snap")
+    n4.feed(E(ecodes.EV_ABS, ecodes.ABS_Z, 0), DEV)          # L2 released
+    check("WM: L2 release exits snap modal + removes flag",
+          w4.mode is None and not os.path.exists(flagp))
+    # WM layer is admin-gated: a denied pad cannot open it
+    n5, w5 = wm_pair(gate_fn=lambda p, n=None: (False, "not OS-admin"))
+    n5.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    check("WM: gate-denied pad cannot enter the layer", posts == [] and w5.mode is None)
+    # the /tmp/gose-wm-open exception: game running + flag -> keys NOT suppressed
+    rec.clear()
+    open(flagp, "w").close()
+    nwm = PadNav(emit=rec.append, game_check=lambda: True,
+                 wm_check=lambda: os.path.exists(flagp))
+    nwm.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
+    check("WM-FLAG: open during game -> emits (mirror of Game-Bar exception)", rec == ["Return"])
+    os.remove(flagp)
+    rec.clear()
+    nwm2 = PadNav(emit=rec.append, game_check=lambda: True,
+                  wm_check=lambda: False)
+    nwm2.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
+    check("WM-FLAG: closed during game -> still suppressed", rec == [])
 
     # ----- ADMIN GATE -------------------------------------------------------
     # Registry fixture: P1 native (admin candidate), a friend's BT pad, the dev
