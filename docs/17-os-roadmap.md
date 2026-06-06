@@ -43,11 +43,56 @@ capture/stream · **AI Hub** (presence + permission tiers + revoke; enforcement 
 - ⬜ Flashable **device image** + install runbook.
 
 ## E. Distribution / packaging ⭐ (Zeke: "an app anyone can download, maybe Steam")
-- ⬜⭐ **Flashable image / installer** anyone can download (Batocera ships this way; build a GOSE image).
-- ⬜ PC installer / runnable build decoupled from our dev machine.
+- 🟡 **Flashable image / installer** anyone can download (Batocera ships this way; build a GOSE image).
+- 🟡 PC installer / runnable build decoupled from our dev machine — **VM launcher BUILT** (see below).
 - ⬜ **Update mechanism** (OTA / versioned updates) — currently none.
 - ⬜ **Steam listing** path (emulation frontends do live on Steam); store assets, screenshots.
 - 🟡 OOBE polish (brand-agnostic, name-your-own-AI — already designed; finish + test the full first-run).
+
+### Distribution launcher — BUILT (Wren, 2026-06-06) `pc-image/dist/`
+The "downloaded GOSE from Steam/GitHub → double-click → it runs in its own VM" experience.
+GOSE boots **inside a QEMU VM**, so installing/running it **never converts the user's real
+Windows machine**, and launching needs **no admin**.
+
+**Built (working local launcher):**
+- `pc-image/dist/GOSE.bat` — double-click entry; runs the launcher with a console title "GOSE".
+- `pc-image/dist/launcher/gose-launcher.ps1` — orchestrator. **Reuses `boot-gose-vm.ps1`** (the working
+  virgl GPU + audio + Bluetooth + host-bridge boot); does NOT reimplement QEMU args. Flow:
+  detect-already-running → focus the GOSE window instead of double-booting; else first-run
+  **provision** (decompress `vm/gose-disk.img.gz` once) → boot via the reused script pointed at
+  bundle-relative QEMU + image (via `GOSE_QEMU_BIN`/`GOSE_IMAGE`/`GOSE_BRIDGE` env overrides, defaults
+  unchanged for the dev box) → wait for the in-VM agent on `127.0.0.1:8731` → bring the GOSE window forward.
+- `pc-image/dist/make-shortcut.ps1` — creates a desktop `GOSE.lnk` with the **GOSE Core `.ico`**
+  (`launcher/gose.ico`, rasterized from `gui/mockup/assets/brand/gose-core-mark.png`).
+- `pc-image/dist/package-bundle.ps1` — assembles the shippable folder from canonical pieces
+  (launcher glue + `gose-vm-host` runtime scripts + portable QEMU + the image).
+- `pc-image/dist/README.md` — the user-facing "double-click GOSE to start" + bundle layout.
+
+**Bundle layout (what a user downloads):**
+```
+GOSE\  GOSE.bat · make-shortcut.ps1 · README.md
+       launcher\ gose-launcher.ps1 · boot-gose-vm.ps1 · host_bridge.py · gose.ico
+       qemu\     (portable QEMU: qemu-system-x86_64.exe + DLLs)
+       vm\       gose-disk.img(.gz)
+```
+The large payloads (`qemu/`, `vm/`, the copied runtime scripts) are **assembled at package time**,
+not committed (the repo holds the launcher glue + icon only).
+
+**Verified end-to-end (2026-06-06):** stopped the running VM → ran the launcher → it booted via the
+reused script (host bridge + QEMU + BT bridge up) → agent `gose_ping` → pong → clean first-boot state
+preserved (`.oobe-done` absent, no `accounts.json`) → kiosk routes to `gose-oobe.html` (deterministic:
+`gose-session.sh` lands OOBE when the flag is absent + `gose-boot.html` redirects on `/oobe/status !done`).
+Single QEMU instance, no duplicates.
+
+**Still TODO (honest — this is a working LOCAL launcher, not a store package):**
+- ⬜⭐ **Real Steam depot packaging** (depot upload, app config, Steam launch options) + store assets.
+- ⬜⭐ **Code-signing** the launcher/installer (unsigned `.bat`/`.ps1`/`.exe` trip SmartScreen/AV).
+- ⬜ **Auto-update** of the VM image + launcher (no OTA yet).
+- ⬜ **Trim portable QEMU** to the `qemu-system-x86_64` DLL closure (current `package-bundle.ps1` copies
+  the whole MSYS2 `mingw64\bin` — over-broad, hundreds of MB).
+- ⬜ **WHPX dependency**: QEMU acceleration needs Windows Hypervisor Platform; enabling it is a one-time
+  admin host step. Launching GOSE afterward needs no admin — but the bundle should detect+guide this.
+- ⬜ A native `.exe` wrapper (vs `.bat`) for a cleaner Steam/desktop launch + a proper splash UI.
 
 ## F. OS fundamentals still thin
 - ⬜ **Update/OTA** (see E). ⬜ Clipboard manager. ⬜ VPN. ⬜ Mobile hotspot/tethering.
