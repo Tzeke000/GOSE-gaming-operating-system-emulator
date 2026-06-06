@@ -118,6 +118,10 @@ license-aware installs).
    pad→menu bridge must accept ANY detected pad during OOBE: the admin-pad
    arbitration (docs/07) only locks in AFTER a user exists — pre-OOBE there is
    no admin yet, so the first pad that navigates becomes the admin candidate.
+   **(b) DONE 2026-06-06** in `gose-pad-nav.py` `AdminGate`: when no admin is set AND
+   `.oobe-done` is absent, ANY detected pad is allowed to drive the menus; normal
+   arbitration resumes once an admin exists or setup completes (selftest cases added).
+   **(a)** `xpadneo` image-bake remains `[needs image build]`.
 3. **Storage auto-import — BUILT (software layer), verified end-to-end on the VM**
    (2026-06-06). "ROMs found on this card — add to your Library?" When an SD/USB
    with ROMs is inserted, GOSE detects it, offers it, and copies the games into
@@ -175,8 +179,22 @@ docs/23 §1.6.)
 
 1. ~~Storage auto-import (§5.3)~~ — **DONE 2026-06-06** (software layer, VM-verified
    end-to-end; real-hardware insertion is the only `[needs hardware]` piece).
-2. OOBE wizard (§3) — new `gose-oobe.html` + first-boot flag in the server;
-   reuses login.html, the pairing screen, and the privacy settings page.
+2. ~~OOBE wizard (§3)~~ — **DONE 2026-06-06** (built + pad-driven end-to-end on the VM).
+   `gose-oobe.html` is the full 11-step wizard (welcome · language · keyboard ·
+   controller · network[skippable] · license · account · privacy · personalize ·
+   AI pairing[skippable] · getting-ready → desktop). First-boot flag
+   `/userdata/system/gose/.oobe-done`; server endpoints `GET /oobe/status`,
+   `POST /oobe/complete` (writes the flag + `accounts.json`, applies the privacy
+   opt-INs via the `scrape_auto` flag, issues the first AI pairing), `POST /oobe/reset`.
+   `gose-session.sh` routes the kiosk to the wizard when the flag is absent (covers a
+   watchdog relaunch mid-setup), the desktop once done; `gose-boot.html` re-checks via
+   `/oobe/status`. Pre-user pad arbitration (§5.2b) implemented in `gose-pad-nav.py`
+   (no admin + OOBE-not-done ⇒ any pad drives the wizard). Reuse: `login.html` focus
+   idiom, the shared OSK in `cursor.js` (on-pad text entry), `themes.css`/a11y,
+   `/controllers` + `/net/scan` live data, `/ai/grant` (Observe pairing token + Hub
+   entry). Controller-paced CSS completion animations respect the a11y reduce-motion
+   attribute. **Reset to first-boot:** `POST /oobe/reset {"wipe_account":true}` or
+   `rm /userdata/system/gose/.oobe-done` (factory reset also resets it).
 3. Image-bake of the §4 app set — folds into the `pc-image/` build +
    Steam-packaging work (docs/17 §C); Flatpak for Steam/Firefox/VLC/Obsidian,
    CloakBrowser per its own install notes.
