@@ -145,7 +145,7 @@
         const games=[], recent=((rc&&rc.games)||[]);
         if(recent.length) recent.slice(0,4).forEach((r,ci)=>games.push({label:r.game,sub:r.sysname,img:r.img||null,icon:"gamepad-2",color:PAL[ci%PAL.length],go:"gose-library.html"}));
         else { let ci=0; ((g&&g.systems)||[]).forEach(s=>s.games.slice(0,2).forEach(x=>{ if(games.length<4)games.push({label:x.name,sub:s.name,img:x.img||null,icon:"gamepad-2",color:PAL[ci++%PAL.length],go:"gose-library.html"}); })); }
-        const apps=((ap&&ap.apps)||[]).slice(0,6).map(a=>({label:a.id,icon:"package",img:"/appicon?id="+a.id,cmd:"flatpak run "+a.id}));
+        const apps=((ap&&ap.apps)||[]).slice(0,6).map(a=>({label:a.id,icon:"layout-grid",img:"/appicon?id="+a.id,cmd:"flatpak run "+a.id}));
         return {games,apps};
       }),
     render:(d)=>{ d=d||{}; const secs=[];
@@ -162,7 +162,9 @@
   GW.define({ id:"wemulators", title:"Emulators", icon:"cpu", size:{w:300}, pos:{x:440,y:180}, poll:6000,
     load:()=>fetch('/widgets/emulators',{cache:'no-store'}).then(r=>r.json()),
     empty:"No emulator history yet — play a game to populate this.",
-    render:(d)=>{ d=d||{}; const tile=e=>({icon:"cpu",label:e.name,sub:(e.core||e.system)+" · "+fmtPlay(e.playtime_s),launch:(e.launch_hint||{system:e.system})});
+    render:(d)=>{ d=d||{}; const tile=e=>({icon:"gamepad-2",
+        img:e.system?("/syslogo?system="+encodeURIComponent(e.system)):null,
+        label:e.name,sub:(e.core||e.system)+" · "+fmtPlay(e.playtime_s),launch:(e.launch_hint||{system:e.system})});
       const secs=[]; if((d.top||[]).length)secs.push({label:"MOST PLAYED",items:d.top.slice(0,5).map(tile)});
       if((d.recent||[]).length)secs.push({label:"RECENT",items:d.recent.slice(0,3).map(tile)});
       return {sections:secs}; } });
@@ -181,11 +183,14 @@
   GW.define({ id:"wstore", title:"Store", icon:"download", size:{w:300}, pos:{x:1100,y:180}, poll:6000,
     load:()=>fetch('/widgets/store',{cache:'no-store'}).then(r=>r.json()),
     empty:"Store unavailable.",
-    render:(d)=>{ d=d||{}; const t=(name,sub,tab,icon)=>({icon,label:name,sub:sub||tab,go:"gose-store.html?tab="+tab});
+    render:(d)=>{ d=d||{}; const t=(name,sub,tab,icon,img)=>({icon,img:img||null,label:name,sub:sub||tab,go:"gose-store.html?tab="+tab});
       const secs=[];
-      if((d.apps||[]).length)secs.push({label:"APPS",items:d.apps.slice(0,2).map(a=>t(a.name,a.cat,'apps',a.icon||'download'))});
-      if((d.emulators||[]).length)secs.push({label:"EMULATORS",items:d.emulators.slice(0,2).map(e=>t(e.name,e.system,'emulators','cpu'))});
-      if((d.games||[]).length)secs.push({label:"GAMES",items:d.games.slice(0,2).map(g=>t(g.name,g.sysname||g.cat,'games','layout-grid'))});
+      // APPS: the app's real flatpak logo (/appicon) when present, else its named icon.
+      if((d.apps||[]).length)secs.push({label:"APPS",items:d.apps.slice(0,2).map(a=>t(a.name,a.cat,'apps',a.icon||'download',a.id?("/appicon?id="+encodeURIComponent(a.id)):null))});
+      // EMULATORS: per-system white logo (/syslogo), gamepad-2 fallback if a system has none.
+      if((d.emulators||[]).length)secs.push({label:"EMULATORS",items:d.emulators.slice(0,2).map(e=>t(e.name,e.system,'emulators','gamepad-2',e.system?("/syslogo?system="+encodeURIComponent(e.system)):null))});
+      // GAMES: a clear gamepad icon (no per-title art in the store sample).
+      if((d.games||[]).length)secs.push({label:"GAMES",items:d.games.slice(0,2).map(g=>t(g.name,g.sysname||g.cat,'games','gamepad-2'))});
       return {sections:secs, footer:{icon:"download",label:"Open Store",go:"gose-store.html"}}; } });
 
   // ---- AI PLAYERS (content): Wren / Ava / Iris — status + tier + revoke ----

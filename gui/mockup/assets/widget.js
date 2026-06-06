@@ -9,7 +9,22 @@
   "use strict";
   var SPECS=[];                 // registered behavioural specs (home mounts these)
   var MOUNTED={};               // id -> {el, body, spec, data}
-  var LAYOUT_V="gw1";           // bump to discard stale saved positions once
+  var LAYOUT_V="gw2";           // bump to discard stale saved positions once
+
+  /* ---- ROW→HEIGHT + AUTO-FLOW (the layout contract) ----------------------------
+     A widget's height is INTRINSIC TO ITS ROW COUNT. There is no uniform widget
+     height and no internal scroll: the body renders header + one line per row, so
+     the widget is exactly as tall as its rows show it to be — Terminal (1 row) is
+     short, Apps & Games / Emulators / Library (many rows) are tall.
+     The framework never hard-codes a y that assumes a short widget. Instead it
+     groups widgets into columns (by their declared x) and AUTO-FLOWS each column
+     top→bottom: the first widget sits at the column's start y, and every widget
+     below starts at (previous widget's measured full height) + GAP. Positions are
+     therefore COMPUTED FROM HEIGHTS, so widgets never overlap regardless of how
+     many rows any of them grows to. A widget the user drags is "pinned" and keeps
+     its spot; everything else flows around the pins.                            */
+  var GAP=18;        // px gap between stacked widgets in a column
+  var COL_TOL=180;   // declared-x within this distance => same column
 
   /* ---- catalog: the SINGLE source for the widget list + defaults + grouping.
      The Widgets toggle page renders from this; the desktop mounts whatever is
@@ -115,6 +130,7 @@
       else b.className='gw-badge'; }
     paintIcons(rec.el);
     if(GW.nav)GW.nav.rebuild();
+    scheduleReflow();        // row count (height) may have changed -> restack columns
   }
   function safe(fn,d){try{return fn(d);}catch(e){return null;}}
 
@@ -216,24 +232,51 @@
   })();
   /* ========================================================================= */
 
-  /* ---- placement + drag (positions persist; layout version resets defaults) ---- */
+  /* ---- placement + drag (auto-flow is the default; dragged widgets pin) ---- */
+  function declaredX(rec){var p=rec.spec.pos||{}; return (p.x!=null?p.x:(p.left!=null?p.left:0));}
+  function declaredY(rec){var p=rec.spec.pos||{}; return (p.y!=null?p.y:(p.top!=null?p.top:0));}
   function place(rec){
-    var spec=rec.spec, w=rec.el, p=spec.pos||{};
-    var saved=rec._pos;
-    if(saved){w.style.left=saved.x+'px';w.style.top=saved.y+'px';w.style.right='auto';w.style.bottom='auto';}
-    else{ if(p.x!=null)w.style.left=p.x+'px'; if(p.y!=null)w.style.top=p.y+'px';
-          if(p.right!=null)w.style.right=p.right+'px'; if(p.bottom!=null)w.style.bottom=p.bottom+'px';
-          if(p.left!=null)w.style.left=p.left+'px'; if(p.top!=null)w.style.top=p.top+'px'; }
+    var spec=rec.spec, w=rec.el;
     if(spec.size&&spec.size.w)w.style.width=spec.size.w+'px';
-    if(spec.size&&spec.size.h)w.style.minHeight=spec.size.h+'px';
+    // NB: no fixed/min height — a widget is exactly as tall as its rows (see ROW→HEIGHT).
+    if(rec._pinned&&rec._pos){            // user-placed: honour the saved spot
+      w.style.left=rec._pos.x+'px';w.style.top=rec._pos.y+'px';w.style.right='auto';w.style.bottom='auto';
+    } else {                              // default: seed at the declared anchor; reflow() finalises y
+      w.style.left=declaredX(rec)+'px';w.style.top=declaredY(rec)+'px';w.style.right='auto';w.style.bottom='auto';
+    }
   }
+  /* Auto-flow: group visible widgets into columns by declared x, then stack each
+     column top→bottom using MEASURED heights so nothing can overlap. Pinned
+     (user-dragged) widgets keep their place and the flow steps past them. */
+  function reflow(){
+    var recs=Object.keys(MOUNTED).map(function(id){return MOUNTED[id];})
+      .filter(function(r){return r.el && !r.el.hidden && r.el.style.display!=='none';});
+    var cols=[];
+    recs.forEach(function(r){var x=declaredX(r),col=null;
+      for(var i=0;i<cols.length;i++){if(Math.abs(cols[i].x-x)<COL_TOL){col=cols[i];break;}}
+      if(!col){col={x:x,items:[]};cols.push(col);} col.items.push(r);});
+    cols.forEach(function(col){
+      col.items.sort(function(a,b){return declaredY(a)-declaredY(b);});
+      var colX=declaredX(col.items[0]);   // align the column under its top widget
+      var top=null;
+      col.items.forEach(function(r){
+        if(r._pinned){var rb=r.el.getBoundingClientRect(); top=rb.top+rb.height+GAP; return;}
+        if(top===null)top=declaredY(r);   // column start = top widget's declared y
+        r.el.style.left=colX+'px'; r.el.style.right='auto'; r.el.style.bottom='auto';
+        r.el.style.top=Math.round(top)+'px';
+        top=top + r.el.offsetHeight + GAP; // next widget begins below this one's full height
+      });
+    });
+  }
+  var _rfT; function scheduleReflow(){clearTimeout(_rfT);_rfT=setTimeout(reflow,30);}
+  function storedPos(){try{return JSON.parse(localStorage.getItem('gose-wpos')||'{}');}catch(e){return {};}}
   function loadPositions(){
     if(localStorage.getItem('gose-wlayout-v')!==LAYOUT_V){
       localStorage.removeItem('gose-wpos'); localStorage.setItem('gose-wlayout-v',LAYOUT_V);}
-    try{return JSON.parse(localStorage.getItem('gose-wpos')||'{}');}catch(e){return {};}}
-  function savePositions(){var o={};Object.keys(MOUNTED).forEach(function(id){var w=MOUNTED[id].el;
-    if(w.hidden)return; var r=w.getBoundingClientRect();o[id]={x:Math.round(r.left),y:Math.round(r.top)};});
-    localStorage.setItem('gose-wpos',JSON.stringify(o));}
+    return storedPos();}
+  function savePosition(rec){var m=storedPos(),r=rec.el.getBoundingClientRect();
+    m[rec.spec.id]={x:Math.round(r.left),y:Math.round(r.top)};
+    localStorage.setItem('gose-wpos',JSON.stringify(m));}
   function makeDraggable(rec){var w=rec.el,h=rec.el.querySelector('.gw-hd')||rec.el,dr=null;
     h.addEventListener('mousedown',function(e){var r=w.getBoundingClientRect();
       dr={dx:e.clientX-r.left,dy:e.clientY-r.top,m:false};
@@ -241,7 +284,8 @@
     addEventListener('mousemove',function(e){if(!dr)return;dr.m=true;GW.dragged=true;
       w.style.left=Math.max(0,Math.min(innerWidth-50,e.clientX-dr.dx))+'px';
       w.style.top=Math.max(0,Math.min(innerHeight-30,e.clientY-dr.dy))+'px';});
-    addEventListener('mouseup',function(){if(dr){if(dr.m)savePositions();dr=null;setTimeout(function(){GW.dragged=false;},60);}});}
+    addEventListener('mouseup',function(){if(dr){if(dr.m){rec._pinned=true;rec._pos=null;savePosition(rec);reflow();}
+      dr=null;setTimeout(function(){GW.dragged=false;},60);}});}
 
   /* ---- public API ---- */
   var GW={
@@ -266,15 +310,18 @@
         el.hidden=!on;
         root.appendChild(el);
         var rec={spec:spec,el:el,body:el.querySelector('.gw-body'),badgeEl:el.querySelector('.gw-badge'),
-                 data:null,_pos:pos[spec.id]};
+                 data:null,_pos:pos[spec.id],_pinned:!!pos[spec.id]};
         // whole-widget action (single-action widgets like Terminal/System)
         if(spec.onActivate)el.__act=spec.onActivate;
         MOUNTED[spec.id]=rec;
         place(rec); makeDraggable(rec); paintIcons(el);
         if(on)runLoad(rec);
       });
+      reflow();                                   // initial column stack (computed from heights)
+      addEventListener('resize',scheduleReflow);  // keep it tidy on window changes
       nav.init();
     },
+    reflow:reflow,
     nav:nav,
     // let a widget force an out-of-band refresh (e.g. after an action)
     refresh:function(id){var r=MOUNTED[id]; if(r){ if(!r.spec.load){renderBody(r);return;}
