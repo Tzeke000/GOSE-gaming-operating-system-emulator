@@ -35,9 +35,13 @@
   <div class="bar"><i></i></div>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
-  // animate, then hand off to the desktop
+  // animate, then hand off. On a fresh install (no .oobe-done flag) land on the first-boot
+  // wizard; otherwise the desktop. The server is the source of truth (so a reset re-runs OOBE).
+  var dest="gose-home.html";
+  fetch("/oobe/status",{cache:"no-store"}).then(function(r){return r.json();})
+    .then(function(d){ if(d&&d.ok&&!d.done) dest="gose-oobe.html"; }).catch(function(){});
   setTimeout(function(){ document.body.classList.add("out"); }, 3000);
-  setTimeout(function(){ location.href="gose-home.html"; }, 3350);
+  setTimeout(function(){ location.href=dest; }, 3350);
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>

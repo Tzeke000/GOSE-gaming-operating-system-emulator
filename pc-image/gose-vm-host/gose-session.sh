@@ -37,10 +37,19 @@ if ! grep -q guide_toggle /etc/openbox/rc.xml 2>/dev/null; then
   sed -i 's#</openbox_config>#  <keyboard>\n    <keybind key="KP_5"><action name="Execute"><command>/userdata/gose-ui/guide_toggle.sh</command></action></keybind>\n    <keybind key="KP_Begin"><action name="Execute"><command>/userdata/gose-ui/guide_toggle.sh</command></action></keybind>\n    <keybind key="Print"><action name="Execute"><command>/userdata/gose-ui/shot.sh</command></action></keybind>\n  </keyboard>\n</openbox_config>#' /etc/openbox/rc.xml
   DISPLAY=:0 openbox --reconfigure 2>/dev/null
 fi
-# Boot splash on the FIRST kiosk launch per VM boot (/tmp clears on reboot); the desktop on relaunches.
+# First-boot routing (docs/25): a fresh install (no .oobe-done flag) lands on the OOBE wizard;
+# once setup is finished the flag exists and we go to the desktop. This also covers a watchdog
+# RELAUNCH mid-setup -> back to the wizard, not the desktop. Reset = remove the flag (or factory
+# reset) to re-run the wizard. The boot splash itself re-checks the flag via /oobe/status.
+if [ -f /userdata/system/gose/.oobe-done ]; then
+  LAND=gose-home.html
+else
+  LAND=gose-oobe.html
+fi
+# Boot splash on the FIRST kiosk launch per VM boot (/tmp clears on reboot); the landing page on relaunches.
 if [ ! -f /tmp/gose-booted ]; then
   touch /tmp/gose-booted
   exec python3 /userdata/gose-ui/kiosk.py http://127.0.0.1:8780/gose-boot.html
 else
-  exec python3 /userdata/gose-ui/kiosk.py http://127.0.0.1:8780/gose-home.html
+  exec python3 /userdata/gose-ui/kiosk.py "http://127.0.0.1:8780/$LAND"
 fi

@@ -1356,7 +1356,17 @@ def ai_grant(payload):
     with _AI_LOCK:
         g = _ai_grants_load()
         if tier == "observe":
-            g.pop(name, None)     # observe is the floor — drop the grant (== revoke)
+            if payload.get("pair"):
+                # OOBE / first pairing: keep an observe-tier roster entry WITH a token so the AI is
+                # identifiable and appears in the AI Hub. (An anonymous observe AI needs no grant; a
+                # *paired* observe AI does, so it shows up and can later be elevated by the owner.)
+                # This is still the safe default tier — it never self-elevates (docs/16).
+                prev = g.get(name, {})
+                g[name] = {"tier": "observe", "granted_at": int(time.time()), "expires": None,
+                           "seat": None, "paired_via": payload.get("via", "oobe"),
+                           "token": prev.get("token") or secrets.token_hex(16)}
+            else:
+                g.pop(name, None)     # observe is the floor — drop the grant (== revoke)
         else:
             prev = g.get(name, {})
             days = payload.get("expires_days")    # None/0 = permanent until revoked (the default)
@@ -1456,6 +1466,96 @@ def ai_audit(limit=100):
     except OSError:
         pass                                          # no audit file yet — empty is honest
     return {"ok": True, "entries": entries[-limit:]}
+
+# ---- First-boot / OOBE (docs/25) -------------------------------------------------------
+# A flag file decides whether the kiosk lands on the first-boot wizard or the desktop.
+# Completing the wizard WRITES the flag, persists the owner account, applies the privacy
+# defaults (opt-IN only — docs/24), and optionally issues the first AI pairing token.
+# Reset = remove the flag (also done by factory reset) -> next boot re-runs the wizard.
+OOBE_DONE_FLAG = "/userdata/system/gose/.oobe-done"
+ACCOUNTS_F = "/userdata/system/gose/accounts.json"
+
+def _accounts_load():
+    try:
+        return json.load(open(ACCOUNTS_F))
+    except Exception:
+        return {"users": []}
+
+def oobe_status():
+    done = os.path.exists(OOBE_DONE_FLAG)
+    info = {}
+    if done:
+        try:
+            info = json.load(open(OOBE_DONE_FLAG)) or {}
+        except Exception:
+            info = {}
+    acc = _accounts_load()
+    owner = next((u for u in acc.get("users", []) if u.get("role") == "owner"), None)
+    return {"ok": True, "done": done, "completed_at": info.get("completed_at"), "owner": owner}
+
+def _apply_oobe_privacy(privacy):
+    # Everything OFF by default, opt-IN only (docs/24). Only the box-art scrape has a real
+    # server-side effect today (the scrape_auto flag, read by auto_scrape_boot); the other
+    # choices are recorded so the rest of the OS can honor them as those features land.
+    try:
+        os.makedirs(os.path.dirname(SCRAPE_AUTO_FLAG), exist_ok=True)
+        if privacy.get("boxart_scrape"):
+            with open(SCRAPE_AUTO_FLAG, "w") as f:
+                f.write("1")                            # explicit opt-IN created the flag
+        elif os.path.exists(SCRAPE_AUTO_FLAG):
+            os.remove(SCRAPE_AUTO_FLAG)                 # default OFF -> ensure the flag is absent
+    except Exception as e:
+        LOG.warning("oobe privacy apply failed: %s", e)
+
+def oobe_complete(payload):
+    p = payload or {}
+    acct = p.get("account") or {}
+    username = (acct.get("username") or "owner").strip()[:32] or "owner"
+    display = (acct.get("display") or username).strip()[:48]
+    # The owner account = the canonical account store the lock screen reads later. Passwords/PINs
+    # are NOT stored in cleartext here; real hashing lands with the auth backend (docs/24 §1.5) —
+    # OOBE records only that they were set.
+    users = [{"username": username, "display": display, "role": "owner",
+              "accent": acct.get("accent") or "#5cd0ff",
+              "has_password": bool(acct.get("has_password")), "has_pin": bool(acct.get("has_pin")),
+              "created_at": int(time.time())}]
+    write_json_atomic(ACCOUNTS_F, {"users": users,
+                                   "device_name": (p.get("device_name") or "GOSE").strip()[:48],
+                                   "locale": p.get("locale"), "keyboard": p.get("keyboard"),
+                                   "timezone": p.get("timezone"), "theme": p.get("theme")})
+    _apply_oobe_privacy(p.get("privacy") or {})
+    paired = None
+    ai = p.get("ai") or {}
+    if (ai.get("name") or "").strip():
+        paired = ai_grant({"name": ai["name"].strip()[:32], "tier": "observe",
+                           "pair": True, "via": "oobe"})
+    info = {"completed_at": int(time.time()), "owner": username}
+    try:
+        os.makedirs(os.path.dirname(OOBE_DONE_FLAG), exist_ok=True)
+        write_json_atomic(OOBE_DONE_FLAG, info)
+    except Exception as e:
+        return {"ok": False, "error": "could not write first-boot flag: %s" % e}
+    LOG.info("OOBE complete: owner=%s device=%s ai=%s", username, p.get("device_name"),
+             ai.get("name") or "(none)")
+    return {"ok": True, "owner": username, "ai_paired": bool(paired and paired.get("ok")),
+            "ai_name": (ai.get("name") or "").strip() or None,
+            "ai_token": (paired or {}).get("token")}
+
+def oobe_reset(payload=None):
+    removed = []
+    try:
+        if os.path.exists(OOBE_DONE_FLAG):
+            os.remove(OOBE_DONE_FLAG); removed.append(".oobe-done")
+    except Exception as e:
+        LOG.warning("oobe reset flag failed: %s", e)
+    if (payload or {}).get("wipe_account"):
+        try:
+            if os.path.exists(ACCOUNTS_F):
+                os.remove(ACCOUNTS_F); removed.append("accounts.json")
+        except Exception as e:
+            LOG.warning("oobe reset accounts failed: %s", e)
+    LOG.info("OOBE reset: removed=%s", removed)
+    return {"ok": True, "removed": removed, "note": "next boot will re-run the first-boot wizard"}
 
 # ---- Screenshot (works anywhere, incl. GL games — frame comes from the host) ----
 def capture_shot(payload):
@@ -1801,6 +1901,10 @@ def gose_factory_reset(payload):
         reset += ["ai_grants.json", "ai_tokens.json"]
     except Exception as e:
         LOG.warning("reset grants failed: %s", e)
+    try:
+        reset += oobe_reset({"wipe_account": True}).get("removed", [])   # back to first-boot wizard
+    except Exception as e:
+        LOG.warning("reset oobe failed: %s", e)
     LOG.info("FACTORY RESET reset=%s safety_backup=%s", reset, safety.get("file"))
     return {"ok": True, "reset": reset, "safety_backup": safety.get("file"),
             "safety_ok": safety.get("ok", False),
@@ -3149,6 +3253,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         if route == "/game/options":
             q = self._qs()
             return self._json(game_options(q.get("system", ""), q.get("game", "")))
+        if route == "/oobe/status":
+            return self._json(oobe_status())
         if route == "/storage.json":
             return self._json(storage_info())
         if route == "/storage/pending":
@@ -3351,6 +3457,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/storage/dismiss":
                 return self._json(storage_dismiss(payload))
             return self._json(storage_removed(payload))
+        if route in ("/oobe/complete", "/oobe/reset"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/oobe/complete":
+                return self._json(oobe_complete(payload))
+            return self._json(oobe_reset(payload))
         if route == "/guide/toggle":
             return self._json(guide_toggle())
         if route == "/game/exit":

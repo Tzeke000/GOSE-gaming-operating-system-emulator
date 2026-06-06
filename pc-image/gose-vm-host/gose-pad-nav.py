@@ -78,6 +78,7 @@ GAME_PGREP_FULL = ("emulatorlauncher",)      # pgrep -f
 # works in games (games read evdev directly; this daemon is silent then anyway).
 SERVER_URL = "http://127.0.0.1:8780"             # in-guest GOSE server (controller registry)
 OS_ADMIN_FILE = "/userdata/system/gose/os_admin_controller.json"  # admin-id fallback source
+OOBE_DONE_FILE = "/userdata/system/gose/.oobe-done"  # absent = first-boot wizard not finished yet
 AI_TOKENS_FILE = os.environ.get("GOSE_AGENT_AI_TOKENS",
                                 "/userdata/system/gose/ai_tokens.json")  # token->{name,tier[,seat]}
 GATE_REFRESH_S = 3.0                              # re-read registry/admin/tokens this often
@@ -347,11 +348,13 @@ class AdminGate:
     """
 
     def __init__(self, refresh_s=GATE_REFRESH_S,
-                 fetch_controllers=None, read_admin_file=None, read_ai_tokens=None):
+                 fetch_controllers=None, read_admin_file=None, read_ai_tokens=None,
+                 read_oobe_done=None):
         self.refresh_s = refresh_s
         self._fetch_controllers = fetch_controllers or self._default_fetch
         self._read_admin_file = read_admin_file or self._default_admin_file
         self._read_ai_tokens = read_ai_tokens or self._default_ai_tokens
+        self._read_oobe_done = read_oobe_done or self._default_oobe_done
         self._t = 0.0
         self._state = None     # computed dict, or None == unreachable (fail-open)
 
@@ -374,6 +377,10 @@ class AdminGate:
             return json.load(open(AI_TOKENS_FILE)) or {}
         except Exception:
             return {}
+
+    @staticmethod
+    def _default_oobe_done():
+        return os.path.exists(OOBE_DONE_FILE)
 
     # --- registry refresh ---------------------------------------------------
     def _rebuild(self):
@@ -411,12 +418,23 @@ class AdminGate:
             else:
                 allow_all_virtual = True       # seated admin AI, seat unmappable -> best-effort
 
+        # docs/25 §5.2b: PRE-USER there is no admin yet, so ANY detected pad must be able to
+        # navigate the first-boot wizard (the pad that completes setup becomes the admin
+        # candidate). Only while no admin is set AND the OOBE flag is absent. Once an admin
+        # exists or setup is done, normal arbitration resumes.
+        try:
+            oobe_done = bool(self._read_oobe_done())
+        except Exception:
+            oobe_done = True       # unknown -> assume done (don't accidentally open the OS)
+        pre_admin = (admin_id is None) and (not oobe_done)
+
         self._state = {
             "admin_id": admin_id,
             "dev_ids": dev_ids,
             "ai_seat_ids": ai_seat_ids,
             "allow_all_virtual": allow_all_virtual,
             "ai_admin": ai_admin,
+            "pre_admin": pre_admin,
             "by_path": {p.get("path"): p for p in pads if p.get("path")},
         }
 
@@ -433,6 +451,8 @@ class AdminGate:
         st = self._state
         if st is None:
             return True, "fail-open (registry unreachable)"
+        if st.get("pre_admin"):
+            return True, "first-boot: no admin yet — any pad drives the wizard"
         entry = st["by_path"].get(dev_path)
         if entry is None:
             return True, "fail-open (unmapped: %s)" % (dev_name or dev_path)
@@ -878,11 +898,12 @@ def selftest():
          "path": "/dev/input/event6", "js": 3, "is_dev": False},     # seat 2
     ]
 
-    def gate(admin="input20", tokens=None, fetch=None):
+    def gate(admin="input20", tokens=None, fetch=None, oobe_done=True):
         return AdminGate(refresh_s=0.0,
                          fetch_controllers=(fetch or (lambda: {"controllers": PADS, "admin": admin})),
                          read_admin_file=lambda: None,
-                         read_ai_tokens=lambda: (tokens or {}))
+                         read_ai_tokens=lambda: (tokens or {}),
+                         read_oobe_done=lambda: oobe_done)
 
     g = gate()
     check("GATE: admin pad allowed",        g.allows("/dev/input/event20")[0] is True)
@@ -922,6 +943,25 @@ def selftest():
           goob.allows("/dev/input/event6")[0] is True)
     check("GATE: all-virtual fallback still ignores native friend pad",
           goob.allows("/dev/input/event22")[0] is False)
+
+    # docs/25 §5.2b: PRE-USER first boot (no admin set + OOBE not done) -> ANY pad drives the wizard
+    gpre = gate(admin=None, oobe_done=False)
+    check("GATE: first-boot (no admin, OOBE not done) -> friend pad allowed",
+          gpre.allows("/dev/input/event22")[0] is True)
+    check("GATE: first-boot reason is the wizard exception",
+          "first-boot" in gpre.allows("/dev/input/event22")[1])
+    check("GATE: first-boot -> even an unmapped pad drives the wizard",
+          gpre.allows("/dev/input/event99")[0] is True)
+    # once setup is DONE, a missing admin no longer opens the OS to a random pad
+    gdone = gate(admin=None, oobe_done=True)
+    check("GATE: setup done + no admin -> friend pad denied (no longer pre-user)",
+          gdone.allows("/dev/input/event22")[0] is False)
+    # admin already chosen -> normal arbitration even before OOBE flag is written
+    gadmin_pre = gate(admin="input20", oobe_done=False)
+    check("GATE: admin set during OOBE -> non-admin friend still denied",
+          gadmin_pre.allows("/dev/input/event22")[0] is False)
+    check("GATE: admin set during OOBE -> admin pad allowed",
+          gadmin_pre.allows("/dev/input/event20")[0] is True)
 
     # gate wired into feed(): non-admin pad's button does not emit
     rec.clear()
