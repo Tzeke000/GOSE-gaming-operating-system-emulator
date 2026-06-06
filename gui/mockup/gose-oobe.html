@@ -25,6 +25,15 @@
   html:not([data-motion=reduce]) .card.anim{animation:cardin .34s cubic-bezier(.2,.8,.2,1) both}
   @keyframes cardin{0%{opacity:0;transform:translateY(12px) scale(.985)}100%{opacity:1;transform:none}}
   .step-eyebrow{color:var(--accent);font-weight:700;font-size:12px;letter-spacing:.8px;text-transform:uppercase}
+  /* per-step required/optional/default badges */
+  .badges{display:flex;gap:8px;align-items:center;margin-bottom:6px;min-height:22px}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.6px;
+    text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid;white-space:nowrap}
+  .badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+  .badge.req{color:#ffce5c;border-color:#ffce5c5c;background:#ffce5c16}
+  .badge.def{color:#37d39b;border-color:#37d39b5c;background:#37d39b16}
+  .badge.opt{color:var(--muted);border-color:var(--line);background:#ffffff08}
+  .badge.rec{color:var(--accent);border-color:#5cd0ff4d;background:#5cd0ff12}
   h1{font-size:27px;margin:7px 0 5px}
   .sub{color:var(--muted);font-size:14.5px;margin-bottom:18px;line-height:1.5}
   .scroll{overflow:auto;flex:1;margin:-4px -6px;padding:4px 6px}
@@ -134,17 +143,20 @@
     ai:{name:"", token:null, paired:false}
   };
 
+  // kind: "required" (no skip, Continue gated until satisfied) |
+  //       "default"  (pre-selected sensible default, one-button Continue) |
+  //       "optional" (clear Skip + "Optional" badge; skipping has no side effects)
   var STEPS = [
     {id:"welcome", name:"Welcome"},
-    {id:"language", name:"Language"},
-    {id:"keyboard", name:"Keyboard"},
-    {id:"controller", name:"Controller"},
-    {id:"network", name:"Network", skip:true},
-    {id:"license", name:"License"},
-    {id:"account", name:"Account"},
-    {id:"privacy", name:"Privacy"},
-    {id:"customize", name:"Personalize"},
-    {id:"ai", name:"AI companion", skip:true},
+    {id:"language", name:"Language", kind:"default"},
+    {id:"keyboard", name:"Keyboard", kind:"default"},
+    {id:"controller", name:"Controller", kind:"default"},
+    {id:"network", name:"Network", kind:"optional", skip:true, skipLabel:"Skip for now", recommended:true},
+    {id:"license", name:"License", kind:"required"},
+    {id:"account", name:"Account", kind:"required"},
+    {id:"privacy", name:"Privacy", kind:"optional", skip:true},
+    {id:"customize", name:"Personalize", kind:"optional", skip:true},
+    {id:"ai", name:"AI companion", kind:"optional", skip:true},
     {id:"ready", name:"Finish"}
   ];
   var idx = 0;
@@ -299,7 +311,7 @@
         '<p class="sub" id="finlbl">Finishing setup</p>'+
         '<div class="checklist" id="chk"></div></div>';
     }
-    card.innerHTML = h;
+    card.innerHTML = badgeRow(s) + h;
     if(!reduce()) card.classList.remove("anim"), void card.offsetWidth, card.classList.add("anim");
     paintIcons();
     buildFooter();
@@ -311,6 +323,16 @@
     setF(first);
   }
 
+  // per-step badge row: makes Required vs Optional vs Default-ready unmistakable
+  function badgeRow(s){
+    if(s.id==="welcome"||s.id==="ready") return "";  // intro + finale carry no badge
+    var b=[];
+    if(s.kind==="required")      b.push('<span class="badge req"><span class="dot"></span>Required</span>');
+    else if(s.kind==="default")  b.push('<span class="badge def"><span class="dot"></span>Default ready</span>');
+    else if(s.kind==="optional"){ b.push('<span class="badge opt">Optional</span>');
+      if(s.recommended) b.push('<span class="badge rec"><span class="dot"></span>Recommended</span>'); }
+    return '<div class="badges">'+b.join("")+'</div>';
+  }
   function esc(v){ return String(v||"").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
   function pairBlock(){ return '<div class="pairok">'+ico("check")+'Paired — added to the AI Hub (Observe tier)</div>'+
     (S.ai.token?'<div class="token">Pairing token: '+S.ai.token+'</div>':''); }
@@ -325,15 +347,28 @@
     var last = (idx===STEPS.length-2); // step before "ready"
     var contLbl = last ? "Finish ›" : "Continue ›";
     var html='<span class="btn ghost focusable" data-act="back">‹ Back</span>';
-    if(s.skip) html+='<span class="btn ghost focusable" data-act="skip">Skip</span>';
+    if(s.skip) html+='<span class="btn ghost focusable" data-act="skip">'+(s.skipLabel||"Skip")+' ›</span>';
     html+='<span class="btn focusable" data-act="continue" id="contbtn">'+contLbl+'</span>';
     fb.innerHTML=html;
+    refreshGate();  // required steps start with Continue disabled until satisfied
+  }
+  // Required steps gate the Continue button; default/optional steps never block it.
+  function refreshGate(){
+    var cb=document.getElementById("contbtn"); if(!cb) return;
+    if(STEPS[idx].kind==="required" && canAdvance()){ cb.setAttribute("disabled",""); return; }
+    cb.removeAttribute("disabled");
+    // a required step that just became satisfied: drop any stale "please do X" hint so it
+    // never sits next to an enabled Continue button.
+    if(STEPS[idx].kind==="required"){ var h=card.querySelector(".hint"); if(h) h.textContent=""; }
   }
 
   function wireStep(s){
     if(s.id==="controller") loadControllers();
     if(s.id==="network") loadNetworks();
     if(s.id==="ready") runFinale();
+    // live-capture text fields so the required-account gate updates as you type (incl. via the OSK)
+    [].slice.call(card.querySelectorAll("input[data-field]")).forEach(function(inp){
+      inp.addEventListener("input", function(){ captureInputs(); refreshGate(); }); });
     // mouse support (preview): click activates
     [].slice.call(document.querySelectorAll(".focusable")).forEach(function(el){
       el.onclick=function(){ if(document.activeElement&&document.activeElement.blur&&el.tagName!=="INPUT")document.activeElement.blur();
@@ -407,7 +442,7 @@
       account:{username:(S.account.username||"owner"), display:S.account.display,
                has_password:!!S.account.password, has_pin:!!S.account.pin, accent:S.account.accent},
       privacy:S.privacy, locale:S.locale, keyboard:S.keyboard, timezone:null,
-      theme:S.theme, device_name:S.device_name,
+      theme:S.theme, device_name:(String(S.device_name||"").trim()||"GOSE"),
       ai: S.ai.paired?{name:S.ai.name}:{}
     };
     var done=false;
@@ -428,6 +463,8 @@
   function canAdvance(){
     var s=STEPS[idx];
     if(s.id==="license" && !S.license) return "Please accept the terms to continue.";
+    if(s.id==="account" && !String(S.account.username||"").trim())
+      return "Enter a username — this first account is the device owner.";
     return null;
   }
   function flashDone(cb){
@@ -439,9 +476,9 @@
     setTimeout(cb, 480);
   }
   function next(){
-    var block=canAdvance();
-    if(block){ flashHint(block); var cb=document.getElementById("contbtn"); return; }
     captureInputs();
+    var block=canAdvance();
+    if(block){ flashHint(block); refreshGate(); return; }
     if(idx>=STEPS.length-1) return;
     if(STEPS[idx].id==="welcome"){ idx++; render(); return; } // no flash on welcome
     flashDone(function(){ idx++; render(); });
@@ -483,7 +520,7 @@
       return; }
     if(el.dataset.toggle){ var k=el.dataset.toggle;
       if(k==="license"){ S.license=!S.license; el.classList.toggle("on",S.license); el.classList.toggle("sel",S.license);
-        var hh=card.querySelector(".hint"); if(hh) hh.textContent=""; }
+        var hh=card.querySelector(".hint"); if(hh) hh.textContent=""; refreshGate(); }
       else { S.privacy[k]=!S.privacy[k]; el.classList.toggle("on",S.privacy[k]); }
       try{ GOSE&&GOSE.sound&&GOSE.sound("select"); }catch(e){}
       return; }
