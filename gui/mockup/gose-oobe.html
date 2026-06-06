@@ -2,7 +2,7 @@
 <html lang="en" data-theme="onyx">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GOSE — First-time setup</title>
+<title>GOSE — Set up your device</title>
 <link rel="stylesheet" href="assets/themes.css">
 <link rel="stylesheet" href="assets/a11y.css">
 <style>
@@ -16,251 +16,516 @@
     background-attachment:fixed;display:flex;flex-direction:column;align-items:center}
   .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
     -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
-  .brand{display:flex;align-items:center;gap:12px;margin-top:42px}
-  .brand img{width:40px;height:40px;filter:drop-shadow(0 0 8px #9a5bff55)}
-  .brand .t{font-size:15px;color:var(--muted);font-weight:600;letter-spacing:.4px}
-  .card{width:760px;max-width:92vw;margin-top:26px;background:var(--surface);border:1px solid var(--line);
-    border-radius:18px;padding:34px 38px;min-height:360px}
+  .brand{display:flex;align-items:center;gap:12px;margin-top:34px}
+  .brand img{width:36px;height:36px;filter:drop-shadow(0 0 8px #9a5bff55)}
+  .brand .t{font-size:14px;color:var(--muted);font-weight:600;letter-spacing:.4px}
+  .card{width:780px;max-width:92vw;margin-top:20px;background:var(--surface);border:1px solid var(--line);
+    border-radius:18px;padding:30px 36px;min-height:392px;max-height:74vh;display:flex;flex-direction:column;
+    position:relative;overflow:hidden}
+  html:not([data-motion=reduce]) .card.anim{animation:cardin .34s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes cardin{0%{opacity:0;transform:translateY(12px) scale(.985)}100%{opacity:1;transform:none}}
   .step-eyebrow{color:var(--accent);font-weight:700;font-size:12px;letter-spacing:.8px;text-transform:uppercase}
-  h1{font-size:30px;margin:8px 0 6px}
-  .sub{color:var(--muted);font-size:15px;margin-bottom:24px;line-height:1.5}
-  /* account-type cards */
-  .cards{display:flex;gap:16px}
-  .pick{flex:1;background:var(--surface2);border:2px solid var(--line);border-radius:14px;padding:22px;cursor:pointer}
-  .pick.sel{border-color:var(--accent);box-shadow:var(--focusglow)}
-  .pick .ic{font-size:30px;color:var(--accent)}
-  .pick h3{margin:12px 0 4px;font-size:18px}
-  .pick p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
-  .pick .badge{display:inline-block;margin-top:12px;font-size:11px;font-weight:700;color:var(--accent);
-    background:#5cd0ff1c;border:1px solid var(--line);border-radius:9px;padding:3px 9px}
-  /* form fields */
-  .field{margin:14px 0}
-  .field label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
-  .input{display:flex;align-items:center;gap:10px;background:var(--surface2);border:2px solid var(--accent);
-    border-radius:11px;padding:12px 14px;font-size:16px}
-  .input.idle{border-color:var(--line)}
-  .input .ph{color:var(--muted)}
-  .input .ic{margin-left:auto;color:var(--muted);font-size:18px}
-  .hint{color:var(--muted);font-size:12px;margin-top:6px}
-  /* identity swatches */
-  .swatches{display:flex;gap:12px;margin-top:8px}
-  .sw{width:46px;height:46px;border-radius:50%;border:3px solid transparent;cursor:pointer}
-  .sw.sel{border-color:#fff}
-  /* AI link rows */
-  .row{display:flex;align-items:center;gap:12px;background:var(--surface2);border:1px solid var(--line);
-    border-radius:11px;padding:12px 14px;margin:8px 0}
-  .row .ic{font-size:18px;color:var(--accent)}
-  .row .nm{font-weight:600}.row .sub2{color:var(--muted);font-size:12px}
-  .row .val{margin-left:auto;color:var(--accent);font-weight:600;font-size:14px}
-  .agentpick{display:flex;gap:10px;margin-top:8px}
-  .agentpick b{display:inline-flex;align-items:center;gap:7px;background:var(--surface2);border:2px solid var(--line);
-    border-radius:11px;padding:8px 14px;font-weight:600;font-size:14px;cursor:pointer}
-  .agentpick b.sel{border-color:var(--accent);box-shadow:var(--focusglow)}
-  .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
-  /* done */
-  .done-i{font-size:54px;color:var(--accent)}
-  .summary{margin-top:16px;background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-  .summary div{display:flex;gap:10px;font-size:14px;margin:6px 0}
-  .summary .k{color:var(--muted);width:130px}
+  h1{font-size:27px;margin:7px 0 5px}
+  .sub{color:var(--muted);font-size:14.5px;margin-bottom:18px;line-height:1.5}
+  .scroll{overflow:auto;flex:1;margin:-4px -6px;padding:4px 6px}
+  /* generic focusable rows / options */
+  .opt{display:flex;align-items:center;gap:12px;background:var(--surface2);border:2px solid var(--line);
+    border-radius:12px;padding:12px 15px;margin:8px 0;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .opt .ic{font-size:18px;color:var(--accent)}
+  .opt .nm{font-weight:600;font-size:14.5px}.opt .sub2{color:var(--muted);font-size:12px;line-height:1.4;margin-top:2px}
+  .opt .val{margin-left:auto;color:var(--accent);font-weight:700;font-size:13px;white-space:nowrap}
+  .opt.sel{border-color:var(--accent);background:#5cd0ff12}
+  .opt.focus{border-color:var(--accent);box-shadow:var(--focusglow);background:#5cd0ff14}
+  .opt.focus .nm{color:var(--accent)}
+  .opt.danger.focus{border-color:#ff8e8e;box-shadow:0 0 0 3px #ff8e8e33}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .grid2 .opt{margin:0}
+  /* account fields */
+  .field{margin:12px 0}
+  .field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px}
+  .inp{width:100%;background:var(--surface2);border:2px solid var(--line);border-radius:11px;padding:12px 14px;
+    font-size:16px;color:var(--text);font-family:inherit;outline:none}
+  .inp::placeholder{color:var(--muted)}
+  .inp.focus,.inp:focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  /* accent / theme swatches */
+  .swatches{display:flex;gap:12px;margin-top:6px;flex-wrap:wrap}
+  .sw{width:44px;height:44px;border-radius:50%;border:3px solid transparent;cursor:pointer}
+  .sw.sel{border-color:#fff}.sw.focus{box-shadow:var(--focusglow);border-color:var(--accent)}
+  /* toggle pill */
+  .pill{margin-left:auto;width:46px;height:26px;border-radius:14px;background:#3a3e4c;position:relative;flex:none;transition:background .15s}
+  .pill>i{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:left .15s}
+  .opt.on .pill{background:var(--accent)}.opt.on .pill>i{left:23px}
+  /* license box */
+  .terms{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+    font-size:13px;color:var(--muted);line-height:1.6;max-height:184px;overflow:auto}
+  .terms h4{color:var(--text);margin:10px 0 4px;font-size:13.5px}.terms h4:first-child{margin-top:0}
+  /* token reveal */
+  .token{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0c0f1c;border:1px solid var(--line);
+    border-radius:10px;padding:11px 13px;color:#7cffb0;font-size:13px;word-break:break-all;margin-top:8px}
+  .pairok{display:flex;align-items:center;gap:8px;color:#37d39b;font-weight:600;font-size:13.5px;margin-top:10px}
+  /* finale */
+  .finale{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px}
+  .ring{width:74px;height:74px;border-radius:50%;border:5px solid #ffffff18;border-top-color:var(--accent)}
+  html:not([data-motion=reduce]) .ring{animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .finale .logo{width:64px;height:64px;filter:drop-shadow(0 0 16px #6a4dffaa)}
+  html:not([data-motion=reduce]) .finale .logo{animation:glow 2s ease-in-out infinite}
+  @keyframes glow{0%,100%{filter:drop-shadow(0 0 12px #6a4dff88)}50%{filter:drop-shadow(0 0 26px #5cd0ffcc)}}
+  .checklist{margin-top:14px;text-align:left;font-size:13.5px;color:var(--muted);display:flex;flex-direction:column;gap:7px}
+  .checklist .li{display:flex;align-items:center;gap:9px;opacity:.35;transition:opacity .3s}
+  .checklist .li.on{opacity:1;color:var(--text)}
+  .checklist .li .ic{color:#37d39b}
+  /* step-complete flash overlay */
+  .flash{position:absolute;inset:0;background:var(--surface);display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:12px;z-index:5}
+  .flash .chk{width:90px;height:90px;border-radius:50%;background:#37d39b1f;border:2px solid #37d39b;
+    display:flex;align-items:center;justify-content:center;color:#37d39b;font-size:46px}
+  html:not([data-motion=reduce]) .flash .chk{animation:pop .42s cubic-bezier(.2,1.3,.4,1) both}
+  @keyframes pop{0%{transform:scale(.4);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+  .flash .lbl{color:var(--text);font-weight:600;font-size:15px}
   /* footer */
-  .foot{position:fixed;bottom:0;left:0;right:0;display:flex;align-items:center;gap:16px;
-    padding:16px 40px;color:var(--muted);font-size:13px}
-  .dots{display:flex;gap:7px}
-  .dots i{width:8px;height:8px;border-radius:50%;background:#ffffff22;display:inline-block}
-  .dots i.on{background:var(--accent)}
-  .foot .h{margin-left:auto}
-  .btn{background:var(--accent);color:#06121a;border-radius:11px;padding:9px 20px;font-weight:700;font-size:14px}
-  .btn.ghost{background:#ffffff10;color:var(--text)}
+  .foot{position:fixed;bottom:0;left:0;right:0;display:flex;align-items:center;gap:12px;
+    padding:14px 40px;color:var(--muted);font-size:13px}
+  .dots{display:flex;gap:6px}
+  .dots i{width:7px;height:7px;border-radius:50%;background:#ffffff22;display:inline-block;transition:background .2s,width .2s}
+  .dots i.on{background:var(--accent);width:16px;border-radius:4px}
+  .dots i.done{background:#37d39b}
+  .foot .keys{margin-left:auto;font-size:12px}
+  .btns{display:flex;gap:10px}
+  .btn{background:var(--accent);color:#06121a;border-radius:11px;padding:10px 22px;font-weight:700;font-size:14px;
+    border:2px solid var(--accent);cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--text);border-color:var(--line)}
+  .btn.focus{box-shadow:var(--focusglow)}
+  .btn.ghost.focus{border-color:var(--accent)}
+  .btn[disabled]{opacity:.45}
+  .hint{color:#ffce5c;font-size:12.5px;margin-top:8px;min-height:16px}
 </style></head>
 <body>
-  <div class="brand"><img src="assets/brand/gose-core-mark.png" alt="GOSE Core"><span class="t">GOSE · first-time setup</span></div>
+  <div class="brand"><img src="assets/brand/gose-core-mark.png" alt="GOSE Core"><span class="t">GOSE · set up your device</span></div>
   <div class="card" id="card"></div>
   <div class="foot">
     <span class="dots" id="dots"></span>
     <span id="stepname"></span>
-    <span class="h">D-pad move · <b>A</b> select · <b>B</b> back · on-screen keyboard for text</span>
+    <span class="btns" id="footbtns"></span>
+    <span class="keys">D-pad move · <b>A</b> select · <b>B</b> back · <b>R1</b> next · <b>L1</b> back</span>
   </div>
 <script src="assets/platform.js"></script>
 <script src="assets/cursor.js"></script>
 <script>
-  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
-  const ACCENTS=["#5cd0ff","#7d8cff","#37d39b","#ff7a9c","#ffce5c","#b388ff"];
-  // time zones — label -> IANA id (same set as desktop Settings)
-  const TZONES=[
-    ["Eastern — New York","America/New_York"],["Central — Chicago","America/Chicago"],
-    ["Mountain — Denver","America/Denver"],["Pacific — Los Angeles","America/Los_Angeles"],
-    ["UTC","UTC"],["London — GMT","Europe/London"],["Helsinki — EET","Europe/Helsinki"],
-    ["Tokyo — JST","Asia/Tokyo"]];
-  // The flow. AI-only steps are tagged so a Human account skips them.
-  const STEPS=[
+(function(){
+  document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
+  var ACCENTS = ["#5cd0ff","#7d8cff","#37d39b","#ff7a9c","#ffce5c","#b388ff"];
+  var THEMES = [["onyx","Onyx (dark)"],["midnight","Midnight"],["neon","Neon"],["aurora","Aurora (light)"]];
+  var LANGS = [["en-US","English (United States)"],["en-GB","English (UK)"],["es-ES","Español"],
+    ["fr-FR","Français"],["de-DE","Deutsch"],["pt-BR","Português (Brasil)"],["it-IT","Italiano"],
+    ["ja-JP","日本語"],["zh-CN","简体中文"],["fi-FI","Suomi"]];
+  var KBDS = [["us","US QWERTY"],["uk","UK QWERTY"],["es","Spanish"],["fr","French (AZERTY)"],
+    ["de","German (QWERTZ)"],["pt","Portuguese"],["it","Italian"],["jp","Japanese"],["fi","Finnish"],
+    ["intl","US International"]];
+
+  // collected answers
+  var S = {
+    locale:"en-US", keyboard:"us", net:null,
+    license:false,
+    account:{username:"", display:"", password:"", pin:"", accent:"#5cd0ff", has_password:false, has_pin:false},
+    privacy:{boxart_scrape:false, telemetry:false, online:false},
+    theme: localStorage.getItem("gose-theme")||"onyx",
+    device_name:"GOSE",
+    ai:{name:"", token:null, paired:false}
+  };
+
+  var STEPS = [
     {id:"welcome", name:"Welcome"},
-    {id:"timezone",name:"Time zone"},
-    {id:"type",    name:"Account type"},
-    {id:"password",name:"Password"},
-    {id:"username",name:"Username"},
-    {id:"identity",name:"Identity"},
-    {id:"ailink",  name:"AI link", aiOnly:true},
-    {id:"role",    name:"Role"},
-    {id:"done",    name:"Finish"},
+    {id:"language", name:"Language"},
+    {id:"keyboard", name:"Keyboard"},
+    {id:"controller", name:"Controller"},
+    {id:"network", name:"Network", skip:true},
+    {id:"license", name:"License"},
+    {id:"account", name:"Account"},
+    {id:"privacy", name:"Privacy"},
+    {id:"customize", name:"Personalize"},
+    {id:"ai", name:"AI companion", skip:true},
+    {id:"ready", name:"Finish"}
   ];
-  const state={type:"human", aiName:"", accent:"#5cd0ff",
-    conn:{MCP:true, SSH:false, Console:false}, useHuman:true,
-    tz: localStorage.getItem("gose-tz")||"America/New_York", tzAuto: localStorage.getItem("gose-tzauto")==="1"};
-  const CONN=[
-    {k:"MCP", sub:"Model Context Protocol — how Claude-style agents drive tools"},
-    {k:"SSH", sub:"Shell over the network — scripts, files, console access"},
-    {k:"Console", sub:"Direct local/serial console on the device"},
-  ];
+  var idx = 0;
+  var card = document.getElementById("card");
+  // The shared on-screen keyboard (cursor.js, #osk) owns input WHILE IT IS VISIBLE. Key off its
+  // actual visibility — NOT mere field focus — so closing the OSK (it doesn't blur the field)
+  // instantly hands navigation back instead of trapping focus in a closed keyboard.
+  function oskVisible(){ var o=document.getElementById("osk"); return !!(o&&o.classList.contains("on")); }
 
+  function reduce(){ return document.documentElement.getAttribute("data-motion")==="reduce"; }
+  function api(path, body){ return fetch(path, body?{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)}:{cache:"no-store"}).then(function(r){return r.json();}).catch(function(){return {ok:false};}); }
+  function ico(n){ return '<span class="ic" data-i="'+n+'"></span>'; }
+  function paintIcons(){ document.querySelectorAll("[data-i]").forEach(function(e){
+    e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)"); }); }
+
+  // ---- spatial roving focus over .focusable (login.html idiom; layout-agnostic) ----
+  function focusables(){ return [].slice.call(document.querySelectorAll(".focusable"))
+    .filter(function(el){ return el.offsetParent!==null; }); }
+  function cur(){ return document.querySelector(".focus"); }
+  function setF(el){ if(!el) return; var c=cur(); if(c)c.classList.remove("focus");
+    el.classList.add("focus"); el.scrollIntoView({block:"nearest"});
+    try{ GOSE&&GOSE.sound&&GOSE.sound("nav"); }catch(e){} }
+  function move(d){
+    var a=cur()||focusables()[0]; if(!a) return; var r=a.getBoundingClientRect();
+    var best=null, bd=1e9, list=focusables();
+    for(var i=0;i<list.length;i++){ var el=list[i]; if(el===a) continue;
+      var b=el.getBoundingClientRect();
+      var dx=(b.left+b.width/2)-(r.left+r.width/2), dy=(b.top+b.height/2)-(r.top+r.height/2);
+      var ok={right:dx>6,left:dx<-6,down:dy>6,up:dy<-6}[d]; if(!ok) continue;
+      var al=(d==="left"||d==="right")?Math.abs(dx):Math.abs(dy);
+      var of=(d==="left"||d==="right")?Math.abs(dy):Math.abs(dx);
+      var dd=al+of*2; if(dd<bd){ bd=dd; best=el; } }
+    if(best){ if(document.activeElement&&document.activeElement.blur)document.activeElement.blur(); setF(best); }
+  }
+
+  // ---- per-step renderers ----
   function render(){
-    const s=STEPS[idx], c=document.getElementById("card");
-    let h="";
+    var s=STEPS[idx];
+    var h="";
     if(s.id==="welcome"){
-      h=`<div class="step-eyebrow">First ever boot</div>
-        <h1>Welcome to GOSE</h1>
-        <p class="sub">This device hasn't been set up yet. Let's create the first account.
-        On GOSE, an account can belong to a <b>person</b> or to an <b>AI</b> — both log in the
-        same way and share the device.</p>
-        <span class="btn">Get started &nbsp;›</span>`;
-    } else if(s.id==="timezone"){
-      h=`<div class="step-eyebrow">Before we start — region</div>
-        <h1>Pick your time zone</h1>
-        <p class="sub">GOSE sets the clock from this. Turn on <b>automatic</b> to use your location when you're online — if there's no internet, GOSE keeps the last zone you used.</p>
-        <div class="row" data-toggle="tzAuto" style="cursor:pointer"><span class="ic" data-i="globe"></span>
-          <div><div class="nm">Set time zone automatically</div>
-          <div class="sub2">From your location when online; otherwise keep the last zone</div></div>
-          <span class="val">${state.tzAuto?'On':'Off'}</span></div>
-        <label style="font-size:13px;color:var(--muted);display:block;margin:14px 0 7px">${state.tzAuto?'Current zone (auto)':'Choose your zone'}</label>
-        <div style="max-height:168px;overflow:auto;display:flex;flex-direction:column;gap:6px;${state.tzAuto?'opacity:.45;pointer-events:none':''}">`+
-        TZONES.map(z=>`<div class="row" data-tz="${z[1]}" style="cursor:pointer;margin:0">
-          <span class="ic" data-i="clock"></span><div><div class="nm">${z[0]}</div></div>
-          <span class="val">${state.tz===z[1]?'Selected ✓':''}</span></div>`).join("")+`</div>`;
-    } else if(s.id==="type"){
-      h=`<div class="step-eyebrow">Step 1 — who is this account for?</div>
-        <h1>Human or AI?</h1>
-        <p class="sub">Every GOSE user can be a human or one of your AI agents. You can add more later.</p>
-        <div class="cards">
-          <div class="pick ${state.type==='human'?'sel':''}"><span class="ic" data-i="user"></span>
-            <h3>Human</h3><p>A person who plays with a controller or keyboard/mouse.</p>
-            ${state.type==='human'?'<span class="badge">Selected</span>':''}</div>
-          <div class="pick ${state.type==='ai'?'sel':''}"><span class="ic" data-i="sparkles"></span>
-            <h3>AI</h3><p>Any agent you bring — you'll name it and pick how it connects. It can drive the OS or play games, on its own or alongside you.</p>
-            ${state.type==='ai'?'<span class="badge">Selected</span>':''}</div>
-        </div>`;
-    } else if(s.id==="password"){
-      h=`<div class="step-eyebrow">Step 2 — secure the account</div>
-        <h1>Set a password</h1>
-        <p class="sub">Used at the lock screen. ${state.type==='ai'?'For an AI account this is the human-side password; the AI itself connects with a pairing token (next).':'You can also set a short PIN for quick controller login.'}</p>
-        <div class="field"><label>Password</label>
-          <div class="input"><span>••••••••••</span><span class="ic" data-i="lock"></span></div></div>
-        <div class="field"><label>Confirm password</label>
-          <div class="input idle"><span>••••••••••</span><span class="ic" data-i="check"></span></div></div>
-        <div class="field"><label>Quick PIN (optional)</label>
-          <div class="input idle"><span class="ph">4–6 digits for fast login</span><span class="ic" data-i="keyboard"></span></div></div>`;
-    } else if(s.id==="username"){
-      h=`<div class="step-eyebrow">Step 3 — name the account</div>
-        <h1>Choose a username</h1>
-        <p class="sub">A short handle to log in with, plus a display name shown on the device.</p>
-        <div class="field"><label>Username</label>
-          <div class="input"><span>${state.type==='ai'?'wren':'zeke'}</span><span class="ic" data-i="user"></span></div></div>
-        <div class="field"><label>Display name</label>
-          <div class="input idle"><span>${state.type==='ai'?'Wren':'Zeke'}</span><span class="ic" data-i="keyboard"></span></div></div>`;
-    } else if(s.id==="identity"){
-      h=`<div class="step-eyebrow">Step 4 — make it yours</div>
-        <h1>Pick an accent color</h1>
-        <p class="sub">Your color marks your presence dot in the taskbar and your tile on the lock screen.</p>
-        <div class="swatches">`+ACCENTS.map(a=>`<span class="sw ${state.accent===a?'sel':''}" style="background:${a}" data-acc="${a}"></span>`).join("")+`</div>
-        <p class="hint">Avatar can be set later from a photo or an agent glyph.</p>`;
-    } else if(s.id==="ailink"){
-      h=`<div class="step-eyebrow">Step 5 — connect the agent</div>
-        <h1>Set up the AI</h1>
-        <p class="sub">Name your agent and choose how it connects. Works with any AI — not tied to a brand.</p>
-        <div class="field"><label>AI name</label>
-          <div class="input"><span>${state.aiName||'<span class="ph">e.g. Wren, Aria, Atlas…</span>'}</span><span class="ic" data-i="sparkles"></span></div></div>
-        <label style="font-size:13px;color:var(--muted);display:block;margin:14px 0 7px">How it connects — select all that apply</label>
-        <div class="agentpick">
-          ${CONN.map(c=>`<b class="${state.conn[c.k]?'sel':''}" data-conn="${c.k}"><span class="dot" style="background:${state.conn[c.k]?'var(--accent)':'#3a3e4c'}"></span>${c.k}</b>`).join("")}
-        </div>
-        <div class="row" data-toggle="useHuman" style="cursor:pointer"><span class="ic" data-i="users"></span><div><div class="nm">Let this AI use a human's account</div>
-          <div class="sub2">Sign in to a person's profile and act as them (e.g. your own agent on your account)</div></div>
-          <span class="val">${state.useHuman?'On':'Off'}</span></div>
-        <div class="row"><span class="ic" data-i="lock"></span><div><div class="nm">Pairing token</div>
-          <div class="sub2">The agent presents this to connect</div></div><span class="val">Generate ›</span></div>
-        <div class="row"><span class="ic" data-i="target"></span><div><div class="nm">Default control scope</div>
-          <div class="sub2">What it can drive when it joins</div></div><span class="val">Whole OS ▸</span></div>`;
-    } else if(s.id==="role"){
-      h=`<div class="step-eyebrow">Step 6 — permissions</div>
-        <h1>Account role</h1>
-        <p class="sub">The first account is the <b>Owner</b>. Owners can change system settings, add users, and grant other accounts (human or AI) access. You can add Standard or Guest users afterward.</p>
-        <div class="row"><span class="ic" data-i="shield"></span><div><div class="nm">Owner</div>
-          <div class="sub2">Full control of the device — this account</div></div><span class="val">Selected</span></div>
-        <div class="row"><span class="ic" data-i="user"></span><div><div class="nm">Standard / Guest</div>
-          <div class="sub2">Play + personal settings only — add these later</div></div><span class="val">Later</span></div>`;
-    } else if(s.id==="done"){
-      h=`<div style="text-align:center"><span class="ic done-i" data-i="check"></span></div>
-        <h1 style="text-align:center">You're all set</h1>
-        <p class="sub" style="text-align:center">First account created. GOSE will boot to the lock screen from now on.</p>
-        <div class="summary">
-          <div><span class="k">Time zone</span><span>${state.tzAuto?'Automatic (from location)':((TZONES.find(z=>z[1]===state.tz)||['—'])[0])}</span></div>
-          <div><span class="k">Type</span><span>${state.type==='ai'?'AI — '+(state.aiName||'unnamed agent'):'Human'}</span></div>
-          <div><span class="k">Username</span><span>${state.type==='ai'?'(the AI name)':'zeke'}</span></div>
-          <div><span class="k">Role</span><span>Owner</span></div>
-          ${state.type==='ai'?`<div><span class="k">Connects via</span><span>${Object.keys(state.conn).filter(k=>state.conn[k]).join(', ')||'none yet'}</span></div>
-          <div><span class="k">Use human account</span><span>${state.useHuman?'Allowed':'No'}</span></div>`:''}
-          <div><span class="k">Sign-in</span><span>Password${state.type==='ai'?' + pairing token':' + optional PIN'}</span></div>
-          <div><span class="k">Accent</span><span><span class="dot" style="display:inline-block;background:${state.accent}"></span></span></div>
-        </div>
-        <div style="text-align:center;margin-top:20px"><span class="btn">Enter GOSE &nbsp;›</span></div>`;
+      h='<div class="step-eyebrow">First-time setup</div>'+
+        '<h1>Welcome to GOSE</h1>'+
+        '<p class="sub">A controller-first gaming OS. We\'ll set up your language, controller, '+
+        'account, and a few preferences. It only takes a minute — everything here can be changed later '+
+        'in Settings, and GOSE works fully offline.</p>'+
+        '<div class="opt focusable" data-act="continue"><span class="ic" data-i="play"></span>'+
+        '<div><div class="nm">Get started</div><div class="sub2">Set up this device now</div></div>'+
+        '<span class="val">A ›</span></div>';
+    } else if(s.id==="language"){
+      h='<div class="step-eyebrow">Step 1 — region</div><h1>Choose your language</h1>'+
+        '<p class="sub">GOSE will use this for menus and the clock format.</p>'+
+        '<div class="scroll">'+LANGS.map(function(l){
+          return '<div class="opt focusable'+(S.locale===l[0]?' sel':'')+'" data-opt="locale" data-v="'+l[0]+'">'+
+            ico("globe")+'<div class="nm">'+l[1]+'</div>'+
+            '<span class="val">'+(S.locale===l[0]?"Selected ✓":"")+'</span></div>'; }).join("")+'</div>';
+    } else if(s.id==="keyboard"){
+      h='<div class="step-eyebrow">Step 2 — input</div><h1>Keyboard layout</h1>'+
+        '<p class="sub">Used by the on-screen keyboard and any physical keyboard you connect.</p>'+
+        '<div class="scroll">'+KBDS.map(function(k){
+          return '<div class="opt focusable'+(S.keyboard===k[0]?' sel':'')+'" data-opt="keyboard" data-v="'+k[0]+'">'+
+            ico("keyboard")+'<div class="nm">'+k[1]+'</div>'+
+            '<span class="val">'+(S.keyboard===k[0]?"Selected ✓":"")+'</span></div>'; }).join("")+'</div>';
+    } else if(s.id==="controller"){
+      h='<div class="step-eyebrow">Step 3 — controller</div><h1>Your controller</h1>'+
+        '<p class="sub">The controller you\'re navigating with is already working — that\'s the one that '+
+        'will set up this device and become its owner. Connect more anytime from Settings.</p>'+
+        '<div id="pads"><div class="opt"><span class="ic" data-i="gamepad-2"></span>'+
+        '<div class="nm">Looking for controllers…</div></div></div>';
+    } else if(s.id==="network"){
+      h='<div class="step-eyebrow">Step 4 — network (optional)</div><h1>Connect to Wi-Fi</h1>'+
+        '<p class="sub">Wi-Fi enables updates and optional online features. GOSE works fully offline — '+
+        'you can <b>skip</b> this and connect later.</p>'+
+        '<div class="scroll" id="nets"><div class="opt"><span class="ic" data-i="wifi"></span>'+
+        '<div class="nm">Scanning for networks…</div></div></div>'+
+        '<div class="hint" id="nethint"></div>';
+    } else if(s.id==="license"){
+      h='<div class="step-eyebrow">Step 5 — terms</div><h1>License agreement</h1>'+
+        '<p class="sub">Please review and accept to continue.</p>'+
+        '<div class="terms" tabindex="0">'+
+        '<h4>GOSE End-User Terms (summary)</h4>'+
+        'GOSE is provided as-is, without warranty. It is built on open-source software (Batocera and the '+
+        'Linux kernel); the corresponding source and component licenses are available in '+
+        '<b>Apps → Licenses</b>.'+
+        '<h4>Emulation & your content</h4>'+
+        'GOSE plays game files you provide. You are responsible for ensuring you have the right to use any '+
+        'games, BIOS, or media you add. Some optional emulator cores are licensed for personal use only and '+
+        'are offered as separate, user-initiated installs from the Store.'+
+        '<h4>Privacy</h4>'+
+        'GOSE collects no analytics by default and makes no automatic outbound connections. Every online '+
+        'feature is opt-in — you choose them on the next screen.'+
+        '</div>'+
+        '<div class="opt focusable'+(S.license?' on sel':'')+'" data-toggle="license" style="margin-top:12px">'+
+        ico("check")+'<div class="nm">I have read and accept the terms</div>'+
+        '<span class="pill"><i></i></span></div>';
+    } else if(s.id==="account"){
+      h='<div class="step-eyebrow">Step 6 — your account</div><h1>Create your account</h1>'+
+        '<p class="sub">This first account is the device <b>owner</b>. Select a field and the on-screen '+
+        'keyboard appears — type with the controller, then press <b>B</b> to close it.</p>'+
+        '<div class="scroll">'+
+        '<div class="field"><label>Username</label>'+
+          '<input class="inp focusable" data-field="username" placeholder="e.g. zeke" value="'+esc(S.account.username)+'"></div>'+
+        '<div class="field"><label>Display name (optional)</label>'+
+          '<input class="inp focusable" data-field="display" placeholder="Shown on the lock screen" value="'+esc(S.account.display)+'"></div>'+
+        '<div class="grid2">'+
+          '<div class="field"><label>Password (optional)</label>'+
+            '<input class="inp focusable" data-field="password" type="password" placeholder="••••••" value="'+esc(S.account.password)+'"></div>'+
+          '<div class="field"><label>Quick PIN (optional)</label>'+
+            '<input class="inp focusable" data-field="pin" inputmode="numeric" placeholder="4–6 digits" value="'+esc(S.account.pin)+'"></div>'+
+        '</div>'+
+        '<div class="field"><label>Your color</label>'+
+          '<div class="swatches">'+ACCENTS.map(function(a){
+            return '<span class="sw focusable'+(S.account.accent===a?' sel':'')+'" data-acc="'+a+'" style="background:'+a+'"></span>'; }).join("")+'</div></div>'+
+        '</div>';
+    } else if(s.id==="privacy"){
+      var P=[["boxart_scrape","image","Download missing cover art","Looks up box art online (sends game names to thumbnails.libretro.com). Off by default."],
+             ["telemetry","cpu","Share anonymous diagnostics","Help improve GOSE. Nothing is sent unless you turn this on."],
+             ["online","cloud","Allow online features","Lets features like updates reach the internet when you use them."]];
+      h='<div class="step-eyebrow">Step 7 — privacy</div><h1>Privacy choices</h1>'+
+        '<p class="sub">Everything is <b>off</b> by default — GOSE sends nothing unless you opt in here. '+
+        'You can change any of these later in Settings → Privacy.</p>'+
+        '<div class="scroll">'+P.map(function(p){
+          return '<div class="opt focusable'+(S.privacy[p[0]]?' on':'')+'" data-toggle="'+p[0]+'">'+
+            ico(p[1])+'<div><div class="nm">'+p[2]+'</div><div class="sub2">'+p[3]+'</div></div>'+
+            '<span class="pill"><i></i></span></div>'; }).join("")+'</div>';
+    } else if(s.id==="customize"){
+      h='<div class="step-eyebrow">Step 8 — personalize</div><h1>Make it yours</h1>'+
+        '<p class="sub">Pick a theme and name your device. (Optional — tweak more in Settings.)</p>'+
+        '<div class="field"><label>Theme</label><div class="grid2">'+THEMES.map(function(t){
+          return '<div class="opt focusable'+(S.theme===t[0]?' sel':'')+'" data-opt="theme" data-v="'+t[0]+'">'+
+            ico("palette")+'<div class="nm">'+t[1]+'</div>'+
+            '<span class="val">'+(S.theme===t[0]?"✓":"")+'</span></div>'; }).join("")+'</div></div>'+
+        '<div class="field"><label>Device name</label>'+
+          '<input class="inp focusable" data-field="device_name" placeholder="GOSE" value="'+esc(S.device_name)+'"></div>';
+    } else if(s.id==="ai"){
+      h='<div class="step-eyebrow">Step 9 — AI companion (optional)</div><h1>Pair an AI companion</h1>'+
+        '<p class="sub">GOSE can pair with an AI agent that observes and (with your later permission) helps '+
+        'out. Pairing issues a token at the safe <b>Observe</b> tier — read-only. You grant more anytime in '+
+        'the <b>AI Hub</b>. This is optional — you can <b>skip</b> and pair later.</p>'+
+        '<div class="field"><label>AI name</label>'+
+          '<input class="inp focusable" data-field="ai_name" placeholder="e.g. Wren, Aria, Atlas…" value="'+esc(S.ai.name)+'"></div>'+
+        '<div class="opt focusable" data-act="pair"><span class="ic" data-i="sparkles"></span>'+
+          '<div><div class="nm">'+(S.ai.paired?"Re-issue pairing token":"Pair this AI (Observe)")+'</div>'+
+          '<div class="sub2">Creates an entry in the AI Hub with a read-only token</div></div>'+
+          '<span class="val">A</span></div>'+
+        '<div id="pairout">'+(S.ai.paired?pairBlock():"")+'</div>';
+    } else if(s.id==="ready"){
+      h='<div class="finale" id="finale">'+
+        '<img class="logo" src="assets/brand/gose-core-mark.png" alt="">'+
+        '<div class="ring" id="ring"></div>'+
+        '<h1 style="margin-top:10px">Getting things ready…</h1>'+
+        '<p class="sub" id="finlbl">Finishing setup</p>'+
+        '<div class="checklist" id="chk"></div></div>';
     }
-    c.innerHTML=h;
-    // dots
-    const vis=STEPS.filter(st=>!st.aiOnly||state.type==='ai');
-    document.getElementById("dots").innerHTML=vis.map(st=>`<i class="${st.id===s.id?'on':''}"></i>`).join("");
-    document.getElementById("stepname").textContent=s.name;
-    document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));
-    // interactions
-    c.querySelectorAll(".pick").forEach((el,i)=>el.onclick=()=>{state.type=i===0?'human':'ai';render();});
-    c.querySelectorAll(".sw").forEach(el=>el.onclick=()=>{state.accent=el.dataset.acc;render();});
-    c.querySelectorAll("[data-conn]").forEach(el=>el.onclick=()=>{const k=el.dataset.conn;state.conn[k]=!state.conn[k];render();});
-    c.querySelectorAll("[data-toggle]").forEach(el=>el.onclick=()=>{const k=el.dataset.toggle;state[k]=!state[k];
-      if(k==="tzAuto")localStorage.setItem("gose-tzauto",state.tzAuto?"1":"0");render();});
-    c.querySelectorAll("[data-tz]").forEach(el=>el.onclick=()=>{state.tz=el.dataset.tz;localStorage.setItem("gose-tz",state.tz);render();});
-    const next=c.querySelector(".btn"); if(next) next.onclick=()=>step(1);
+    card.innerHTML = h;
+    if(!reduce()) card.classList.remove("anim"), void card.offsetWidth, card.classList.add("anim");
+    paintIcons();
+    buildFooter();
+    buildDots();
+    document.getElementById("stepname").textContent = s.name;
+    wireStep(s);
+    // initial focus: first focusable in the card (or the primary footer button)
+    var first = card.querySelector(".focusable") || document.querySelector("#footbtns .focusable");
+    setF(first);
   }
 
-  let idx=0;
-  function visibleSteps(){return STEPS.map((s,i)=>i).filter(i=>!STEPS[i].aiOnly||state.type==='ai');}
-  function step(d){
-    const vis=visibleSteps(); let pos=vis.indexOf(idx);
-    if(pos<0){ // current step hidden (e.g. left AI flow) -> snap to nearest
-      idx=vis[Math.min(vis.length-1,Math.max(0,pos))]||0; pos=vis.indexOf(idx);
-    }
-    let np=Math.min(vis.length-1,Math.max(0,pos+d));
-    idx=vis[np];
-    if(d>0 && idx===STEPS.findIndex(s=>s.id==="done")+0 && np===vis.length-1 && STEPS[vis[pos]].id==="done"){
-      location.href="login.html"; return; // past the end
-    }
-    render();
-  }
-  // deep-link to a step for screenshots: gose-oobe.html#username  (or #ailink&ai)
-  (function initHash(){
-    const hash=(location.hash||"").replace("#","");
-    const parts=hash.split("&");
-    if(parts.includes("ai")) state.type="ai";
-    const want=STEPS.findIndex(s=>s.id===parts[0]);
-    if(want>=0) idx=want;
-  })();
+  function esc(v){ return String(v||"").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
+  function pairBlock(){ return '<div class="pairok">'+ico("check")+'Paired — added to the AI Hub (Observe tier)</div>'+
+    (S.ai.token?'<div class="token">Pairing token: '+S.ai.token+'</div>':''); }
 
-  addEventListener("keydown",e=>{
-    if(e.key==="ArrowRight"||e.key==="Enter") step(1);
-    else if(e.key==="ArrowLeft") step(-1);
-    else return; e.preventDefault();});
-  let prev={};(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-    if(gp){const tap=i=>gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if(tap(0))step(1); if(tap(1))step(-1); if(tap(14))step(-1); if(tap(15))step(1);
-      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);}requestAnimationFrame(pad);})();
+  function buildDots(){
+    document.getElementById("dots").innerHTML = STEPS.map(function(st,i){
+      return '<i class="'+(i<idx?"done":(i===idx?"on":""))+'"></i>'; }).join("");
+  }
+  function buildFooter(){
+    var s=STEPS[idx], fb=document.getElementById("footbtns");
+    if(s.id==="welcome"||s.id==="ready"){ fb.innerHTML=""; return; }
+    var last = (idx===STEPS.length-2); // step before "ready"
+    var contLbl = last ? "Finish ›" : "Continue ›";
+    var html='<span class="btn ghost focusable" data-act="back">‹ Back</span>';
+    if(s.skip) html+='<span class="btn ghost focusable" data-act="skip">Skip</span>';
+    html+='<span class="btn focusable" data-act="continue" id="contbtn">'+contLbl+'</span>';
+    fb.innerHTML=html;
+  }
+
+  function wireStep(s){
+    if(s.id==="controller") loadControllers();
+    if(s.id==="network") loadNetworks();
+    if(s.id==="ready") runFinale();
+    // mouse support (preview): click activates
+    [].slice.call(document.querySelectorAll(".focusable")).forEach(function(el){
+      el.onclick=function(){ if(document.activeElement&&document.activeElement.blur&&el.tagName!=="INPUT")document.activeElement.blur();
+        setF(el); activate(el); }; });
+  }
+
+  function loadControllers(){
+    api("/controllers").then(function(d){
+      var box=document.getElementById("pads"); if(!box) return;
+      var pads=(d&&d.controllers)||[];
+      if(!pads.length){ box.innerHTML='<div class="opt"><span class="ic" data-i="gamepad-2"></span>'+
+        '<div><div class="nm">No controller detected yet</div><div class="sub2">Connect one — it will appear here. '+
+        'A keyboard works too.</div></div></div>'; paintIcons(); return; }
+      box.innerHTML=pads.map(function(p){
+        return '<div class="opt sel"><span class="ic" data-i="gamepad-2"></span>'+
+          '<div><div class="nm">'+esc(p.name||"Controller")+'</div>'+
+          '<div class="sub2">'+esc(p.source||"connected")+(p.is_dev?" · this controller":"")+'</div></div>'+
+          '<span class="val">Ready ✓</span></div>'; }).join("");
+      paintIcons();
+    });
+  }
+
+  function loadNetworks(){
+    api("/net/scan").then(function(d){
+      var box=document.getElementById("nets"); var hint=document.getElementById("nethint"); if(!box) return;
+      var nets=(d&&(d.networks||d.aps||d.results))||[];
+      // normalize a few possible shapes
+      if(d&&d.ok&&Array.isArray(d.list)) nets=d.list;
+      if(!Array.isArray(nets)) nets=[];
+      if(!nets.length){ box.innerHTML='<div class="opt"><span class="ic" data-i="wifi"></span>'+
+        '<div><div class="nm">No networks found</div><div class="sub2">You can skip — GOSE works fully offline.</div></div></div>';
+        if(hint) hint.textContent="Tip: press Skip to continue without Wi-Fi."; paintIcons();
+        var s=card.querySelector(".focusable"); return; }
+      box.innerHTML=nets.map(function(n){ var ssid=n.ssid||n.name||n.SSID||String(n);
+        return '<div class="opt focusable" data-net="'+esc(ssid)+'"><span class="ic" data-i="wifi"></span>'+
+          '<div class="nm">'+esc(ssid)+'</div>'+
+          '<span class="val">'+((S.net===ssid)?"Connected ✓":"Connect ›")+'</span></div>'; }).join("");
+      paintIcons();
+      wireStep({id:"network-list"});  // attach click handlers to new rows
+    });
+  }
+  function joinNetwork(ssid){
+    var hint=document.getElementById("nethint"); if(hint) hint.textContent="Connecting to "+ssid+"…";
+    api("/net/connect",{ssid:ssid}).then(function(d){
+      if(d&&d.ok){ S.net=ssid; if(hint) hint.textContent="Connected to "+ssid+" ✓"; }
+      else { if(hint) hint.textContent="Couldn't connect — you can skip and set it up later."; }
+      loadNetworks();
+    });
+  }
+
+  function doPair(){
+    var name=(S.ai.name||"").trim(); var out=document.getElementById("pairout");
+    if(!name){ if(out) out.innerHTML='<div class="hint" style="color:#ffce5c">Enter an AI name first.</div>'; return; }
+    if(out) out.innerHTML='<div class="sub2" style="margin-top:8px">Pairing '+esc(name)+'…</div>';
+    api("/ai/grant",{name:name, tier:"observe", pair:true, via:"oobe"}).then(function(d){
+      if(d&&d.ok&&d.token){ S.ai.paired=true; S.ai.token=d.token; if(out) out.innerHTML=pairBlock(); paintIcons(); }
+      else { if(out) out.innerHTML='<div class="hint" style="color:#ff8e8e">Pairing failed — you can skip and pair later.</div>'; }
+    });
+  }
+
+  // ---- finale: persist everything, then go to the desktop with a flourish ----
+  function runFinale(){
+    // theme + locale to localStorage so the desktop reflects the choices immediately
+    localStorage.setItem("gose-theme", S.theme);
+    document.documentElement.dataset.theme = S.theme;
+    var steps=["Creating your account","Applying privacy choices","Personalizing GOSE","Preparing the desktop"];
+    var chk=document.getElementById("chk");
+    if(chk) chk.innerHTML=steps.map(function(t,i){ return '<div class="li" data-li="'+i+'">'+ico("check")+t+'</div>'; }).join("");
+    paintIcons();
+    var payload={
+      account:{username:(S.account.username||"owner"), display:S.account.display,
+               has_password:!!S.account.password, has_pin:!!S.account.pin, accent:S.account.accent},
+      privacy:S.privacy, locale:S.locale, keyboard:S.keyboard, timezone:null,
+      theme:S.theme, device_name:S.device_name,
+      ai: S.ai.paired?{name:S.ai.name}:{}
+    };
+    var done=false;
+    function tick(i){ var li=document.querySelector('[data-li="'+i+'"]'); if(li) li.classList.add("on"); }
+    // animate the checklist; complete on the server in parallel
+    var delays = reduce()?[0,0,0,0]:[350,850,1350,1900];
+    delays.forEach(function(ms,i){ setTimeout(function(){ tick(i); }, ms); });
+    api("/oobe/complete", payload).then(function(d){ done=(d&&d.ok); }).catch(function(){});
+    var wait = reduce()?500:2500;
+    setTimeout(function(){
+      var f=document.getElementById("finlbl"); if(f) f.textContent="All set — welcome to GOSE";
+      var r=document.getElementById("ring"); if(r) r.style.borderTopColor="#37d39b";
+      setTimeout(function(){ location.href="gose-home.html"; }, reduce()?200:900);
+    }, wait);
+  }
+
+  // ---- step gating + advance with completion flash ----
+  function canAdvance(){
+    var s=STEPS[idx];
+    if(s.id==="license" && !S.license) return "Please accept the terms to continue.";
+    return null;
+  }
+  function flashDone(cb){
+    if(reduce()){ cb(); return; }
+    var f=document.createElement("div"); f.className="flash";
+    f.innerHTML='<div class="chk">'+ico("check")+'</div><div class="lbl">'+STEPS[idx].name+' done</div>';
+    card.appendChild(f); paintIcons();
+    try{ GOSE&&GOSE.sound&&GOSE.sound("select"); }catch(e){}
+    setTimeout(cb, 480);
+  }
+  function next(){
+    var block=canAdvance();
+    if(block){ flashHint(block); var cb=document.getElementById("contbtn"); return; }
+    captureInputs();
+    if(idx>=STEPS.length-1) return;
+    if(STEPS[idx].id==="welcome"){ idx++; render(); return; } // no flash on welcome
+    flashDone(function(){ idx++; render(); });
+  }
+  function skip(){ captureInputs(); if(idx<STEPS.length-1){ idx++; render(); } }
+  function back(){ if(idx>0){ captureInputs(); idx--; render(); } }
+  function flashHint(msg){
+    var s=STEPS[idx]; // show inline hint under the card content
+    var h=card.querySelector(".hint"); if(!h){ h=document.createElement("div"); h.className="hint"; card.appendChild(h); }
+    h.style.color="#ffce5c"; h.textContent=msg; try{ GOSE&&GOSE.sound&&GOSE.sound("error"); }catch(e){}
+  }
+  function captureInputs(){
+    [].slice.call(card.querySelectorAll("input[data-field]")).forEach(function(inp){
+      var f=inp.dataset.field, v=inp.value;
+      if(f==="username") S.account.username=v;
+      else if(f==="display") S.account.display=v;
+      else if(f==="password") S.account.password=v;
+      else if(f==="pin") S.account.pin=v;
+      else if(f==="device_name") S.device_name=v;
+      else if(f==="ai_name") S.ai.name=v;
+    });
+  }
+
+  // ---- activate the focused element ----
+  function activate(el){
+    if(!el) return;
+    if(el.dataset.act){ var a=el.dataset.act;
+      if(a==="continue") next(); else if(a==="back") back(); else if(a==="skip") skip();
+      else if(a==="pair"){ captureInputs(); doPair(); }
+      return; }
+    if(el.dataset.opt){ var grp=el.dataset.opt, v=el.dataset.v;
+      S[grp]=v;
+      if(grp==="theme"){ document.documentElement.dataset.theme=v; }
+      // update siblings' selected state without a full re-render (keeps focus stable)
+      [].slice.call(document.querySelectorAll('[data-opt="'+grp+'"]')).forEach(function(o){
+        var on=o.dataset.v===v; o.classList.toggle("sel",on);
+        var val=o.querySelector(".val"); if(val) val.textContent=on?(grp==="theme"?"✓":"Selected ✓"):""; });
+      try{ GOSE&&GOSE.sound&&GOSE.sound("select"); }catch(e){}
+      return; }
+    if(el.dataset.toggle){ var k=el.dataset.toggle;
+      if(k==="license"){ S.license=!S.license; el.classList.toggle("on",S.license); el.classList.toggle("sel",S.license);
+        var hh=card.querySelector(".hint"); if(hh) hh.textContent=""; }
+      else { S.privacy[k]=!S.privacy[k]; el.classList.toggle("on",S.privacy[k]); }
+      try{ GOSE&&GOSE.sound&&GOSE.sound("select"); }catch(e){}
+      return; }
+    if(el.dataset.acc!==undefined){ S.account.accent=el.dataset.acc;
+      [].slice.call(document.querySelectorAll("[data-acc]")).forEach(function(o){ o.classList.toggle("sel",o===el); });
+      return; }
+    if(el.dataset.net!==undefined){ joinNetwork(el.dataset.net); return; }
+    if(el.tagName==="INPUT"){ el.focus(); /* opens the shared OSK (cursor.js) */ return; }
+  }
+
+  // ---- keyboard (the pad-nav daemon synthesizes these in the kiosk) ----
+  document.addEventListener("keydown", function(e){
+    if(oskVisible()) return;      // the on-screen keyboard owns input while it is open
+    var k=e.key;
+    if(k==="ArrowRight") move("right");
+    else if(k==="ArrowLeft") move("left");
+    else if(k==="ArrowDown") move("down");
+    else if(k==="ArrowUp") move("up");
+    else if(k==="Enter"||k===" ") activate(cur());
+    else if(k==="Escape"||k==="Backspace"){ try{ GOSE&&GOSE.sound&&GOSE.sound("back"); }catch(e2){} back(); }
+    else if(k==="]"||k==="PageDown"){ next(); }   // R1 = continue (accelerator from anywhere)
+    else if(k==="["||k==="PageUp"){ back(); }      // L1 = back
+    else return;
+    e.preventDefault();
+  });
+
+  // ---- gamepad fallback (browser preview only; the kiosk uses key synthesis) ----
+  var prev={};
+  (function pad(){ var gp=navigator.getGamepads&&[].slice.call(navigator.getGamepads()).filter(Boolean)[0];
+    if(gp && !oskVisible()){ var t=function(i){ return gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i]; };
+      if(t(12)) move("up"); if(t(13)) move("down"); if(t(14)) move("left"); if(t(15)) move("right");
+      if(t(0)) activate(cur()); if(t(1)) back();
+      if(t(5)) next(); if(t(4)) back();   // RB = continue, LB = back
+      gp.buttons.forEach(function(b,i){ prev[i]=b.pressed; }); }
+    requestAnimationFrame(pad); })();
+
+  // deep-link to a step for screenshots:  gose-oobe.html#account
+  (function initHash(){ var want=(location.hash||"").replace("#","");
+    var i=STEPS.map(function(s){return s.id;}).indexOf(want); if(i>=0) idx=i; })();
 
   render();
+})();
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>
