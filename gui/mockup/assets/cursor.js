@@ -319,10 +319,16 @@
 (function(){
   if(window.__goseSound) return; window.__goseSound=true;
   window.GOSE=window.GOSE||{};
+  // Bring up the full sound manager (per-category volume/mute + quiet-mode + game-duck).
+  if(!window.GOSESOUND){ var ss=document.createElement('script'); ss.src='assets/sound.js';
+    (document.head||document.documentElement).appendChild(ss); }
   var cache={};
   function enabled(){ return localStorage.getItem('gose-sounds')!=='off'; }
   GOSE.sound=function(name){
-    if(!enabled()) return;
+    // Route through the manager when present so the ui-category volume/mute, the
+    // global quiet-mode and the game-duck all apply from one place.
+    if(window.GOSESOUND && GOSESOUND.catOf(name)){ return GOSESOUND.play(name); }
+    if(!enabled()) return;                                  // fallback (manager not loaded yet)
     try{
       var a=cache[name]; if(!a){ a=cache[name]=new Audio('assets/sounds/'+name+'.wav'); a.volume=0.5; }
       a.currentTime=0; var p=a.play(); if(p&&p.catch)p.catch(function(){});
