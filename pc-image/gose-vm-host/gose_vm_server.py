@@ -50,7 +50,8 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/games/install": (12, 60),
            "/game/screenshot": (30, 60), "/game/record/toggle": (12, 60),
            "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300),
-           "/sys/perf": (60, 60), "/widgets/store": (30, 60), "/widgets/steam": (30, 60)}
+           "/sys/perf": (60, 60), "/widgets/store": (30, 60), "/widgets/steam": (30, 60),
+           "/storage/import": (12, 60), "/storage/detected": (30, 60)}
 
 _SKIPDIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_media"}
 _SKIPEXT = {".txt", ".xml", ".cfg", ".dat", ".jpg", ".jpeg", ".png", ".mp4", ".srm", ".state"}
@@ -2188,6 +2189,289 @@ def games_uninstall(payload):
     LOG.info("GAME UNINSTALL %s", gid)
     return {"ok": True, "id": gid, "removed": True}
 
+# ===== STORAGE AUTO-IMPORT (docs/25 §5.3): detect ROMs on inserted SD/USB -> offer -> import =====
+# REUSE, not reinvent: Batocera's stock removable-storage stack already does the mounting. The base
+# udev rule 99-external-storage.rules -> batocera-storage-udev -> batocera-storage-manager mounts ANY
+# inserted partition (with a filesystem) under /media/<label> and skips the system/boot/userdata LUNs.
+# GOSE does NOT duplicate that mount logic. A PARALLEL GOSE udev rule fires gose-storage-handler.sh,
+# which waits for Batocera's mount to appear, then POSTs /storage/detected here. We scan the mount,
+# classify ROM-shaped files by extension (parsed from es_systems.cfg, the same source ES uses), and
+# offer to COPY them into /userdata/roms/<system>. COPY (not symlink / not Batocera's mergerfs union):
+# removable media that gets pulled out must never break the Library or leave dangling links -- a copy
+# makes the games permanently the user's, present after the card is gone. (Batocera's own roms-on-USB
+# feature is a mergerfs union that vanishes on eject; that's the wrong contract for "add to Library".)
+STORAGE_STATE_F = "/userdata/gose-ui/storage_offers.json"
+_STORAGE_LOCK = threading.Lock()
+_STORAGE_ABORT = set()          # vol_ids whose device was pulled mid-import -> stop copying
+_EXT_SYS_CACHE = {"map": None, "names": None}
+
+# extensions too generic to classify alone (need a system-named parent folder as the hint)
+_AMBIG_EXT = {".zip", ".7z", ".bin", ".cue", ".iso", ".img", ".chd", ".rom", ".cso", ".m3u", ".pbp"}
+# obvious non-ROM file types skipped while scanning
+_NONROM_EXT = {".txt", ".xml", ".cfg", ".dat", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+               ".svg", ".mp4", ".mov", ".mkv", ".webm", ".avi", ".srm", ".state", ".sav", ".nfo",
+               ".md", ".pdf", ".log", ".json", ".ini", ".db", ".html", ".css", ".js", ".ico",
+               ".lnk", ".sys", ".inf", ".exe", ".dll", ".tmp", ".part"}
+_SCAN_SKIPDIRS = {"system volume information", "$recycle.bin", ".trash-1000", ".spotlight-v100",
+                  ".fseventsd", "images", "videos", "media", "manuals", "downloaded_images",
+                  "downloaded_media", ".git", "bios", "saves", "cheats", "screenshots"}
+_SCAN_MAX_FILES = 5000
+_SCAN_MAX_DEPTH = 6
+
+def _ext_sys_map():
+    """Parse es_systems.cfg -> ({ext: set(system_ids)}, {system_id: fullname}). Cached (single source)."""
+    if _EXT_SYS_CACHE["map"] is not None:
+        return _EXT_SYS_CACHE["map"], _EXT_SYS_CACHE["names"]
+    ext_map, names = {}, {}
+    try:
+        txt = open(_ES).read()
+        for block in re.findall(r"<system>.*?</system>", txt, re.S):
+            nm = re.search(r"<name>([^<]+)</name>", block)
+            if not nm:
+                continue
+            sysid = nm.group(1).strip()
+            full = re.search(r"<fullname>([^<]+)</fullname>", block)
+            names[sysid] = full.group(1).strip() if full else sysid
+            exts = re.search(r"<extension>([^<]+)</extension>", block)
+            if exts:
+                for e in exts.group(1).split():
+                    e = e.strip().lower()
+                    if e.startswith("."):
+                        ext_map.setdefault(e, set()).add(sysid)
+    except Exception:
+        pass
+    _EXT_SYS_CACHE["map"], _EXT_SYS_CACHE["names"] = ext_map, names
+    return ext_map, names
+
+def _sys_fullname(sysid):
+    _, names = _ext_sys_map()
+    return _SYS_EMU.get(sysid) or names.get(sysid) or _SYS.get(sysid) or sysid
+
+def _classify_rom(path, ext_map, known):
+    """Map a file to a system id, or None. A system-named parent folder is the strongest signal
+    (matches Batocera's roms/<system>/ layout + how people organise cards); a uniquely-owned
+    extension is next; ambiguous extensions with no folder hint are NOT guessed."""
+    ext = os.path.splitext(path)[1].lower()
+    if not ext or ext in _NONROM_EXT:
+        return None
+    parent = os.path.basename(os.path.dirname(path)).lower()
+    cands = ext_map.get(ext)
+    if parent in known and (not cands or parent in cands or ext in _AMBIG_EXT):
+        return parent
+    if cands and len(cands) == 1:
+        return next(iter(cands))
+    return None   # ambiguous, no usable hint -> leave unclassified
+
+def _is_external_mount(rp):
+    # only ever touch volumes Batocera mounted under /media/<name> (never the OS/data/boot disks)
+    return bool(rp) and rp.startswith("/media/") and rp != "/media" and os.path.isdir(rp)
+
+def scan_volume(mount):
+    """Walk a mounted external volume; classify ROM-shaped files by system. Bounded + safe."""
+    rp = os.path.realpath(mount or "")
+    if not _is_external_mount(rp):
+        return {"ok": False, "error": "refused: not an external /media mount"}
+    ext_map, names = _ext_sys_map()
+    known = set(names.keys())
+    by_sys, ambiguous, total = {}, 0, 0
+    base_depth = rp.rstrip("/").count("/")
+    try:
+        for root, dirs, files in os.walk(rp):
+            if root.rstrip("/").count("/") - base_depth >= _SCAN_MAX_DEPTH:
+                dirs[:] = []
+            dirs[:] = [d for d in dirs if d.lower() not in _SCAN_SKIPDIRS and not d.startswith(".")]
+            for f in files:
+                if total >= _SCAN_MAX_FILES:
+                    break
+                if f.startswith("."):
+                    continue
+                ext = os.path.splitext(f)[1].lower()
+                if not ext or ext in _NONROM_EXT:
+                    continue
+                p = os.path.join(root, f)
+                try:
+                    sz = os.path.getsize(p)
+                except OSError:
+                    continue
+                sysid = _classify_rom(p, ext_map, known)
+                if sysid:
+                    by_sys.setdefault(sysid, []).append({"file": f, "path": p, "size": sz})
+                    total += 1
+                elif ext in ext_map or ext in _AMBIG_EXT:
+                    ambiguous += 1
+                    total += 1
+            if total >= _SCAN_MAX_FILES:
+                break
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    systems = [{"system": s, "name": _sys_fullname(s), "count": len(v),
+                "games": sorted([{"name": os.path.splitext(g["file"])[0], "file": g["file"],
+                                  "path": g["path"], "size": g["size"]} for g in v],
+                                key=lambda g: g["name"].lower())}
+               for s, v in sorted(by_sys.items())]
+    return {"ok": True, "mount": rp, "systems": systems,
+            "rom_count": sum(s["count"] for s in systems), "ambiguous": ambiguous}
+
+def _load_storage_state():
+    try:
+        st = json.load(open(STORAGE_STATE_F))
+    except Exception:
+        st = {}
+    st.setdefault("pending", {})
+    st.setdefault("dismissed", [])
+    st.setdefault("imported", [])
+    return st
+
+def storage_register(payload):
+    """udev-handler insert hook: scan the freshly-mounted volume + record a pending offer."""
+    payload = payload or {}
+    mount = payload.get("mount", "")
+    vol_id = payload.get("vol_id") or payload.get("dev") or mount
+    dev = payload.get("dev", "")
+    rp = os.path.realpath(mount or "")
+    label = payload.get("label") or os.path.basename(rp.rstrip("/")) or vol_id
+    if not _is_external_mount(rp):
+        return {"ok": False, "error": "ignored: not an external /media mount", "mount": mount}
+    scan = scan_volume(rp)
+    if not scan.get("ok"):
+        return scan
+    with _STORAGE_LOCK:
+        st = _load_storage_state()
+        _STORAGE_ABORT.discard(vol_id)
+        if scan["rom_count"] == 0:
+            st["pending"].pop(vol_id, None)
+            write_json_atomic(STORAGE_STATE_F, st)
+            return {"ok": True, "vol_id": vol_id, "rom_count": 0, "note": "no ROMs found"}
+        if vol_id in st["imported"]:
+            return {"ok": True, "vol_id": vol_id, "rom_count": scan["rom_count"],
+                    "note": "already imported (debounced)"}
+        st["pending"][vol_id] = {"vol_id": vol_id, "label": label, "mount": rp, "dev": dev,
+                                 "systems": scan["systems"], "rom_count": scan["rom_count"],
+                                 "ambiguous": scan["ambiguous"], "t": int(time.time())}
+        if vol_id in st["dismissed"]:
+            st["dismissed"].remove(vol_id)
+        write_json_atomic(STORAGE_STATE_F, st)
+    LOG.info("STORAGE detect %s (%s) at %s: %d roms in %d systems",
+             label, vol_id, rp, scan["rom_count"], len(scan["systems"]))
+    return {"ok": True, "vol_id": vol_id, "rom_count": scan["rom_count"],
+            "systems": [s["system"] for s in scan["systems"]]}
+
+def storage_pending():
+    """Freshest live, un-dismissed offer(s) -- the home-page poller's source. Read-only/cheap."""
+    st = _load_storage_state()
+    offers = [off for vid, off in st["pending"].items()
+              if vid not in st["dismissed"] and os.path.ismount(off.get("mount", ""))]
+    offers.sort(key=lambda o: -o.get("t", 0))
+    return {"ok": True, "offers": offers, "offer": (offers[0] if offers else None)}
+
+def storage_import(payload):
+    """Copy ROMs from the offer's volume into /userdata/roms/<system>. Collision-safe; aborts
+    cleanly if the card is pulled mid-copy."""
+    payload = payload or {}
+    vol_id = payload.get("vol_id")
+    want_all = bool(payload.get("all"))
+    want_systems = set(payload.get("systems") or [])
+    st = _load_storage_state()
+    off = st["pending"].get(vol_id)
+    if not off:
+        return {"ok": False, "error": "no pending offer for that volume"}
+    mount = off["mount"]
+    if not os.path.ismount(mount):
+        return {"ok": False, "error": "drive was removed"}
+    _STORAGE_ABORT.discard(vol_id)
+    imported = skipped = 0
+    errors, by_system, aborted = [], {}, False
+    for s in off["systems"]:
+        if not want_all and s["system"] not in want_systems:
+            continue
+        sysdir = os.path.join(ROMS, s["system"])
+        try:
+            os.makedirs(sysdir, exist_ok=True)
+        except Exception as e:
+            errors.append("%s: %s" % (s["system"], e))
+            continue
+        sysreal = os.path.realpath(sysdir)
+        for g in s["games"]:
+            if vol_id in _STORAGE_ABORT or not os.path.ismount(mount):
+                aborted = True
+                break
+            src = g["path"]
+            if not os.path.isfile(src):
+                skipped += 1
+                continue
+            dest = os.path.join(sysdir, g["file"])
+            if os.path.isfile(dest):
+                try:
+                    if os.path.getsize(dest) == g["size"]:
+                        skipped += 1   # identical file already in the Library
+                        continue
+                except OSError:
+                    pass
+                stem, ext = os.path.splitext(g["file"])
+                n = 2
+                while os.path.isfile(os.path.join(sysdir, "%s (%d)%s" % (stem, n, ext))):
+                    n += 1
+                dest = os.path.join(sysdir, "%s (%d)%s" % (stem, n, ext))
+            # hard confinement: the write target must live directly inside the system's roms dir
+            if not os.path.realpath(os.path.dirname(dest)).startswith(sysreal):
+                errors.append("%s: unsafe destination" % g["file"])
+                continue
+            try:
+                tmp = dest + ".part"
+                shutil.copyfile(src, tmp)
+                os.replace(tmp, dest)
+                imported += 1
+                by_system[s["system"]] = by_system.get(s["system"], 0) + 1
+            except Exception as e:
+                errors.append("%s: %s" % (g["file"], e))
+                try:
+                    os.remove(dest + ".part")
+                except OSError:
+                    pass
+        if aborted:
+            break
+    with _STORAGE_LOCK:
+        st = _load_storage_state()
+        if not aborted:
+            st["pending"].pop(vol_id, None)
+            if vol_id not in st["imported"]:
+                st["imported"].append(vol_id)
+        write_json_atomic(STORAGE_STATE_F, st)
+    LOG.info("STORAGE import %s: +%d skipped=%d errors=%d aborted=%s",
+             vol_id, imported, skipped, len(errors), aborted)
+    return {"ok": True, "vol_id": vol_id, "imported": imported, "skipped": skipped,
+            "errors": errors, "by_system": by_system, "aborted": aborted}
+
+def storage_dismiss(payload):
+    vol_id = (payload or {}).get("vol_id")
+    with _STORAGE_LOCK:
+        st = _load_storage_state()
+        if vol_id and vol_id not in st["dismissed"]:
+            st["dismissed"].append(vol_id)
+        write_json_atomic(STORAGE_STATE_F, st)
+    return {"ok": True, "dismissed": vol_id}
+
+def storage_removed(payload):
+    """udev-handler remove hook: drop offers for the gone device + abort any in-flight import."""
+    payload = payload or {}
+    dev = payload.get("dev", "")
+    vol_id = payload.get("vol_id")
+    with _STORAGE_LOCK:
+        st = _load_storage_state()
+        gone = [vid for vid, off in st["pending"].items()
+                if vid == vol_id or (dev and off.get("dev") == dev)
+                or not os.path.ismount(off.get("mount", ""))]
+        for vid in gone:
+            st["pending"].pop(vid, None)
+            _STORAGE_ABORT.add(vid)                # stop a copy that's running for this volume
+            if vid in st["dismissed"]:
+                st["dismissed"].remove(vid)        # a re-inserted dismissed card re-prompts
+            # NOTE: 'imported' is kept across removal so a re-inserted, already-imported card
+            # is debounced (docs/25 §5.3) rather than nagging again.
+        write_json_atomic(STORAGE_STATE_F, st)
+    LOG.info("STORAGE remove dev=%s vol=%s -> cleared %s", dev, vol_id, gone)
+    return {"ok": True, "removed": gone}
+
 # ===== Desktop-widget data layer + controller registry + host proxies (docs/16 wave) =====
 # The widgets/controllers consume these; nothing here mutates game state, it derives views over the
 # already-tracked playtime.json / recent.json + the live /proc input devices + host_bridge.
@@ -2867,6 +3151,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(game_options(q.get("system", ""), q.get("game", "")))
         if route == "/storage.json":
             return self._json(storage_info())
+        if route == "/storage/pending":
+            return self._json(storage_pending())
         if route == "/procs.json":
             return self._json(procs_info())
         if route == "/windows":
@@ -3052,6 +3338,19 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             return self._json(controllers_admin_set(payload))
+        if route in ("/storage/detected", "/storage/import", "/storage/dismiss", "/storage/removed"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/storage/detected":
+                return self._json(storage_register(payload))
+            if route == "/storage/import":
+                return self._json(storage_import(payload))
+            if route == "/storage/dismiss":
+                return self._json(storage_dismiss(payload))
+            return self._json(storage_removed(payload))
         if route == "/guide/toggle":
             return self._json(guide_toggle())
         if route == "/game/exit":

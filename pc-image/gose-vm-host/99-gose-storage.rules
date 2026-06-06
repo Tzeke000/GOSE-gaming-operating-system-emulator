@@ -1,0 +1,13 @@
+# GOSE storage auto-import (docs/25 §5.3) -- runs ALONGSIDE Batocera's 99-external-storage.rules,
+# does NOT replace it. Batocera's rule mounts the volume; this only notifies the GOSE server to
+# scan + offer. The handler waits for Batocera's /media mount and ignores anything not mounted
+# there, so the system / boot / userdata LUNs are never acted on. Whole-disk events (sdb) are
+# harmless: the handler finds no /media mount for them and skips (only the mounted partition acts).
+ACTION=="add",    SUBSYSTEM=="block", KERNEL=="sd*",     RUN+="/userdata/gose-ui/gose-storage-handler.sh add %k"
+ACTION=="add",    SUBSYSTEM=="block", KERNEL=="mmcblk*", RUN+="/userdata/gose-ui/gose-storage-handler.sh add %k"
+ACTION=="add",    SUBSYSTEM=="block", KERNEL=="nvme*",   RUN+="/userdata/gose-ui/gose-storage-handler.sh add %k"
+ACTION=="add",    SUBSYSTEM=="block", KERNEL=="ub*",     RUN+="/userdata/gose-ui/gose-storage-handler.sh add %k"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="sd*",     RUN+="/userdata/gose-ui/gose-storage-handler.sh remove %k"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="mmcblk*", RUN+="/userdata/gose-ui/gose-storage-handler.sh remove %k"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="nvme*",   RUN+="/userdata/gose-ui/gose-storage-handler.sh remove %k"
+ACTION=="remove", SUBSYSTEM=="block", KERNEL=="ub*",     RUN+="/userdata/gose-ui/gose-storage-handler.sh remove %k"

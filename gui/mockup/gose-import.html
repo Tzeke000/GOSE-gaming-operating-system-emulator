@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Add ROMs</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 38px 4px}
+  .top .gi{width:38px;height:38px;border-radius:11px;background:#6a4dff33;color:#dfe5f5;
+    display:flex;align-items:center;justify-content:center}.top .gi .ic{font-size:20px}
+  .top h1{font-size:20px;margin:0}.top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .wrap{flex:1;min-height:0;display:flex;flex-direction:column;padding:10px 38px 0}
+  .pane{flex:1;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:8px 10px;overflow:auto}
+  .item{display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:11px;border:2px solid transparent}
+  .item.focus{border-color:var(--accent);background:#5cd0ff14;box-shadow:0 0 16px #5cd0ff44}
+  .item .ck{width:22px;height:22px;border-radius:6px;border:2px solid #ffffff33;flex:none;
+    display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff}
+  .item.on .ck{background:var(--accent);border-color:var(--accent)}
+  .item .nm{font-weight:600;flex:1}.item .ct{color:var(--muted);font-size:13px}
+  .item.go{justify-content:center;background:#6a4dff2e;font-weight:700;font-size:15px;margin-top:6px}
+  .item.go.focus{background:#6a4dff45}
+  .foot{margin:10px 38px 14px;display:flex;gap:10px;color:var(--muted);font-size:13px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+</style></head>
+<body>
+  <div class="top"><div class="gi"><span class="ic" data-i="hard-drive"></span></div>
+    <div><h1>Add ROMs to Library</h1><div class="s" id="sub">reading card…</div></div>
+    <div class="home"><b>B</b> / Esc — cancel</div>
+  </div>
+  <div class="wrap"><div class="pane"><div id="list"></div></div></div>
+  <div class="foot"><span class="ic" data-i="hard-drive"></span> GOSE Storage
+    <span class="h"><b>↑↓</b> move · <b>A</b> toggle / import · <b>B</b> cancel</span></div>
+<script src="assets/notify.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  const VOL=(new URLSearchParams(location.search)).get("vol")||"";
+  let offer=null, rows=[], foc=0, checked={};
+
+  function buildRows(){
+    rows = (offer.systems||[]).map(s=>({type:"sys",system:s.system,name:s.name,count:s.count}));
+    rows.push({type:"go"});
+  }
+  function render(){
+    $("list").innerHTML = rows.map((r,i)=>{
+      if(r.type==="go"){
+        const n=Object.keys(checked).filter(k=>checked[k]).reduce((a,k)=>{const s=(offer.systems||[]).find(x=>x.system===k);return a+(s?s.count:0);},0);
+        return `<div class="item go ${i===foc?'focus':''}" data-i2="${i}">Import ${n} selected ${n===1?'game':'games'}</div>`;
+      }
+      return `<div class="item ${checked[r.system]?'on':''} ${i===foc?'focus':''}" data-i2="${i}">
+        <span class="ck">${checked[r.system]?'✓':''}</span>
+        <span class="nm">${r.name}</span><span class="ct">${r.count} ${r.count===1?'game':'games'}</span></div>`;
+    }).join("");
+    const f=$("list").querySelector(".item.focus"); if(f)f.scrollIntoView({block:"nearest"});
+  }
+  function move(d){if(!rows.length)return;foc=(foc+d+rows.length)%rows.length;render();}
+  function activate(){
+    const r=rows[foc]; if(!r)return;
+    if(r.type==="sys"){ checked[r.system]=!checked[r.system]; render(); return; }
+    doImport();
+  }
+  function doImport(){
+    const sys=Object.keys(checked).filter(k=>checked[k]);
+    if(!sys.length){ if(window.GOSE)GOSE.notify({title:"Nothing selected",body:"Pick at least one system to import.",icon:"hard-drive"}); return; }
+    $("sub").textContent="importing…";
+    fetch("/storage/import",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({vol_id:VOL,systems:sys})}).then(r=>r.json()).then(j=>{
+      if(window.GOSE){ if(j&&j.ok){const m=j.imported+(j.imported===1?" game added":" games added")+(j.skipped?(" · "+j.skipped+" already had"):"")+(j.aborted?" · stopped (card removed)":"");
+        GOSE.notify({title:"Added to Library",body:m,icon:"hard-drive"});}
+        else GOSE.notify({title:"Import failed",body:(j&&j.error)||"could not copy ROMs",icon:"triangle-alert"});}
+      location.href="gose-home.html";
+    }).catch(()=>{ location.href="gose-home.html"; });
+  }
+  // WebKitGTK may deliver arrows as "ArrowDown" or bare "Down" -- accept both (pad nav keysyms).
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="ArrowDown"||k==="Down")move(1);else if(k==="ArrowUp"||k==="Up")move(-1);
+    else if(k==="Enter"||k===" ")activate();
+    else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
+    else return;e.preventDefault();},true);
+
+  paint();
+  fetch("/storage/pending",{cache:"no-store"}).then(r=>r.json()).then(j=>{
+    const offers=(j&&j.offers)||[];
+    offer = offers.find(o=>o.vol_id===VOL) || (j&&j.offer) || null;
+    if(!offer){ $("sub").textContent="no card detected — it may have been removed"; rows=[{type:"go"}]; render(); return; }
+    (offer.systems||[]).forEach(s=>checked[s.system]=true);   // all selected by default
+    $("sub").textContent=`${offer.label||"card"} · ${offer.rom_count} games · ${(offer.systems||[]).length} systems`;
+    buildRows(); render(); paint();
+  }).catch(()=>{$("sub").textContent="storage service offline";});
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>

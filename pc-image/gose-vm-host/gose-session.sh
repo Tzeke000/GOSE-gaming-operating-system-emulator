@@ -22,6 +22,16 @@ pgrep -f watchdog.py >/dev/null 2>&1 || \
 pkill -f gose-pad-nav.py 2>/dev/null
 ( cd /userdata/gose-ui && DISPLAY=:0 setsid python3 -u gose-pad-nav.py \
     >>/userdata/system/logs/gose-pad-nav.log 2>&1 </dev/null & )
+# Storage auto-import (docs/25 §5.3): install the GOSE udev rule so an inserted SD/USB with ROMs is
+# detected and offered to the Library. Runs ALONGSIDE Batocera's storage rule (reuses its mount).
+# /etc/udev/rules.d is a non-persistent overlay, so (re)install + reload on every boot. Idempotent.
+chmod +x /userdata/gose-ui/gose-storage-handler.sh 2>/dev/null
+if [ -f /userdata/gose-ui/99-gose-storage.rules ]; then
+  if ! cmp -s /userdata/gose-ui/99-gose-storage.rules /etc/udev/rules.d/99-gose-storage.rules 2>/dev/null; then
+    cp /userdata/gose-ui/99-gose-storage.rules /etc/udev/rules.d/99-gose-storage.rules
+    udevadm control --reload 2>/dev/null
+  fi
+fi
 # Bind the Guide (numpad 5 / Home) globally in Openbox so it toggles the overlay even over a game.
 if ! grep -q guide_toggle /etc/openbox/rc.xml 2>/dev/null; then
   sed -i 's#</openbox_config>#  <keyboard>\n    <keybind key="KP_5"><action name="Execute"><command>/userdata/gose-ui/guide_toggle.sh</command></action></keybind>\n    <keybind key="KP_Begin"><action name="Execute"><command>/userdata/gose-ui/guide_toggle.sh</command></action></keybind>\n    <keybind key="Print"><action name="Execute"><command>/userdata/gose-ui/shot.sh</command></action></keybind>\n  </keyboard>\n</openbox_config>#' /etc/openbox/rc.xml

@@ -118,9 +118,42 @@ license-aware installs).
    pad→menu bridge must accept ANY detected pad during OOBE: the admin-pad
    arbitration (docs/07) only locks in AFTER a user exists — pre-OOBE there is
    no admin yet, so the first pad that navigates becomes the admin candidate.
-3. **Storage auto-import** — udev already *sees* an inserted SD/USB; the missing
-   piece is a rule + UI offer: "ROMs found on this card — add to your Library?"
-   **Approved to build** (works in the VM via USB passthrough; task on the list).
+3. **Storage auto-import — BUILT (software layer), verified end-to-end on the VM**
+   (2026-06-06). "ROMs found on this card — add to your Library?" When an SD/USB
+   with ROMs is inserted, GOSE detects it, offers it, and copies the games into
+   the Library.
+   - **Reuse, not reinvent.** Batocera's stock stack already does the hard part:
+     `99-external-storage.rules` → `batocera-storage-udev` → `batocera-storage-manager`
+     **mounts** any inserted partition under `/media/<label>` and skips the
+     system/boot/userdata LUNs. GOSE adds **only** detection-of-ROMs + the offer +
+     the copy — it does **not** duplicate any mount logic.
+   - **Detection.** A parallel GOSE udev rule (`99-gose-storage.rules`, installed +
+     `udevadm control --reload`'d each boot by `gose-session.sh`) fires
+     `gose-storage-handler.sh` on block add/remove. The handler waits for
+     Batocera's `/media` mount, then `POST /storage/detected`. The server
+     (`gose_vm_server.py`) scans the volume and classifies each ROM-shaped file by
+     extension (parsed from `es_systems.cfg`, the same source ES uses); a
+     system-named parent folder is the tie-breaker for ambiguous extensions
+     (`.bin`, `.zip`, …). Generic/unknown files are ignored; the system SD,
+     `/userdata`, `/boot` are never touched.
+   - **Offer (pad-navigable).** A home-page poller (`assets/storage-offer.js`,
+     reusing the `GOSE.notify` toast path) fires a one-time toast and shows a modal:
+     **N ROMs found on `<volume>` — [Add all] [Choose] [Not now]**. "Choose" opens
+     `gose-import.html`, a pad-navigable per-system review surface (toggle systems,
+     live count, Import).
+   - **Import = COPY (not symlink / not Batocera's mergerfs union).** Removable
+     media that gets pulled must never break the Library or leave dangling links —
+     a copy makes the games permanently the user's. Files land in
+     `/userdata/roms/<system>/`; identical files are skipped (collision-safe);
+     name collisions get a `(2)` suffix; the import aborts cleanly if the card is
+     pulled mid-copy. Already-imported volumes are debounced (no re-nag).
+   - **Eject.** Device-removal drops the offer and aborts any in-flight import
+     (the offer poll also filters volumes whose mount has vanished) — no crash, no
+     dangling state.
+   - `[needs hardware]`: a **real** SD/USB insertion on the Odin 2 (the VM path was
+     verified with a `scsi_debug` removable disk + real udev events; on hardware
+     the same rule fires from a physical card). USB passthrough of a host stick to
+     the dev VM is the other way to exercise it live.
 
 ## 5b. Widget nav order (Zeke, 2026-06-06 — required fix)
 
@@ -140,7 +173,8 @@ docs/23 §1.6.)
 
 ## 6. Build order
 
-1. Storage auto-import (§5.3) — after windowing wave-1 lands (same files).
+1. ~~Storage auto-import (§5.3)~~ — **DONE 2026-06-06** (software layer, VM-verified
+   end-to-end; real-hardware insertion is the only `[needs hardware]` piece).
 2. OOBE wizard (§3) — new `gose-oobe.html` + first-boot flag in the server;
    reuses login.html, the pairing screen, and the privacy settings page.
 3. Image-bake of the §4 app set — folds into the `pc-image/` build +
