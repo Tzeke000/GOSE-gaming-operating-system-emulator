@@ -62,6 +62,33 @@ that navigated you to it).
    token/pairing flow (docs/16); skippable, never nagged
 7. Done → desktop, default apps already installed (§4)
 
+### 3a. Step taxonomy — required vs defaulted vs skippable (Zeke 2026-06-06)
+
+Every wizard page carries a visible, controller-readable badge so it's
+unmistakable which steps are blockers and which aren't. Three kinds:
+
+- **REQUIRED** (gold badge, **no Skip control**, Continue stays disabled until
+  satisfied): **License** (legal accept) and **Account** (the device needs an
+  owner — a non-empty username). R1/Continue do not advance; an inline hint
+  states what's missing, and clears the moment the step is satisfied.
+- **DEFAULTED** (green "Default ready" badge, no Skip — one-button Continue with
+  a sensible pre-selection): **Language** (en-US), **Keyboard** (from language),
+  **Controller** (the pad that navigated you here is auto-detected + already
+  "Ready ✓"; Continue confirms it as owner — connect extras later in Settings).
+- **SKIPPABLE** (muted "Optional" badge + an always-reachable Skip button in the
+  roving-focus order; skipping advances immediately with **no side effects**):
+  **Network/Wi-Fi** ("Skip for now" bypasses scanning entirely → stays offline;
+  also carries a subtle "Recommended" badge), **Privacy** (Skip = everything
+  stays OFF, the default), **Personalize** (Skip = onyx theme + "GOSE" name),
+  **AI pairing** (Skip = no grant; pair later from the Hub). Extra controllers
+  are covered by the DEFAULTED controller step — Continue means "the current pad
+  is enough."
+
+Skip is the footer ghost button (A once focused, same one-press cost as
+Continue); L2 was considered as a Skip accelerator but is reserved by the
+windowing snap/modal layer (docs/23), so it isn't reused here. Pad-driven
+end-to-end skip-heavy verification done 2026-06-06.
+
 ## 4. The default app set (locked by Zeke, 2026-06-06)
 
 **Baked into the image — zero downloads on first boot:**
