@@ -2429,7 +2429,7 @@ WM_VERBS = {"focus", "move", "resize", "maximize", "restore", "minimize", "snap"
             "close", "suspend", "free"} | WM_VERBS_WEB_ONLY
 
 _WM_LOCK = threading.Lock()
-_WEB_WINS = {"ts": 0.0, "list": []}     # shell-side cache: the kiosk's web-window list
+_WEB_WINS = {"ts": 0.0, "list": [], "inst": None}   # shell cache + which page instance sent it
 _WM_QUEUE = collections.deque(maxlen=64)  # commands pending for the shell web-WM
 WEB_STALE_S = 15                        # no /windows/sync in this long => cache is stale
 
@@ -2470,12 +2470,17 @@ def _snap_rect(zone, margin_top=0):
     return Z.get(zone)
 
 def native_windows(include_shell=False):
-    """Live native X windows via xdotool (wmctrl is not on the image — see header)."""
+    """Live native X windows via xdotool (wmctrl is not on the image — see header).
+    Batched: xdotool command-chaining (`search ... getwindowname %@`) gets every
+    window's name/geometry in ONE spawn each instead of 3-4 spawns per window —
+    GET /windows was costing seconds under load the per-window way."""
     wins = []
     try:
         rc, out, _ = _xdo("search --onlyvisible --name '.'")
         xids = [x for x in out.split() if x.isdigit()]
     except Exception:
+        return wins
+    if not xids:
         return wins
     active = None
     try:
@@ -2483,24 +2488,45 @@ def native_windows(include_shell=False):
         active = a if a.isdigit() else None
     except Exception:
         pass
+    # names: one line per window, same order as the search output
+    names = {}
+    try:
+        _, o, _ = _xdo("search --onlyvisible --name '.' getwindowname %@")
+        lines = o.splitlines()
+        if len(lines) == len(xids):
+            names = dict(zip(xids, lines))
+    except Exception:
+        pass
+    # geometry: --shell blocks are self-keyed by WINDOW=<xid> (alignment-safe)
+    geoms = {}
+    try:
+        _, o, _ = _xdo("search --onlyvisible --name '.' getwindowgeometry --shell %@")
+        cur = None
+        for ln in o.splitlines():
+            if "=" not in ln:
+                continue
+            k, v = ln.split("=", 1)
+            if k == "WINDOW":
+                cur = v.strip(); geoms[cur] = {}
+            elif cur and k in ("X", "Y", "WIDTH", "HEIGHT") and v.lstrip("-").isdigit():
+                geoms[cur][{"X": "x", "Y": "y", "WIDTH": "w", "HEIGHT": "h"}[k]] = int(v)
+    except Exception:
+        pass
     for xid in xids:
         try:
-            _, title, _ = _xdo("getwindowname %s" % xid, timeout=4)
-            _, pid_s, _ = _xdo("getwindowpid %s" % xid, timeout=4)
-            geom = {}
-            _, g, _ = _xdo("getwindowgeometry --shell %s" % xid, timeout=4)
-            for ln in g.splitlines():
-                if "=" in ln:
-                    k, v = ln.split("=", 1)
-                    if k in ("X", "Y", "WIDTH", "HEIGHT") and v.lstrip("-").isdigit():
-                        geom[{"X": "x", "Y": "y", "WIDTH": "w", "HEIGHT": "h"}[k]] = int(v)
+            title = names.get(xid)
+            if title is None:
+                _, title, _ = _xdo("getwindowname %s" % xid, timeout=4)   # fallback path
             shell = title in _SHELL_WIN_TITLES
             if shell and not include_shell:
                 continue
+            pid_s = ""
+            if not shell:    # pid lookup only for real windows (the expensive leftovers)
+                _, pid_s, _ = _xdo("getwindowpid %s" % xid, timeout=4)
             wins.append({"id": "xwin-%s" % xid, "kind": "native", "xid": int(xid),
                          "pid": int(pid_s) if pid_s.isdigit() else None,
                          "title": title or "(untitled)", "icon": "gamepad-2",
-                         "geom": geom, "state": "normal", "group": None,
+                         "geom": geoms.get(xid, {}), "state": "normal", "group": None,
                          "shell": shell, "focused": (xid == active)})
         except Exception:
             continue
@@ -2517,7 +2543,7 @@ def windows_merged():
     native = native_windows()
     focus = next((w["id"] for w in web + native if w.get("focused")), None)
     return {"ok": True, "windows": web + native, "web_fresh": fresh,
-            "focus": focus, "ts": round(time.time(), 2)}
+            "shell_inst": _WEB_WINS.get("inst"), "focus": focus, "ts": round(time.time(), 2)}
 
 def windows_sync(payload):
     """Shell WM → server: replace the web-window cache; drain pending commands back."""
@@ -2527,6 +2553,10 @@ def windows_sync(payload):
         if isinstance(lst, list):
             _WEB_WINS["list"] = [w for w in lst if isinstance(w, dict) and w.get("id")]
             _WEB_WINS["ts"] = time.time()
+            inst = payload.get("inst")
+            if inst and inst != _WEB_WINS.get("inst"):
+                LOG.info("WM shell instance: %s (was %s)", inst, _WEB_WINS.get("inst"))
+                _WEB_WINS["inst"] = inst
         while _WM_QUEUE:
             cmds.append(_WM_QUEUE.popleft())
     return {"ok": True, "commands": cmds}
