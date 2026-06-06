@@ -245,10 +245,20 @@ def scrape_system(system, force=False, state=None):
     LOG.info("scrape %s: +%d art, %d missed, %d skipped", system, scraped, missed, skipped)
     return {"ok": True, "system": system, "scraped": scraped, "missed": missed, "had_art": skipped}
 
+# Privacy: scraping cover art sends the user's ROM filenames (= their game library) to a
+# third-party art server (thumbnails.libretro.com). So the AUTO pass is OFF by default —
+# it runs only if the user opted in (this flag file exists). The manual "Scrape" button in
+# the Library always works on demand. (A Privacy/Settings toggle creates/removes this flag.)
+SCRAPE_AUTO_FLAG = "/userdata/system/gose/scrape_auto"
+
 def auto_scrape_boot():
-    # Background, one-shot per boot: fill in any missing cover art automatically so the Library is
-    # populated without the user pressing Scrape. Cheap on reboot thanks to the scrape_state manifest.
+    # Background, one-shot per boot: fill in any missing cover art automatically. OPT-IN only
+    # (privacy — see SCRAPE_AUTO_FLAG above). Cheap on reboot thanks to the scrape_state manifest.
     try:
+        if not os.path.exists(SCRAPE_AUTO_FLAG):
+            LOG.info("auto-scrape skipped (opt-in only; create %s to enable). Manual Scrape still works.",
+                     SCRAPE_AUTO_FLAG)
+            return
         time.sleep(20)   # let the boot settle before touching the network
         state = _scrape_state()
         total = 0

@@ -16,7 +16,9 @@ def _env_bool(name: str, default: bool) -> bool:
 
 @dataclass
 class AgentConfig:
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"   # privacy/security: loopback by DEFAULT (was 0.0.0.0 = all
+    #   interfaces = LAN-exposed on real Wi-Fi, e.g. an Odin 2). The VM sets GOSE_AGENT_HOST=0.0.0.0
+    #   explicitly (custom.sh) so the host hostfwd still reaches it; remote access otherwise via Tailscale.
     port: int = 8731
     token: Optional[str] = None          # required for non-loopback clients
     allow_shell: bool = True             # system.run enabled (owner's device)

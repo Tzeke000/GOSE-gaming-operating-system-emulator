@@ -130,8 +130,13 @@ def online():
     if _net["every"] != 1:
         return _net["online"]
     try:
-        s = socket.create_connection(("8.8.8.8", 53), 1.2); s.close()
-        _net["online"] = True
+        # privacy: use Windows' OWN connectivity assessment (Network List Manager) — it contacts
+        # NO third party. (Was: connect to 8.8.8.8:53 = phoning Google DNS on every poll.)
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "[bool]((Get-NetConnectionProfile).IPv4Connectivity -contains 'Internet')"],
+            capture_output=True, text=True, timeout=3)
+        _net["online"] = "True" in out.stdout
     except Exception:
         _net["online"] = False
     return _net["online"]
