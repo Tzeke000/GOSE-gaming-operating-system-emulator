@@ -1,0 +1,7 @@
+# Large / built payloads — assembled at package time by package-bundle.ps1, never source.
+qemu/
+vm/
+# Runtime scripts are copied in from ../gose-vm-host at package time (canonical source
+# lives there — link, don't duplicate). The committed dist holds only the launcher glue + icon.
+launcher/boot-gose-vm.ps1
+launcher/host_bridge.py
