@@ -2420,16 +2420,29 @@ WM_EVENTS = {
     "wm.min":      ("minimize", {}),    # minimize ("act out" tier 0 — still live)
     "wm.suspend":  ("suspend", {}),     # pause: web=queued to shell, native=SIGSTOP (RAM kept)
     "wm.free":     ("free", {}),        # release: web=teardown to descriptor, native=SIGTERM/KILL
-    "wm.overview": ("overview", {}),    # all-windows grid (chunk B)
+    "wm.overview": ("overview", {}),    # all-windows grid
+    # ---- chunk B: the pad bridge's WM modal layer (docs/23 §7) posts these ----
+    "wm.carousel": ("carousel", {}),    # hold-Guide → open the window carousel
+    "wm.select":   ("select", {}),      # A / Guide-release → take the highlighted choice
+    "wm.cancel":   ("cancel", {}),      # B → close the open WM modal
+    "wm.left":     ("left", {}),        # d-pad while a WM modal is open
+    "wm.right":    ("right", {}),
+    "wm.up":       ("up", {}),
+    "wm.down":     ("down", {}),
+    "wm.snapmode": ("snapmode", {}),    # L2+d-pad → Snap Layout chooser (§4.3)
+    "wm.act":      ("act", {}),         # X → act-out the highlighted/focused window (tier per shell)
 }
 # Uniform verbs (docs/23 §4.2) + registry/launch ops (open/winify are how web windows
 # come into being; they're shell-queue-only, not in the §4.2 table).
-WM_VERBS_WEB_ONLY = {"open", "winify", "next", "prev", "overview"}
+WM_VERBS_WEB_ONLY = {"open", "winify", "next", "prev", "overview", "resummon",
+                     "carousel", "select", "cancel", "left", "right", "up", "down",
+                     "snapmode", "act"}
 WM_VERBS = {"focus", "move", "resize", "maximize", "restore", "minimize", "snap",
             "close", "suspend", "free"} | WM_VERBS_WEB_ONLY
 
 _WM_LOCK = threading.Lock()
-_WEB_WINS = {"ts": 0.0, "list": [], "inst": None}   # shell cache + which page instance sent it
+_WM_CV = threading.Condition(_WM_LOCK)  # long-poll wakeup: command queued -> waiter returns NOW
+_WEB_WINS = {"ts": 0.0, "list": [], "inst": None, "ui": None}  # shell cache + page instance + modal/UI state
 _WM_QUEUE = collections.deque(maxlen=64)  # commands pending for the shell web-WM
 WEB_STALE_S = 15                        # no /windows/sync in this long => cache is stale
 
@@ -2543,7 +2556,8 @@ def windows_merged():
     native = native_windows()
     focus = next((w["id"] for w in web + native if w.get("focused")), None)
     return {"ok": True, "windows": web + native, "web_fresh": fresh,
-            "shell_inst": _WEB_WINS.get("inst"), "focus": focus, "ts": round(time.time(), 2)}
+            "shell_inst": _WEB_WINS.get("inst"), "ui": _WEB_WINS.get("ui"),
+            "nav": _WEB_WINS.get("nav"), "focus": focus, "ts": round(time.time(), 2)}
 
 def windows_sync(payload):
     """Shell WM → server: replace the web-window cache; drain pending commands back."""
@@ -2553,6 +2567,12 @@ def windows_sync(payload):
         if isinstance(lst, list):
             _WEB_WINS["list"] = [w for w in lst if isinstance(w, dict) and w.get("id")]
             _WEB_WINS["ts"] = time.time()
+            # modal/UI state mirror ({modal, sel, zone, ...} or null) — lets a text-first
+            # verifier (or the bridge) see what the carousel/snap chooser is showing
+            # without a screenshot.
+            _WEB_WINS["ui"] = payload.get("ui") if isinstance(payload.get("ui"), dict) else None
+            # live widget nav-zone order + current focus (docs/25 §5b/§5c) — verification surface
+            _WEB_WINS["nav"] = payload.get("nav") if isinstance(payload.get("nav"), (list, dict)) else None
             inst = payload.get("inst")
             if inst and inst != _WEB_WINS.get("inst"):
                 LOG.info("WM shell instance: %s (was %s)", inst, _WEB_WINS.get("inst"))
@@ -2561,16 +2581,25 @@ def windows_sync(payload):
             cmds.append(_WM_QUEUE.popleft())
     return {"ok": True, "commands": cmds}
 
-def wm_poll():
+def wm_poll(wait_s=0.0):
+    """Drain queued shell commands. With wait_s > 0 this is a LONG-POLL: the request
+    parks until a command arrives (or the wait expires), so the shell holds one
+    hanging GET open and a pad-bridge /wm/event reaches the page in milliseconds
+    instead of riding the 4s sync heartbeat (which stretches badly under load —
+    the chunk-A perf finding). Server is threaded, so parking a request is safe."""
+    deadline = time.time() + max(0.0, min(float(wait_s or 0), 25.0))
     cmds = []
-    with _WM_LOCK:
+    with _WM_CV:
+        while not _WM_QUEUE and time.time() < deadline:
+            _WM_CV.wait(timeout=max(0.05, deadline - time.time()))
         while _WM_QUEUE:
             cmds.append(_WM_QUEUE.popleft())
     return {"ok": True, "commands": cmds}
 
 def _wm_queue(cmd):
-    with _WM_LOCK:
+    with _WM_CV:
         _WM_QUEUE.append(cmd)
+        _WM_CV.notify_all()
     return {"ok": True, "queued": True, "cmd": cmd}
 
 def _wm_native(verb, win, payload):
@@ -2758,7 +2787,11 @@ class H(http.server.SimpleHTTPRequestHandler):
         if route == "/windows":
             return self._json(windows_merged())
         if route == "/wm/poll":
-            return self._json(wm_poll())
+            try:
+                wait_s = float(self._qs().get("wait", 0))
+            except Exception:
+                wait_s = 0.0
+            return self._json(wm_poll(wait_s))
         if route == "/splice/videos":
             return self._json(splice_videos())
         if route == "/splice/probe":
