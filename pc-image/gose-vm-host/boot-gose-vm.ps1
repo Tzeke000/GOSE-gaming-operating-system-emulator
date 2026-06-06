@@ -3,12 +3,15 @@
 # Key: use MSYS2's qemu (has virglrenderer + ANGLE) + gl=on (DESKTOP GL).
 #   gl=es (ANGLE GLES) FAILS — "Unable to create OpenGL context >= 3.0".
 param(
-  [string]$Image = "D:\gose-vm\batocera-x86_64-43.1-20260529.img",
+  # Image / qemu / bridge default to the dev box but honor env overrides so the
+  # distribution launcher can point them at bundle-relative paths (additive, 2026-06-06).
+  [string]$Image = $(if ($env:GOSE_IMAGE) { $env:GOSE_IMAGE } else { "D:\gose-vm\batocera-x86_64-43.1-20260529.img" }),
   [string]$Display = "sdl,gl=on",   # sdl,gl=on confirmed working; gtk,gl=on also worth trying
   [int]$Mem = 6,
-  [int]$Cpus = 4
+  [int]$Cpus = 4,
+  [string]$QemuBin = $(if ($env:GOSE_QEMU_BIN) { $env:GOSE_QEMU_BIN } else { "D:\gose-build\msys64\mingw64\bin" })
 )
-$bin = "D:\gose-build\msys64\mingw64\bin"          # MSYS2 qemu (virgl-enabled)
+$bin = $QemuBin                                    # MSYS2 qemu (virgl-enabled); overridable for the portable bundle
 $qemu = "$bin\qemu-system-x86_64.exe"
 if (-not (Test-Path $qemu)) { Write-Error "MSYS2 qemu not found at $qemu"; exit 1 }
 $env:PATH = "$bin;$env:PATH"                        # so its DLLs (virgl/epoxy/ANGLE) resolve
@@ -19,7 +22,7 @@ Get-Process usbredirect -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 2
 
 # host bridge: feeds REAL laptop battery + internet state to the guest (10.0.2.2:8790)
-$bridge = "D:\gose-vm\host_bridge.py"
+$bridge = $(if ($env:GOSE_BRIDGE) { $env:GOSE_BRIDGE } else { "D:\gose-vm\host_bridge.py" })
 if (Test-Path $bridge) {
   Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -like "*host_bridge.py*" } |
