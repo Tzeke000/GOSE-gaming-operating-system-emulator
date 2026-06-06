@@ -15,6 +15,13 @@ pgrep -f overlay_window.py >/dev/null 2>&1 || \
 # Watchdog: auto-restart the UI server / overlay if they die mid-session (availability/recovery).
 pgrep -f watchdog.py >/dev/null 2>&1 || \
   (cd /userdata/gose-ui && nohup python3 -u watchdog.py >>/userdata/gose-ui/gose.log 2>&1 &)
+# Gamepad -> keyboard bridge: WebKit has no gamepad lib + no evmapy/gptokeyb here,
+# so the controller can't drive the (keyboard-navigable) UI on its own. This daemon
+# reads the pad via evdev and synthesizes the matching X keys (xdotool). Idempotent:
+# kill any stale instance first so a session relaunch never stacks duplicates.
+pkill -f gose-pad-nav.py 2>/dev/null
+( cd /userdata/gose-ui && DISPLAY=:0 setsid python3 -u gose-pad-nav.py \
+    >>/userdata/system/logs/gose-pad-nav.log 2>&1 </dev/null & )
 # Bind the Guide (numpad 5 / Home) globally in Openbox so it toggles the overlay even over a game.
 if ! grep -q guide_toggle /etc/openbox/rc.xml 2>/dev/null; then
   sed -i 's#</openbox_config>#  <keyboard>\n    <keybind key="KP_5"><action name="Execute"><command>/userdata/gose-ui/guide_toggle.sh</command></action></keybind>\n    <keybind key="KP_Begin"><action name="Execute"><command>/userdata/gose-ui/guide_toggle.sh</command></action></keybind>\n    <keybind key="Print"><action name="Execute"><command>/userdata/gose-ui/shot.sh</command></action></keybind>\n  </keyboard>\n</openbox_config>#' /etc/openbox/rc.xml
