@@ -142,29 +142,46 @@ def online():
     return _net["online"]
 
 def battery_ps():
-    # fallback when psutil is missing/None: read battery via PowerShell (CIM)
+    # fallback when psutil is missing/None: read battery via PowerShell (CIM).
+    # EstimatedRunTime is MINUTES remaining on battery; 0x7fffffff (71582788) = unknown/charging.
     try:
         out = subprocess.run(["powershell", "-NoProfile", "-Command",
-            "$b=Get-CimInstance Win32_Battery; if($b){\"$($b.EstimatedChargeRemaining),$($b.BatteryStatus)\"}else{'none'}"],
+            "$b=Get-CimInstance Win32_Battery; if($b){\"$($b.EstimatedChargeRemaining),$($b.BatteryStatus),$($b.EstimatedRunTime)\"}else{'none'}"],
             capture_output=True, text=True, timeout=4).stdout.strip()
         if out and out != "none":
-            pct, status = out.split(",")
+            parts = out.split(",")
+            pct, status = parts[0], parts[1]
+            charging = status.strip() in ("2", "3", "6", "7", "8")
+            secs = None
+            if not charging and len(parts) > 2:
+                try:
+                    mins = int(parts[2])
+                    if 0 < mins < 60 * 48:   # ignore the unknown sentinel
+                        secs = mins * 60
+                except Exception:
+                    secs = None
             # BatteryStatus 2 = AC/charging; 1 = discharging
-            return {"has_battery": True, "battery_pct": int(pct), "charging": status.strip() in ("2", "3", "6", "7", "8")}
+            return {"has_battery": True, "battery_pct": int(pct), "charging": charging,
+                    "secs_left": secs, "battery_source": "host:Win32_Battery"}
     except Exception:
         pass
     return None
 
 def info():
     out = {"ok": True, "online": online(), "has_battery": False,
-           "battery_pct": None, "charging": None}
+           "battery_pct": None, "charging": None, "secs_left": None,
+           "battery_source": None}
     got = False
     if psutil:
         try:
             b = psutil.sensors_battery()
             if b is not None:
+                secs = None
+                if b.secsleft is not None and b.secsleft >= 0 and not b.power_plugged:
+                    secs = int(b.secsleft)
                 out.update(has_battery=True, battery_pct=round(b.percent),
-                           charging=bool(b.power_plugged)); got = True
+                           charging=bool(b.power_plugged), secs_left=secs,
+                           battery_source="host:psutil"); got = True
         except Exception:
             pass
     if not got:

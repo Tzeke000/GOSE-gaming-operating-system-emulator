@@ -986,6 +986,66 @@ def host_info():
     except Exception:
         return {}
 
+# ---- battery / power ----
+# Real handheld hardware exposes a battery under /sys/class/power_supply/BAT*.
+# The dev VM has none, so we source the laptop's REAL battery via the host bridge
+# (a live, moving number to test against). battery_source is always honest about which.
+BAT_OVERRIDE_F = "/tmp/gose-bat-override"   # test hook: {"battery_pct":N,"charging":bool}
+
+def _local_battery():
+    import glob as _glob
+    for d in sorted(_glob.glob("/sys/class/power_supply/BAT*")):
+        try:
+            cap = int(open(os.path.join(d, "capacity")).read().strip())
+        except Exception:
+            continue
+        try:
+            status = open(os.path.join(d, "status")).read().strip()
+        except Exception:
+            status = ""
+        charging = status in ("Charging", "Full", "Not charging")
+        secs = None
+        try:   # time-to-empty estimate from charge_now / current_now (or energy_now / power_now)
+            if not charging:
+                now = full = rate = None
+                for nm, rt in (("charge_now", "current_now"), ("energy_now", "power_now")):
+                    if os.path.isfile(os.path.join(d, nm)) and os.path.isfile(os.path.join(d, rt)):
+                        now = int(open(os.path.join(d, nm)).read().strip())
+                        rate = int(open(os.path.join(d, rt)).read().strip())
+                        break
+                if now is not None and rate and rate > 0:
+                    secs = int(now / rate * 3600)
+        except Exception:
+            secs = None
+        return {"has_battery": True, "battery_pct": cap, "charging": charging,
+                "secs_left": secs, "battery_source": "local:" + os.path.basename(d)}
+    return None
+
+def battery_info():
+    # 0) test override (QA: force a low value without draining a laptop) — honest source
+    try:
+        if os.path.isfile(BAT_OVERRIDE_F):
+            o = json.loads(open(BAT_OVERRIDE_F).read() or "{}")
+            return {"ok": True, "has_battery": True,
+                    "battery_pct": o.get("battery_pct"), "charging": bool(o.get("charging")),
+                    "secs_left": o.get("secs_left"), "battery_source": "override:test"}
+    except Exception:
+        pass
+    # 1) real local battery (handheld hardware)
+    lb = _local_battery()
+    if lb:
+        lb["ok"] = True
+        return lb
+    # 2) dev VM: the laptop's real battery via the host bridge
+    h = host_info()
+    if h.get("has_battery"):
+        return {"ok": True, "has_battery": True,
+                "battery_pct": h.get("battery_pct"), "charging": h.get("charging"),
+                "secs_left": h.get("secs_left"),
+                "battery_source": h.get("battery_source") or "host:laptop"}
+    return {"ok": True, "has_battery": False, "battery_pct": None, "charging": None,
+            "secs_left": None, "battery_source": None}
+
 def health():
     # production health check: are the moving parts alive?
     return {"ok": True, "version": VERSION["version"], "uptime_s": round(time.time() - START_T),
@@ -1091,15 +1151,37 @@ def sys_brightness(set_val=None):
     except Exception as e:
         return {"ok": False, "has": True, "error": str(e)}
 
+POWER_LOG_F = "/userdata/gose-ui/power_actions.log"
+
+def _power_log(msg):
+    try:
+        with open(POWER_LOG_F, "a") as f:
+            f.write(time.strftime("%Y-%m-%dT%H:%M:%S ") + msg + "\n")
+    except Exception:
+        pass
+
 def sys_power(action):
+    # "suspend" is the canonical name; "sleep" kept as an alias.
+    if action == "suspend":
+        action = "sleep"
     cmds = {"sleep": ["/bin/sh", "-c", "systemctl suspend 2>/dev/null || echo mem > /sys/power/state"],
             "restart": ["/bin/sh", "-c", "batocera-es-swissknife --reboot 2>/dev/null || reboot"],
             "shutdown": ["/bin/sh", "-c", "batocera-es-swissknife --shutdown 2>/dev/null || poweroff"]}
     if action not in cmds:
+        _power_log("REJECTED bad action=%r" % action)
         return {"ok": False, "error": "bad action"}
+    # On hardware without a real battery (the dev VM), suspend can't truly ACPI-sleep —
+    # writing 'mem' to /sys/power/state would hang the guest. Log + no-op so the action
+    # PATH is verifiable; real suspend is [needs hardware].
+    if action == "sleep" and _local_battery() is None:
+        _power_log("INVOKED action=suspend simulated=yes (no local battery; VM cannot ACPI-suspend)")
+        return {"ok": True, "action": "suspend", "simulated": True,
+                "note": "[needs hardware] VM has no battery; real ACPI-suspend not attempted"}
     try:
+        _power_log("INVOKED action=%s simulated=no" % action)
         _spawn(cmds[action]); return {"ok": True, "action": action}
     except Exception as e:
+        _power_log("ERROR action=%s err=%s" % (action, e))
         return {"ok": False, "error": str(e)}
 
 def sys_perf(mode):
@@ -2748,10 +2830,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(gose_backups())
         if route == "/status.json":
             st = agent_status(); h = host_info()
-            for k in ("battery_pct", "charging", "has_battery", "online",
-                      "gpu_pct", "gpu_mem_used_mb", "gpu_mem_total_mb", "gpu_temp_c", "gpu_name"):
+            for k in ("online", "gpu_pct", "gpu_mem_used_mb", "gpu_mem_total_mb",
+                      "gpu_temp_c", "gpu_name"):
                 if k in h:
                     st[k] = h[k]
+            b = battery_info()   # local BAT* > host laptop > override; honest source
+            for k in ("has_battery", "battery_pct", "charging", "secs_left", "battery_source"):
+                st[k] = b.get(k)
             return self._json(st)
         if route == "/games.json":
             return self._json(list_games())
@@ -2812,6 +2897,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(sys_brightness_host())
         if route == "/sys/perf":
             return self._json(sys_perf_host())
+        if route == "/sys/battery":
+            return self._json(battery_info())
         if route == "/widgets/emulators":
             return self._json(widgets_emulators())
         if route == "/widgets/library":

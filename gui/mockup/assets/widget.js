@@ -40,7 +40,8 @@
     {id:"wterminal",  name:"Terminal",       desc:"Quick-launch the terminal",                 icon:"terminal",    group:"content", def:1},
     {id:"controllers",name:"Controllers",    desc:"Connected gamepads (count badge when live)",icon:"gamepad-2",   group:"status",  def:1},
     {id:"notifs",     name:"Notifications",  desc:"Recent notifications (unread-count badge)",  icon:"bell",        group:"status",  def:1},
-    {id:"system",     name:"System",         desc:"Live laptop CPU / GPU / RAM / temp monitor",icon:"cpu",         group:"status",  def:1}
+    {id:"system",     name:"System",         desc:"Live laptop CPU / GPU / RAM / temp monitor",icon:"cpu",         group:"status",  def:1},
+    {id:"battery",    name:"Battery & Power", desc:"Charge, time left & suspend / restart / shutdown",icon:"battery",  group:"status",  def:1}
   ];
   function catMeta(id){for(var i=0;i<CATALOG.length;i++)if(CATALOG[i].id===id)return CATALOG[i];return null;}
   function defOn(id){var m=catMeta(id);return m?!!m.def:false;}

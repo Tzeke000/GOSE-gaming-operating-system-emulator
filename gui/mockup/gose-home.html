@@ -267,6 +267,42 @@
       return {body, badge:{text:"live",dot:true}}; } });
 
   function fmtUp(s){const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${m}m`:`${m}m`;}
+  function fmtETA(s){ if(s==null||s<0)return null; const h=Math.floor(s/3600),m=Math.floor(s%3600/60); return h?`${h}h ${m}m`:`${m}m`; }
+
+  // ---- BATTERY & POWER (status dock): real charge + suspend/restart/shutdown ----
+  // Body shows the live charge (local /sys/class/power_supply on hardware, else the
+  // laptop's real battery via the host bridge — battery_source is always honest).
+  // Items are the pad-navigable power actions. Real ACPI-suspend is [needs hardware].
+  // Direct, pad-navigable power action (handheld-style: the chosen action fires on A).
+  // A pad-navigable confirm step for the destructive two is a future refinement.
+  function powerAct(action,label){
+    return ()=>{
+      fetch('/sys/power',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action})}).then(r=>r.json()).then(j=>{
+        if(window.GOSE&&GOSE.notify)GOSE.notify({title:'Power',icon:'power',
+          body:(j&&j.simulated)?(label+' — '+(j.note||'simulated')):(label+(j&&j.ok?' requested':' failed'))});
+      }).catch(()=>{}); }; }
+  GW.define({ id:"battery", title:"Battery & Power", icon:"battery", size:{w:250}, pos:{x:1650,y:300}, poll:5000,
+    load:()=>fetch('/sys/battery',{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false})),
+    render:(b)=>{ b=b||{};
+      const items=[
+        {icon:"moon",      label:"Suspend",  sub:"Sleep (resume on input)", onActivate:powerAct("suspend","Suspend")},
+        {icon:"rotate-ccw",label:"Restart",  sub:"Reboot the system",       onActivate:powerAct("restart","Restart")},
+        {icon:"power",     label:"Shut Down", sub:"Power off",              onActivate:powerAct("shutdown","Shut Down")}];
+      if(!b.has_battery)
+        return {body:'<div class="sys-row"><span>Battery</span><b>No battery</b></div>'+
+                     '<div style="color:#7f86a6;font-size:11px;margin:4px 0 2px">Plugged-in / desktop</div>',
+                items, badge:{text:"AC",muted:true}};
+      const pct=(b.battery_pct==null?"—":b.battery_pct+"%");
+      const state=b.charging?"Charging":"On battery";
+      const eta=(!b.charging?fmtETA(b.secs_left):null);
+      const rows=[["Charge",pct],["State",state]];
+      if(eta)rows.push(["Time left",eta]);
+      const src=b.battery_source?('<div style="color:#7f86a6;font-size:10px;margin-top:5px;text-align:right">src: '+esc(b.battery_source)+'</div>'):'';
+      const low=(!b.charging&&b.battery_pct!=null&&b.battery_pct<=20);
+      const body='<div>'+rows.map(r=>'<div class="sys-row"><span>'+r[0]+'</span><b>'+esc(r[1])+'</b></div>').join('')+src+'</div>';
+      const badge=b.charging?{text:"AC",dot:true}:(low?{text:"low"}:{text:b.battery_pct+"%",muted:true});
+      return {body, items, badge}; } });
 
   // mount everything (creates panels, places them, starts data loops, wires nav)
   GW.mount();
@@ -295,6 +331,21 @@
       setIcon(bat,d.charging?"plug-zap":"battery"); bat.title=d.charging?"Charging":"On battery";
       pct.textContent=(d.battery_pct==null?"":d.battery_pct+"%");
     } else { bat.style.display=pct.style.display="none"; }
+    lowBatteryCheck(d);
+  }
+  // Non-blocking low-battery warnings at 20% then 10% while discharging (docs/25 §5.1).
+  // Each threshold fires once per discharge episode; re-arms when charging or recovered.
+  const BAT_THRESHOLDS=[20,10]; let _batArmed={20:true,10:true};
+  function lowBatteryCheck(d){
+    if(!d||!d.has_battery||d.battery_pct==null){ return; }
+    if(d.charging){ _batArmed={20:true,10:true}; return; }   // re-arm on charge
+    BAT_THRESHOLDS.forEach(t=>{
+      if(d.battery_pct>t){ _batArmed[t]=true; }               // re-arm when above threshold
+      else if(_batArmed[t]){ _batArmed[t]=false;
+        if(window.GOSE&&GOSE.notify)GOSE.notify({title:"Low battery",icon:"triangle-alert",
+          body:d.battery_pct+"% remaining — plug in soon."+(t<=10?" Critical.":"")});
+      }
+    });
   }
   async function pollTray(){ try{ const d=await (await fetch("/status.json",{cache:"no-store"})).json(); updateTray(d); }catch(e){} }
   pollTray(); setInterval(pollTray, 2000);
