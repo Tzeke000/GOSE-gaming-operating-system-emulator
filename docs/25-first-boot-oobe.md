@@ -86,11 +86,32 @@ license-aware installs).
 
 ## 5. Step-3 gaps (honest list)
 
-1. **Battery/power management — APPROVED, must be baked into step 3** (Zeke
-   2026-06-06): charge %, low-battery warning, suspend/resume on power button.
-   The *software* layer (read `/sys/class/power_supply`, battery widget,
-   warnings) is buildable + mockable in the VM now; live verification is
-   `[needs hardware]` — the VM has no battery.
+1. **Battery/power management — BUILT (software layer), live on the VM**
+   (Zeke 2026-06-06). Done:
+   - **Source.** `gose_vm_server.battery_info()` reads real hardware from
+     `/sys/class/power_supply/BAT*` (capacity/status + charge_now/current_now
+     time-to-empty); in the dev VM (no battery) it sources the laptop's REAL
+     battery via the host bridge. Every reading carries an honest
+     `battery_source` (`local:BAT0` / `host:Win32_Battery` / `host:psutil`).
+     Served at `GET /sys/battery` and mirrored into `/status.json`
+     (`battery_pct, charging, secs_left, battery_source`). A
+     `/tmp/gose-bat-override` test hook (source `override:test`) lets QA force a
+     low value without draining a laptop.
+   - **Widget.** "Battery & Power" (`GW.define`, follows docs/21): charge %,
+     charging/discharging, est. time left when discharging, honest source line;
+     blue focus glow, row-count height, hover-naming; appears in the spatial nav
+     order (right dock, between Notifications and System). Pad-verified.
+   - **Low-battery warning.** Non-blocking notifications at 20% then 10% while
+     discharging, via the existing `GOSE.notify` toast/center path; re-arms on
+     charge/recovery. Pad-verified (forced 15% then 8%, both fired once).
+   - **Power actions.** Suspend / Restart / Shut Down are focusable,
+     pad-navigable items wired to `POST /sys/power`; every invocation is logged
+     to `power_actions.log`. Suspend pad-invoke verified end-to-end.
+   - `[needs hardware]`: **real ACPI suspend/resume** and the **physical power
+     button** — the VM cannot ACPI-sleep, so suspend there logs + no-ops
+     (won't hang the guest); the real sleep/resume + power-button event
+     (`acpid`) lands on the Odin 2 hardware. Real `/sys/class/power_supply/BAT*`
+     readings are also hardware-confirmed there.
 2. **Controller breadth — ALL controller types must maneuver the OS on first
    startup** (Zeke 2026-06-06). Two parts: (a) bake `xpadneo` (Xbox pads) into
    the image — PS4/PS5 are kernel-native — `[needs image build]`; (b) the
