@@ -7,7 +7,7 @@ that plays it. Source art lives in `OneDrive/Documents/stuff for GESO/`
 
 ## Icon set
 
-11 cohesive neon-hexagon system icons + the faceted **crystal** brand mark. Each
+12 cohesive neon-hexagon system icons + the faceted **crystal** brand mark. Each
 source PNG was a flat-background neon render (no alpha); the background was cut to
 transparent with a **border flood-fill** (so interior darks/brights are kept),
 **edge despill** (transparent pixels take the nearest opaque RGB → no halo when
@@ -28,6 +28,7 @@ Files (`gui/mockup/assets/icons/brand/`) — named by GOSE's real category:
 | pictures | `gallery.png` | Gallery |
 | settings | `settings.png` | Settings |
 | store | `store.png` | Store |
+| system | `system.png` | System (live monitor widget) |
 | termanal | `terminal.png` | Terminal |
 
 Brand mark: `gui/mockup/assets/brand/gose-crystal.png` (from the **black-bg** source).
@@ -39,13 +40,16 @@ Most GOSE icons are monochrome SVG **masks** tinted with `currentColor`
 the accent colour), so `assets/icons.js` (`GICON`) renders the brand PNGs as a
 contained **background-image** instead. Brand tokens are namespaced so they never
 collide with the lucide names (`settings`/`terminal` would, hence `settings-app`
-/`terminal-app`). `GICON.paint(root)` handles both; it's routed through
+/`terminal-app`; `system` has no lucide collision so it stays plain `system`).
+`GICON.paint(root)` handles both; it's routed through
 `widget.js` `paintIcons` and each page's painter. **Focus glow (docs/21) is
 untouched** — it lives on the item element, not the icon.
 
 Applied at: home side-nav, dock, all widget headers + the widget **catalog**
 (so the Widgets manager matches), hub/appsgames pins, apps launcher grid, store
-tabs + game tiles, library, settings rail, OOBE. The crystal is the launcher
+tabs + game tiles, library, settings rail, OOBE. The **System** monitor widget
+(`widget.js` CATALOG + `gose-home.html` `GW.define`) carries the `system` brand
+icon (was the lucide `cpu` mask). The crystal is the launcher
 `.ico` (multi-size 16–256, regenerated from the PNG), the boot splash, the OOBE
 header + finale logo, and the home centerpiece/top-bar/page logos.
 
@@ -90,10 +94,14 @@ Settings → Sound adds: **Quiet mode**, and per-category volume/mute pickers fo
 each with a preview on change. The old single "UI sounds" on/off is folded into
 the UI picker (`gose-sounds` kept in sync for back-compat).
 
-## Pending / skipped
+## Corrections / pending
 
-- **12th icon (`system`)** — Zeke's `system` source folder is empty, so that one
-  app keeps its current lucide icon. Slot the brand icon in when the art exists.
+- **Gallery + System icons (2026-06-07)** — the first integration ran before Zeke
+  fixed a source swap: `pictures/` then held the system art and `system/` was
+  empty, so Gallery wore the wrong icon and System had none. Re-cut from the
+  corrected source: `gallery.png` now carries the real pictures/gallery art, and
+  the 12th icon `system.png` is cut + wired (`system` brand token) onto the System
+  monitor widget. Both verified on the VM via pad-drive.
 - **3D logo** — `3D/GOSE icon/GOSE+3D+model.zip` was left for later (no turntable
   boot/loading animation yet); the static crystal is the boot/OOBE logo for now.
 - **wake** clip is present but a reliable web "resume" trigger isn't wired (the

@@ -253,7 +253,7 @@
       return {items, badge: unread?{text:unread+" new",dot:true,muted:false}:null}; } });
 
   // ---- SYSTEM (status dock): live laptop telemetry; whole-widget opens Task Manager ----
-  GW.define({ id:"system", title:"System", icon:"cpu", size:{w:250}, pos:{x:1650,y:430}, poll:2000,
+  GW.define({ id:"system", title:"System", icon:"system", size:{w:250}, pos:{x:1650,y:430}, poll:2000,
     onActivate:()=>{ location.href='gose-taskman.html'; },
     load:()=>fetch("/sys/perf",{cache:"no-store"}).then(r=>r.json()).catch(()=>({ok:false})),
     render:(p)=>{ p=p||{ok:false};

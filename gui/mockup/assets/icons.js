@@ -11,7 +11,7 @@
   var BRAND = {
     ai:'ai', apps:'apps', emulators:'emulators', files:'files', games:'games',
     library:'library', notifications:'notifications', gallery:'gallery', store:'store',
-    'settings-app':'settings', 'terminal-app':'terminal'
+    system:'system', 'settings-app':'settings', 'terminal-app':'terminal'
   };
   function apply(e){
     var n = e.dataset.i; if(n==null) return;
