@@ -357,5 +357,10 @@
     if(location.hash.indexOf("notif")>=0)setTimeout(toggle,300);
   })();
 </script>
+<!-- windowing (docs/23 wave 1, additive): WinBox frame engine + the GOSE web-layer WM.
+     Loaded AFTER the widget declarations + GW.mount() so the WM can bind to the live
+     desktop (launcher intercept, widget ⤢ buttons, dock tiles, registry sync). -->
+<script src="assets/vendor/winbox/winbox.bundle.min.js"></script>
+<script src="assets/gose-wm.js"></script>
 <script src="assets/a11y.js"></script>
 </body></html>
