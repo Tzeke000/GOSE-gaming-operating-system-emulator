@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOSE — Library</title>
 <link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
 <style>
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
@@ -29,9 +30,10 @@
   .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:4px 4px 10px}
   .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
   .game{cursor:pointer}
-  .game .art{height:120px;border-radius:10px;border:2px solid transparent;display:flex;align-items:flex-end;
+  .game .art{position:relative;height:120px;border-radius:10px;border:2px solid transparent;display:flex;align-items:flex-end;
     padding:8px;font-weight:700;font-size:13px;color:#fff;text-shadow:0 1px 4px #000a}
   .game.focus .art{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .game .fav{position:absolute;top:5px;right:8px;color:#ffd23f;font-size:16px;text-shadow:0 1px 3px #000}
   .game .sub{color:var(--muted);font-size:11px;margin-top:5px}
   .empty{color:var(--muted);font-size:14px;padding:30px}
   .foot{margin:8px 36px 14px;display:flex;gap:10px;color:var(--muted);font-size:13px;
@@ -59,7 +61,7 @@
   </div>
   <div class="wrap"><div class="rail" id="rail"></div><div class="pane" id="pane"></div></div>
   <div class="foot"><span class="ic" data-i="gamepad-2"></span> GOSE Library
-    <span class="h">D-pad move · <b>A</b> launch · <b>Y/O</b> options · <b>L1/R1</b> system · <b>S</b> scrape art · <b>B</b> home</span></div>
+    <span class="h">D-pad move · <b>A</b> launch · <b>X/F</b> favorite · <b>Y/O</b> options · <b>L1/R1</b> system · <b>S</b> scrape art · <b>B</b> home</span></div>
   <div class="toast" id="toast"></div>
   <div class="gopt" id="gopt"><div class="box" id="gopt-box"></div></div>
 <script src="assets/platform.js"></script>
@@ -79,7 +81,7 @@
     pane.innerHTML=`<div class="ph">${s.logo?`<img src="${s.logo}" alt="${s.name}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode('${s.name.toUpperCase()} '))">`:s.name.toUpperCase()+' '}— ${s.games.length} GAME${s.games.length!=1?'S':''}</div><div class="grid" id="grid"></div>`;
     const g=$("grid");
     g.innerHTML=s.games.map((gm,i)=>`<div class="game ${i===foc?'focus':''}" data-g="${i}">
-      <div class="art" style="${gm.img?`background:#0c0c1e url('/fs/file?path=${encodeURIComponent(gm.img)}') center/cover no-repeat`:`background:linear-gradient(135deg,${COLORS[i%COLORS.length]},#0c0c1e)`}">${gm.img?'':gm.name}</div>
+      <div class="art" style="${gm.img?`background:#0c0c1e url('/fs/file?path=${encodeURIComponent(gm.img)}') center/cover no-repeat`:`background:linear-gradient(135deg,${COLORS[i%COLORS.length]},#0c0c1e)`}">${gm.fav?'<span class="fav">★</span>':''}${gm.img?'':gm.name}</div>
       <div class="sub">${gm.plays?('▶ '+gm.plays+'× · '+fmtPlay(gm.secs||0)):gm.name}</div></div>`).join("");
     [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.g;render();launch();});}
   function render(){buildRail();buildPane();paint();const f=pane.querySelector(".game.focus");if(f)f.scrollIntoView({block:"nearest"});}
@@ -90,7 +92,13 @@
       body:JSON.stringify({system:sys,game:g})}).then(r=>r.json())
       .then(d=>say(d.ok?("Launching "+g+" — "+s.name):("Couldn't launch: "+(d.error||"?"))))
       .catch(e=>say("Launch failed"));}
-  function scrapeArt(){const s=SYS[cat];if(!s||s.system==="__recent"){say("Pick a system to scrape");return;}
+  function toggleFav(){const s=SYS[cat];if(!s||!s.games[foc])return;const gm=s.games[foc];
+    const sys=gm.system||s.system, game=gm.name, on=!gm.fav;
+    say((on?"★ Favorited ":"☆ Removed ")+game);
+    fetch("/game/favorite",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system:sys,game:game,on:on})}).then(r=>r.json())
+      .then(d=>{if(d.ok)loadAll(true);else say("Favorite failed");}).catch(()=>say("Favorite failed"));}
+  function scrapeArt(){const s=SYS[cat];if(!s||s.system==="__recent"||s.system==="__fav"){say("Pick a system to scrape");return;}
     say("Scraping cover art for "+s.name+"… (this can take a moment)");
     fetch("/scrape",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:s.system})})
       .then(r=>r.json()).then(d=>{
@@ -148,6 +156,7 @@
     else if(k==="]"||k==="PageDown")moveCat(1);else if(k==="["||k==="PageUp")moveCat(-1);
     else if(k==="Enter"||k===" ")launch();
     else if(k==="s"||k==="S")scrapeArt();
+    else if(k==="f"||k==="F")toggleFav();
     else if(k==="o"||k==="O")openOptions();
     else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
     else return;e.preventDefault();});
@@ -159,18 +168,30 @@
         gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;requestAnimationFrame(pad);return;}
       if(tap(15))moveFoc(1);if(tap(14))moveFoc(-1);if(tap(13))moveFoc(4);if(tap(12))moveFoc(-4);
       if(tap(5))moveCat(1);if(tap(4))moveCat(-1);if(tap(0))launch();if(tap(3))openOptions();
+      if(tap(2))toggleFav();
       if(tap(1)){location.href="gose-home.html";}
       gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
   paint();
-  Promise.all([
-    fetch("/games.json").then(r=>r.json()).catch(()=>({})),
-    fetch("/recent.json").then(r=>r.json()).catch(()=>({}))
-  ]).then(([d,rc])=>{
-    SYS=(d.systems||[]);
-    const recent=((rc&&rc.games)||[]).map(r=>({name:r.game,img:r.img,system:r.system,plays:r.plays,secs:r.secs}));
-    if(recent.length) SYS.unshift({name:"★ Recent",system:"__recent",games:recent});
-    $("sub").textContent=d.ok?`${d.total||0} games · ${(d.systems||[]).length} systems${recent.length?" · "+recent.length+" recent":""}`:"couldn't read games";
-    render();
-  }).catch(e=>{$("sub").textContent="library offline";render();});
+  function loadAll(keep){
+    // remember the focused system+game so a reload (e.g. after a favorite toggle) keeps your place
+    const cur=keep&&SYS[cat]?{sys:SYS[cat].system,game:(SYS[cat].games[foc]||{}).name}:null;
+    return Promise.all([
+      fetch("/games.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+      fetch("/recent.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+      fetch("/favorites.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}))
+    ]).then(([d,rc,fv])=>{
+      SYS=(d.systems||[]);
+      const recent=((rc&&rc.games)||[]).map(r=>({name:r.game,img:r.img,system:r.system,plays:r.plays,secs:r.secs,fav:r.fav}));
+      const favs=((fv&&fv.games)||[]).map(r=>({name:r.game,img:r.img,system:r.system,fav:true}));
+      if(recent.length) SYS.unshift({name:"▶ Continue Playing",system:"__recent",games:recent});
+      if(favs.length) SYS.unshift({name:"★ Favorites",system:"__fav",games:favs});
+      $("sub").textContent=d.ok?`${d.total||0} games · ${(d.systems||[]).length} systems${favs.length?" · "+favs.length+"★":""}${recent.length?" · "+recent.length+" recent":""}`:"couldn't read games";
+      if(cur){let ci=SYS.findIndex(s=>s.system===cur.sys);cat=ci<0?0:ci;
+        const gi=cur.game?SYS[cat].games.findIndex(g=>g.name===cur.game):-1;foc=gi<0?0:gi;}
+      render();
+    }).catch(()=>{$("sub").textContent="library offline";render();});
+  }
+  loadAll(false);
 </script>
+<script src="assets/a11y.js"></script>
 </body></html>

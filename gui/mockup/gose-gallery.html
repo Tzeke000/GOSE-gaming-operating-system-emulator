@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Gallery</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 6px}
+  .top img{width:34px;height:34px}.top h1{font-size:20px;margin:0}
+  .top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .pane{flex:1;min-width:0;margin:6px 36px 0;background:var(--surface);border:1px solid var(--line);
+    border-radius:14px;padding:14px 16px;overflow:auto}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:4px 4px 10px}
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  .shot{cursor:pointer}
+  .shot .art{height:118px;border-radius:10px;border:2px solid transparent;background:#0c0c1e center/cover no-repeat;
+    display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+  .shot.focus .art{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .shot .art .vic{font-size:34px;color:#cdd2ea;opacity:.85}
+  .shot .badge{position:absolute;top:6px;left:6px;background:#000a;border-radius:7px;padding:1px 7px;
+    font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;gap:4px}
+  .shot .sub{color:var(--muted);font-size:11px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .empty{color:var(--muted);font-size:14px;padding:30px}
+  .foot{margin:8px 36px 14px;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:13px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .rec{color:#ff5a6e;font-weight:700;display:none;align-items:center;gap:6px}.rec.on{display:inline-flex}
+  .rec i{width:9px;height:9px;border-radius:50%;background:#ff5a6e;box-shadow:0 0 8px #ff5a6e;animation:bl 1s steps(1) infinite}
+  @keyframes bl{50%{opacity:.25}}
+  .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:70}
+  .toast.show{opacity:1}
+  .lb{position:fixed;inset:0;background:#06060ce8;display:none;align-items:center;justify-content:center;z-index:60;
+    backdrop-filter:blur(6px);flex-direction:column;gap:12px}
+  .lb.on{display:flex}
+  .lb img{max-width:90vw;max-height:80vh;border-radius:12px;box-shadow:0 8px 40px #000a}
+  .lb .cap{color:var(--muted);font-size:13px}
+  .lb .vbox{width:70vw;max-width:720px;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:26px;text-align:center}.lb .vbox .ic{font-size:54px;color:var(--accent)}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <div><h1>Gallery</h1><div class="s" id="sub">loading captures…</div></div>
+    <div class="home"><span class="ic" data-i="layout-grid"></span> B / Esc — home</div>
+  </div>
+  <div class="pane" id="pane"></div>
+  <div class="foot"><span class="ic" data-i="image"></span> GOSE Gallery
+    <span class="rec" id="recind"><i></i> REC</span>
+    <span class="h">D-pad move · <b>A</b> open · <b>S</b> screenshot · <b>R</b> record · <b>B</b> home</span></div>
+  <div class="toast" id="toast"></div>
+  <div class="lb" id="lb"><div id="lb-body"></div><div class="cap" id="lb-cap"></div></div>
+<script src="assets/platform.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const pane=document.getElementById("pane"),toast=document.getElementById("toast"),$=id=>document.getElementById(id);
+  let ITEMS=[],foc=0,recording=false,COLS=5;
+  function say(m){toast.textContent=m;toast.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove("show"),1700);}
+  function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function fmtSize(n){if(n<1024)return n+" B";if(n<1048576)return Math.round(n/1024)+" KB";return (n/1048576).toFixed(1)+" MB";}
+  function fmtWhen(t){const d=new Date(t*1000);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+" "+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+  function render(){
+    if(!ITEMS.length){pane.innerHTML='<div class="empty">No captures yet. Launch a game, then press <b>S</b> here (or use the in-game Guide) to take a screenshot.</div>';paint();return;}
+    pane.innerHTML='<div class="ph">CAPTURES — '+ITEMS.length+' ITEM'+(ITEMS.length!=1?'S':'')+'</div><div class="grid" id="grid"></div>';
+    const g=$("grid");
+    g.innerHTML=ITEMS.map((it,i)=>{
+      const art=it.kind==="image"
+        ? `<div class="art" style="background-image:url('${it.url}')"><span class="badge"><span class="ic" data-i="image"></span></span></div>`
+        : `<div class="art"><span class="vic ic" data-i="film"></span><span class="badge"><span class="ic" data-i="film"></span> CLIP</span></div>`;
+      return `<div class="shot ${i===foc?'focus':''}" data-s="${i}">${art}<div class="sub">${esc(it.name)}</div></div>`;
+    }).join("");
+    [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.s;render();open();});
+    paint();
+    const f=pane.querySelector(".shot.focus");if(f)f.scrollIntoView({block:"nearest"});
+  }
+  function open(){const it=ITEMS[foc];if(!it)return;
+    if(it.kind==="image"){$("lb-body").innerHTML=`<img src="${it.url}" alt="">`;}
+    else{$("lb-body").innerHTML=`<div class="vbox"><span class="ic" data-i="film"></span><div style="margin-top:10px;font-weight:600">${esc(it.name)}</div><div style="color:var(--muted);font-size:12px;margin-top:6px">Game clip — open in Files or Splice to play/trim</div></div>`;}
+    $("lb-cap").textContent=it.name+" · "+fmtSize(it.size)+" · "+fmtWhen(it.mtime);
+    $("lb").classList.add("on");paint();}
+  function closeLb(){$("lb").classList.remove("on");}
+  function load(){fetch("/game/gallery",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    ITEMS=(d.items||[]);recording=!!d.recording;updateRec();
+    $("sub").textContent=ITEMS.length?(ITEMS.length+" captures · newest first"):"no captures yet";
+    if(foc>=ITEMS.length)foc=Math.max(0,ITEMS.length-1);
+    render();
+  }).catch(()=>{$("sub").textContent="gallery offline";render();});}
+  function updateRec(){$("recind").classList.toggle("on",recording);}
+  function shoot(){say("Taking screenshot…");
+    fetch("/game/screenshot",{method:"POST"}).then(r=>r.json()).then(d=>{
+      if(d.ok){say("Saved "+d.name);setTimeout(load,400);}else say(d.error||"Screenshot failed — is a game running?");
+    }).catch(()=>say("Screenshot failed"));}
+  function recToggle(){fetch("/game/record/toggle",{method:"POST"}).then(r=>r.json()).then(d=>{
+    if(d.ok){recording=!!d.recording;updateRec();say(recording?"Recording started":"Recording saved");if(!recording)setTimeout(load,600);}
+    else say(d.error||"Record failed — is a game running?");
+  }).catch(()=>say("Record failed"));}
+  function moveFoc(d){if(!ITEMS.length)return;foc=(foc+d+ITEMS.length)%ITEMS.length;render();}
+  addEventListener("keydown",e=>{const k=e.key;
+    if($("lb").classList.contains("on")){if(k==="Escape"||k==="Backspace"||k==="Enter"||k===" ")closeLb();else return;e.preventDefault();return;}
+    if(k==="ArrowRight")moveFoc(1);else if(k==="ArrowLeft")moveFoc(-1);
+    else if(k==="ArrowDown")moveFoc(COLS);else if(k==="ArrowUp")moveFoc(-COLS);
+    else if(k==="Enter"||k===" ")open();
+    else if(k==="s"||k==="S")shoot();
+    else if(k==="r"||k==="R")recToggle();
+    else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
+    else return;e.preventDefault();});
+  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if($("lb").classList.contains("on")){if(tap(0)||tap(1))closeLb();gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;requestAnimationFrame(pad);return;}
+      if(tap(15))moveFoc(1);if(tap(14))moveFoc(-1);if(tap(13))moveFoc(COLS);if(tap(12))moveFoc(-COLS);
+      if(tap(0))open();if(tap(2))shoot();if(tap(3))recToggle();
+      if(tap(1)){location.href="gose-home.html";}
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  paint();load();setInterval(load,8000);
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>

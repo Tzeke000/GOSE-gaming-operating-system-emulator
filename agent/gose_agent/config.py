@@ -20,6 +20,7 @@ class AgentConfig:
     port: int = 8731
     token: Optional[str] = None          # required for non-loopback clients
     allow_shell: bool = True             # system.run enabled (owner's device)
+    sandbox_shell: bool = True           # confine system.run (mount-ns jail + cap-drop)
 
     # Where the front-end keeps ROMs; systems are subdirectories.
     roms_dir: str = "/storage/roms"
@@ -51,6 +52,7 @@ class AgentConfig:
         cfg.port = int(os.environ.get("GOSE_AGENT_PORT", cfg.port))
         cfg.token = os.environ.get("GOSE_AGENT_TOKEN", cfg.token)
         cfg.allow_shell = _env_bool("GOSE_AGENT_ALLOW_SHELL", cfg.allow_shell)
+        cfg.sandbox_shell = _env_bool("GOSE_AGENT_SANDBOX_SHELL", cfg.sandbox_shell)
         cfg.roms_dir = os.environ.get("GOSE_AGENT_ROMS_DIR", cfg.roms_dir)
         cfg.retroarch_host = os.environ.get("GOSE_AGENT_RA_HOST", cfg.retroarch_host)
         cfg.retroarch_port = int(os.environ.get("GOSE_AGENT_RA_PORT", cfg.retroarch_port))

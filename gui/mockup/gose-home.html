@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOSE — Home</title>
 <link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
 <style>
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
@@ -115,6 +116,7 @@
     <div class="pin">
       <a data-go="gose-apps.html"><span class="ic" data-i="layout-grid"></span>All Apps</a>
       <a data-go="gose-library.html"><span class="ic" data-i="cpu"></span>All Games</a>
+      <a data-go="gose-gallery.html"><span class="ic" data-i="image"></span>Gallery</a>
     </div>
     <div class="hd" style="margin-top:12px">RECENT GAMES</div>
     <div id="recent"></div>
@@ -146,11 +148,9 @@
     <div id="w-pads" style="font-size:13px;color:#aeb4d2;padding:6px 2px;line-height:1.7">Checking…</div></div>
   <div class="panel widget" data-wid="notifs" data-wname="Notifications" style="left:auto;right:18px;top:236px;width:262px">
     <div class="hd whandle">NOTIFICATIONS</div><div id="w-notifs" style="max-height:200px;overflow:auto"></div></div>
-  <div class="panel widget" data-wid="aiplayers" data-wname="AI Players" style="left:470px;top:120px;width:230px">
+  <div class="panel widget" data-wid="aiplayers" data-wname="AI Players" style="left:470px;top:120px;width:264px">
     <div class="hd whandle">AI PLAYERS</div>
-    <div class="pin"><a data-go="gose-ai.html"><span class="dotw" style="background:#3a3e4c"></span>Wren</a>
-      <a data-go="gose-ai.html"><span class="dotw" style="background:#3a3e4c"></span>Ava</a>
-      <a data-go="gose-ai.html"><span class="dotw" style="background:#3a3e4c"></span>Iris</a></div></div>
+    <div id="w-ai" class="pin"><a data-go="gose-ai.html">Loading…</a></div></div>
   <div class="panel widget" data-wid="hub" data-wname="Hub" style="left:470px;top:300px;width:300px">
     <div class="hd whandle">HUB</div><div id="w-hub" style="padding:4px 2px;font-size:13px;color:#aeb4d2"></div>
     <div class="pin"><a data-go="gose-apps.html">All Apps</a><a data-go="gose-library.html">Games</a><a data-go="gose-settings.html">Settings</a></div></div>
@@ -205,6 +205,27 @@
         `<div style="font-size:12px">${n.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})}</div>`;}
   }
   renderWidgetContent(); setInterval(renderWidgetContent, 3000);
+  // AI Players widget — live tiers + a Revoke button (the widget half of the AI Hub; full controls in gose-ai.html)
+  function renderAiWidget(){
+    const el=document.getElementById('w-ai'); if(!el)return;
+    const AIS=['Wren','Ava','Iris'], TC={observe:'#9aa3b8',play:'#5cd0ff',admin:'#ffb74d'}, TL={observe:'Observe',play:'Play',admin:'Admin'};
+    Promise.all([fetch('/ai/grants',{cache:'no-store'}).then(r=>r.json()).catch(()=>({})),
+                 fetch('/ai/players',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))]).then(([g,p])=>{
+      const grants=(g&&g.grants)||{}, live=((p&&p.players)||[]);
+      el.innerHTML=AIS.map(n=>{ const tier=(grants[n]&&grants[n].tier)||'observe', on=live.some(x=>x.name===n&&x.online);
+        const rev=tier!=='observe'?`<span class="wrev" data-rev="${n}" style="margin-left:auto;font-size:10px;font-weight:700;color:#ff8a8a;background:#ff6b6b18;border:1px solid #ff6b6b44;border-radius:7px;padding:2px 7px;cursor:pointer">Revoke</span>`:'';
+        return `<a data-go="gose-ai.html" style="display:flex;align-items:center;gap:7px">
+          <span class="dotw" style="background:${on?'#3fe0a0':'#3a3e4c'}"></span>${n}
+          <span style="font-size:10px;font-weight:700;color:${TC[tier]};border:1px solid #ffffff1a;border-radius:6px;padding:1px 6px">${TL[tier]}</span>${rev}</a>`;
+      }).join('');
+      el.querySelectorAll('.wrev[data-rev]').forEach(b=>b.onclick=(e)=>{e.stopPropagation();e.preventDefault();
+        const nm=b.dataset.rev;
+        fetch('/ai/revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:nm})})
+          .then(()=>{ if(window.GOSE&&GOSE.notify)GOSE.notify({title:'AI access',body:nm+' revoked → Observe only'}); renderAiWidget(); }).catch(()=>{});});
+      if(window.__rebuildNav)window.__rebuildNav();
+    });
+  }
+  renderAiWidget(); setInterval(renderAiWidget, 5000);
   document.getElementById("dock").innerHTML=
     `<div class="d on" data-go="gose-apps.html" title="Apps"><img src="assets/brand/gose-core-mark.png" alt="Apps"></div>`+
     [["download","Store","gose-store.html"],["cpu","Task Manager","gose-taskman.html"],["palette","Widgets","gose-widgets.html"],["power","Lock","gose-lock.html"]]
@@ -411,4 +432,5 @@
     });
   })();
 </script>
+<script src="assets/a11y.js"></script>
 </body></html>

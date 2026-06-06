@@ -8,10 +8,12 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import time
-from typing import Dict
+from typing import Dict, Optional
 
 from ..protocol import AgentError, ERR_DENIED, ERR_TIMEOUT
+from .. import sandbox
 
 
 def _read(path: str) -> str:
@@ -23,20 +25,53 @@ def _read(path: str) -> str:
 
 
 class SystemCapability:
-    def __init__(self, allow_shell: bool = True):
+    def __init__(self, allow_shell: bool = True, sandbox_shell: bool = True):
         self.allow_shell = allow_shell
+        # When True, system.run is confined (mount-namespace jail + cap-drop,
+        # see sandbox.py). Default ON: the agent has a single system.run path and
+        # the capability layer can't see the caller's tier (that's resolved in
+        # server.py, which this task must not edit), so we protect the critical
+        # invariant for ALL callers. The owner's unconfined dev path is opt-out
+        # via config (GOSE_AGENT_SANDBOX_SHELL=0) or an explicit confine=False;
+        # a per-tier dev exemption is a one-line server.py follow-up.
+        self.sandbox_shell = sandbox_shell
         # "real" because subprocess always works; status values degrade
         # gracefully when sysfs nodes are absent (e.g. in a container).
         self.backend = "real"
 
-    def run(self, cmd: str, timeout_ms: int = 10000) -> Dict:
+    def run(self, cmd: str, timeout_ms: int = 10000,
+            confine: Optional[bool] = None) -> Dict:
         if not self.allow_shell:
             raise AgentError(ERR_DENIED, "shell execution disabled (allow_shell=false)")
         if not cmd or not isinstance(cmd, str):
             raise AgentError("ERR_ARGS", "cmd must be a non-empty string")
+        if confine is None:
+            confine = self.sandbox_shell
+
+        if confine:
+            # Backstop deny-list first (holds on every platform, even if the
+            # kernel jail degrades or is unavailable off-Linux).
+            try:
+                sandbox.guard_command(cmd)
+            except sandbox.GuardDenied as e:
+                raise AgentError(ERR_DENIED, str(e)) from e
+            if sys.platform.startswith("linux"):
+                # The real jail: mount-ns + cap-drop. Linux-only mechanism.
+                argv = sandbox.wrap_command(cmd)
+                shell = False
+            else:
+                # Dev host (Windows/macOS) has no namespace mechanism; the
+                # deny-list above is the only confinement here. The deployment
+                # target is the Linux VM, where the jail engages.
+                argv = cmd
+                shell = True
+        else:
+            argv = cmd                       # owner/dev path: unconfined, as before
+            shell = True
+
         try:
             proc = subprocess.run(
-                cmd, shell=True, capture_output=True, text=True,
+                argv, shell=shell, capture_output=True, text=True,
                 timeout=max(0.1, timeout_ms / 1000.0),
             )
         except subprocess.TimeoutExpired as e:

@@ -1,0 +1,37 @@
+/* GOSE accessibility layer — applied via <html> data-* attrs + --ui-scale, set by a11y.js
+   from localStorage. Composes ON TOP of themes.css (token overrides), works over any theme. */
+
+/* Text size: scale the rem/px base so the whole UI grows proportionally */
+html { font-size: calc(16px * var(--ui-scale, 1)); }
+
+/* Bold text */
+html[data-bold="1"] body, html[data-bold="1"] body * { font-weight: 600 !important; }
+
+/* High contrast: push tokens to high-contrast values (over any theme) */
+html[data-contrast="high"]{
+  --text:#ffffff; --muted:#dde2f0; --line:#ffffff66; --accent:#7fe6ff;
+  --surface:#0b0d12; --surface2:#14171f; --tile:#14171f;
+  --focusglow:0 0 0 3px #ffffff, 0 0 0 5px var(--accent);
+}
+html[data-contrast="high"] .glass, html[data-contrast="high"] .card,
+html[data-contrast="high"] .set, html[data-contrast="high"] .cat,
+html[data-contrast="high"] .nav, html[data-contrast="high"] .row{ border-color:#ffffff5a !important; }
+
+/* Reduce transparency: make translucent surfaces opaque */
+html[data-opaque="1"]{ --surface:#0d0f15; --surface2:#16191f; }
+
+/* Larger focus outline */
+html[data-focus="thick"] .focus, html[data-focus="thick"] .kf,
+html[data-focus="thick"] .cat.kf, html[data-focus="thick"] .set.focus,
+html[data-focus="thick"] .nav.focus, html[data-focus="thick"] .game.focus,
+html[data-focus="thick"] *:focus{ outline:3px solid var(--accent) !important; outline-offset:2px !important; }
+
+/* Reduce motion: neutralize animations + transitions everywhere */
+html[data-motion="reduce"] *, html[data-motion="reduce"] *::before, html[data-motion="reduce"] *::after{
+  animation-duration:0.001ms !important; animation-iteration-count:1 !important;
+  transition-duration:0.001ms !important; scroll-behavior:auto !important;
+}
+
+/* Colorblind-friendly palette (Okabe-Ito) — remaps the token accent (CVD *correction*
+   filters for deut/prot/trit are applied to <html> by a11y.js, recoloring the whole screen). */
+html[data-cbpalette="friendly"]{ --accent:#0072B2; --accent2:#E69F00; }

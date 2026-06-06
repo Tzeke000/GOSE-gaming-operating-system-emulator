@@ -107,7 +107,12 @@ class EvdevInput(BaseInput):
                 (e.ABS_HAT0Y, evdev.AbsInfo(0, -1, 1, 0, 0, 0)),
             ],
         }
-        self._ui = evdev.UInput(cap, name="GOSE Virtual Gamepad")
+        # Present as a Microsoft Xbox 360 pad (vendor 045e / product 028e / version 0x0110) so its
+        # SDL GUID (030000005e0400008e02000010010000) matches es_input.cfg → the OS gives it real
+        # button bindings and games actually accept its input. Without a known identity the pad is
+        # only DETECTED, never BOUND (the bug that made "AI plays games" silently not work).
+        self._ui = evdev.UInput(cap, name="Microsoft Xbox 360 pad",
+                                vendor=0x045e, product=0x028e, version=0x0110)
         self._hat = {  # dpad -> (axis, value)
             "up": (e.ABS_HAT0Y, -1), "down": (e.ABS_HAT0Y, 1),
             "left": (e.ABS_HAT0X, -1), "right": (e.ABS_HAT0X, 1),
@@ -162,13 +167,92 @@ class EvdevInput(BaseInput):
         raise AgentError(ERR_BACKEND, "type_text not yet wired on evdev backend")
 
 
-def make_input(force_mock: bool = False) -> BaseInput:
-    if force_mock:
+class SeatManager:
+    """Multiplayer seats: one virtual controller per seat (docs/16 + multiplayer plan).
+
+    Seat 1 is created at startup (back-compat: it IS the original single pad).
+    More seats open on demand up to MAX_SEATS; each evdev seat is its own uinput
+    pad, so the OS/emulator sees one controller per player. Seat order == pad
+    creation order == the player order `_virtual_pad_args` passes at game launch.
+    """
+    MAX_SEATS = 4
+
+    def __init__(self, factory):
+        self._factory = factory          # () -> BaseInput
+        self._seats: Dict[int, BaseInput] = {1: factory()}
+
+    @property
+    def backend(self) -> str:
+        return self._seats[1].backend
+
+    @property
+    def events(self):
+        """Mock-backend introspection (tests/CI): seat 1's recorded events."""
+        return self._seats[1].events
+
+    def info(self) -> Dict:
+        d = self._seats[1].info()
+        d["seats"] = sorted(self._seats.keys())
+        d["max_seats"] = self.MAX_SEATS
+        return d
+
+    def seats(self) -> Dict:
+        return {"seats": sorted(self._seats.keys()), "max_seats": self.MAX_SEATS}
+
+    def seat_open(self, seat: int) -> Dict:
+        seat = int(seat)
+        if not 1 <= seat <= self.MAX_SEATS:
+            raise AgentError(ERR_ARGS, f"seat must be 1..{self.MAX_SEATS}")
+        if seat not in self._seats:
+            self._seats[seat] = self._factory()
+        return self.seats()
+
+    def seat_close(self, seat: int) -> Dict:
+        seat = int(seat)
+        if seat == 1:
+            raise AgentError(ERR_ARGS, "seat 1 is permanent")
+        be = self._seats.pop(seat, None)
+        if be is not None:
+            ui = getattr(be, "_ui", None)
+            if ui is not None:
+                try:
+                    ui.close()
+                except Exception:
+                    pass
+        return self.seats()
+
+    def _seat(self, seat) -> BaseInput:
+        try:
+            seat = int(seat)
+        except (TypeError, ValueError):
+            raise AgentError(ERR_ARGS, "seat must be an integer")
+        be = self._seats.get(seat)
+        if be is None:
+            raise AgentError(ERR_ARGS, f"seat {seat} not open (open seats: {sorted(self._seats)})")
+        return be
+
+    # mirror the BaseInput surface, with a seat selector
+    def button(self, name, action, duration_ms=80, seat=1):
+        return self._seat(seat).button(name, action, duration_ms)
+
+    def combo(self, buttons, duration_ms=80, seat=1):
+        return self._seat(seat).combo(buttons, duration_ms)
+
+    def axis(self, name, value, seat=1):
+        return self._seat(seat).axis(name, value)
+
+    def type_text(self, text, seat=1):
+        return self._seat(seat).type_text(text)
+
+
+def make_input(force_mock: bool = False) -> SeatManager:
+    def factory() -> BaseInput:
+        if not force_mock:
+            try:
+                if os.access("/dev/uinput", os.W_OK):
+                    import evdev  # noqa: F401
+                    return EvdevInput()
+            except Exception:
+                pass
         return MockInput()
-    try:
-        if os.access("/dev/uinput", os.W_OK):
-            import evdev  # noqa: F401
-            return EvdevInput()
-    except Exception:
-        pass
-    return MockInput()
+    return SeatManager(factory)

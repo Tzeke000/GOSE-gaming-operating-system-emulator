@@ -9,14 +9,101 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import logging
-from typing import Optional, Set
+import os
+import time
+import urllib.request
+from typing import Optional, Set, Tuple
 
 from .agent import Agent
 from .config import AgentConfig
 from . import protocol as P
 
 log = logging.getLogger("gose.agent")
+
+# ---- AI permission tiers (docs/16-ai-permission-model): observe < play < admin. ----
+# The dev/owner token (config.token) and dev-loopback always resolve to 'admin' so OUR
+# own MCP/dev connection stays fully privileged (back-compat). A downloader's AI connects
+# with its own token, which maps to a granted tier; unmapped ops require admin (deny-by-default).
+TIER_RANK = {"observe": 0, "play": 1, "admin": 2}
+OP_TIER = {
+    "ping": "observe", "agent.info": "observe",
+    "system.status": "observe",
+    "games.systems": "observe", "games.list": "observe",
+    "screen.capture": "observe",
+    "state.profiles": "observe", "state.attach": "observe", "state.read": "observe",
+    "state.status": "observe", "state.read_raw": "observe",
+    "input.button": "play", "input.combo": "play", "input.axis": "play", "input.type": "play",
+    "input.seats": "observe", "input.seat_open": "play", "input.seat_close": "play",
+    "games.launch": "play", "games.stop": "play", "state.write_raw": "play",
+    "system.run": "admin", "system.service": "admin",
+}
+_AI_TOKENS_PATH = os.environ.get("GOSE_AGENT_AI_TOKENS", "/userdata/system/gose/ai_tokens.json")
+
+
+def _load_ai_tokens() -> dict:
+    """token -> {"name": str, "tier": "observe|play|admin"}. Re-read each call so an
+    owner's grant/revoke takes effect immediately (re-check-every-time, not cached)."""
+    try:
+        with open(_AI_TOKENS_PATH, "r", encoding="utf-8") as fh:
+            d = json.load(fh)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+# ---- Audit log: every op a GUEST AI runs (per-AI token) is recorded, allowed or denied.
+# Dev/owner-token + open-loopback ops are NOT logged — this audits guest AIs, not the owner.
+# JSON-lines so the UI server can tail it cheaply (vm_server GET /ai/audit).
+_AUDIT_PATH = os.environ.get("GOSE_AGENT_AI_AUDIT", "/userdata/system/gose/ai_audit.jsonl")
+_AUDIT_MAX = 512 * 1024   # rotate: rename to .1 and start fresh past this size
+
+
+def audit_append(name: str, op: str, ok: bool, code: Optional[str] = None,
+                 path: Optional[str] = None) -> None:
+    """Append one {ts,name,op,ok[,code]} line. Best-effort: an audit failure must
+    never take down the request path (log it, drop the line)."""
+    p = path or _AUDIT_PATH
+    rec = {"ts": int(time.time()), "name": name, "op": op, "ok": bool(ok)}
+    if code:
+        rec["code"] = code
+    try:
+        try:
+            if os.path.getsize(p) > _AUDIT_MAX:
+                os.replace(p, p + ".1")
+        except OSError:
+            pass                      # missing file / first write — fine
+        with open(p, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, separators=(",", ":")) + "\n")
+    except Exception as e:            # noqa: BLE001
+        log.warning("audit write failed: %s", e)
+
+
+# ---- Pre-auth pairing request: an unauthenticated client may ask the owner for access.
+# Forwarded to the in-VM UI server (which stores it for the AI Hub's approve/deny banner).
+# It NEVER grants anything by itself; rate-limited so a stranger can't spam the owner.
+_PAIR_URL = os.environ.get("GOSE_AGENT_PAIR_URL", "http://127.0.0.1:8780/ai/request")
+_PAIR_TIMES: list = []
+
+
+def _pair_rate_ok(limit: int = 5, window: float = 60.0) -> bool:
+    now = time.time()
+    while _PAIR_TIMES and _PAIR_TIMES[0] < now - window:
+        _PAIR_TIMES.pop(0)
+    if len(_PAIR_TIMES) >= limit:
+        return False
+    _PAIR_TIMES.append(now)
+    return True
+
+
+def _forward_pair_request(args: dict) -> dict:
+    """Blocking HTTP POST to the UI server's /ai/request (run off the event loop)."""
+    body = json.dumps({"name": args.get("name"), "tier": args.get("tier", "observe")}).encode()
+    req = urllib.request.Request(_PAIR_URL, data=body,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
 
 
 class AgentServer:
@@ -45,14 +132,40 @@ class AgentServer:
         except Exception:
             return False
 
-    def _authed(self, peer, msg: dict) -> bool:
-        # Loopback with no configured token = open (dev convenience).
+    def _resolve_tier(self, peer, msg: dict) -> Tuple[Optional[str], Optional[str]]:
+        """(tier, ai_name) for this request; (None, None) if unauthenticated.
+        The dev/owner token and dev-loopback resolve to 'admin' (keeps OUR own MCP/dev
+        connection fully privileged) with ai_name None — those are NOT audited.
+        A per-AI token maps to its granted tier + name, which IS audited."""
+        tok = msg.get("token")
+        if self.config.token and tok == self.config.token:
+            return "admin", None                 # developer/owner token — full access, always
         if self._is_loopback(peer) and not self.config.token:
-            return True
-        if not self.config.token:
-            # No token configured but remote peer: refuse by default.
-            return False
-        return msg.get("token") == self.config.token
+            return "admin", None                 # dev convenience: open loopback, no token configured
+        ai = _load_ai_tokens().get(tok or "")
+        if isinstance(ai, dict) and ai.get("tier") in TIER_RANK:
+            return ai["tier"], str(ai.get("name") or "unknown")
+        return None, None
+
+    @staticmethod
+    def _pin_seat(msg: dict, args: dict) -> dict:
+        """Seat arbitration: an AI token with an assigned seat may only drive THAT seat.
+        Its input.* calls are pinned to the assignment (whatever seat it asked for), and
+        it may not open/close other seats. Admin/dev tokens are unrestricted — the owner
+        assigns seats in the AI Hub. Identity-blind dispatch stays identity-blind: the
+        pinning happens here at the auth boundary."""
+        ai = _load_ai_tokens().get(msg.get("token") or "")
+        seat = ai.get("seat") if isinstance(ai, dict) else None
+        if seat is None:
+            return args
+        op = msg.get("op") or ""
+        if op in ("input.button", "input.combo", "input.axis", "input.type"):
+            args = dict(args); args["seat"] = int(seat)
+        elif op in ("input.seat_open", "input.seat_close"):
+            if int(args.get("seat", 0)) != int(seat):
+                raise P.AgentError(P.ERR_DENIED,
+                    f"this AI is assigned seat {seat}; it cannot manage other seats")
+        return args
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         peer = writer.get_extra_info("peername")
@@ -64,26 +177,70 @@ class AgentServer:
                 if not line:
                     break
                 req_id = None
+                ai_name = None      # set for per-AI tokens only; gates the audit log
+                op = None
                 try:
                     msg = P.decode_line(line.decode("utf-8", "replace"))
                     req_id = msg.get("id")
-                    if not self._authed(peer, msg):
-                        writer.write(P.encode(P.err_response(req_id, P.ERR_AUTH, "bad or missing token")))
+                    op = msg.get("op")
+                    tier, ai_name = self._resolve_tier(peer, msg)
+                    if tier is None:
+                        # Pre-auth pairing: 'pair.request' is the ONE op allowed without a
+                        # token — it only files a request for the owner to approve in the
+                        # AI Hub; it grants nothing. Rate-limited; connection stays open
+                        # so the client sees the response.
+                        if op == "pair.request":
+                            if not _pair_rate_ok():
+                                writer.write(P.encode(P.err_response(
+                                    req_id, P.ERR_DENIED, "pairing requests rate-limited — try again in a minute")))
+                            else:
+                                try:
+                                    r = await asyncio.get_event_loop().run_in_executor(
+                                        None, _forward_pair_request, msg.get("args") or {})
+                                    if r.get("ok"):
+                                        writer.write(P.encode(P.ok_response(req_id, {
+                                            "requested": True, "name": r.get("name"), "tier": r.get("tier"),
+                                            "note": "request filed — the device owner approves it in GOSE → AI Hub"})))
+                                    else:
+                                        writer.write(P.encode(P.err_response(
+                                            req_id, P.ERR_BADREQ, str(r.get("error") or "request rejected"))))
+                                except Exception as e:  # noqa: BLE001 — UI server down/unreachable
+                                    writer.write(P.encode(P.err_response(
+                                        req_id, P.ERR_BACKEND, f"pairing service unavailable: {e}")))
+                            await writer.drain()
+                            continue
+                        writer.write(P.encode(P.err_response(
+                            req_id, P.ERR_AUTH,
+                            "bad or missing token — the device owner grants access in GOSE → AI Hub "
+                            "(Pairing shows your token), or send op 'pair.request' {name, tier} to ask "
+                            "the owner to approve your pairing request")))
                         await writer.drain()
                         break
-                    op = msg.get("op")
                     if not isinstance(op, str):
                         raise P.AgentError(P.ERR_BADREQ, "missing 'op'")
-                    args = msg.get("args") or {}
+                    need = OP_TIER.get(op, "admin")     # unmapped ops require admin (deny-by-default)
+                    if TIER_RANK[tier] < TIER_RANK[need]:
+                        # Scope denial flows through the normal error path → connection stays open,
+                        # so an Observe-tier AI can still do its allowed ops.
+                        raise P.AgentError(P.ERR_DENIED,
+                            f"'{op}' needs '{need}' access; this connection has '{tier}'. "
+                            f"The device owner grants access in GOSE → AI Hub.")
+                    args = self._pin_seat(msg, msg.get("args") or {})
                     # Run (possibly blocking) dispatch off the event loop.
                     result = await asyncio.get_event_loop().run_in_executor(
                         None, self.agent.dispatch, op, args)
                     writer.write(P.encode(P.ok_response(req_id, result)))
+                    if ai_name:
+                        audit_append(ai_name, op, True)
                 except P.AgentError as e:
                     writer.write(P.encode(P.err_response(req_id, e.code, e.message)))
+                    if ai_name and isinstance(op, str):
+                        audit_append(ai_name, op, False, e.code)
                 except Exception as e:  # noqa: BLE001 — never let one bad msg kill the conn
                     log.exception("dispatch error")
                     writer.write(P.encode(P.err_response(req_id, P.ERR_BACKEND, str(e))))
+                    if ai_name and isinstance(op, str):
+                        audit_append(ai_name, op, False, P.ERR_BACKEND)
                 await writer.drain()
         finally:
             self._writers.discard(writer)

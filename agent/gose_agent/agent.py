@@ -24,7 +24,8 @@ class Agent:
         self.config = config or AgentConfig()
         self.emit = emit or (lambda *_: None)
         self.input = make_input(force_mock=self.config.force_mock)
-        self.system = SystemCapability(allow_shell=self.config.allow_shell)
+        self.system = SystemCapability(allow_shell=self.config.allow_shell,
+                                       sandbox_shell=self.config.sandbox_shell)
         self.games = GamesCapability(self.config.roms_dir,
                                      self.config.launch_templates,
                                      emit=self.emit)
@@ -71,13 +72,18 @@ class Agent:
         return {
             "ping": lambda ar: {"pong": True, "ts": __import__("time").time()},
             "agent.info": lambda ar: self.info(),
-            # input
+            # input (seat = player slot; 1 is the original pad — see SeatManager)
             "input.button": lambda ar: self.input.button(
-                a(ar, "button"), a(ar, "action", "tap"), int(ar.get("duration_ms", 80))),
+                a(ar, "button"), a(ar, "action", "tap"), int(ar.get("duration_ms", 80)),
+                seat=ar.get("seat", 1)),
             "input.combo": lambda ar: self.input.combo(
-                a(ar, "buttons"), int(ar.get("duration_ms", 80))),
-            "input.axis": lambda ar: self.input.axis(a(ar, "axis"), a(ar, "value")),
-            "input.type": lambda ar: self.input.type_text(a(ar, "text")),
+                a(ar, "buttons"), int(ar.get("duration_ms", 80)), seat=ar.get("seat", 1)),
+            "input.axis": lambda ar: self.input.axis(
+                a(ar, "axis"), a(ar, "value"), seat=ar.get("seat", 1)),
+            "input.type": lambda ar: self.input.type_text(a(ar, "text"), seat=ar.get("seat", 1)),
+            "input.seats": lambda ar: self.input.seats(),
+            "input.seat_open": lambda ar: self.input.seat_open(a(ar, "seat")),
+            "input.seat_close": lambda ar: self.input.seat_close(a(ar, "seat")),
             # system
             "system.run": lambda ar: self.system.run(
                 a(ar, "cmd"), int(ar.get("timeout_ms", 10000))),

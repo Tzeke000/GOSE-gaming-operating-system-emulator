@@ -1,0 +1,20 @@
+{
+  "name": "Pong 1K 2P (NES homebrew)",
+  "system": "nes",
+  "core": "fceumm",
+  "endian": "little",
+  "read_method": "core_ram",
+  "match": { "game_substr": "pong1k2p", "crc": "8b5f35d9" },
+  "notes": "Addresses found empirically 2026-06-06 by RAM-diffing over the NCI on the live GOSE VM (READ_CORE_RAM; NES achievement space = CPU $0000-$07FF identity), then VERIFIED against the rendered score display + a 5Hz RAM log across a full played match. Game ends when a score hits 9; at game-over the ball freezes - send NCI RESET then tap start for a new match. paddle_y fields are the paddle's TOP edge; paddles are 0x20 tall (4 sprites, P1 OAM Y at $0278/$027C/$0280/$0284). Ball OAM shadow: Y=$0298, X=$029B. $0000 = frame counter/RNG (always changing - liveness check). P1 = joypad index 0 = LEFT paddle. $16 is ball speed/serve param (1-4), NOT a score - early drafts mislabeled $15/$16 as the scores.",
+  "fields": [
+    { "name": "ball_x", "address": "0x07", "type": "u8" },
+    { "name": "ball_y", "address": "0x09", "type": "u8" },
+    { "name": "p1_paddle_y", "address": "0x10", "type": "u8" },
+    { "name": "p2_paddle_y", "address": "0x11", "type": "u8" },
+    { "name": "p1_paddle_bottom", "address": "0x12", "type": "u8" },
+    { "name": "score_left", "address": "0x14", "type": "u8" },
+    { "name": "score_right", "address": "0x15", "type": "u8" },
+    { "name": "ball_speed", "address": "0x16", "type": "u8" },
+    { "name": "frame_counter", "address": "0x00", "type": "u8" }
+  ]
+}

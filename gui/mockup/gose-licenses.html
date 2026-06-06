@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Open Source Licenses</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:rgba(7,7,15,.78);
+    backdrop-filter:blur(18px);display:flex;flex-direction:column;align-items:center}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .wrap{width:920px;max-width:94vw;margin-top:5vh;display:flex;flex-direction:column;flex:1;min-height:0}
+  .head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .head img{width:30px;height:30px}.head h1{font-size:18px;margin:0}
+  .head .x{margin-left:auto;color:var(--muted);font-size:13px}
+  .intro{color:var(--muted);font-size:12.5px;line-height:1.5;margin:0 2px 14px;max-width:760px}
+  .search{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);
+    border-radius:12px;padding:11px 16px;margin-bottom:14px}
+  .search input{flex:1;background:transparent;border:0;outline:none;color:var(--text);font-size:15px}
+  .list{overflow:auto;padding:0 2px 8px;flex:1;min-height:0}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);margin:16px 2px 8px;
+    display:flex;align-items:center;gap:8px}
+  .ph .cnt{color:var(--accent)}
+  .row{background:var(--surface);border:2px solid transparent;border-radius:12px;padding:12px 16px;
+    margin-bottom:8px;cursor:pointer}
+  .row:hover{background:var(--surface2)}
+  .row.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .row .top{display:flex;align-items:center;gap:10px}
+  .row .nm{font-weight:700;font-size:14.5px}
+  .row .sys{color:var(--muted);font-size:12px}
+  .row .lic{margin-left:auto;font-size:11.5px;font-weight:700;border:1px solid var(--line);
+    border-radius:8px;padding:2px 9px;white-space:nowrap}
+  .row .lic.ok{color:#3fe0a0;background:#3fe0a01c}
+  .row .lic.excl{color:#ff5a6e;background:#ff5a6e1c}
+  .row .lic.review{color:#ffb454;background:#ffb4541c}
+  .row .att{display:none;margin-top:9px;padding-top:9px;border-top:1px solid var(--line);
+    color:var(--muted);font-size:12.5px;line-height:1.55;white-space:pre-wrap}
+  .row.open .att{display:block}
+  .foot{margin:8px 0 14px;color:var(--muted);font-size:13px}
+  .empty{color:var(--muted);font-size:13px;padding:24px 4px}
+</style></head>
+<body>
+  <div class="wrap">
+    <div class="head"><img src="assets/brand/gose-core-mark.png" alt="GOSE"><h1>Open Source Licenses &amp; Credits</h1>
+      <span class="x"><span class="ic" data-i="shield"></span> Esc — back</span></div>
+    <p class="intro">GOSE is built on open-source software. We thank the projects below and
+      reproduce their license notices as those licenses require. Emulator cores marked
+      <b style="color:#ff5a6e">non-commercial</b> are not part of a paid GOSE build and are
+      available only as user-installed add-ons. Full audit: <b>docs/19-license-audit.md</b>.</p>
+    <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search components, licenses…" autofocus></div>
+    <div class="list" id="list"></div>
+  </div>
+  <div class="foot"><b>↑↓</b> move · <b>Enter</b> show notice · type to search · <b>Esc</b> back</div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+
+  // verdict: ok | excl | review  ; att = attribution / notice text shown on Enter
+  const SECTIONS=[
+    {h:"GOSE platform", items:[
+      {nm:"GOSE shell & agent", sys:"first-party", lic:"GOSE", k:"ok",
+       att:"© 2026 GOSE. The GOSE shell, AI agent, and brand marks are original work."},
+    ]},
+    {h:"Fonts & icons", items:[
+      {nm:"Inter", sys:"typeface", lic:"SIL OFL 1.1", k:"ok",
+       att:"Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter). Licensed under the SIL Open Font License, Version 1.1. The font is bundled with this software; it may not be sold by itself."},
+      {nm:"Lucide", sys:"icon set", lic:"ISC", k:"ok",
+       att:"Copyright (c) 2026 Lucide Icons and Contributors — ISC License. Some icons are derived from the Feather project: Copyright (c) 2013-present Cole Bemis — MIT License."},
+    ]},
+    {h:"Libraries", items:[
+      {nm:"WinBox.js", sys:"window manager", lic:"Apache-2.0", k:"ok",
+       att:"Copyright NextApps GmbH — Apache License 2.0. See the bundled NOTICE."},
+      {nm:"simple-keyboard", sys:"on-screen keyboard", lic:"MIT", k:"ok",
+       att:"Copyright (c) Francisco Hodge and contributors — MIT License."},
+      {nm:"pymacaroons", sys:"capability tokens", lic:"MIT", k:"ok",
+       att:"Copyright (c) Evan Cordell — MIT License."},
+      {nm:"landrun / nsjail", sys:"sandbox", lic:"Apache-2.0", k:"ok",
+       att:"landrun — Apache-2.0. nsjail — Apache-2.0 (Google)."},
+      {nm:"python-evdev", sys:"input injection", lic:"BSD-3-Clause", k:"ok",
+       att:"Copyright (c) Georgi Valkov and contributors — Revised (3-clause) BSD License. Used on-device for virtual gamepad input."},
+      {nm:"libDaltonLens / color-blindness-emulation", sys:"accessibility filters", lic:"Public Domain / CC0", k:"ok",
+       att:"libDaltonLens CVD color matrices — Public Domain. hail2u/color-blindness-emulation filters — CC0."},
+    ]},
+    {h:"Emulator cores — included (commercial-OK)", items:[
+      {nm:"GPL / LGPL cores", sys:"bsnes, mesen, mgba, mame, blastem, flycast, mednafen, vice, ppsspp, …", lic:"GPL/LGPL", k:"ok",
+       att:"The majority of included libretro cores are licensed under the GNU GPL (v2/v2+/v3/v3+) or LGPL. Commercial distribution is permitted under these licenses; the complete corresponding source code for every GPL/LGPL core is available from GOSE on request and from the libretro project. No additional restrictions are imposed."},
+      {nm:"Permissive cores", sys:"fake08, lutro, mrboom, tic80, wasm4, np2kai, play, …", lic:"MIT/BSD/zlib/ISC", k:"ok",
+       att:"Cores under MIT, BSD-2/3-Clause, zlib, ISC, MPL-2.0 (mGBA), Artistic, and Public-Domain licenses. Copyright and license notices are retained per each license."},
+    ]},
+    {h:"Emulator cores — NOT in paid build (non-commercial)", items:[
+      {nm:"Snes9x (snes9x, snes9x_next)", sys:"SNES — use bsnes / mesen-s instead", lic:"Non-commercial", k:"excl",
+       att:"Snes9x is freeware for non-commercial use only; its license forbids inclusion in commercial bundles. Not shipped in a paid GOSE build — available as an optional user-installed add-on. SNES is covered by bsnes / mesen-s (GPLv3)."},
+      {nm:"Genesis Plus GX (+expanded, +wide)", sys:"Sega — use blastem / gearsystem", lic:"Non-commercial", k:"excl",
+       att:"Genesis Plus GX (Eke-Eke) may not be sold or used in a commercial product. Not shipped in a paid build; available as a user add-on."},
+      {nm:"FinalBurn Neo (fbneo)", sys:"Arcade — use MAME (GPLv2+)", lic:"Non-commercial", k:"excl",
+       att:"FBNeo may not be sold or used in a commercial product or activity. Not shipped in a paid build; available as a user add-on. Arcade is covered by current MAME (GPLv2+)."},
+      {nm:"fMSX, mame078plus, opera, px68k, quasi88", sys:"MSX / legacy-MAME / 3DO / X68000 / PC-8801", lic:"Non-commercial", k:"excl",
+       att:"These cores carry non-commercial or legacy-MAME-noncommercial terms and are not bundled in a paid build. MSX is covered by blueMSX (GPLv2); the others are offered as optional user-installed add-ons."},
+    ]},
+    {h:"Needs review (not shipped until cleared)", items:[
+      {nm:"picodrive, hatarib, zc210", sys:"ambiguous / empty license field", lic:"Review", k:"review",
+       att:"picodrive's bare “MAME” license, and the empty license fields on hatarib and zc210, are pending manual legal review and are excluded from the paid build until confirmed."},
+    ]},
+    {h:"Bundled content", items:[
+      {nm:"DOOM shareware (doom1)", sys:"prboom", lic:"Shareware", k:"ok",
+       att:"DOOM shareware episode © id Software, redistributed under its shareware license (included as doom1_shareware_license.txt). No registered/commercial WADs are shipped."},
+      {nm:"PrBoom WAD, Mr.Boom, 2048", sys:"homebrew / free", lic:"GPL/MIT/free", k:"ok",
+       att:"Free/open game data shipped with the OS. GOSE ships no copyrighted commercial ROMs or console BIOS — users supply their own legally-obtained content."},
+    ]},
+  ];
+
+  // flatten for navigation, keep section headers as separators
+  let FLAT=[], foc=0;
+  function build(filter){
+    FLAT=[]; const q=(filter||"").trim().toLowerCase();
+    for(const sec of SECTIONS){
+      const items=sec.items.filter(it=> !q ||
+        (it.nm+" "+it.sys+" "+it.lic+" "+it.att).toLowerCase().includes(q));
+      if(items.length){ FLAT.push({header:sec.h, count:items.length}); for(const it of items) FLAT.push(it); }
+    }
+    // focus first real item
+    foc=FLAT.findIndex(x=>!x.header); if(foc<0) foc=0;
+  }
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  function render(){
+    if(!FLAT.length){ $("list").innerHTML='<div class="empty">No matching components.</div>'; return; }
+    $("list").innerHTML=FLAT.map((x,i)=>{
+      if(x.header) return `<div class="ph">${esc(x.header)} <span class="cnt">${x.count}</span></div>`;
+      const cls=i===foc?"row focus":"row";
+      return `<div class="${cls}" data-i2="${i}">
+        <div class="top"><span class="nm">${esc(x.nm)}</span><span class="sys">${esc(x.sys)}</span>
+          <span class="lic ${x.k}">${esc(x.lic)}</span></div>
+        <div class="att">${esc(x.att)}</div></div>`;
+    }).join("");
+    [...$("list").querySelectorAll(".row")].forEach(el=>{
+      el.onclick=()=>{foc=+el.dataset.i2; toggle();};
+    });
+    const f=$("list").querySelector(".row.focus"); if(f) f.scrollIntoView({block:"nearest"});
+    paint();
+  }
+  function toggle(){
+    const el=$("list").querySelector(`[data-i2="${foc}"]`);
+    if(el){ el.classList.toggle("open"); render(); const r=$("list").querySelector(".row.focus"); if(r) r.classList.add("open"); }
+  }
+  function move(d){
+    if(!FLAT.length) return;
+    let n=foc;
+    do{ n=(n+d+FLAT.length)%FLAT.length; } while(FLAT[n] && FLAT[n].header);
+    foc=n; render();
+  }
+  function filter(){ build($("q").value); render(); }
+  $("q").addEventListener("input",filter);
+  addEventListener("keydown",e=>{const k=e.key;
+    if(k==="Escape"){location.href="gose-settings.html";}
+    else if(k==="ArrowDown")move(1);
+    else if(k==="ArrowUp")move(-1);
+    else if(k==="Enter")toggle();
+    else return; e.preventDefault();});
+  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
+      if(tap(13))move(1);if(tap(12))move(-1);
+      if(tap(0))toggle();if(tap(1))location.href="gose-settings.html";
+      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  build(""); render();
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>

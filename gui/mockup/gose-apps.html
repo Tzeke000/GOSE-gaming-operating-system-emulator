@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOSE — Apps</title>
 <link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
 <style>
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
@@ -67,9 +68,11 @@
     {nm:"Files",    ds:"Browse, open & edit files + storage map", ic:"folder", href:"gose-files.html"},
     {nm:"Task Manager", ds:"Processes, performance, kill tasks", ic:"cpu", href:"gose-taskman.html"},
     {nm:"Settings", ds:"Personalize the whole OS",      ic:"settings",   href:"gose-settings.html"},
+    {nm:"Gallery",  ds:"Screenshots & game clips",       ic:"image",    href:"gose-gallery.html"},
     {nm:"Splice",   ds:"Lossless video trim",           ic:"scissors", href:"gose-splice.html"},
     {nm:"Store",    ds:"Get more apps from Flathub",     ic:"download", href:"gose-store.html"},
     {nm:"Terminal", ds:"Command line — the real shell",  ic:"terminal", href:"gose-term.html"},
+    {nm:"Licenses", ds:"Open-source credits & licenses", ic:"file-text", href:"gose-licenses.html"},
     {nm:"Beam",     ds:"Send files to phone & devices", ic:"send",     soon:true},
     {nm:"AI Players", ds:"Wren, Ava, Iris — join & play", ic:"sparkles", soon:true},
     {nm:"Emulators", ds:"Cores & systems",              ic:"gamepad-2",  soon:true},
@@ -143,4 +146,5 @@
   render(); loadInstalled(); setInterval(loadInstalled, 8000);
   (function(){const hq=(location.hash.match(/q=([^&]+)/)||[])[1]; if(hq){$("q").value=decodeURIComponent(hq);filter();}})();
 </script>
+<script src="assets/a11y.js"></script>
 </body></html>

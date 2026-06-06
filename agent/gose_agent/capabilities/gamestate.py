@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import glob
 import json
+import logging
 import os
 import re
 import socket
@@ -26,6 +27,8 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..protocol import AgentError, ERR_ARGS, ERR_BACKEND
+
+log = logging.getLogger("gose.agent.gamestate")
 
 # Friendly aliases -> stable-retro/numpy-style descriptors. We accept BOTH our
 # readable names and stable-retro's own type strings (e.g. ">u4", "<i2", "|u1"),
@@ -44,20 +47,40 @@ _STRUCT = {
     ("u", 8): "Q", ("i", 8): "q",
     ("f", 4): "f", ("f", 8): "d",
 }
-_DESC_RE = re.compile(r"^([<>|=]?)([uif])(\d+)$")
+# BCD kinds (stable-retro descriptors): 'd' = packed BCD, two digits per byte
+# (e.g. ">d2" = a 4-digit score in 2 bytes); 'n' = one digit in each byte's LOW
+# nybble (e.g. ">n6" = SMB's 6-byte score). struct has no format char for these,
+# so resolve_type returns a pseudo-format that decode_field branches on.
+_BCD_FMT = {"d": "bcd_d", "n": "bcd_n"}
+_BCD_MAX_BYTES = 8
+_DESC_RE = re.compile(r"^([<>|=]?)([uifdn])(\d+)$")
+_BCD_ALIAS_RE = re.compile(r"^bcd_([dn])(\d+)$")
 
 
 def resolve_type(type_str: str, default_endian: str) -> Tuple[str, str, int]:
-    """Map a type string to (struct_endian_char, struct_fmt_char, byte_size).
+    """Map a type string to (struct_endian_char, fmt, byte_size).
 
-    Accepts our aliases ("u16") and stable-retro descriptors ("<u2", ">i4", "|u1").
+    Accepts our aliases ("u16", "bcd_n6", "bcd_d2") and stable-retro descriptors
+    ("<u2", ">i4", "|u1", ">n6", ">d2"). For BCD kinds, fmt is the pseudo-format
+    "bcd_d" / "bcd_n" (see _BCD_FMT) rather than a struct char — decode_field
+    handles those without struct. The "bcd_*" aliases carry no endianness, so
+    the profile default applies; ">" means first byte is most significant.
     """
     desc = _ALIASES.get(type_str, type_str)
+    bcd = _BCD_ALIAS_RE.match(desc)
+    if bcd:
+        desc = bcd.group(1) + bcd.group(2)  # "bcd_n6" -> "n6" (default endian)
     m = _DESC_RE.match(desc)
     if not m:
         raise AgentError(ERR_ARGS, f"unsupported type '{type_str}'")
     endian_sym, kind, width = m.group(1), m.group(2), int(m.group(3))
-    if (kind, width) not in _STRUCT:
+    if kind in _BCD_FMT:
+        if not 1 <= width <= _BCD_MAX_BYTES:
+            raise AgentError(ERR_ARGS, f"unsupported type '{type_str}'")
+        fmt = _BCD_FMT[kind]
+    elif (kind, width) in _STRUCT:
+        fmt = _STRUCT[(kind, width)]
+    else:
         raise AgentError(ERR_ARGS, f"unsupported type '{type_str}'")
     if endian_sym in (">",):
         endc = ">"
@@ -67,7 +90,21 @@ def resolve_type(type_str: str, default_endian: str) -> Tuple[str, str, int]:
         endc = "<"  # endianness irrelevant for 1-byte
     else:
         endc = "<" if default_endian == "little" else ">"
-    return endc, _STRUCT[(kind, width)], width
+    return endc, fmt, width
+
+
+def decode_bcd(raw: bytes, fmt: str, endc: str) -> int:
+    """Decode BCD bytes. "bcd_d" = packed (high nybble tens, low nybble ones);
+    "bcd_n" = one digit in each byte's low nybble (high nybble ignored).
+    endc ">" = first byte is the most significant digit(s)."""
+    data = raw if endc == ">" else bytes(reversed(raw))
+    value = 0
+    for b in data:
+        if fmt == "bcd_d":
+            value = value * 100 + ((b >> 4) & 0xF) * 10 + (b & 0xF)
+        else:
+            value = value * 10 + (b & 0xF)
+    return value
 
 
 class RetroArchClient:
@@ -179,7 +216,10 @@ class GameProfile:
 
     def decode_field(self, f: Dict[str, Any], raw: bytes) -> Any:
         endc, fmt, size = resolve_type(f["type"], f.get("endian", self.endian))
-        value = struct.unpack(endc + fmt, raw[:size])[0]
+        if fmt in ("bcd_d", "bcd_n"):
+            value = decode_bcd(raw[:size], fmt, endc)
+        else:
+            value = struct.unpack(endc + fmt, raw[:size])[0]
         if "scale" in f:
             value = value * f["scale"]
         if f.get("bool"):
@@ -192,26 +232,33 @@ class GameProfile:
                 "match": self.match}
 
 
-def load_profiles(profiles_dir: str) -> Dict[str, GameProfile]:
+def load_profiles(profiles_dir: str) -> Tuple[Dict[str, GameProfile], Dict[str, str]]:
+    """Load all profile JSONs. Returns (profiles, skipped) — skipped maps
+    filename -> reason for every file that failed to parse/validate, so bad
+    profiles are visible instead of silently vanishing."""
     out: Dict[str, GameProfile] = {}
+    skipped: Dict[str, str] = {}
     if not profiles_dir or not os.path.isdir(profiles_dir):
-        return out
+        return out, skipped
     for path in glob.glob(os.path.join(profiles_dir, "*.json")):
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
             key = os.path.splitext(os.path.basename(path))[0]
             out[key] = GameProfile(data, source=path)
-        except (json.JSONDecodeError, KeyError, AgentError):
-            continue  # skip malformed profiles rather than crashing the agent
-    return out
+        except (json.JSONDecodeError, KeyError, AgentError) as e:
+            # Skip malformed profiles rather than crashing the agent — but say so.
+            reason = e.message if isinstance(e, AgentError) else f"{type(e).__name__}: {e}"
+            skipped[os.path.basename(path)] = reason
+            log.warning("skipping malformed profile %s: %s", path, reason)
+    return out, skipped
 
 
 class GameStateCapability:
     def __init__(self, profiles_dir: str, ra_host: str = "127.0.0.1",
                  ra_port: int = 55355):
         self.profiles_dir = profiles_dir
-        self.profiles = load_profiles(profiles_dir)
+        self.profiles, self.profiles_skipped = load_profiles(profiles_dir)
         self.ra = RetroArchClient(ra_host, ra_port)
         self.active: Optional[str] = None
         # "real" means we'll genuinely talk UDP; reachability is checked per-call.
@@ -220,6 +267,7 @@ class GameStateCapability:
     # ---- ops ----
     def list_profiles(self) -> Dict[str, Any]:
         return {"profiles": {k: p.to_summary() for k, p in self.profiles.items()},
+                "skipped": self.profiles_skipped,  # filename -> reason (bad JSONs)
                 "profiles_dir": self.profiles_dir, "active": self.active}
 
     def status(self) -> Dict[str, Any]:
@@ -256,7 +304,10 @@ class GameStateCapability:
         fields: Dict[str, Any] = {}
         for f in p.fields:
             size = p.field_size(f)
-            raw = self.ra.read_memory(GameProfile.addr(f["address"]), size, p.read_method)
+            # Per-field read_method override: imported profiles fall back to
+            # core_memory for fields outside the console's READ_CORE_RAM window.
+            method = f.get("read_method", p.read_method)
+            raw = self.ra.read_memory(GameProfile.addr(f["address"]), size, method)
             fields[f["name"]] = p.decode_field(f, raw)
         return {"profile": key, "fields": fields, "ts": time.time()}
 

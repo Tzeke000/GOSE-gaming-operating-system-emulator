@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOSE Overlay</title>
 <link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
 <style>
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
@@ -67,6 +68,7 @@
       <span class="ttl">Game Bar</span><span class="sep"></span>
       <div class="meta" id="meta">—</div></div>
     <div class="cards">
+      <div class="card glass" id="savescard" style="display:none"><h3><span class="ic" data-i="hard-drive"></span>Save States</h3><div id="saves"></div></div>
       <div class="card glass"><h3><span class="ic" data-i="cpu"></span>Performance</h3><div id="perf"></div></div>
       <div class="card glass"><h3><span class="ic" data-i="volume-2"></span>Audio &amp; Display</h3><div id="av"></div></div>
       <div class="card glass"><h3><span class="ic" data-i="image"></span>Capture</h3><div id="cap"></div></div>
@@ -84,7 +86,7 @@
   function api(p,b){return fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{cache:"no-store"}).then(r=>r.json()).catch(()=>({ok:false}));}
   function ico(n){return '<span class="ic" style="-webkit-mask:url(assets/icons/'+n+'.svg) center/contain no-repeat;mask:url(assets/icons/'+n+'.svg) center/contain no-repeat;background:currentColor;display:inline-block"></span>';}
   let S={vol:50,mute:false,bri:null,briHas:true,perf:"balanced",batt:null,charging:false,net:"—",
-         cpu:null,gpu:null,ram:null,temp:null,powerMode:false,buffer:false};
+         cpu:null,gpu:null,ram:null,temp:null,powerMode:false,buffer:false,slots:[]};
   let foc=0, items=[];
   function say(m){var t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(function(){t.classList.remove("show");},1800);}
   function build(){
@@ -96,7 +98,12 @@
       items.push({k:"c60",type:"act",ic:"scissors",lab:"Clip last 1m",clip:60,card:"cap"});
       items.push({k:"c120",type:"act",ic:"scissors",lab:"Clip last 2m",clip:120,card:"cap"});
     }
-    // (save/load state intentionally NOT here — each game/emulator owns its own save system)
+    if(IN_GAME){   // a game is paused behind us → RetroArch save states, live in the Game Bar
+      items.push({k:"save",type:"act",ic:"hard-drive",lab:"Save state",savestate:"save",card:"saves"});
+      items.push({k:"load",type:"act",ic:"rotate-ccw",lab:"Load state",savestate:"load",card:"saves"});
+      items.push({k:"slotprev",type:"act",ic:"chevron-left",lab:"Previous slot",slot:"prev",card:"saves"});
+      items.push({k:"slotnext",type:"act",ic:"chevron-right",lab:"Next slot",slot:"next",card:"saves"});
+    }
     if(S.powerMode){
       items.push({k:"sleep",type:"act",ic:"moon",lab:"Sleep",act:"sleep"});
       items.push({k:"restart",type:"act",ic:"rotate-ccw",lab:"Restart",act:"restart"});
@@ -132,14 +139,25 @@
     var modes=[["battery","Battery"],["balanced","Balanced"],["performance","Perf"]];
     sys+='<div class="row '+(foc===si?"focus":"")+'"><div class="lab">'+ico("cpu")+'Performance mode</div><div class="seg">'+
       modes.map(m=>'<span class="'+(S.perf===m[0]?"sel":"")+'">'+m[1]+'</span>').join("")+'</div></div>';
-    var cap="";
+    var cap="", saves="";
     items.forEach(function(it,i){ if(it.type!=="act")return;
       var sub=it.sub; if(it.buffer) sub=S.buffer?"On":"Off";
       var html='<div class="row '+(foc===i?"focus":"")+(it.danger?" danger":"")+'"><div class="lab">'+ico(it.ic)+it.lab+
         (sub?'<span class="v">'+sub+'</span>':"")+'</div></div>';
-      if(it.card==="cap") cap+=html; else sys+=html;});
+      if(it.card==="cap") cap+=html; else if(it.card==="saves") saves+=html; else sys+=html;});
     $("sys").innerHTML=sys; $("cap").innerHTML=cap;
+    var sc=$("savescard"); if(sc) sc.style.display=IN_GAME?"":"none";
+    if(IN_GAME){
+      var thumbs = S.slots.length
+        ? S.slots.map(function(s){return '<div style="text-align:center;font-size:10px;color:#aeb6d4">'+
+            (s.thumb_path?'<img src="/fs/file?path='+encodeURIComponent(s.thumb_path)+'" style="width:60px;height:45px;object-fit:cover;border-radius:5px;border:1px solid #ffffff22">':'<div style="width:60px;height:45px;border-radius:5px;background:#ffffff10"></div>')+
+            '<div>Slot '+s.slot+'</div></div>';}).join('')
+        : '<span style="font-size:11px;color:#8b92b0">No saves yet — Save state to create one.</span>';
+      $("saves").innerHTML=saves+'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+thumbs+'</div>';
+    }
   }
+  function loadSlots(){ if(!IN_GAME)return;
+    api("/game/state/slots").then(function(d){ if(d&&d.slots){S.slots=d.slots;render();} }); }
   function refresh(){
     api("/status.json").then(d=>{if(d){if(d.battery_pct!=null)S.batt=d.battery_pct;S.charging=!!d.charging;
       if(d.cpu_pct!=null)S.cpu=d.cpu_pct; if(d.gpu_pct!=null)S.gpu=d.gpu_pct; if(d.mem_pct!=null)S.ram=d.mem_pct;
@@ -155,7 +173,10 @@
   function adjust(d){var it=items[foc];if(!it)return;if(it.k==="vol")setVol(S.vol+d*5);else if(it.k==="bri")setBri((S.bri||0)+d*5);else if(it.type==="seg")setPerf(d);}
   function enter(){var it=items[foc];if(!it)return;
     if(it.savestate){say(it.savestate==="save"?"Saving state…":"Loading state…");
-      api("/game/"+(it.savestate==="save"?"savestate":"loadstate"),{});return;}
+      api("/game/"+(it.savestate==="save"?"savestate":"loadstate"),{}).then(function(){
+        if(it.savestate==="save"){say("State saved");setTimeout(loadSlots,700);}});return;}
+    if(it.slot){say(it.slot==="next"?"Next slot →":"← Previous slot");
+      api("/game/slot",{dir:it.slot}).then(function(){setTimeout(loadSlots,300);});return;}
     if(it.shot){say("Saving screenshot…");api("/capture/shot",{source:"frozen"}).then(d=>say(d&&d.ok?("Saved to Pictures: "+d.name):"Screenshot failed"));return;}
     if(it.buffer){var on=!S.buffer;say(on?"Starting replay buffer…":"Stopping replay buffer");
       api("/capture/buffer",{on:on}).then(d=>{S.buffer=!!(d&&d.running);build();say(S.buffer?"Replay buffer ON — now recording":"Replay buffer off");});return;}
@@ -173,5 +194,7 @@
     else return;e.preventDefault();});
   build();refresh();setInterval(refresh,2000);
   api("/capture/buffer").then(d=>{if(d){S.buffer=!!d.running;build();}});   // reflect replay-buffer state on open
+  loadSlots();   // populate the saved-states thumbnails when the Game Bar opens over a game
 </script>
+<script src="assets/a11y.js"></script>
 </body></html>

@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOSE — Controllers</title>
 <link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
 <style>
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
@@ -161,4 +162,5 @@
   (function watch(){const id=CONTROLLERS[ctrl].id;localStorage.setItem("gose-remap-active",id);setTimeout(watch,800);})();
   paint();map=loadMap();render();detect();setInterval(detect,1500);
 </script>
+<script src="assets/a11y.js"></script>
 </body></html>

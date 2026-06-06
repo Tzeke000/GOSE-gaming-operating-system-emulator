@@ -52,24 +52,45 @@ class GoseClient:
 
     # ---- core request/response ----
     def call(self, op: str, **args) -> Dict[str, Any]:
-        if self._sock is None:
-            self.connect()
-        self._id += 1
-        req: Dict[str, Any] = {"id": self._id, "op": op, "args": args}
-        if self.token:
-            req["token"] = self.token
-        self._sock.sendall((json.dumps(req) + "\n").encode("utf-8"))
-        # Read until we get a response matching our id (skip async events).
-        while True:
-            line = self._readline()
-            msg = json.loads(line)
-            if "event" in msg:
-                continue  # ignore unsolicited events in the simple client
-            if msg.get("id") != req["id"]:
-                continue
-            if not msg.get("ok"):
-                raise GoseClientError(msg.get("code", "ERR"), msg.get("error", ""))
-            return msg.get("result", {})
+        # Try once, and if the connection is dead (e.g. the agent restarted), drop the
+        # stale socket and reconnect once. Without this, a single agent restart wedges
+        # the client forever on a dead socket.
+        last_err: Optional[Exception] = None
+        for attempt in (1, 2):
+            if self._sock is None:
+                self.connect()
+            self._id += 1
+            req: Dict[str, Any] = {"id": self._id, "op": op, "args": args}
+            if self.token:
+                req["token"] = self.token
+            try:
+                self._sock.sendall((json.dumps(req) + "\n").encode("utf-8"))
+                # Read until we get a response matching our id (skip async events).
+                while True:
+                    line = self._readline()
+                    msg = json.loads(line)
+                    if "event" in msg:
+                        continue  # ignore unsolicited events in the simple client
+                    if msg.get("id") != req["id"]:
+                        continue
+                    if not msg.get("ok"):
+                        raise GoseClientError(msg.get("code", "ERR"), msg.get("error", ""))
+                    return msg.get("result", {})
+            except GoseClientError as e:
+                if e.code == "ERR_CONN" and attempt == 1:
+                    self._reset(); last_err = e; continue  # dead connection — reconnect once
+                raise  # ERR_DENIED / ERR_BACKEND / etc. are real responses, don't retry
+            except OSError as e:  # broken pipe / reset / aborted on a stale socket
+                self._reset(); last_err = e
+                if attempt == 1:
+                    continue
+                raise GoseClientError("ERR_CONN", str(e))
+        raise GoseClientError("ERR_CONN", str(last_err) if last_err else "connection failed")
+
+    def _reset(self):
+        """Drop the current socket + buffered bytes so the next call reconnects clean."""
+        self.close()
+        self._buf = b""
 
     def _readline(self) -> str:
         while b"\n" not in self._buf:

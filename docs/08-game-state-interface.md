@@ -34,9 +34,12 @@ Researched 2026-06-03; decision in ADR-0006. Prior art we build on:
 ## Profiles (RAM maps)
 One JSON per game in `agent/gose_agent/profiles/` (schema + caveats in that
 folder's README). Accepts both readable types (`u16`, `float32`) and stable-retro
-descriptors (`>u4`, `<i2`, `|u1`). Each profile declares `read_method`
-(`core_memory` vs `core_ram`) because the two commands use **different address
-spaces** — stable-retro offsets map to `core_ram`.
+descriptors (`>u4`, `<i2`, `|u1`, BCD `>d2`/`>n6`). Each profile declares
+`read_method` (`core_memory` vs `core_ram`) because the two commands use
+**different address spaces** — stable-retro addresses are *system-bus*
+addresses, which the importer translates per console into the
+RetroAchievements/`core_ram` space (windows from rcheevos `consoleinfo.c`);
+fields outside a console's RAM window fall back to per-field `core_memory`.
 
 ## Honest limitations
 - **Core support varies.** Cores must expose memory to the NCI. Confirmed-working:

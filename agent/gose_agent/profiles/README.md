@@ -27,8 +27,14 @@ file per game. See `../capabilities/gamestate.py` and
 ```
 
 ### Field types
-`u8 s8 u16 s16 u32 s32 float32`. Optional per-field: `endian` (overrides profile),
-`scale` (multiply decoded value), `bool` (coerce to true/false).
+`u8 s8 u16 s16 u32 s32 float32`, stable-retro descriptors (`>u4`, `<i2`, `|u1`),
+and BCD: `bcd_d<N>` = N bytes of packed BCD (two digits per byte, e.g. score
+`12 34` → 1234) and `bcd_n<N>` = N bytes with one digit in each byte's low
+nybble (SMB-style scores; stable-retro `>d2` / `>n6` descriptors also accepted —
+`>` means first byte is most significant). Optional per-field: `endian`
+(overrides profile), `scale` (multiply decoded value), `bool` (coerce to
+true/false), `read_method` (overrides the profile's — used by imported profiles
+for fields outside the console's READ_CORE_RAM window).
 
 ## ⚠️ Addresses must be verified
 Memory addresses are **game + core specific** and the values committed here are

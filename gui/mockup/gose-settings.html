@@ -4,6 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOSE — Settings</title>
 <link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
 <style>
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
@@ -94,11 +95,21 @@
       {ic:"sparkles", nm:"Core glow", sub:"Glow around the GOSE Core centerpiece", t:"cycle", v:["Soft","Bright","Off"]},
       {ic:"moon", nm:"Appearance", sub:"GOSE is dark-first; light mode is experimental", t:"cycle", v:["Dark","Light (beta)"]},
     ]},
+    {id:"a11y", ic:"eye", nm:"Accessibility", rows:[
+      {ic:"eye", nm:"Text size", sub:"Make everything bigger — applies across the whole OS", t:"cycle", v:["Default","Large","Larger","Largest"], apply:"a11y_scale"},
+      {ic:"sun", nm:"High contrast", sub:"Stronger text, colors and borders", t:"cycle", v:["Off","On"], apply:"a11y_contrast"},
+      {ic:"monitor", nm:"Bold text", sub:"Heavier font weight everywhere", t:"cycle", v:["Off","On"], apply:"a11y_bold"},
+      {ic:"palette", nm:"Color filters", sub:"Colorblind-friendly palette, or full-screen correction", t:"cycle", v:["Off","Friendly palette","Deuteranopia","Protanopia","Tritanopia"], apply:"a11y_cb"},
+      {ic:"sparkles", nm:"Reduce motion", sub:"Stop animations and live wallpaper", t:"cycle", v:["Off","On"], apply:"a11y_motion"},
+      {ic:"monitor", nm:"Reduce transparency", sub:"Make frosted panels solid", t:"cycle", v:["Off","On"], apply:"a11y_opaque"},
+      {ic:"target", nm:"Larger focus outline", sub:"Thicker highlight on the selected item", t:"cycle", v:["Off","On"], apply:"a11y_focus"},
+    ]},
     {id:"display", ic:"monitor", nm:"Display", rows:[
       {ic:"monitor", nm:"Mode", sub:"PC desktop, or Odin 2 handheld-console feel (VM default: PC)", t:"cycle", v:["PC desktop","Console (handheld)"]},
       {ic:"monitor", nm:"Resolution", sub:"Internal panel / VM window", t:"cycle", v:["1280 x 720","1920 x 1080","1280 x 800"], i:1},
       {ic:"smartphone", nm:"Output", sub:"Where the picture goes", t:"cycle", v:["Auto","Internal","HDMI (dock)"]},
       {ic:"sun", nm:"VSync", sub:"Tear-free at a small latency cost", t:"cycle", v:["On","Off"]},
+      {ic:"monitor", nm:"FPS counter", sub:"Show frames-per-second overlay in games — applies on next launch", t:"cycle", v:["Off","On"], apply:"fps"},
       {ic:"sun", nm:"Brightness", sub:"Panel backlight (handheld only)", t:"cycle", v:["40%","60%","80%","100%"], i:2},
     ]},
     {id:"sound", ic:"volume-2", nm:"Sound", rows:[
@@ -107,17 +118,28 @@
       {ic:"bluetooth", nm:"Bluetooth audio", sub:"Pair wireless headphones / earbuds", t:"cycle", v:["On","Off"]},
       {ic:"bell", nm:"UI sounds", sub:"Clicks and navigation feedback", t:"cycle", v:["On","Off"], apply:"sounds"},
     ]},
-    {id:"net", ic:"wifi", nm:"Network", rows:[
-      {ic:"globe", nm:"Connection", sub:"Active network (live, via connman)", t:"info", val:"—", live:"net"},
-      {ic:"wifi", nm:"Wi-Fi", sub:"Scan & join your laptop's networks", t:"link", go:"gose-wifi.html"},
-      {ic:"bluetooth", nm:"Bluetooth", sub:"Pair controllers, headsets & accessories", t:"link", go:"gose-bluetooth.html"},
+    {id:"net", ic:"wifi", nm:"Network & internet", rows:[
+      {ic:"globe", nm:"Status", sub:"Active connection (live, via connman)", t:"info", val:"—", live:"net"},
+      {ic:"wifi", nm:"Wi-Fi", sub:"Connect & manage known networks", t:"link", go:"gose-wifi.html", live:"wifi"},
+      {ic:"plane", nm:"Airplane mode", sub:"Turn off wireless radios", t:"cycle", v:["Off","On"], apply:"airplane"},
       {ic:"globe", nm:"Hostname", sub:"How the device is named on the network", t:"info", val:"gose"},
       {ic:"usb", nm:"SSH access", sub:"Console + file push over the network", t:"cycle", v:["Enabled","Disabled"]},
     ]},
-    {id:"input", ic:"gamepad-2", nm:"Input", rows:[
+    {id:"btdev", ic:"bluetooth", nm:"Bluetooth & devices", rows:[
+      {ic:"bluetooth", nm:"Bluetooth", sub:"Wireless radio — pair controllers, audio & accessories", t:"cycle", v:["On","Off"], apply:"bt", live:"bt"},
+      {ic:"search", nm:"Add device", sub:"Scan & pair a new controller, headset or accessory", t:"link", go:"gose-bluetooth.html"},
+      {ic:"gamepad-2", nm:"My devices", sub:"Paired devices — connect, disconnect, remove", t:"link", go:"gose-bluetooth.html"},
+      {ic:"target", nm:"Controllers & remap", sub:"Layout and button remapping", t:"link", go:"gose-remap.html"},
+      {ic:"volume-2", nm:"Audio devices", sub:"Wireless headphones & earbuds", t:"link", go:"gose-bluetooth.html"},
+    ]},
+    {id:"controllers", ic:"gamepad-2", nm:"Controllers", rows:[
+      {ic:"target", nm:"Layout & remap", sub:"Pick your controller and remap every button", t:"link", go:"gose-remap.html"},
+      {ic:"mouse", nm:"Stick deadzone", sub:"Use the controller's own deadzone, or override with a level", t:"cycle", v:["Controller default","Low","Medium","High"], i:0},
+      {ic:"power", nm:"Rumble", sub:"Controller vibration feedback", t:"cycle", v:["On","Off"]},
+      {ic:"gamepad-2", nm:"Button prompts", sub:"Icon style shown in menus", t:"cycle", v:["Auto","Xbox","PlayStation","Nintendo"]},
+    ]},
+    {id:"input", ic:"keyboard", nm:"Input", rows:[
       {ic:"gamepad-2", nm:"Default input mode", sub:"PC default is Keyboard; device is Native", t:"cycle", v:["Keyboard","Controller","Native"]},
-      {ic:"target", nm:"Controller layout & remap", sub:"Pick your controller and remap buttons", t:"link", go:"gose-remap.html"},
-      {ic:"mouse", nm:"Stick deadzone", sub:"Ignore tiny stick drift", t:"cycle", v:["Low","Medium","High"], i:1},
       {ic:"keyboard", nm:"On-screen keyboard", sub:"For Wi-Fi passwords / search", t:"cycle", v:["On","Off"]},
     ]},
     {id:"time", ic:"clock", nm:"Time & Language", rows:[
@@ -128,9 +150,12 @@
     ]},
     {id:"power", ic:"battery", nm:"Power & Battery", rows:[
       {ic:"battery", nm:"Battery", sub:"Live from the host laptop (hidden on a desktop PC)", t:"info", val:"—", live:"bat"},
-      {ic:"power", nm:"Power mode", sub:"Trade performance vs battery life", t:"cycle", v:["Balanced","Performance","Battery saver"]},
+      {ic:"power", nm:"Power mode", sub:"Trade performance vs battery life", t:"cycle", v:["Balanced","Performance","Battery saver"], apply:"perf"},
       {ic:"clock", nm:"Sleep after", sub:"Idle time before the screen sleeps", t:"cycle", v:["Never","5 min","10 min","30 min"], i:2},
       {ic:"sun", nm:"Dim on battery", sub:"Lower brightness when unplugged", t:"cycle", v:["On","Off"]},
+      {ic:"moon", nm:"Sleep now", sub:"Suspend the device", t:"action", val:"sleep", post:"/sys/power", body:{action:"sleep"}, act:"Sleeping…"},
+      {ic:"rotate-ccw", nm:"Restart", sub:"Reboot GOSE", t:"action", val:"restart", post:"/sys/power", body:{action:"restart"}, act:"Restarting…", confirm:true},
+      {ic:"power", nm:"Shut down", sub:"Power off the device", t:"action", val:"shutdown", post:"/sys/power", body:{action:"shutdown"}, act:"Shutting down…", confirm:true},
     ]},
     {id:"privacy", ic:"shield", nm:"Privacy & Security", rows:[
       {ic:"shield", nm:"Require approval to join", sub:"Ask you before an agent takes control", t:"cycle", v:["On","Off"]},
@@ -146,11 +171,18 @@
       {ic:"lock", nm:"Sign-in", sub:"How accounts unlock this device", t:"cycle", v:["None","PIN","Password"]},
     ]},
     {id:"ai", ic:"sparkles", nm:"AI & Remote", rows:[
+      {ic:"sparkles", nm:"AI access & players", sub:"Grant or revoke each AI's access — Observe / Play / Admin", t:"link", go:"gose-ai.html"},
       {ic:"plug-zap", nm:"Remote agent control", sub:"Let agents drive this device over the network", t:"cycle", v:["Enabled","Disabled"]},
       {ic:"users", nm:"Allowed agents", sub:"Who may join your session", t:"agents"},
       {ic:"shield", nm:"Require approval to join", sub:"Ask you before an agent takes control", t:"cycle", v:["On","Off"]},
       {ic:"lock", nm:"Pairing token", sub:"Secret agents present to connect", t:"action", val:"reveal", act:"Pairing token shown (demo)"},
       {ic:"volume-2", nm:"Voice", sub:"Agents may speak / listen in-session", t:"cycle", v:["On","Off"]},
+    ]},
+    {id:"system", ic:"hard-drive", nm:"System", rows:[
+      {ic:"hard-drive", nm:"Latest backup", sub:"Most recent GOSE backup saved on this device", t:"info", val:"—", live:"backup"},
+      {ic:"download", nm:"Back up GOSE", sub:"Save accounts, grants, favorites & settings to /userdata/backups — not your games or saves", t:"sys", op:"backup", val:"Back up"},
+      {ic:"rotate-ccw", nm:"Restore", sub:"Roll GOSE back to the latest backup (press twice to confirm)", t:"sys", op:"restore", val:"Restore"},
+      {ic:"triangle-alert", nm:"Reset GOSE", sub:"Wipe accounts, grants & settings to defaults — keeps your games and saves (press twice to confirm)", t:"sys", op:"reset", val:"Reset"},
     ]},
     {id:"about", ic:"info", nm:"About", rows:[
       {ic:"info", nm:"GOSE", sub:"Gaming Operating System Emulator", t:"info", val:"v0.4 (dev)"},
@@ -204,6 +236,8 @@
   function render(){buildRail();buildPane();paintIcons();}
   function showToast(m){toast.textContent=m;toast.classList.add("show");clearTimeout(showToast._t);
     showToast._t=setTimeout(()=>toast.classList.remove("show"),1600);}
+  function post(url,body){return fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body||{})}).catch(()=>{});}
   function change(dir){
     const r=CATS[cat].rows[foc];
     if(r.t==="cycle"){r.i=((r.i||0)+(dir||1)+r.v.length)%r.v.length;buildPane();paintIcons();
@@ -213,8 +247,54 @@
       buildPane();paintIcons();showToast("Theme: "+r.v[r.i]);}
     else if(r.t==="link"){location.href=r.go;}
     else if(r.t==="agents"){showToast("Manage who can join (demo)");}
-    else if(r.t==="action"){showToast(r.act||"OK");}
+    else if(r.t==="action"){
+      if(r.post){
+        if(r.confirm && r._armed!==true){ r._armed=true; showToast("Press again to "+r.nm.toLowerCase());
+          clearTimeout(r._t); r._t=setTimeout(()=>{r._armed=false;},2500); return; }
+        r._armed=false; showToast(r.act||"OK"); post(r.post, r.body||{});
+      } else showToast(r.act||"OK");
+    }
+    else if(r.t==="sys"){doSys(r);}
     else if(r.t==="info"){showToast(r.nm+": "+r.val);}
+  }
+  // System: backup / restore / factory reset — wired to the in-VM server endpoints
+  let LATEST_BACKUP=null;
+  function fmtSize(b){b=b||0;const u=["B","KB","MB","GB"];let i=0;
+    while(b>=1024&&i<u.length-1){b/=1024;i++;}return b.toFixed(b<10&&i>0?1:0)+" "+u[i];}
+  async function refreshBackups(){
+    try{const x=await(await fetch("/system/backups",{cache:"no-store"})).json();
+      const list=(x&&x.backups)||[]; LATEST_BACKUP=list[0]||null;
+      setLive("backup", LATEST_BACKUP?(LATEST_BACKUP.file+" · "+fmtSize(LATEST_BACKUP.size))
+                                     :"None yet — back up to create one");
+    }catch(e){}
+  }
+  async function postJSON(url,body){
+    try{const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body||{})});return await r.json();}catch(e){return null;}
+  }
+  async function doSys(r){
+    if(r.op==="backup"){
+      showToast("Backing up…");
+      const x=await postJSON("/system/backup",{});
+      if(x&&x.ok){showToast("Backup saved: "+x.file+" ("+fmtSize(x.size)+")");refreshBackups();}
+      else showToast("Backup failed: "+((x&&x.error)||"error"));
+    } else if(r.op==="restore"){
+      if(!LATEST_BACKUP){showToast("No backup yet — back up first");return;}
+      if(r._armed!==true){r._armed=true;showToast("Press again to restore "+LATEST_BACKUP.file);
+        clearTimeout(r._t);r._t=setTimeout(()=>{r._armed=false;},3000);return;}
+      r._armed=false;showToast("Restoring "+LATEST_BACKUP.file+"…");
+      const x=await postJSON("/system/restore",{file:LATEST_BACKUP.file});
+      showToast((x&&x.ok)?("Restored "+LATEST_BACKUP.file+" — restart to apply")
+                         :("Restore failed: "+((x&&x.error)||"")));
+    } else if(r.op==="reset"){
+      if(r._armed!==true){r._armed=true;
+        showToast("Reset wipes accounts & settings (keeps games). Press again to confirm");
+        clearTimeout(r._t);r._t=setTimeout(()=>{r._armed=false;},3500);return;}
+      r._armed=false;showToast("Resetting GOSE…");
+      const x=await postJSON("/system/factory_reset",{confirm:"RESET"});
+      if(x&&x.ok){showToast("GOSE reset — safety backup: "+(x.safety_backup||"none"));refreshBackups();}
+      else showToast("Reset failed: "+((x&&x.error)||""));
+    }
   }
   // wallpaper / timezone / clock-format actually persist + apply (desktop reads these)
   function applyRow(r){
@@ -229,7 +309,24 @@
       localStorage.setItem("gose-live",names[r.i||0]);showToast("Live wallpaper: "+r.v[r.i]);}
     else if(r.apply==="sounds"){const off=(r.i===1);localStorage.setItem("gose-sounds",off?"off":"on");
       showToast("UI sounds: "+(off?"Off":"On"));if(!off&&window.GOSE&&GOSE.sound)GOSE.sound("select");}
+    else if(r.apply==="bt"){const on=(r.i===0);post("/bt",{action:"power",on});  // v:["On","Off"]
+      showToast("Bluetooth: "+(on?"On":"Off"));}
+    else if(r.apply==="airplane"){const on=(r.i===1);post("/bt",{action:"power",on:!on});  // v:["Off","On"]
+      const bt=findRow("bt","apply"); if(bt)bt.i=on?1:0; buildPane(); paintIcons();
+      showToast("Airplane mode: "+(on?"On — radios off":"Off"));}
+    else if(r.apply==="perf"){const modes=["balanced","performance","battery"];post("/sys/perf",{mode:modes[r.i||0]});
+      showToast("Power mode: "+r.v[r.i]);}
+    else if(r.apply==="fps"){const on=(r.i===1);post("/game/fps",{on});  // v:["Off","On"]
+      showToast("FPS counter: "+(on?"On — shows next game launch":"Off"));}
+    else if(r.apply==="a11y_scale"){localStorage.setItem("gose-ui-scale",["1","1.15","1.3","1.5"][r.i||0]);a11y();showToast("Text size: "+r.v[r.i]);}
+    else if(r.apply==="a11y_contrast"){localStorage.setItem("gose-contrast",r.i===1?"on":"off");a11y();showToast("High contrast: "+r.v[r.i]);}
+    else if(r.apply==="a11y_bold"){localStorage.setItem("gose-bold",r.i===1?"on":"off");a11y();showToast("Bold text: "+r.v[r.i]);}
+    else if(r.apply==="a11y_cb"){localStorage.setItem("gose-cb",["off","friendly","deut","prot","trit"][r.i||0]);a11y();showToast("Color filter: "+r.v[r.i]);}
+    else if(r.apply==="a11y_motion"){localStorage.setItem("gose-motion",r.i===1?"on":"off");a11y();showToast("Reduce motion: "+r.v[r.i]);}
+    else if(r.apply==="a11y_opaque"){localStorage.setItem("gose-opaque",r.i===1?"on":"off");a11y();showToast("Reduce transparency: "+r.v[r.i]);}
+    else if(r.apply==="a11y_focus"){localStorage.setItem("gose-focus",r.i===1?"on":"off");a11y();showToast("Larger focus: "+r.v[r.i]);}
   }
+  function a11y(){ if(window.GOSE&&GOSE.a11y)GOSE.a11y.apply(); }
   function findRow(tag,key){for(const c of CATS)for(const r of c.rows)if(r[key]===tag)return r;return null;}
   (function initPersist(){
     const wp=parseInt(localStorage.getItem("gose-wp")||"0",10), wi=isNaN(wp)?0:wp;
@@ -241,6 +338,14 @@
     const rl=findRow("live","apply"); const lv=["off","aurora","starfield","particles","nebula"].indexOf(localStorage.getItem("gose-live"));
     if(rl&&lv>=0)rl.i=lv;
     const rsnd=findRow("sounds","apply"); if(rsnd)rsnd.i=(localStorage.getItem("gose-sounds")==="off")?1:0;
+    const onoff=(k)=>localStorage.getItem(k)==="on"?1:0;
+    const rsc=findRow("a11y_scale","apply"); if(rsc){const k=["1","1.15","1.3","1.5"].indexOf(localStorage.getItem("gose-ui-scale")||"1");rsc.i=k<0?0:k;}
+    const rct=findRow("a11y_contrast","apply"); if(rct)rct.i=onoff("gose-contrast");
+    const rbd=findRow("a11y_bold","apply"); if(rbd)rbd.i=onoff("gose-bold");
+    const rcb=findRow("a11y_cb","apply"); if(rcb){const k=["off","friendly","deut","prot","trit"].indexOf(localStorage.getItem("gose-cb")||"off");rcb.i=k<0?0:k;}
+    const rmo=findRow("a11y_motion","apply"); if(rmo)rmo.i=onoff("gose-motion");
+    const rop=findRow("a11y_opaque","apply"); if(rop)rop.i=onoff("gose-opaque");
+    const rfo=findRow("a11y_focus","apply"); if(rfo)rfo.i=onoff("gose-focus");
   })();
   // live readouts in Network / Power / About, pulled from the same /status.json the desktop uses
   function setLive(tag,val){let chg=false;
@@ -255,10 +360,23 @@
       setLive("bat", d.has_battery?(d.battery_pct+"%"+(d.charging?" · charging":" · on battery")):"No battery (desktop PC)");
       setLive("cpu", d.ok?(d.cpu_pct+"% load"):"—");
       setLive("mem", d.ok?(d.mem_used_gb+" / "+d.mem_total_gb+" GB ("+d.mem_pct+"%)"):"—");
+      try{const f=await(await fetch("/game/fps",{cache:"no-store"})).json();   // sync the FPS-counter toggle to the real config
+        const fr=findRow("fps","apply");
+        if(fr && typeof f.on==="boolean"){const idx=f.on?1:0;
+          if(fr.i!==idx){fr.i=idx; if(CATS[cat].id==="display"){buildPane();paintIcons();}}}
+      }catch(e){}
+      try{const b=await(await fetch("/bt/status",{cache:"no-store"})).json();   // sync the Bluetooth toggle to the real radio
+        const br=findRow("bt","apply");
+        if(br && b.adapter && typeof b.powered==="boolean"){const idx=b.powered?0:1;
+          if(br.i!==idx){br.i=idx; if(CATS[cat].id==="btdev"){buildPane();paintIcons();}}}
+      }catch(e){}
     }catch(e){}
   }
   pollLive(); setInterval(pollLive, 3000);
+  refreshBackups();   // populate the System > Latest backup readout
   function moveCat(d){cat=(cat+d+CATS.length)%CATS.length;foc=0;render();}
+  // tab-switch (L1/R1 + [ ] / Tab): change category AND drop focus into its content so D-pad moves within the tab
+  function switchCat(d){cat=(cat+d+CATS.length)%CATS.length;foc=0;zone="pane";render();}
   function moveFoc(d){const n=CATS[cat].rows.length;foc=(foc+d+n)%n;buildPane();paintIcons();
     const f=pane.querySelector(".set.focus"); if(f)f.scrollIntoView({block:"nearest"});}
 
@@ -266,9 +384,9 @@
   function toRail(){zone="rail";render();}
   addEventListener("keydown",e=>{const k=e.key;
     if(k==="Escape"){location.href="gose-home.html";}
-    else if(k==="["||k==="PageUp"){zone="rail";moveCat(-1);}      // global category prev
-    else if(k==="]"||k==="PageDown"){zone="rail";moveCat(1);}      // global category next
-    else if(k==="Tab"){zone="rail";moveCat(e.shiftKey?-1:1);}
+    else if(k==="["||k==="PageUp"){switchCat(-1);}      // global tab prev → land in content
+    else if(k==="]"||k==="PageDown"){switchCat(1);}      // global tab next → land in content
+    else if(k==="Tab"){switchCat(e.shiftKey?-1:1);}
     else if(zone==="rail"){
       if(k==="ArrowDown")moveCat(1);
       else if(k==="ArrowUp")moveCat(-1);
@@ -285,7 +403,7 @@
 
   let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
     if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if(tap(5)){zone="rail";moveCat(1);} if(tap(4)){zone="rail";moveCat(-1);}   // L1/R1 category
+      if(tap(5)){switchCat(1);} if(tap(4)){switchCat(-1);}   // L1/R1 switch tab → land in tab content (D-pad then moves within)
       if(zone==="rail"){
         if(tap(13))moveCat(1); if(tap(12))moveCat(-1);
         if(tap(15)||tap(0))enterPane();
@@ -300,4 +418,5 @@
 
   render();
 </script>
+<script src="assets/a11y.js"></script>
 </body></html>

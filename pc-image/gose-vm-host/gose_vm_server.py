@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # In-VM server: serves the GOSE UI + /status.json with REAL telemetry from the
 # local agent (127.0.0.1:8731 = loopback in-guest = no token needed).
-import http.server, socketserver, json, socket, functools, os, urllib.request, mimetypes, shutil, subprocess, threading, collections, time
+import http.server, socketserver, json, socket, functools, os, urllib.request, mimetypes, shutil, subprocess, threading, collections, time, secrets
 import logging, logging.handlers, traceback, re
 ROOT = "/userdata/gose-ui"
 FS_ROOT = "/userdata"   # Files app is rooted here (the data partition)
@@ -45,7 +45,9 @@ def rate_ok(key, limit, window):
 _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer": (20, 60),
            "/net/scan": (10, 60), "/launch": (30, 60), "/store/install": (20, 60),
            "/splice/cut": (10, 120), "/fs/op": (60, 60), "/scrape": (6, 120),
-           "/store/uninstall": (15, 60)}
+           "/store/uninstall": (15, 60), "/ai/request": (6, 60),
+           "/game/screenshot": (30, 60), "/game/record/toggle": (12, 60),
+           "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300)}
 
 _SKIPDIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_media"}
 _SKIPEXT = {".txt", ".xml", ".cfg", ".dat", ".jpg", ".jpeg", ".png", ".mp4", ".srm", ".state"}
@@ -70,6 +72,7 @@ def system_logo_path(system):
 
 def list_games():
     try:
+        favset = _fav_set()
         systems = []
         for sysname in sorted(os.listdir(ROMS)):
             d = os.path.join(ROMS, sysname)
@@ -92,7 +95,8 @@ def list_games():
                 if os.path.splitext(f)[1].lower() in _SKIPEXT:
                     continue
                 stem = os.path.splitext(f)[0]
-                games.append({"name": stem, "img": find_img(stem)})
+                games.append({"name": stem, "img": find_img(stem),
+                              "fav": (sysname, stem) in favset})
             if games:
                 systems.append({"system": sysname, "name": _SYS.get(sysname, sysname),
                                 "logo": ("/syslogo?system=" + sysname) if system_logo_path(sysname) else None,
@@ -139,9 +143,10 @@ def _playtime():
 
 def recent_games():
     try:
-        rec = json.load(open(RECENT_F)); pt = _playtime()
+        rec = json.load(open(RECENT_F)); pt = _playtime(); favset = _fav_set()
         for r in rec:
             r["secs"] = pt.get(r.get("system", "") + "/" + r.get("game", ""), 0)
+            r["fav"] = (r.get("system", ""), r.get("game", "")) in favset
         return {"ok": True, "games": rec}
     except Exception:
         return {"ok": True, "games": []}
@@ -288,6 +293,39 @@ def _safe(p):
     rp = os.path.realpath(p or FS_ROOT)
     return rp if (rp == FS_ROOT or rp.startswith(FS_ROOT + "/")) else None
 
+# ---- OS-protection: never let the Files app / terminal destroy boot-critical paths ----
+# A safety net so the OS can't be broken by deleting system files (NOT a hardened sandbox —
+# that's the landrun/bubblewrap work in the security wave; this stops the careless/accidental case).
+PROTECTED_PREFIXES = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/boot", "/etc", "/sys",
+                      "/proc", "/dev", "/run", "/var",
+                      "/userdata/gose-ui", "/userdata/system/gose")   # the GOSE shell + agent/tokens
+PROTECTED_EXACT = {"/", "/userdata", "/userdata/system", "/userdata/system/batocera.conf"}
+
+def _is_protected(path):
+    try:
+        p = os.path.realpath(path)
+    except Exception:
+        return True   # unresolvable → refuse (fail safe)
+    if p in PROTECTED_EXACT:
+        return True
+    return any(p == pre or p.startswith(pre + "/") for pre in PROTECTED_PREFIXES)
+
+_DESTRUCTIVE = re.compile(r'\b(rm|rmdir|unlink|shred|srm|mv|dd|mkfs\w*|wipefs|truncate|fdisk|sgdisk|parted)\b')
+_CATASTROPHIC = re.compile(r'rm\s+-[a-z]*\s*(/|/\*)(\s|$)|:\(\)\s*\{\s*:\|:\s*&\s*\}|mkfs|dd\s+of=/dev|>\s*/dev/sd')
+
+def _cmd_is_dangerous(cmd, cwd="/"):
+    """Heuristic: block obviously-destructive shell commands aimed at boot-critical paths."""
+    c = cmd or ""
+    if _CATASTROPHIC.search(c):
+        return "that command could brick the OS"
+    if _DESTRUCTIVE.search(c):
+        for tok in re.findall(r'(/[^\s\'";|&)]*)', c):     # absolute protected targets
+            if _is_protected(tok):
+                return "it touches a protected system path (%s)" % tok
+        if _is_protected(cwd):                              # relative destructive op in a protected dir
+            return "it's a destructive command inside a protected directory (%s)" % cwd
+    return None
+
 def _kind(name, isdir):
     if isdir:
         return "dir"
@@ -399,6 +437,8 @@ def fs_op(payload):
     op = payload.get("op"); src = _safe(payload.get("path"))
     if not src:
         return {"ok": False, "error": "bad path"}
+    if op in ("delete", "move", "write") and _is_protected(src):
+        return {"ok": False, "error": "protected: that's a system file GOSE needs — can't delete or change it"}
     try:
         if op == "delete":
             if os.path.isdir(src):
@@ -757,6 +797,58 @@ def set_game_options(payload):
     LOG.info("game options set: %s", k)
     return {"ok": True, "key": k}
 
+# Our AI virtual controllers present as Xbox 360 pads (agent input.py). EmulationStation normally
+# tells Batocera's launcher which controllers exist; since the GOSE shell replaced ES, we must pass
+# those per-player args ourselves or the pad is detected-but-unbound (= AI can't actually play). The
+# Xbox-360 GUID matches es_input.cfg so the launcher generates real button mappings.
+_XBOX_GUID = "030000005e0400008e02000010010000"   # "Microsoft Xbox 360 pad" (in es_input.cfg)
+
+_NON_PADS = ("batocera hotkeys", "evmapy")   # uinput helpers that expose js but aren't players
+
+def _sdl_guid(bus, vendor, product, version):
+    """SDL2 joystick GUID from the kernel I: line ids (LE u16 fields, zero crc/driver),
+    matching the format in es_input.cfg / gamecontrollerdb (e.g. the Xbox 360 constant)."""
+    def le(v):
+        return "%02x%02x" % (v & 0xFF, (v >> 8) & 0xFF)
+    return le(bus) + "0000" + le(vendor) + "0000" + le(product) + "0000" + le(version) + "0000"
+
+def _virtual_pad_args(max_players=5):
+    """Build emulatorlauncher -pN controller args (the job EmulationStation used to do).
+    Players = HUMAN physical pads first, then our uinput virtual pads (AI seats, identified
+    by phys 'py-evdev-uinput'), so a human always lands on the lowest player slot when one
+    is plugged in. NOTE: a physical pad's GUID must exist in the launcher's controller DB to
+    generate binds — true for common pads (same constraint ES had); the AI pads guarantee it
+    by masquerading as Xbox 360."""
+    try:
+        txt = open("/proc/bus/input/devices").read()
+    except Exception:
+        return []
+    all_js, virt, phys = [], [], []
+    for blk in txt.split("\n\n"):
+        jss = re.findall(r"js(\d+)", blk); evs = re.findall(r"event(\d+)", blk)
+        if not jss:
+            continue
+        all_js.append(int(jss[0]))
+        if not evs:
+            continue
+        entry = (int(jss[0]), "/dev/input/event" + evs[0])
+        name_m = re.search(r'Name="([^"]*)"', blk)
+        name = name_m.group(1) if name_m else "pad"
+        if "py-evdev-uinput" in blk:
+            virt.append(entry + (_XBOX_GUID, "Microsoft Xbox 360 pad"))
+        elif not any(s in name.lower() for s in _NON_PADS):
+            ids = re.search(r"Bus=(\w+) Vendor=(\w+) Product=(\w+) Version=(\w+)", blk)
+            guid = (_sdl_guid(*(int(x, 16) for x in ids.groups())) if ids else _XBOX_GUID)
+            phys.append(entry + (guid, name))
+    all_js = sorted(set(all_js)); virt.sort(); phys.sort()
+    args = []
+    for n, (js, path, guid, name) in enumerate((phys + virt)[:max_players], start=1):
+        idx = all_js.index(js) if js in all_js else (n - 1)
+        args += ["-p%dindex" % n, str(idx), "-p%dguid" % n, guid,
+                 "-p%dname" % n, name, "-p%ddevicepath" % n, path,
+                 "-p%dnbbuttons" % n, "11", "-p%dnbhats" % n, "1", "-p%dnbaxes" % n, "6"]
+    return args
+
 def launch_game(system, game):
     d = os.path.join(ROMS, system)
     if not os.path.isdir(d):
@@ -768,7 +860,7 @@ def launch_game(system, game):
     if not rom:
         return {"ok": False, "error": "rom not found for " + game}
     try:
-        _spawn(["emulatorlauncher", "-system", system, "-rom", rom])
+        _spawn(["emulatorlauncher"] + _virtual_pad_args() + ["-system", system, "-rom", rom])
         record_recent(system, game)
         return {"ok": True, "rom": rom}
     except Exception as e:
@@ -781,6 +873,11 @@ def term_exec(cmd):
     cmd = (cmd or "").strip()
     if not cmd:
         return {"ok": True, "out": "", "cwd": _TERM["cwd"]}
+    danger = _cmd_is_dangerous(cmd, _TERM["cwd"])
+    if danger:
+        return {"ok": False, "out": "⛔ Blocked by OS-protection: %s.\n"
+                "(GOSE guards boot-critical system files so the OS can't be broken.)" % danger,
+                "cwd": _TERM["cwd"], "code": 1}
     # CMD / PowerShell-style aliases so familiar commands work (it's bash underneath)
     prelude = ('dir(){ ls -la "$@"; }; copy(){ cp -r "$@"; }; move(){ mv "$@"; }; '
                'del(){ rm "$@"; }; erase(){ rm "$@"; }; type(){ cat "$@"; }; '
@@ -834,6 +931,9 @@ def launch_app(payload):
     if app and app in _APPS:
         argv = _APPS[app]
     elif cmd:
+        danger = _cmd_is_dangerous(cmd)
+        if danger:
+            return {"ok": False, "error": "blocked by OS-protection: %s" % danger}
         argv = ["/bin/sh", "-c", cmd]   # e.g. emulatorlauncher / retroarch invocations
     else:
         return {"ok": False, "error": "no app or cmd"}
@@ -1063,7 +1163,8 @@ def ai_players():
     out = []
     for name, info in _ai_load().items():
         out.append({"name": name, "online": (now - info.get("t", 0)) < 30,
-                    "mode": info.get("mode", "watching"), "since": info.get("since")})
+                    "mode": info.get("mode", "watching"), "since": info.get("since"),
+                    "tier": ai_tier(name)})
     out.sort(key=lambda p: (not p["online"], p["name"]))
     return {"ok": True, "players": out}
 
@@ -1088,6 +1189,159 @@ def ai_leave(payload):
             write_json_atomic(AI_F, reg)
     LOG.info("AI leave: %s", name)
     return {"ok": True}
+
+# ---- AI permission grants (Zeke's UAC-style model — a human grants a tier; an AI can REQUEST
+#      but never self-elevate; revoke is instant. Human-facing surface = AI Hub + widget. See docs/16.
+#      This is the persisted grant store; per-tool token enforcement (Capframe/macaroons) is the next phase. ----
+AI_GRANTS_F = "/userdata/gose-ui/ai_grants.json"
+AI_TIERS = ["observe", "play", "admin"]   # observe = read-only (default), play = games, admin = full OS
+
+def _ai_grants_load():
+    try:
+        return json.load(open(AI_GRANTS_F))
+    except Exception:
+        return {}
+
+def ai_tier(name):
+    """Effective tier for an AI: stored grant (honoring optional expiry) or the safe default 'observe'."""
+    g = _ai_grants_load().get(name)
+    if not g:
+        return "observe"
+    exp = g.get("expires")
+    if exp and time.time() > exp:
+        return "observe"          # an expired grant silently falls back to observe
+    t = g.get("tier", "observe")
+    return t if t in AI_TIERS else "observe"
+
+# The agent (port 8731) reads this token->tier map and ENFORCES it. Granting here writes it,
+# so a Hub grant actually gates what that AI can do — the full loop, end to end. (docs/16)
+AI_TOKENS_F = os.environ.get("GOSE_AGENT_AI_TOKENS", "/userdata/system/gose/ai_tokens.json")
+
+def _sync_ai_tokens(g):
+    """Rebuild the agent's token->{name,tier[,seat]} map from the grants so grant/revoke
+    enforces at once. seat pins a play-tier AI to one controller seat (agent _pin_seat)."""
+    toks = {rec["token"]: ({"name": name, "tier": rec["tier"], "seat": rec["seat"]}
+                           if rec.get("seat") else {"name": name, "tier": rec["tier"]})
+            for name, rec in g.items() if rec.get("token") and rec.get("tier") in AI_TIERS}
+    try:
+        os.makedirs(os.path.dirname(AI_TOKENS_F), exist_ok=True)
+        write_json_atomic(AI_TOKENS_F, toks)
+    except Exception as e:
+        LOG.warning("ai_tokens sync failed: %s", e)
+
+def ai_grants():
+    g = _ai_grants_load()
+    return {"ok": True, "grants": {n: {"tier": ai_tier(n), "granted_at": g[n].get("granted_at"),
+                                       "expires": g[n].get("expires"), "token": g[n].get("token"),
+                                       "seat": g[n].get("seat")} for n in g}}
+
+def ai_grant(payload):
+    name, tier = payload.get("name"), payload.get("tier")
+    if not name or tier not in AI_TIERS:
+        return {"ok": False, "error": "name + valid tier required"}
+    with _AI_LOCK:
+        g = _ai_grants_load()
+        if tier == "observe":
+            g.pop(name, None)     # observe is the floor — drop the grant (== revoke)
+        else:
+            prev = g.get(name, {})
+            days = payload.get("expires_days")    # None/0 = permanent until revoked (the default)
+            seat = payload.get("seat")            # optional controller seat (1-4) — pins the AI to it
+            try:
+                seat = int(seat) if seat else None
+                if seat is not None and not 1 <= seat <= 4:
+                    seat = None
+            except (TypeError, ValueError):
+                seat = None
+            g[name] = {"tier": tier, "granted_at": int(time.time()),
+                       "expires": (int(time.time()) + int(days) * 86400) if days else None,
+                       "seat": seat,
+                       "token": prev.get("token") or secrets.token_hex(16)}  # stable per-AI token
+        write_json_atomic(AI_GRANTS_F, g)
+        _sync_ai_tokens(g)        # <-- push the token->tier map to the agent so it enforces NOW
+    LOG.info("AI grant: %s -> %s (token issued + enforced)", name, tier)
+    return {"ok": True, "name": name, "tier": tier, "token": g.get(name, {}).get("token"),
+            "seat": g.get(name, {}).get("seat")}
+
+def ai_revoke(payload):
+    name = payload.get("name")
+    with _AI_LOCK:
+        g = _ai_grants_load()
+        existed = g.pop(name, None) is not None
+        if existed:
+            write_json_atomic(AI_GRANTS_F, g)
+            _sync_ai_tokens(g)    # <-- token vanishes from the agent's map → access dies immediately
+    LOG.info("AI revoke: %s -> observe (token removed)", name)
+    return {"ok": True, "name": name, "tier": "observe", "revoked": existed}
+
+# ---- AI pairing requests: an unauthenticated AI may ASK for a tier; the owner approves or
+#      denies it in the AI Hub. A request NEVER grants anything by itself — approval is the
+#      owner calling /ai/grant. Stored separate from grants; rate-limited at the route. ----
+AI_REQUESTS_F = "/userdata/gose-ui/ai_requests.json"
+_AI_REQ_MAX = 8         # pending cap — a stranger can't flood the owner's screen
+
+def _ai_requests_load():
+    try:
+        return json.load(open(AI_REQUESTS_F))
+    except Exception:
+        return {}
+
+def ai_request(payload):
+    name = (payload.get("name") or "").strip()[:32]
+    tier = payload.get("tier")
+    if not name or not re.match(r"^[\w][\w .\-]*$", name):
+        return {"ok": False, "error": "name required (letters/digits/space/.-_, max 32)"}
+    if tier not in AI_TIERS:
+        return {"ok": False, "error": "tier must be one of %s" % AI_TIERS}
+    with _AI_LOCK:
+        reqs = _ai_requests_load()
+        if name not in reqs and len(reqs) >= _AI_REQ_MAX:
+            return {"ok": False, "error": "too many pending requests — ask the owner to clear some"}
+        reqs[name] = {"tier": tier, "ts": int(time.time())}
+        write_json_atomic(AI_REQUESTS_F, reqs)
+    LOG.info("AI pairing request: %s asks for %s (pending owner approval)", name, tier)
+    return {"ok": True, "name": name, "tier": tier, "pending": True}
+
+def ai_requests():
+    reqs = _ai_requests_load()
+    out = [{"name": n, "tier": r.get("tier", "observe"), "ts": r.get("ts")} for n, r in reqs.items()]
+    out.sort(key=lambda r: r["ts"] or 0)
+    return {"ok": True, "requests": out}
+
+def ai_request_clear(payload):
+    name = (payload.get("name") or "").strip()[:32]
+    with _AI_LOCK:
+        reqs = _ai_requests_load()
+        existed = reqs.pop(name, None) is not None
+        if existed:
+            write_json_atomic(AI_REQUESTS_F, reqs)
+    return {"ok": True, "name": name, "cleared": existed}
+
+# ---- AI audit: the agent appends one JSON line per guest-AI op (allowed or denied) to
+#      ai_audit.jsonl; this just tails it for the Hub's Activity strip. ----
+AI_AUDIT_F = "/userdata/system/gose/ai_audit.jsonl"
+
+def ai_audit(limit=100):
+    try:
+        limit = max(1, min(int(limit), 500))
+    except (TypeError, ValueError):
+        limit = 100
+    entries = []
+    try:
+        with open(AI_AUDIT_F, "rb") as fh:
+            fh.seek(0, 2)
+            fh.seek(max(0, fh.tell() - 96 * 1024))   # tail only — never load a big file whole
+            lines = fh.read().decode("utf-8", "replace").splitlines()
+        for ln in lines[-limit:]:
+            try:
+                e = json.loads(ln)
+                if isinstance(e, dict):
+                    entries.append(e)
+            except Exception:
+                pass                                  # torn first line after the seek — skip
+    except OSError:
+        pass                                          # no audit file yet — empty is honest
+    return {"ok": True, "entries": entries[-limit:]}
 
 # ---- Screenshot (works anywhere, incl. GL games — frame comes from the host) ----
 def capture_shot(payload):
@@ -1138,21 +1392,358 @@ def guide_toggle():
 _GAME_PATS = ["retroarch", "emulatorlauncher", "ppsspp", "pcsx", "dolphin-emu", "mupen64",
               "duckstation", "flycast", "mednafen", "melonds", "scummvm", "bwrap", "glxgears"]
 
+def _nci(cmd, want_reply=False, timeout=1.0):
+    """Send a RetroArch Network Command Interface message over UDP 55355.
+    want_reply reads one datagram back (for GET_STATUS); else fire-and-forget."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(timeout)
+    try:
+        s.sendto(cmd.encode(), ("127.0.0.1", 55355))
+        if not want_reply:
+            return None
+        data, _ = s.recvfrom(8192)
+        return data.decode("utf-8", "replace").strip()
+    except socket.timeout:
+        return None
+    except Exception:
+        return None
+    finally:
+        s.close()
+
+def _resume_game():
+    # hide the Guide → resumes the (SIGSTOP'd) game so RetroArch processes the queued NCI packet
+    try: subprocess.run(["pkill", "-USR2", "-f", "overlay_window.py"], capture_output=True, timeout=4)
+    except Exception: pass
+
 def game_state(action):
-    # save/load emulator state via RetroArch's network command interface (UDP 55355).
+    # save/load emulator state via RetroArch's NCI (UDP 55355), to the CURRENT slot.
     # Works while the game is SIGSTOP'd (Guide open): the packet queues until the game resumes.
     cmd = {"save": "SAVE_STATE", "load": "LOAD_STATE"}.get(action)
     if not cmd:
         return {"ok": False, "error": "bad action"}
+    _nci(cmd); _resume_game()
+    return {"ok": True, "action": action}
+
+def game_slot(direction):
+    # step the active save slot (RetroArch shows the slot # on-screen). NCI has no "set slot N",
+    # so next/prev is the reliable primitive — same as RetroArch's own F6/F7.
+    cmd = {"next": "STATE_SLOT_PLUS", "prev": "STATE_SLOT_MINUS"}.get(direction)
+    if not cmd:
+        return {"ok": False, "error": "bad direction"}
+    _nci(cmd); _resume_game()
+    return {"ok": True, "direction": direction}
+
+def game_running():
+    # GET_STATUS → "GET_STATUS PLAYING <system>,<game>,crc32=<hex>" (or no/empty reply when idle)
+    r = _nci("GET_STATUS", want_reply=True, timeout=1.2)
+    if not r or "PLAYING" not in r.upper():
+        return {"ok": True, "running": False, "raw": r}
+    after = r.split("PLAYING", 1)[1].strip()
+    parts = [p.strip() for p in after.split(",")]
+    crc = next((p.split("=", 1)[1] for p in parts if p.startswith("crc32=")), "")
+    return {"ok": True, "running": True,
+            "system": parts[0] if parts else "", "game": parts[1] if len(parts) > 1 else "", "crc32": crc}
+
+def game_state_slots(system, game):
+    # list savestate slots on disk for a ROM: /userdata/saves/<system>/<game>.state[N] (+ .png thumb).
+    import glob, re
+    if not system or not game:
+        gr = game_running()
+        system = system or gr.get("system", "")
+        game = game or gr.get("game", "")
+    out = []
+    d = os.path.join("/userdata/saves", system or "")
+    if game and os.path.isdir(d):
+        for f in glob.glob(glob.escape(os.path.join(d, game)) + ".state*"):
+            if f.endswith(".png"):
+                continue
+            m = re.search(r"\.state(\d*)$", f)
+            if not m:
+                continue
+            png = f + ".png"
+            out.append({"slot": int(m.group(1)) if m.group(1) else 0,
+                        "mtime": int(os.path.getmtime(f)), "size": os.path.getsize(f),
+                        "thumb_path": png if os.path.isfile(png) else None})
+        out.sort(key=lambda x: x["slot"])
+    return {"ok": True, "system": system, "game": game, "slots": out}
+
+# ---- Screenshots / recording / gallery (player-facing capture via RetroArch NCI) ----
+SHOTS_DIR = "/userdata/screenshots"
+GALLERY_DIRS = (SHOTS_DIR, "/userdata/home/Pictures", "/userdata/home/Videos")
+_IMG_EXT = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+_VID_EXT = (".mp4", ".mkv", ".webm", ".avi", ".mov")
+_recording = {"on": False}   # RetroArch RECORDING_TOGGLE has no status query → track the toggle
+
+def _gallery_url(path):
+    from urllib.parse import quote
+    return "/fs/file?path=" + quote(path)
+
+def game_screenshot():
+    # RetroArch NCI SCREENSHOT → writes a PNG into screenshot_directory (/userdata/screenshots).
+    # Snapshot the dir before/after so we return the EXACT new file (NCI is fire-and-forget).
+    os.makedirs(SHOTS_DIR, exist_ok=True)
+    try: before = set(os.listdir(SHOTS_DIR))
+    except Exception: before = set()
+    _nci("SCREENSHOT"); _resume_game()
+    newf = None
+    for _ in range(25):                      # poll up to ~2.5s for the PNG to land on disk
+        time.sleep(0.1)
+        try: now = set(os.listdir(SHOTS_DIR))
+        except Exception: now = before
+        added = [f for f in (now - before) if os.path.splitext(f)[1].lower() in _IMG_EXT]
+        if added:
+            newf = max(added, key=lambda f: os.path.getmtime(os.path.join(SHOTS_DIR, f)))
+            break
+    if not newf:
+        return {"ok": False, "error": "no screenshot produced (is a game running?)"}
+    p = os.path.join(SHOTS_DIR, newf)
+    return {"ok": True, "name": newf, "path": p, "url": _gallery_url(p)}
+
+def game_record_toggle():
+    # RetroArch NCI RECORDING_TOGGLE → start/stop an .mkv in recording_output_directory.
+    gr = game_running()
+    if not gr.get("running") and not _recording["on"]:
+        return {"ok": False, "error": "no game running"}
+    _nci("RECORDING_TOGGLE"); _resume_game()
+    _recording["on"] = not _recording["on"]
+    return {"ok": True, "recording": _recording["on"]}
+
+def game_gallery():
+    # list captured screenshots + clips across the capture dirs (path-confined), newest first
+    items = []
+    for d in GALLERY_DIRS:
+        try: names = os.listdir(d)
+        except Exception: continue
+        for f in names:
+            ext = os.path.splitext(f)[1].lower()
+            kind = "image" if ext in _IMG_EXT else ("video" if ext in _VID_EXT else None)
+            if not kind:
+                continue
+            p = os.path.join(d, f)
+            if not _safe(p) or not os.path.isfile(p):
+                continue
+            try: stt = os.stat(p)
+            except Exception: continue
+            items.append({"name": f, "path": p, "kind": kind, "size": stt.st_size,
+                          "mtime": int(stt.st_mtime), "url": _gallery_url(p)})
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    return {"ok": True, "items": items, "recording": _recording["on"]}
+
+# ---- Favorites (player-pinned games) ----
+FAVORITES_F = "/userdata/gose-ui/favorites.json"
+
+def _fav_load():
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.sendto(cmd.encode(), ("127.0.0.1", 55355)); s.close()
-        # hide the Guide → resumes the (SIGSTOP'd) game so RetroArch processes the queued packet
-        try: subprocess.run(["pkill", "-USR2", "-f", "overlay_window.py"], capture_output=True, timeout=4)
-        except Exception: pass
-        return {"ok": True, "action": action}
+        v = json.load(open(FAVORITES_F))
+        return v if isinstance(v, list) else []
+    except Exception:
+        return []
+
+def _fav_set():
+    return {(r.get("system", ""), r.get("game", "")) for r in _fav_load()}
+
+def game_favorite(payload):
+    system = (payload or {}).get("system", ""); game = (payload or {}).get("game", "")
+    if not system or not game:
+        return {"ok": False, "error": "system+game required"}
+    on = (payload or {}).get("on", True)
+    favs = [r for r in _fav_load() if not (r.get("system") == system and r.get("game") == game)]
+    if on:
+        favs.insert(0, {"system": system, "game": game, "t": int(time.time())})
+    write_json_atomic(FAVORITES_F, favs)
+    return {"ok": True, "favorite": bool(on), "count": len(favs)}
+
+def favorites_json():
+    out = []
+    for r in _fav_load():
+        s, g = r.get("system", ""), r.get("game", "")
+        out.append({"system": s, "game": g, "name": g, "sysname": _SYS.get(s, s),
+                    "img": _game_img(s, g), "fav": True})
+    return {"ok": True, "games": out}
+
+# ---- stranger's-hands resilience: boot-success counter + backup / restore / factory reset (gap J1/J2) ----
+# Boot counter: the watchdog INCREMENTS .boot_attempts every time it (re)starts the UI server; this
+# server CLEARS it the moment it serves the home page (proof the UI booted far enough to render).
+# A crash-loop that never reaches home lets the count climb -> watchdog trips safe mode at the threshold.
+BOOT_ATTEMPTS_F = ROOT + "/.boot_attempts"
+BACKUP_DIR = "/userdata/backups"
+# What a backup captures (relative to /userdata): the whole GOSE UI/state dir minus caches/logs,
+# plus the AI account tokens + audit. NEVER roms, NEVER saves, NEVER the OS.
+_BACKUP_INCLUDE = ["gose-ui", "system/gose/ai_tokens.json", "system/gose/ai_audit.jsonl"]
+_BACKUP_EXCLUDE = ["gose-ui/*.log", "gose-ui/*.log.*", "gose-ui/__pycache__",
+                   "gose-ui/*.tmp", "gose-ui/.boot_attempts", "gose-ui/.safe_mode",
+                   "gose-ui/_stream_test.bin", "gose-ui/_render_common.pyc"]
+# Factory reset wipes these GOSE state files back to defaults (grants handled separately via the
+# agent-sync path). ROMs (/userdata/roms) and saves (/userdata/saves) are deliberately untouched.
+_RESET_DEFAULTS = [
+    (ROOT + "/favorites.json", []),
+    (ROOT + "/recent.json", []),
+    (ROOT + "/playtime.json", {}),
+    (ROOT + "/ai_requests.json", {}),
+]
+
+def clear_boot_attempts():
+    try:
+        write_json_atomic(BOOT_ATTEMPTS_F, 0)
+        return True
+    except Exception:
+        return False
+
+def gose_backup(reason="manual"):
+    """Atomic tar.gz of GOSE UI/state under /userdata/backups. Excludes logs/caches; never roms/saves."""
+    try:
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        members = [m for m in _BACKUP_INCLUDE if os.path.exists("/userdata/" + m)]
+        if not members:
+            return {"ok": False, "error": "nothing to back up"}
+        name = "gose-" + time.strftime("%Y%m%d-%H%M%S") + ".tar.gz"
+        final = os.path.join(BACKUP_DIR, name)
+        tmp = os.path.join(BACKUP_DIR, ".tmp-" + name)
+        cmd = ["tar", "-czf", tmp, "-C", "/userdata"]
+        for ex in _BACKUP_EXCLUDE:
+            cmd.append("--exclude=" + ex)
+        cmd += members
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        # GNU tar returns 1 for benign "file changed as we read it" warnings; treat tmp existence as truth
+        if not os.path.exists(tmp) or r.returncode > 1:
+            try: os.remove(tmp)
+            except Exception: pass
+            return {"ok": False, "error": "tar failed: " + (r.stderr or "")[:200]}
+        os.replace(tmp, final)
+        size = os.path.getsize(final)
+        LOG.info("BACKUP %s (%d bytes, reason=%s)", name, size, reason)
+        return {"ok": True, "file": name, "path": final, "size": size, "reason": reason}
+    except Exception as e:
+        LOG.error("backup failed: %s", e)
+        return {"ok": False, "error": str(e)}
+
+def gose_backups():
+    out = []
+    try:
+        for f in sorted(os.listdir(BACKUP_DIR), reverse=True):
+            if not f.endswith(".tar.gz") or f.startswith(".tmp-"):
+                continue
+            p = os.path.join(BACKUP_DIR, f)
+            try:
+                st = os.stat(p)
+                out.append({"file": f, "path": p, "size": st.st_size, "mtime": int(st.st_mtime)})
+            except Exception:
+                pass
+    except FileNotFoundError:
+        pass
+    return {"ok": True, "backups": out, "dir": BACKUP_DIR}
+
+def gose_restore(payload):
+    """Restore GOSE state from a backup in /userdata/backups. Path-confined + member-validated."""
+    f = (payload or {}).get("file") or ""
+    base = os.path.basename(f)
+    if not base or base != f or not base.endswith(".tar.gz"):
+        return {"ok": False, "error": "invalid backup file"}
+    path = os.path.join(BACKUP_DIR, base)
+    if os.path.realpath(os.path.dirname(path)) != os.path.realpath(BACKUP_DIR) or not os.path.isfile(path):
+        return {"ok": False, "error": "backup not found"}
+    try:
+        lst = subprocess.run(["tar", "-tzf", path], capture_output=True, text=True, timeout=60)
+        if lst.returncode != 0:
+            return {"ok": False, "error": "cannot read archive"}
+        members = [m for m in lst.stdout.splitlines() if m.strip()]
+        for m in members:
+            mm = m.lstrip("./")
+            if ".." in mm.split("/") or mm.startswith("/"):
+                return {"ok": False, "error": "unsafe path in archive: " + m}
+            if not (mm == "gose-ui" or mm.startswith("gose-ui/") or
+                    mm in ("system/gose/ai_tokens.json", "system/gose/ai_audit.jsonl",
+                           "system/gose", "system/gose/")):
+                return {"ok": False, "error": "archive escapes GOSE state: " + m}
+        ex = subprocess.run(["tar", "-xzf", path, "-C", "/userdata"],
+                            capture_output=True, text=True, timeout=180)
+        if ex.returncode > 1:
+            return {"ok": False, "error": "extract failed: " + (ex.stderr or "")[:200]}
+        LOG.info("RESTORE from %s (%d members)", base, len(members))
+        return {"ok": True, "file": base, "members": len(members),
+                "note": "restart the UI server to load any restored code"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+def gose_factory_reset(payload):
+    """Wipe GOSE config/state to defaults (accounts/grants/favorites/recent/playtime). Makes a
+    safety backup first. PRESERVES roms + saves + OS. Requires an explicit confirm token."""
+    confirm = (payload or {}).get("confirm")
+    if confirm not in (True, "RESET", "reset", "true"):
+        return {"ok": False, "error": "factory reset requires confirm token (confirm: 'RESET')"}
+    safety = gose_backup(reason="pre-factory-reset")
+    reset = []
+    for path, default in _RESET_DEFAULTS:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            write_json_atomic(path, default)
+            reset.append(os.path.basename(path))
+        except Exception as e:
+            LOG.warning("reset %s failed: %s", path, e)
+    try:
+        with _AI_LOCK:
+            write_json_atomic(AI_GRANTS_F, {})
+            _sync_ai_tokens({})        # empties /userdata/system/gose/ai_tokens.json + tells the agent
+        reset += ["ai_grants.json", "ai_tokens.json"]
+    except Exception as e:
+        LOG.warning("reset grants failed: %s", e)
+    LOG.info("FACTORY RESET reset=%s safety_backup=%s", reset, safety.get("file"))
+    return {"ok": True, "reset": reset, "safety_backup": safety.get("file"),
+            "safety_ok": safety.get("ok", False),
+            "note": "roms + saves preserved; theme/prefs are browser-local (localStorage) and unaffected"}
+
+# ---- FPS overlay toggle (RetroArch on-screen FPS counter) ----
+# IMPORTANT: batocera's configgen REGENERATES retroarchcustom.cfg from source on every launch,
+# so editing fps_show there is clobbered. The authoritative source configgen reads is the
+# EmulationStation setting <bool name="DrawFramerate"> in es_settings.cfg (Emulator.py reads it
+# at launch and writes fps_show into the per-launch retroarchcustom.cfg). We toggle THAT, plus
+# mirror fps_show into the live custom cfg so a /game/fps GET reflects state between launches.
+ES_SETTINGS = "/userdata/system/configs/emulationstation/es_settings.cfg"
+RA_CFG = "/userdata/system/configs/retroarch/retroarchcustom.cfg"
+
+def _fps_state():
+    try:
+        m = re.search(r'<bool\s+name="DrawFramerate"\s+value="(\w+)"', open(ES_SETTINGS).read())
+    except Exception:
+        m = None
+    return bool(m and m.group(1).lower() == "true")
+
+def fps_get():
+    return {"ok": True, "on": _fps_state()}
+
+def fps_set(on):
+    on = bool(on)
+    val = "true" if on else "false"
+    # 1) the authoritative source: es_settings.cfg DrawFramerate (configgen reads this at launch)
+    try:
+        txt = open(ES_SETTINGS).read()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    node = '<bool name="DrawFramerate" value="%s" />' % val
+    if re.search(r'<bool\s+name="DrawFramerate"', txt):
+        txt = re.sub(r'<bool\s+name="DrawFramerate"\s+value="\w+"\s*/>', node, txt, count=1)
+    elif "</config>" in txt:
+        txt = txt.replace("</config>", "\t" + node + "\n</config>", 1)
+    else:
+        txt = txt.rstrip("\n") + "\n" + node + "\n"
+    try:
+        tmp = ES_SETTINGS + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(txt); f.flush(); os.fsync(f.fileno())
+        os.replace(tmp, ES_SETTINGS)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    # 2) best-effort mirror into the live custom cfg (regenerated next launch anyway)
+    try:
+        c = open(RA_CFG).read()
+        cval = '"true"' if on else '"false"'
+        if re.search(r'^\s*fps_show\s*=', c, re.M):
+            c = re.sub(r'^(\s*fps_show\s*=).*$', lambda m: m.group(1) + " " + cval, c, count=1, flags=re.M)
+            with open(RA_CFG, "w") as f:
+                f.write(c)
+    except Exception:
+        pass
+    return {"ok": True, "on": on, "note": "applies on next game launch"}
 
 def game_exit():
     # exit the running game/app back to the GOSE desktop: kill known launchers, hide the
@@ -1227,6 +1818,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(health())
         if route == "/version":
             return self._json(VERSION)
+        if route == "/boot/ok":
+            # explicit "this boot is good" signal (also fired implicitly when home is served below)
+            return self._json({"ok": clear_boot_attempts()})
+        if route == "/boot/status":
+            try:
+                n = int(open(BOOT_ATTEMPTS_F).read().strip() or "0")
+            except Exception:
+                n = 0
+            return self._json({"ok": True, "attempts": n})
+        if route == "/system/backups":
+            return self._json(gose_backups())
         if route == "/status.json":
             st = agent_status(); h = host_info()
             for k in ("battery_pct", "charging", "has_battery", "online",
@@ -1236,10 +1838,28 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(st)
         if route == "/games.json":
             return self._json(list_games())
+        if route == "/game/running":
+            return self._json(game_running())
+        if route == "/game/gallery":
+            return self._json(game_gallery())
+        if route == "/game/fps":
+            return self._json(fps_get())
+        if route == "/favorites.json":
+            return self._json(favorites_json())
+        if route == "/game/state/slots":
+            from urllib.parse import parse_qs
+            q = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+            return self._json(game_state_slots((q.get("system") or [""])[0], (q.get("game") or [""])[0]))
         if route == "/recent.json":
             return self._json(recent_games())
         if route == "/ai/players":
             return self._json(ai_players())
+        if route == "/ai/grants":
+            return self._json(ai_grants())
+        if route == "/ai/requests":
+            return self._json(ai_requests())
+        if route == "/ai/audit":
+            return self._json(ai_audit(self._qs().get("limit", 100)))
         if route == "/game/options":
             q = self._qs()
             return self._json(game_options(q.get("system", ""), q.get("game", "")))
@@ -1320,6 +1940,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 self.send_error(500)
             return
+        # serving the home page is proof the UI booted far enough to render -> clear the crash counter
+        if route in ("/gose-home.html", "/", "/index.html"):
+            clear_boot_attempts()
         return super().do_GET()
 
     def _route_post(self):
@@ -1340,14 +1963,45 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json(term_exec(payload.get("cmd")))
             except Exception as e:
                 return self._json({"ok": False, "out": str(e)})
+        if route in ("/system/backup", "/system/restore", "/system/factory_reset"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/system/backup":
+                return self._json(gose_backup("manual"))
+            if route == "/system/restore":
+                return self._json(gose_restore(payload))
+            return self._json(gose_factory_reset(payload))
         if route == "/guide/toggle":
             return self._json(guide_toggle())
         if route == "/game/exit":
             return self._json(game_exit())
+        if route == "/game/screenshot":
+            return self._json(game_screenshot())
+        if route == "/game/record/toggle":
+            return self._json(game_record_toggle())
+        if route in ("/game/favorite", "/game/fps"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/game/favorite":
+                return self._json(game_favorite(payload))
+            return self._json(fps_set(payload.get("on")))
         if route == "/game/savestate":
             return self._json(game_state("save"))
         if route == "/game/loadstate":
             return self._json(game_state("load"))
+        if route == "/game/slot":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            return self._json(game_slot(payload.get("dir") or payload.get("direction")))
         if route in ("/scrape", "/game/options"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
@@ -1357,12 +2011,21 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/game/options":
                 return self._json(set_game_options(payload))
             return self._json(scrape_system(payload.get("system", ""), force=True))
-        if route in ("/ai/join", "/ai/heartbeat", "/ai/leave"):
+        if route in ("/ai/join", "/ai/heartbeat", "/ai/leave", "/ai/grant", "/ai/revoke",
+                     "/ai/request", "/ai/request/clear"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
             except Exception:
                 payload = {}
+            if route == "/ai/grant":
+                return self._json(ai_grant(payload))
+            if route == "/ai/revoke":
+                return self._json(ai_revoke(payload))
+            if route == "/ai/request":
+                return self._json(ai_request(payload))
+            if route == "/ai/request/clear":
+                return self._json(ai_request_clear(payload))
             return self._json(ai_leave(payload) if route == "/ai/leave" else ai_join(payload))
         if route in ("/capture/shot", "/capture/buffer", "/capture/clip"):
             try:
