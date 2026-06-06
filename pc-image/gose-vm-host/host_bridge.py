@@ -246,6 +246,130 @@ def clip_save(seconds):
         pass
     return None
 
+# ---- Real host PERFORMANCE telemetry: CPU/RAM/GPU/temps/uptime ----
+# The guest's own perf stats are VM-fake (it only sees its 4 vCPUs). These read the
+# REAL laptop. psutil is preferred but the runtime interpreter (MSYS2 python) has no
+# psutil, so CPU/RAM/uptime fall back to ctypes (dependency-free, exact). GPU reuses
+# nvidia-smi (gpu()); CPU temp via ACPI thermal zone (WMI through PowerShell, cached).
+import ctypes, threading, time
+from ctypes import wintypes
+
+_k32 = ctypes.windll.kernel32
+_perf = {"cpu_pct": None, "cores": None}
+
+class _MEMORYSTATUSEX(ctypes.Structure):
+    _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+def _mem():
+    m = _MEMORYSTATUSEX(); m.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+    _k32.GlobalMemoryStatusEx(ctypes.byref(m))
+    return m.ullTotalPhys, m.ullTotalPhys - m.ullAvailPhys, m.dwMemoryLoad
+
+def _cpu_times():
+    # GetSystemTimes: kernel time INCLUDES idle, so busy = (kernel+user) - idle
+    i = wintypes.FILETIME(); ke = wintypes.FILETIME(); u = wintypes.FILETIME()
+    _k32.GetSystemTimes(ctypes.byref(i), ctypes.byref(ke), ctypes.byref(u))
+    f = lambda ft: (ft.dwHighDateTime << 32) | ft.dwLowDateTime
+    return f(i), f(ke), f(u)
+
+def _cpu_delta(a, b):
+    idle = b[0] - a[0]; total = (b[1] - a[1]) + (b[2] - a[2])
+    return round((total - idle) / total * 100, 1) if total > 0 else None
+
+def _cpu_sampler():
+    # background: keep a ~1s rolling CPU% so /perf needs no per-request interval
+    if psutil:
+        while True:
+            try:
+                _perf["cpu_pct"] = psutil.cpu_percent(interval=1.0)
+                _perf["cores"] = psutil.cpu_percent(percpu=True)
+            except Exception:
+                time.sleep(1.0)
+    else:
+        prev = _cpu_times()
+        while True:
+            time.sleep(1.0)
+            cur = _cpu_times()
+            _perf["cpu_pct"] = _cpu_delta(prev, cur)
+            prev = cur
+
+_temp = {"v": None, "ts": 0.0}
+
+def cpu_temp():
+    # ACPI thermal zone via WMI (PowerShell). Not strictly a CPU core sensor — it's the
+    # mainboard/CPU ACPI zone, the only temp this laptop exposes without OpenHardwareMonitor.
+    now = time.time()
+    if _temp["ts"] and now - _temp["ts"] < 8:
+        return _temp["v"]
+    _temp["ts"] = now
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command",
+            "$t=(Get-CimInstance -Namespace root/wmi -ClassName MSAcpi_ThermalZoneTemperature "
+            "-EA Stop).CurrentTemperature; if($t){($t|Measure-Object -Maximum).Maximum}"],
+            capture_output=True, text=True, timeout=5).stdout.strip()
+        _temp["v"] = round(int(out.splitlines()[0]) / 10.0 - 273.15, 1) if out else None
+    except Exception:
+        _temp["v"] = None
+    return _temp["v"]
+
+def perf():
+    total, used, load = _mem()
+    g = gpu()
+    cpu = _perf["cpu_pct"]
+    if cpu is None and not psutil:   # not sampled yet — take a quick blocking sample
+        a = _cpu_times(); time.sleep(0.08); cpu = _cpu_delta(a, _cpu_times())
+    return {
+        "ok": True,
+        "cpu_pct": cpu,
+        "cpu_cores": _perf["cores"],            # per-core list when psutil present, else null
+        "mem_used": used, "mem_total": total,   # bytes
+        "mem_used_mb": round(used / 1048576), "mem_total_mb": round(total / 1048576),
+        "mem_pct": load,
+        "gpu_pct": g.get("gpu_pct"),
+        "gpu_mem": g.get("gpu_mem_used_mb"),    # alias: MB in use
+        "gpu_mem_used_mb": g.get("gpu_mem_used_mb"), "gpu_mem_total_mb": g.get("gpu_mem_total_mb"),
+        "gpu_name": g.get("gpu_name"),
+        "cpu_temp_c": cpu_temp(),               # ACPI thermal zone (see cpu_temp note)
+        "gpu_temp_c": g.get("gpu_temp_c"),
+        "uptime_s": round(_k32.GetTickCount64() / 1000),
+    }
+
+# ---- Laptop BRIGHTNESS: drive the internal panel via the Windows WMI brightness API ----
+def brightness_get():
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command",
+            "(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness "
+            "-EA Stop).CurrentBrightness"],
+            capture_output=True, text=True, timeout=6)
+        s = out.stdout.strip()
+        if s:
+            return {"ok": True, "level": int(s.splitlines()[0])}
+        return {"ok": False, "error": "WmiMonitorBrightness returned no data "
+                "(display does not support WMI brightness — e.g. external/desktop monitor)"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def brightness_set(level):
+    try:
+        lvl = max(0, min(100, int(level)))
+    except Exception:
+        return {"ok": False, "error": "level must be an integer 0-100"}
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command",
+            "$m=Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -EA Stop; "
+            "Invoke-CimMethod -InputObject $m -MethodName WmiSetBrightness "
+            "-Arguments @{Timeout=1; Brightness=%d} | Out-Null; 'ok'" % lvl],
+            capture_output=True, text=True, timeout=8)
+        if "ok" in (r.stdout or ""):
+            return {"ok": True, "level": lvl}
+        return {"ok": False, "error": ((r.stderr or r.stdout) or "set failed").strip()[:200]}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 class H(http.server.BaseHTTPRequestHandler):
     def _send(self, obj):
         body = json.dumps(obj).encode()
@@ -304,6 +428,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 try: proc.kill()
                 except Exception: pass
             return
+        if route == "/perf":
+            return self._send(perf())
+        if route == "/brightness":
+            return self._send(brightness_get())
         if route == "/clip/status":
             return self._send(clip_status())
         if route == "/clip/save":
@@ -336,6 +464,8 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._send(wifi_connect(payload.get("ssid"), payload.get("password")))
         if route == "/wifi/disconnect":
             return self._send(wifi_disconnect())
+        if route == "/brightness":
+            return self._send(brightness_set(payload.get("level")))
         self._send({"ok": False, "error": "unknown"})
 
     def log_message(self, *a):
@@ -347,4 +477,5 @@ class Bridge(socketserver.ThreadingTCPServer):
 
 if __name__ == "__main__":
     print("GOSE host bridge on 127.0.0.1:8790 (guest sees 10.0.2.2:8790) [threaded]")
+    threading.Thread(target=_cpu_sampler, daemon=True).start()   # rolling host CPU%
     Bridge(("127.0.0.1", 8790), H).serve_forever()

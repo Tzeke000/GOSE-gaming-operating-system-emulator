@@ -56,15 +56,16 @@
   const DEFON={appsgames:1, system:1};   // on by default; the rest are opt-in
   const WIDGETS=[
     {id:"appsgames",  name:"Apps & Games",         desc:"All apps & games, plus your most recent", icon:"layout-grid"},
-    {id:"system",     name:"System",               desc:"Live CPU / GPU / RAM / temp monitor",     icon:"cpu"},
-    {id:"controllers",name:"Connected Controllers",desc:"Shows the gamepads plugged in",           icon:"gamepad-2"},
-    {id:"notifs",     name:"Notifications",         desc:"Recent notifications on the desktop",     icon:"bell"},
+    {id:"system",     name:"System",               desc:"Live laptop CPU / GPU / RAM / temp monitor", icon:"cpu"},
+    {id:"controllers",name:"Connected Controllers",desc:"Connected gamepads — glows when one's plugged in", icon:"gamepad-2"},
+    {id:"notifs",     name:"Notifications",         desc:"Recent notifications — glows on a new one", icon:"bell"},
     {id:"aiplayers",  name:"AI Players",            desc:"Wren, Ava, Iris — status & join",         icon:"sparkles"},
     {id:"hub",        name:"Hub",                   desc:"Clock, date & quick shortcuts",           icon:"layout-grid"},
     {id:"wterminal",  name:"Terminal",              desc:"Quick-launch the terminal",               icon:"terminal"},
-    {id:"wlibrary",   name:"Library",               desc:"Quick-launch your game library",          icon:"layout-grid"},
-    {id:"wstore",     name:"Store",                 desc:"Quick-launch the app store",              icon:"download"},
-    {id:"wemulators", name:"Emulators",             desc:"Game systems & cores",                    icon:"cpu"},
+    {id:"wemulators", name:"Emulators",             desc:"Most-played & recent systems — start one", icon:"cpu"},
+    {id:"wlibrary",   name:"Library",               desc:"Recent & most-played games — launch one", icon:"layout-grid"},
+    {id:"wstore",     name:"Store",                 desc:"Sample apps, emulators & games to grab",  icon:"download"},
+    {id:"steam",      name:"Steam",                 desc:"Steam status & library when signed in",   icon:"gamepad-2"},
   ];
   let en={}; try{en=JSON.parse(localStorage.getItem("gose-wenabled")||"{}");}catch(e){}
   function isOn(id){ return en[id]!==undefined ? !!en[id] : !!DEFON[id]; }

@@ -39,6 +39,12 @@
   .set .val{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--accent);
     font-weight:600;font-size:14px;white-space:nowrap}
   .set .val .cy{color:var(--muted);font-size:13px}
+  .set .val.sld{gap:10px}
+  .set .track{position:relative;width:120px;height:6px;border-radius:4px;background:var(--surface2);
+    border:1px solid var(--line);overflow:hidden;cursor:pointer}
+  .set .fill{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:4px}
+  .set .pct{min-width:40px;text-align:right}
+  .set.focus .track{box-shadow:var(--focusglow);border-color:var(--accent)}
   .set .off{color:var(--muted)}
   .set.focus{border-color:var(--accent);background:#5cd0ff14;box-shadow:var(--focusglow)}
   .set.focus .ic,.set.focus .nm{color:var(--accent)}
@@ -110,7 +116,7 @@
       {ic:"smartphone", nm:"Output", sub:"Where the picture goes", t:"cycle", v:["Auto","Internal","HDMI (dock)"]},
       {ic:"sun", nm:"VSync", sub:"Tear-free at a small latency cost", t:"cycle", v:["On","Off"]},
       {ic:"monitor", nm:"FPS counter", sub:"Show frames-per-second overlay in games — applies on next launch", t:"cycle", v:["Off","On"], apply:"fps"},
-      {ic:"sun", nm:"Brightness", sub:"Panel backlight (handheld only)", t:"cycle", v:["40%","60%","80%","100%"], i:2},
+      {ic:"sun", nm:"Brightness", sub:"Display backlight — controls the real laptop panel (←/→ to adjust)", t:"slider", min:0, max:100, step:5, get:"/sys/brightness", post:"/sys/brightness", live:"brightness"},
     ]},
     {id:"sound", ic:"volume-2", nm:"Sound", rows:[
       {ic:"volume-2", nm:"Output device", sub:"Where audio plays", t:"cycle", v:["Auto","Speakers","HDMI","Headphones","Bluetooth"]},
@@ -215,6 +221,10 @@
     if(r.t==="action") return `<span class="val">${r.val} <span class="ic" data-i="chevron-right"></span></span>`;
     if(r.t==="agents") return `<span class="val agts">`+AGENTS.map(a=>
       `<b><span class="dot" style="background:${a.c}"></span>${a.n}${a.on?"":" <span class='off'>(off)</span>"}</b>`).join("")+`</span>`;
+    if(r.t==="slider"){const loaded=(r.cur!=null), v=loaded?r.cur:0;
+      return `<span class="val sld"><span class="cy ic" data-i="chevron-left"></span>`+
+        `<span class="track"><span class="fill" style="width:${v}%"></span></span>`+
+        `<span class="pct">${loaded?v+"%":"—"}</span><span class="cy ic" data-i="chevron-right"></span></span>`;}
     const i=r.i||0, cur=r.v[i];
     const isOff=/^(off|disabled)$/i.test(cur);
     return `<span class="val"><span class="cy ic" data-i="chevron-left"></span>`+
@@ -229,6 +239,10 @@
       el.innerHTML=`<span class="ic" data-i="${r.ic}"></span>`+
         `<div class="lbl"><div class="nm">${r.nm}</div><div class="sub">${r.sub}</div></div>`+valHtml(r);
       el.onclick=()=>{foc=ri;zone="pane";render();change();};
+      if(r.t==="slider"){const trk=el.querySelector(".track");
+        if(trk)trk.onclick=(ev)=>{ev.stopPropagation();foc=ri;zone="pane";
+          const rect=trk.getBoundingClientRect();
+          setBrightness(r, Math.round((ev.clientX-rect.left)/rect.width*100));};}
       pane.appendChild(el);
     });
   }
@@ -238,9 +252,25 @@
     showToast._t=setTimeout(()=>toast.classList.remove("show"),1600);}
   function post(url,body){return fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body||{})}).catch(()=>{});}
+  // Brightness slider — wired to the real laptop panel via /sys/brightness (GET load, POST set, debounced)
+  function setBrightness(r,val){
+    val=Math.max(r.min,Math.min(r.max,Math.round(val)));
+    r.cur=val; r._lastUser=Date.now(); buildPane(); paintIcons();
+    showToast(r.nm+": "+val+"%");
+    clearTimeout(r._dt); r._dt=setTimeout(()=>{post(r.post,{level:r.cur});},150);  // debounce so dragging doesn't spam
+  }
+  function adjSlider(r,dir){ setBrightness(r,(r.cur||0)+(dir<0?-1:1)*(r.step||5)); }
+  async function loadBrightness(){
+    const r=findRow("brightness","live"); if(!r)return;
+    if(Date.now()-(r._lastUser||0)<1500)return;   // don't fight a fresh user drag
+    try{const x=await(await fetch(r.get,{cache:"no-store"})).json();
+      if(x&&typeof x.level==="number"&&x.level!==r.cur){r.cur=x.level;
+        if(CATS[cat].id==="display"){buildPane();paintIcons();}}}catch(e){}
+  }
   function change(dir){
     const r=CATS[cat].rows[foc];
-    if(r.t==="cycle"){r.i=((r.i||0)+(dir||1)+r.v.length)%r.v.length;buildPane();paintIcons();
+    if(r.t==="slider"){adjSlider(r, dir||1);}   // ←/→ adjust; Enter nudges up
+    else if(r.t==="cycle"){r.i=((r.i||0)+(dir||1)+r.v.length)%r.v.length;buildPane();paintIcons();
       if(r.apply)applyRow(r); else showToast(r.nm+": "+r.v[r.i]);}
     else if(r.t==="theme"){r.i=((r.i||0)+(dir||1)+r.v.length)%r.v.length;
       const t=THEMES[r.i];document.documentElement.dataset.theme=t;localStorage.setItem("gose-theme",t);
@@ -373,6 +403,7 @@
     }catch(e){}
   }
   pollLive(); setInterval(pollLive, 3000);
+  loadBrightness(); setInterval(loadBrightness, 3000);   // load + keep the brightness slider synced to the real panel
   refreshBackups();   // populate the System > Latest backup readout
   function moveCat(d){cat=(cat+d+CATS.length)%CATS.length;foc=0;render();}
   // tab-switch (L1/R1 + [ ] / Tab): change category AND drop focus into its content so D-pad moves within the tab
@@ -393,8 +424,11 @@
       else if(k==="ArrowRight"||k==="Enter"||k===" ")enterPane();
       else return;
     } else {  // pane
+      const fr=CATS[cat].rows[foc];
       if(k==="ArrowDown")moveFoc(1);
       else if(k==="ArrowUp")moveFoc(-1);
+      else if(fr&&fr.t==="slider"&&k==="ArrowLeft")adjSlider(fr,-1);   // ←/→ adjust a focused slider in place
+      else if(fr&&fr.t==="slider"&&k==="ArrowRight")adjSlider(fr,1);
       else if(k==="ArrowLeft")toRail();                            // ← always escapes back to the category list
       else if(k==="ArrowRight"||k==="Enter"||k===" ")change(1);
       else return;
@@ -409,9 +443,10 @@
         if(tap(15)||tap(0))enterPane();
         if(tap(1))location.href="gose-home.html";
       } else {
+        const fr=CATS[cat].rows[foc];
         if(tap(13))moveFoc(1); if(tap(12))moveFoc(-1);
-        if(tap(15)||tap(0))change(1); if(tap(14))toRail();
-        if(tap(1))toRail();
+        if(fr&&fr.t==="slider"){ if(tap(15))adjSlider(fr,1); if(tap(14))adjSlider(fr,-1); if(tap(1))toRail(); }
+        else { if(tap(15)||tap(0))change(1); if(tap(14))toRail(); if(tap(1))toRail(); }
       }
       gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}
     requestAnimationFrame(pad);})();

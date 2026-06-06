@@ -69,6 +69,20 @@ def capture():
     except Exception:
         pass
 
+# The pad-nav bridge pauses the controller while a game runs; this flag tells it the
+# Game Bar is open so the controller drives the BAR instead (robust signal — set whether
+# or not the game got SIGSTOPped, which the active-window race can miss).
+GAMEBAR_FLAG = "/tmp/gose-gamebar-open"
+
+def _set_gamebar_flag(on):
+    try:
+        if on:
+            open(GAMEBAR_FLAG, "w").close()
+        else:
+            os.remove(GAMEBAR_FLAG)
+    except Exception:
+        pass
+
 def show():
     state["busy"] = True
     gp = active_game_pid()
@@ -85,6 +99,7 @@ def show():
     win.show_all(); win.move(0, 0); win.resize(SW, SH)
     win.set_keep_above(True); win.present(); wv.grab_focus()
     state["on"] = True; state["busy"] = False
+    _set_gamebar_flag(True)
 
 def hide():
     gp = state.get("game")
@@ -93,6 +108,7 @@ def hide():
         except Exception: pass
         state["game"] = None
     win.hide(); state["on"] = False
+    _set_gamebar_flag(False)
 
 def toggle():
     if state["busy"]:

@@ -49,7 +49,8 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/emulators/install": (10, 60), "/emulators/uninstall": (15, 60),
            "/games/install": (12, 60),
            "/game/screenshot": (30, 60), "/game/record/toggle": (12, 60),
-           "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300)}
+           "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300),
+           "/sys/perf": (60, 60), "/widgets/store": (30, 60), "/widgets/steam": (30, 60)}
 
 _SKIPDIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_media"}
 _SKIPEXT = {".txt", ".xml", ".cfg", ".dat", ".jpg", ".jpeg", ".png", ".mp4", ".srm", ".state"}
@@ -2077,6 +2078,289 @@ def games_uninstall(payload):
     LOG.info("GAME UNINSTALL %s", gid)
     return {"ok": True, "id": gid, "removed": True}
 
+# ===== Desktop-widget data layer + controller registry + host proxies (docs/16 wave) =====
+# The widgets/controllers consume these; nothing here mutates game state, it derives views over the
+# already-tracked playtime.json / recent.json + the live /proc input devices + host_bridge.
+
+# ---- playtime/recent rollups (per-game -> per-system) ----
+def _system_playtime():
+    """Aggregate per-game playtime (playtime.json keys 'system/game' -> secs) up to the SYSTEM."""
+    agg = {}
+    for key, secs in _playtime().items():
+        s = key.split("/", 1)[0]
+        agg[s] = agg.get(s, 0) + (secs or 0)
+    return agg
+
+def _recent_rows():
+    try:
+        rec = json.load(open(RECENT_F))
+        return rec if isinstance(rec, list) else []
+    except Exception:
+        return []
+
+def _system_recency():
+    """From recent.json (newest-first): {system: last_played_ts} + the systems in recency order."""
+    last, order = {}, []
+    for r in _recent_rows():
+        s = r.get("system")
+        if s and s not in last:
+            last[s] = r.get("t", 0); order.append(s)
+    return last, order
+
+def _system_repr_game(system):
+    """A launchable game to represent a system tile: most-recent, else most-played, else first ROM."""
+    for r in _recent_rows():
+        if r.get("system") == system and r.get("game"):
+            return r["game"]
+    best, bestsecs = None, -1
+    for key, secs in _playtime().items():
+        s, _, g = key.partition("/")
+        if s == system and (secs or 0) > bestsecs:
+            best, bestsecs = g, secs or 0
+    if best:
+        return best
+    d = os.path.join(ROMS, system)
+    try:
+        for f in sorted(os.listdir(d)):
+            if f.startswith(".") or f in _SKIPDIRS or "gamelist" in f or os.path.isdir(os.path.join(d, f)):
+                continue
+            if os.path.splitext(f)[1].lower() in _SKIPEXT:
+                continue
+            return os.path.splitext(f)[0]
+    except Exception:
+        pass
+    return None
+
+def _sysname(system):
+    return _SYS_EMU.get(system, _SYS.get(system, system))
+
+def _emulator_item(system, playtime_s, last_played):
+    game = _system_repr_game(system)
+    # launch_hint = the exact body to POST to /launch (system+game) so the tile is startable
+    return {"system": system, "name": _sysname(system), "core": _effective_default(system),
+            "playtime_s": int(playtime_s or 0), "last_played": last_played,
+            "launch_hint": ({"system": system, "game": game} if game else None)}
+
+def widgets_emulators():
+    agg = _system_playtime()
+    last, order = _system_recency()
+    top_systems = sorted(agg.keys(), key=lambda s: -agg[s])[:5]
+    return {"ok": True,
+            "top": [_emulator_item(s, agg.get(s, 0), last.get(s)) for s in top_systems],
+            "recent": [_emulator_item(s, agg.get(s, 0), last.get(s)) for s in order[:3]]}
+
+def _library_item(system, game, playtime_s, last_played):
+    # the system+game fields ARE the /launch body, so the tile is directly startable
+    return {"system": system, "game": game, "name": game, "sysname": _sysname(system),
+            "img": _game_img(system, game), "playtime_s": int(playtime_s or 0),
+            "last_played": last_played}
+
+def widgets_library(limit=6):
+    pt = _playtime(); rec = _recent_rows()
+    recent = []
+    for r in rec[:limit]:
+        s, g = r.get("system"), r.get("game")
+        if s and g:
+            recent.append(_library_item(s, g, pt.get(s + "/" + g, 0), r.get("t")))
+    last_map = {(r.get("system"), r.get("game")): r.get("t") for r in rec}
+    top = []
+    for key, secs in sorted(pt.items(), key=lambda kv: -(kv[1] or 0))[:limit]:
+        s, _, g = key.partition("/")
+        if s and g:
+            top.append(_library_item(s, g, secs, last_map.get((s, g))))
+    return {"ok": True, "recent": recent, "top": top}
+
+def widgets_store():
+    # a small sample for each store section to populate the widget
+    apps = store_catalog().get("apps", [])[:4]
+    emus = [{"system": e["system"], "name": e["name"], "default": e.get("default"),
+             "has_games": e.get("has_games")} for e in emulators_list().get("systems", [])[:4]]
+    games = games_catalog().get("games", [])[:4]
+    return {"ok": True, "apps": apps, "emulators": emus, "games": games}
+
+STEAM_APPID = "com.valvesoftware.Steam"
+
+def _steam_loginusers():
+    import glob as _glob
+    seen, cands = set(), []
+    for home in ("/userdata/home", "/userdata/system", os.path.expanduser("~"), "/root"):
+        if not home or home in seen:
+            continue
+        seen.add(home)
+        cands += _glob.glob(home + "/.var/app/" + STEAM_APPID + "/**/config/loginusers.vdf",
+                            recursive=True)
+    for p in cands:
+        try:
+            return p, open(p, encoding="utf-8", errors="replace").read()
+        except Exception:
+            continue
+    return None, None
+
+# Steam-SPECIFIC cmdline tokens. NOT a bare "steam" substring — that would match the HTTP client
+# requesting /widgets/steam (the URL contains "steam") or a `pgrep -f steam` self-match. These tokens
+# (flatpak app id + steam's own helper) only appear in a real Steam process tree.
+_STEAM_PROC_TOKENS = ("valvesoftware.steam", "steamwebhelper", "/steam/steam.sh", "steam_app_")
+_STEAM_ARGV0 = ("steam", "steam.sh", "steamwebhelper")
+
+def _steam_running():
+    """Real-Steam detection via a /proc scan for Steam-specific markers (flatpak app id / helper /
+    argv0). Avoids the false positives that a bare 'steam' substring or `pgrep -f` produce."""
+    me = os.getpid()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit() or int(pid) == me:
+            continue
+        try:
+            raw = open("/proc/%s/cmdline" % pid, "rb").read()
+        except Exception:
+            continue
+        if not raw:
+            continue
+        parts = raw.split(b"\x00")
+        cl = raw.replace(b"\x00", b" ").decode("utf-8", "replace").lower()
+        if any(tok in cl for tok in _STEAM_PROC_TOKENS):
+            return True
+        argv0 = os.path.basename(parts[0].decode("utf-8", "replace")).lower()
+        if argv0 in _STEAM_ARGV0:
+            return True
+    return False
+
+def widgets_steam():
+    installed = STEAM_APPID in store_installed()
+    try:
+        running = _steam_running()
+    except Exception:
+        running = False
+    logged_in, user = False, None
+    _path, txt = _steam_loginusers()
+    if txt:
+        try:
+            # loginusers.vdf: per-steamid blocks; the active account has MostRecent "1"
+            for m in re.finditer(r'"(\d{8,})"\s*\{(.*?)\}', txt, re.S):
+                if re.search(r'"MostRecent"\s*"1"', m.group(2)):
+                    logged_in = True
+                    pm = re.search(r'"PersonaName"\s*"([^"]*)"', m.group(2))
+                    user = pm.group(1) if pm else None
+                    break
+            if not logged_in and re.search(r'"\d{8,}"', txt):
+                logged_in = True   # an account exists but none flagged MostRecent — best-effort
+                pm = re.search(r'"PersonaName"\s*"([^"]*)"', txt)
+                user = pm.group(1) if pm else None
+        except Exception:
+            pass
+    out = {"ok": True, "installed": installed, "running": running, "logged_in": logged_in,
+           "recent_games": []}   # recent_games: not derivable without localconfig parse — best-effort
+    if user:
+        out["user"] = user
+    return out
+
+# ---- Controller registry: who's connected + which one drives the OS menus ----
+OS_ADMIN_F = "/userdata/system/gose/os_admin_controller.json"
+
+def _parse_controllers():
+    """Every connected gamepad from /proc/bus/input/devices (anything exposing a js* handler)."""
+    try:
+        txt = open("/proc/bus/input/devices").read()
+    except Exception:
+        return []
+    pads = []
+    for blk in txt.split("\n\n"):
+        js = re.search(r"\bjs(\d+)\b", blk)
+        if not js:
+            continue                              # not a joystick/gamepad
+        ev = re.search(r"\bevent(\d+)\b", blk)
+        name_m = re.search(r'Name="([^"]*)"', blk)
+        phys_m = re.search(r"Phys=(\S*)", blk)
+        sys_m = re.search(r"Sysfs=(\S+)", blk)
+        ids = re.search(r"Bus=(\w+) Vendor=(\w+) Product=(\w+) Version=(\w+)", blk)
+        phys = phys_m.group(1) if phys_m else ""
+        sysfs = sys_m.group(1) if sys_m else ""
+        bus = int(ids.group(1), 16) if ids else 0
+        guid = _sdl_guid(*(int(x, 16) for x in ids.groups())) if ids else _XBOX_GUID
+        is_virtual = "py-evdev-uinput" in phys
+        source = "virtual" if is_virtual else ("bluetooth" if bus == 0x05 else "native")
+        pads.append({"id": os.path.basename(sysfs) or ("js" + js.group(1)),
+                     "name": name_m.group(1) if name_m else "Controller", "guid": guid,
+                     "source": source,
+                     "path": ("/dev/input/event" + ev.group(1)) if ev else None,
+                     "js": int(js.group(1)), "is_dev": False})
+    pads.sort(key=lambda p: p["js"])
+    seen_virt = False
+    for p in pads:
+        # the dev virtual pad = the first/original (seat 1) uinput pad created at agent startup
+        if p["source"] == "virtual" and not seen_virt:
+            p["is_dev"] = True; seen_virt = True
+    return pads
+
+def _os_admin_load():
+    try:
+        return (json.load(open(OS_ADMIN_F)) or {}).get("id")
+    except Exception:
+        return None
+
+def _default_admin_id(pads):
+    # default = first non-virtual controller, else the dev virtual pad, else the first pad
+    for p in pads:
+        if p["source"] != "virtual":
+            return p["id"]
+    for p in pads:
+        if p["is_dev"]:
+            return p["id"]
+    return pads[0]["id"] if pads else None
+
+def _effective_admin(pads):
+    stored = _os_admin_load()
+    ids = {p["id"] for p in pads}
+    return (stored if stored in ids else _default_admin_id(pads)), stored
+
+def controllers_list():
+    pads = _parse_controllers()
+    admin, stored = _effective_admin(pads)
+    for p in pads:
+        p["is_os_admin"] = (p["id"] == admin)
+    return {"ok": True, "controllers": pads, "admin": admin,
+            "admin_explicit": (stored if any(p["id"] == stored for p in pads) else None)}
+
+def controllers_admin_get():
+    pads = _parse_controllers()
+    admin, stored = _effective_admin(pads)
+    return {"ok": True, "id": admin, "explicit": stored, "default": _default_admin_id(pads)}
+
+def controllers_admin_set(payload):
+    cid = (payload or {}).get("id")
+    if not cid:
+        return {"ok": False, "error": "id required"}
+    if cid not in {p["id"] for p in _parse_controllers()}:
+        return {"ok": False, "error": "no connected controller with id '%s'" % cid}
+    try:
+        os.makedirs(os.path.dirname(OS_ADMIN_F), exist_ok=True)
+        write_json_atomic(OS_ADMIN_F, {"id": cid, "t": int(time.time())})
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    LOG.info("OS admin controller set: %s", cid)
+    return {"ok": True, "id": cid}
+
+# ---- Host-bridge proxies: real laptop perf + brightness (tolerate the bridge being down) ----
+def sys_perf_host():
+    r = host_bridge("/perf", timeout=4)
+    return r if (isinstance(r, dict) and r.get("ok")) else {"ok": False}
+
+def sys_brightness_host(level=None):
+    if level is None:
+        r = host_bridge("/brightness", timeout=4)
+        if isinstance(r, dict) and r.get("ok"):
+            return r
+        loc = sys_brightness()                       # bare-metal fallback (VM has no backlight)
+        return loc if loc.get("ok") else {"ok": False}
+    try:
+        level = max(0, min(100, int(level)))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "level must be 0-100"}
+    r = host_bridge("/brightness", {"level": level}, timeout=4)
+    if isinstance(r, dict) and r.get("ok"):
+        return r
+    loc = sys_brightness(level)
+    return loc if loc.get("ok") else {"ok": False}
+
 class H(http.server.SimpleHTTPRequestHandler):
     # static assets (fonts/icons/css/brand art) — only served from the static dir
     _CACHE_EXT = (".woff2", ".woff", ".ttf", ".svg", ".png", ".jpg", ".jpeg",
@@ -2197,7 +2481,21 @@ class H(http.server.SimpleHTTPRequestHandler):
         if route == "/sys/audio":
             return self._json(sys_audio())
         if route == "/sys/brightness":
-            return self._json(sys_brightness())
+            return self._json(sys_brightness_host())
+        if route == "/sys/perf":
+            return self._json(sys_perf_host())
+        if route == "/widgets/emulators":
+            return self._json(widgets_emulators())
+        if route == "/widgets/library":
+            return self._json(widgets_library())
+        if route == "/widgets/store":
+            return self._json(widgets_store())
+        if route == "/widgets/steam":
+            return self._json(widgets_steam())
+        if route == "/controllers":
+            return self._json(controllers_list())
+        if route == "/controllers/admin":
+            return self._json(controllers_admin_get())
         if route == "/net/scan":
             return self._json(host_bridge("/wifi/scan"))
         if route == "/net/wifi":
@@ -2313,6 +2611,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/system/restore":
                 return self._json(gose_restore(payload))
             return self._json(gose_factory_reset(payload))
+        if route == "/controllers/admin":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            return self._json(controllers_admin_set(payload))
         if route == "/guide/toggle":
             return self._json(guide_toggle())
         if route == "/game/exit":
@@ -2400,7 +2705,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 if route == "/sys/audio":
                     return self._json(sys_audio(payload.get("volume"), payload.get("mute")))
                 if route == "/sys/brightness":
-                    return self._json(sys_brightness(payload.get("value")))
+                    return self._json(sys_brightness_host(
+                        payload.get("level", payload.get("value"))))
                 if route == "/sys/power":
                     return self._json(sys_power(payload.get("action")))
                 if route == "/sys/perf":

@@ -94,6 +94,28 @@
   .rapp img{width:26px;height:26px;object-fit:contain}
   .rapp:hover{border-color:var(--accent)}
   .dotw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:0}
+  /* rich-widget rows (emulators / library / store / steam) */
+  .wlist{display:flex;flex-direction:column;gap:1px}
+  .wsub{color:#7f86a6;font-size:10px;font-weight:700;letter-spacing:.5px;margin:9px 2px 3px}
+  .wsub:first-child{margin-top:2px}
+  .witem{display:flex;align-items:center;gap:9px;padding:6px 7px;border-radius:9px;cursor:pointer;color:#cdd2ea}
+  .witem:hover{background:#ffffff0c}
+  .witem.focus{box-shadow:0 0 0 2px var(--accent),0 0 18px #5cd0ff99}
+  .witem .wa{width:30px;height:30px;border-radius:7px;flex:none;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,#6a4dff33,#3a86b033);font-size:14px;overflow:hidden;color:var(--accent)}
+  .witem .wa img{width:100%;height:100%;object-fit:cover}
+  .witem .wa .ic{font-size:15px}
+  .witem .wm{min-width:0;flex:1}
+  .witem .wn{font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .witem .ws{font-size:10.5px;color:#9aa0c0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .wlaunch{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:8px;background:#6a4dff33;
+    border:1px solid var(--accent);border-radius:9px;padding:8px;font-weight:600;font-size:12.5px;cursor:pointer;color:#eaf0ff}
+  .wlaunch:hover{background:#6a4dff55}.wlaunch.focus{box-shadow:0 0 0 2px var(--accent),0 0 18px #5cd0ff99}
+  .wempty{color:#8b92b0;font-size:12px;padding:7px 4px;line-height:1.5}
+  /* widget GLOW — controller-connected (green) / pending notification (amber) */
+  @keyframes wglow{0%,100%{box-shadow:0 0 0 1px var(--gc),0 0 14px -3px var(--gc)}
+    50%{box-shadow:0 0 0 1px var(--gc),0 0 30px 1px var(--gc)}}
+  .widget.glow{animation:wglow 2.4s ease-in-out infinite;border-color:var(--gc)!important}
 </style></head>
 <body>
   <div class="horizon"></div>
@@ -145,7 +167,7 @@
   <!-- opt-in widgets (toggle in the Widgets app) -->
   <div class="panel widget" data-wid="controllers" data-wname="Controllers" style="left:auto;right:18px;top:64px;width:240px">
     <div class="hd whandle">CONTROLLERS</div>
-    <div id="w-pads" style="font-size:13px;color:#aeb4d2;padding:6px 2px;line-height:1.7">Checking…</div></div>
+    <div id="w-pads" style="font-size:13px;color:#aeb4d2;padding:6px 2px;line-height:1.6">Checking…</div></div>
   <div class="panel widget" data-wid="notifs" data-wname="Notifications" style="left:auto;right:18px;top:236px;width:262px">
     <div class="hd whandle">NOTIFICATIONS</div><div id="w-notifs" style="max-height:200px;overflow:auto"></div></div>
   <div class="panel widget" data-wid="aiplayers" data-wname="AI Players" style="left:470px;top:120px;width:264px">
@@ -156,12 +178,14 @@
     <div class="pin"><a data-go="gose-apps.html">All Apps</a><a data-go="gose-library.html">Games</a><a data-go="gose-settings.html">Settings</a></div></div>
   <div class="panel widget" data-wid="wterminal" data-wname="Terminal" style="left:780px;top:120px;width:220px">
     <div class="hd whandle">TERMINAL</div><div class="pin"><a data-go="gose-term.html"><span class="ic" data-i="terminal"></span>Open Terminal</a></div></div>
-  <div class="panel widget" data-wid="wlibrary" data-wname="Library" style="left:780px;top:230px;width:220px">
-    <div class="hd whandle">LIBRARY</div><div class="pin"><a data-go="gose-library.html"><span class="ic" data-i="layout-grid"></span>All Games</a></div></div>
-  <div class="panel widget" data-wid="wstore" data-wname="Store" style="left:780px;top:340px;width:220px">
-    <div class="hd whandle">STORE</div><div class="pin"><a data-go="gose-store.html"><span class="ic" data-i="download"></span>Get Apps</a></div></div>
-  <div class="panel widget" data-wid="wemulators" data-wname="Emulators" style="left:780px;top:450px;width:220px">
-    <div class="hd whandle">EMULATORS</div><div class="pin"><a data-go="gose-library.html"><span class="ic" data-i="cpu"></span>Systems</a></div></div>
+  <div class="panel widget" data-wid="wemulators" data-wname="Emulators" style="left:120px;top:300px;width:262px">
+    <div class="hd whandle">EMULATORS</div><div id="w-emulators" class="wlist"><div class="wempty">Loading…</div></div></div>
+  <div class="panel widget" data-wid="wlibrary" data-wname="Library" style="left:470px;top:430px;width:280px">
+    <div class="hd whandle">LIBRARY</div><div id="w-library" class="wlist"><div class="wempty">Loading…</div></div></div>
+  <div class="panel widget" data-wid="wstore" data-wname="Store" style="left:780px;top:300px;width:250px">
+    <div class="hd whandle">STORE</div><div id="w-store" class="wlist"><div class="wempty">Loading…</div></div></div>
+  <div class="panel widget" data-wid="steam" data-wname="Steam" style="left:780px;top:470px;width:250px">
+    <div class="hd whandle">STEAM</div><div id="w-steam" class="wlist"><div class="wempty">Checking…</div></div></div>
 
 <script src="assets/notify.js"></script>
 <script src="assets/cursor.js"></script>
@@ -191,10 +215,7 @@
   renderRecentApps(); setInterval(renderRecentApps, 10000);
   // dynamic content for the opt-in widgets (controllers / notifications / hub clock)
   function renderWidgetContent(){
-    const pe=document.getElementById('w-pads');
-    if(pe){const gps=(navigator.getGamepads?[...navigator.getGamepads()]:[]).filter(Boolean);
-      pe.innerHTML=gps.length? gps.map(g=>`<div>🎮 ${((g.id||'Controller')+'').slice(0,30)}</div>`).join('')
-        : 'No controllers connected.<br><span style="font-size:11px;color:#7f86a6">Connect a pad and it shows here.</span>';}
+    // controllers (w-pads) are driven from the real /controllers endpoint in renderControllers()
     const ne=document.getElementById('w-notifs');
     if(ne&&window.GOSE){const a=GOSE.notifs().slice(0,5);
       ne.innerHTML=a.length? a.map(n=>`<div style="padding:7px 6px;border-bottom:1px solid #ffffff10"><div style="font-weight:600;font-size:13px">${n.title}</div><div style="color:#8b92b0;font-size:11px">${n.body}</div></div>`).join('')
@@ -226,6 +247,78 @@
     });
   }
   renderAiWidget(); setInterval(renderAiWidget, 5000);
+
+  // ---- RICH desktop widgets: emulators / library / store / steam, fed by /widgets/* ----
+  function esc(s){return (s==null?'':(''+s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function fmtPlay(s){s=s||0;const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?(h+'h'+(m?' '+m+'m':'')):(m?m+'m':'<1m');}
+  function paintIcons(el){if(el)el.querySelectorAll('[data-i]').forEach(e=>e.style.setProperty('--u',`url(assets/icons/${e.dataset.i}.svg)`));}
+  function setGlow(wid,on,color){const w=document.querySelector('.widget[data-wid="'+wid+'"]'); if(!w)return;
+    if(on){w.style.setProperty('--gc',color);w.classList.add('glow');} else {w.classList.remove('glow');w.style.removeProperty('--gc');}}
+  function emuTile(e){const b=JSON.stringify(e.launch_hint||{system:e.system});
+    return `<div class="witem" data-launch='${esc(b)}' data-label="${esc(e.name)}">
+      <span class="wa"><span class="ic" data-i="cpu"></span></span>
+      <div class="wm"><div class="wn">${esc(e.name)}</div><div class="ws">${esc(e.core||e.system)} · ${fmtPlay(e.playtime_s)}</div></div></div>`;}
+  function gameTile(g){const b=JSON.stringify({system:g.system,game:g.game});
+    const art=g.img?`<img src="/fs/file?path=${encodeURIComponent(g.img)}" onerror="this.remove()">`:`<span class="ic" data-i="layout-grid"></span>`;
+    return `<div class="witem" data-launch='${esc(b)}' data-label="${esc(g.name)}">
+      <span class="wa">${art}</span>
+      <div class="wm"><div class="wn">${esc(g.name)}</div><div class="ws">${esc(g.sysname||g.system)} · ${fmtPlay(g.playtime_s)}</div></div></div>`;}
+  function storeTile(name,sub,tab,icon){return `<div class="witem" data-go="gose-store.html?tab=${tab}" data-label="${esc(name)}">
+    <span class="wa"><span class="ic" data-i="${icon}"></span></span>
+    <div class="wm"><div class="wn">${esc(name)}</div><div class="ws">${esc(sub||tab)}</div></div></div>`;}
+  function renderEmulators(){const el=document.getElementById('w-emulators'); if(!el)return;
+    fetch('/widgets/emulators',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+      const top=(d.top||[]),rec=(d.recent||[]); let h='';
+      if(top.length)h+='<div class="wsub">MOST PLAYED</div>'+top.slice(0,5).map(emuTile).join('');
+      if(rec.length)h+='<div class="wsub">RECENT</div>'+rec.slice(0,3).map(emuTile).join('');
+      el.innerHTML=h||'<div class="wempty">No emulator history yet — play a game to populate this.</div>';
+      paintIcons(el); if(window.__rebuildNav)window.__rebuildNav();}).catch(()=>{});}
+  function renderLibrary(){const el=document.getElementById('w-library'); if(!el)return;
+    fetch('/widgets/library',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+      const rec=(d.recent||[]),top=(d.top||[]); let h='';
+      if(rec.length)h+='<div class="wsub">RECENT</div>'+rec.slice(0,3).map(gameTile).join('');
+      if(top.length)h+='<div class="wsub">MOST PLAYED</div>'+top.slice(0,4).map(gameTile).join('');
+      el.innerHTML=h||'<div class="wempty">No games played yet. Open the Library to add ROMs.</div>';
+      paintIcons(el); if(window.__rebuildNav)window.__rebuildNav();}).catch(()=>{});}
+  function renderStore(){const el=document.getElementById('w-store'); if(!el)return;
+    fetch('/widgets/store',{cache:'no-store'}).then(r=>r.json()).then(d=>{ let h='';
+      if((d.apps||[]).length)h+='<div class="wsub">APPS</div>'+d.apps.slice(0,2).map(a=>storeTile(a.name,a.cat,'apps',a.icon||'download')).join('');
+      if((d.emulators||[]).length)h+='<div class="wsub">EMULATORS</div>'+d.emulators.slice(0,2).map(e=>storeTile(e.name,e.system,'emulators','cpu')).join('');
+      if((d.games||[]).length)h+='<div class="wsub">GAMES</div>'+d.games.slice(0,2).map(g=>storeTile(g.name,g.sysname||g.cat,'games','layout-grid')).join('');
+      el.innerHTML=(h||'<div class="wempty">Store unavailable.</div>')+'<div class="wlaunch" data-go="gose-store.html" data-label="Open Store"><span class="ic" data-i="download"></span>Open Store</div>';
+      paintIcons(el); if(window.__rebuildNav)window.__rebuildNav();}).catch(()=>{});}
+  function renderSteam(){const el=document.getElementById('w-steam'); if(!el)return;
+    fetch('/widgets/steam',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+      if(d.running&&d.logged_in){
+        let h=`<div class="wsub">SIGNED IN${d.user?' · '+esc((''+d.user).toUpperCase()):''}</div>`;
+        const rg=(d.recent_games||[]);
+        h+= rg.length? rg.slice(0,5).map(g=>{const nm=g&&g.name?g.name:(''+g);return `<div class="witem" data-label="${esc(nm)}"><span class="wa"><span class="ic" data-i="gamepad-2"></span></span><div class="wm"><div class="wn">${esc(nm)}</div></div></div>`;}).join('')
+          : '<div class="wempty">Steam is running — open it for your library.</div>';
+        h+=`<div class="wlaunch" data-launch='{"app":"steam"}' data-label="Open Steam"><span class="ic" data-i="gamepad-2"></span>Open Steam</div>`;
+        el.innerHTML=h;
+      } else {
+        const why=!d.installed?'Steam isn’t installed':(d.running?'Steam is running — not signed in':'Steam — not running / not signed in');
+        el.innerHTML='<div class="wempty">'+esc(why)+'.</div>'+(d.installed
+          ? `<div class="wlaunch" data-launch='{"app":"steam"}' data-label="Launch Steam"><span class="ic" data-i="gamepad-2"></span>Launch Steam</div>`
+          : `<div class="witem" data-go="gose-store.html?tab=apps" data-label="Get Steam"><span class="wa"><span class="ic" data-i="download"></span></span><div class="wm"><div class="wn">Get Steam from the Store</div></div></div>`);
+      }
+      paintIcons(el); if(window.__rebuildNav)window.__rebuildNav();
+    }).catch(()=>{el.innerHTML='<div class="wempty">Steam status unavailable.</div>';});}
+  function renderControllers(){const el=document.getElementById('w-pads');
+    fetch('/controllers',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+      const cs=(d.controllers||[]);
+      if(el)el.innerHTML=cs.length? cs.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 2px">
+          <span class="dotw" style="background:#3fe0a0;margin-right:0"></span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span>
+          ${c.is_os_admin?'<span style="font-size:9px;font-weight:700;color:#ffb74d;border:1px solid #ffb74d55;border-radius:6px;padding:1px 5px">OS</span>':''}</div>`).join('')
+        : 'No controllers connected.<br><span style="font-size:11px;color:#7f86a6">Connect a pad and it shows here.</span>';
+      setGlow('controllers',cs.length>0,'#3fe0a0');     // GLOW when a controller is connected
+    }).catch(()=>{});}
+  function refreshNotifGlow(){if(!window.GOSE)return; setGlow('notifs',(GOSE.unread&&GOSE.unread()>0),'#ffb74d');}  // GLOW on pending notification
+  function renderRichWidgets(){renderEmulators();renderLibrary();renderStore();renderSteam();renderControllers();refreshNotifGlow();}
+  renderRichWidgets(); setInterval(renderRichWidgets, 6000);
+  window.addEventListener('gose-notify',refreshNotifGlow);
+
   document.getElementById("dock").innerHTML=
     `<div class="d on" data-go="gose-apps.html" title="Apps"><img src="assets/brand/gose-core-mark.png" alt="Apps"></div>`+
     [["download","Store","gose-store.html"],["cpu","Task Manager","gose-taskman.html"],["palette","Widgets","gose-widgets.html"],["power","Lock","gose-lock.html"]]
@@ -246,11 +339,23 @@
     document.body.appendChild(zlabel);
     let zones=[], z=0, ii=0, lblT;
     function curItem(){return zones[z]&&zones[z].items[ii];}
+    function esc2(s){return (s==null?'':(''+s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+    function itemLabel(it){if(!it)return''; if(it.dataset&&it.dataset.label)return it.dataset.label;
+      let t=(it.textContent||'').replace(/\s+/g,' ').trim(); if(!t)t=it.title||''; return t.slice(0,46);}
     function highlight(){document.querySelectorAll('.focus').forEach(e=>e.classList.remove('focus'));
       const it=curItem(); if(it){it.classList.add('focus');it.scrollIntoView({block:'nearest'});}
-      if(zones[z]){zlabel.textContent='◀  '+zones[z].name+'  ▶';zlabel.style.opacity='1';clearTimeout(lblT);lblT=setTimeout(()=>zlabel.style.opacity='0',1300);}}
+      if(zones[z]){
+        // single-item (whole-widget) zone → show the widget name with arrows;
+        // inside a widget → show the hovered ITEM's name, widget name as context
+        const single=it&&it.classList&&it.classList.contains('widget');
+        if(single){zlabel.textContent='◀  '+zones[z].name+'  ▶';}
+        else{zlabel.innerHTML='<span style="color:#9aa0c0;font-size:11px">'+esc2(zones[z].name)+'</span>&nbsp;·&nbsp;<b>'+esc2(itemLabel(it))+'</b>';}
+        zlabel.style.opacity='1';clearTimeout(lblT);lblT=setTimeout(()=>zlabel.style.opacity='0',1300);}}
     function activate(){const it=curItem(); if(!it)return;
       if(it.dataset.go){location.href=it.dataset.go;return;}
+      if(it.dataset.launch){try{const b=JSON.parse(it.dataset.launch);
+        fetch('/launch',{method:'POST',headers:{'Content-Type':'application/json'},body:it.dataset.launch});
+        say('Launching '+(b.game||b.app||b.name||b.system||'…'));}catch(e){say('Launch failed');}return;}
       if(it.dataset.cmd){fetch('/launch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cmd:it.dataset.cmd})});say('Opening…');return;}
       if(it.classList.contains('game')){say('Open Library to play this');return;}
       if(it.click){it.click();}}
@@ -258,7 +363,7 @@
       const cur=curItem(), Z=[];
       const side=[...document.querySelectorAll('#side .nav')]; if(side.length)Z.push({name:'Menu',items:side});
       document.querySelectorAll('.widget').forEach(w=>{ if(w.style.display==='none')return;
-        let its=[...w.querySelectorAll('.pin a, #recent .game, #recentapps .rapp, .search[data-go]')];
+        let its=[...w.querySelectorAll('.pin a, #recent .game, #recentapps .rapp, .search[data-go], .witem, .wlaunch')];
         if(!its.length)its=[w];
         Z.push({name:(w.dataset.wname||'Widget'),items:its}); });
       const dock=[...document.querySelectorAll('#dock .d')]; if(dock.length)Z.push({name:'Dock',items:dock});
@@ -310,20 +415,24 @@
   function fmtUp(s){const h=Math.floor(s/3600),m=Math.floor(s%3600/60);return h?`${h}h ${m}m`:`${m}m`;}
   const $=id=>document.getElementById(id);
   async function poll(){
+    // System widget: REAL laptop telemetry via /sys/perf (NOT the VM's own cpu/mem)
     try{
-      const r=await fetch("/status.json",{cache:"no-store"}); const d=await r.json();
-      if(d.ok){
-        $("d-cpu").textContent=d.cpu_pct+"%";
-        $("d-temp").textContent=(d.temp_c==null?"—":d.temp_c+"°C");
-        $("d-mem").textContent=`${d.mem_used_gb} / ${d.mem_total_gb} GB (${d.mem_pct}%)`;
-        $("d-up").textContent=fmtUp(d.uptime_s);
-        $("d-status").textContent="System Status: "+(d.cpu_pct<85&&d.mem_pct<90?"Optimal":"Busy");
+      const p=await (await fetch("/sys/perf",{cache:"no-store"})).json();
+      if(p.ok){
+        $("d-cpu").textContent=Math.round(p.cpu_pct)+"%";
+        $("d-gpu").textContent=(p.gpu_pct!=null?Math.round(p.gpu_pct)+"%":"—");
+        const g=$("d-gpu"); if(g&&p.gpu_name)g.title=p.gpu_name;                 // RTX 5060 on hover
+        $("d-temp").textContent=(p.cpu_temp_c!=null?Math.round(p.cpu_temp_c)+"°C":"—")+
+          (p.gpu_temp_c!=null?"  ·  GPU "+Math.round(p.gpu_temp_c)+"°C":"");
+        const gb=v=>(v/1024).toFixed(1);
+        $("d-mem").textContent=`${gb(p.mem_used_mb)} / ${gb(p.mem_total_mb)} GB (${p.mem_pct}%)`;
+        $("d-up").textContent=fmtUp(p.uptime_s);
+        $("d-status").textContent="System Status: "+(p.cpu_pct<85&&p.mem_pct<90?"Optimal":"Busy");
         $("d-live").style.color="#3fe0a0"; $("d-live").textContent="● live";
-      } else { $("d-live").style.color="#ff7a6e"; $("d-live").textContent="● agent offline"; $("d-status").textContent="System Status: agent unreachable"; }
-      updateTray(d);
-      $("d-gpu").textContent=(d.gpu_pct!=null?d.gpu_pct+"%":"—");          // live host GPU (RTX 5060)
-      if(d.gpu_temp_c!=null)$("d-temp").textContent=d.gpu_temp_c+"°C";     // GPU temp (agent reports none)
+      } else { $("d-live").style.color="#ff7a6e"; $("d-live").textContent="● host offline"; $("d-status").textContent="System Status: host unreachable"; }
     }catch(e){ $("d-live").style.color="#ff7a6e"; $("d-live").textContent="● no feed"; }
+    // tray: real battery + wifi/online from the host laptop (via /status.json bridge)
+    try{ const d=await (await fetch("/status.json",{cache:"no-store"})).json(); updateTray(d); }catch(e){}
   }
   // tray: real battery (from host laptop via bridge) + wifi/online, like Windows
   function setIcon(el,name){el.style.setProperty("--u",`url(assets/icons/${name}.svg)`);}

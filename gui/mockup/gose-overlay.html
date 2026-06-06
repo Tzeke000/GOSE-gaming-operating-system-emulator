@@ -19,7 +19,13 @@
   .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
     -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
   .stage{position:fixed;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;
-    gap:16px;padding:30px 24px;overflow:auto}
+    gap:16px;padding:30px 24px;overflow:auto;transform:translateY(10px);transition:transform .2s ease;will-change:transform}
+  /* clean reveal: window opens on solid #07070f (matches GTK bg) → no white flash / half-paint;
+     the whole bar + frozen-frame backdrop fade in together once ready, instead of popping in piecemeal */
+  body{opacity:0;transition:opacity .18s ease}
+  body.ready{opacity:1}
+  body.ready .stage{transform:none}
+  html[data-motion="reduce"] body,html[data-motion="reduce"] .stage{transition:none!important}
   /* glass material used by the toolbar + cards */
   .glass{background:rgba(22,24,33,.74);backdrop-filter:blur(26px) saturate(1.25);
     -webkit-backdrop-filter:blur(26px) saturate(1.25);border:1px solid rgba(255,255,255,.10);
@@ -86,7 +92,7 @@
   function api(p,b){return fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{cache:"no-store"}).then(r=>r.json()).catch(()=>({ok:false}));}
   function ico(n){return '<span class="ic" style="-webkit-mask:url(assets/icons/'+n+'.svg) center/contain no-repeat;mask:url(assets/icons/'+n+'.svg) center/contain no-repeat;background:currentColor;display:inline-block"></span>';}
   let S={vol:50,mute:false,bri:null,briHas:true,perf:"balanced",batt:null,charging:false,net:"—",
-         cpu:null,gpu:null,ram:null,temp:null,powerMode:false,buffer:false,slots:[]};
+         cpu:null,gpu:null,ram:null,temp:null,cputemp:null,gpuName:null,powerMode:false,buffer:false,slots:[]};
   let foc=0, items=[];
   function say(m){var t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(function(){t.classList.remove("show");},1800);}
   function build(){
@@ -121,12 +127,13 @@
     var now=new Date(),hh=now.getHours(),mm=now.getMinutes(),ap=hh>=12?"PM":"AM",h12=((hh+11)%12)+1;
     var batt=S.batt==null?"":(" · "+S.batt+"%"+(S.charging?" ⚡":""));
     $("meta").innerHTML='<b>'+h12+':'+(mm<10?"0":"")+mm+' '+ap+'</b> &nbsp; '+(S.net||"—")+batt;
-    // Performance widget (live, read-only)
+    // Performance widget — live HOST telemetry from /sys/perf (the real laptop), read-only
     $("perf").innerHTML=
       statRow("CPU", S.cpu==null?"—":S.cpu+"%", S.cpu)+
       statRow("GPU", S.gpu==null?"—":S.gpu+"%", S.gpu)+
       statRow("RAM", S.ram==null?"—":S.ram+"%", S.ram)+
-      statRow("Temp", S.temp==null?"—":S.temp+"°C", S.temp);
+      statRow("Temp", S.temp==null?"—":S.temp+"°C", S.temp)+
+      (S.gpuName?'<div style="font-size:10.5px;color:#8b92b0;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+S.gpuName+'">'+S.gpuName+(S.cputemp!=null?' · CPU '+S.cputemp+'°C':'')+'</div>':'');
     // Audio & Display card
     var av="";[{k:"vol"},{k:"bri"}].forEach(function(o){var it=items.find(x=>x.k===o.k);var i=items.indexOf(it);
       var val=o.k==="vol"?S.vol:S.bri, dis=o.k==="bri"&&!S.briHas;
@@ -158,18 +165,34 @@
   }
   function loadSlots(){ if(!IN_GAME)return;
     api("/game/state/slots").then(function(d){ if(d&&d.slots){S.slots=d.slots;render();} }); }
+  function refreshPerf(){   // REAL host stats (laptop CPU/GPU/RAM/temps) — NOT the VM's own /status.json
+    api("/sys/perf").then(d=>{if(d&&d.ok){
+      if(d.cpu_pct!=null)S.cpu=Math.round(d.cpu_pct);
+      if(d.gpu_pct!=null)S.gpu=Math.round(d.gpu_pct);
+      if(d.mem_pct!=null)S.ram=Math.round(d.mem_pct);
+      if(d.gpu_temp_c!=null)S.temp=Math.round(d.gpu_temp_c);
+      if(d.cpu_temp_c!=null)S.cputemp=Math.round(d.cpu_temp_c);
+      if(d.gpu_name)S.gpuName=d.gpu_name;
+      render();}});}
   function refresh(){
-    api("/status.json").then(d=>{if(d){if(d.battery_pct!=null)S.batt=d.battery_pct;S.charging=!!d.charging;
-      if(d.cpu_pct!=null)S.cpu=d.cpu_pct; if(d.gpu_pct!=null)S.gpu=d.gpu_pct; if(d.mem_pct!=null)S.ram=d.mem_pct;
-      if(d.gpu_temp_c!=null)S.temp=d.gpu_temp_c;}render();});
+    // status.json's cpu_pct/mem_pct are the GUEST VM (fake) — perf comes from /sys/perf instead.
+    api("/status.json").then(d=>{if(d){if(d.battery_pct!=null)S.batt=d.battery_pct;S.charging=!!d.charging;}render();});
     api("/net.json").then(d=>{if(d&&d.ok)S.net=d.connection||(d.online?"Online":"Offline");render();});
     api("/sys/audio").then(d=>{if(d&&d.ok){S.vol=d.volume==null?S.vol:d.volume;S.mute=!!d.mute;}render();});
-    api("/sys/brightness").then(d=>{if(d){S.briHas=d.has!==false;if(d.ok)S.bri=d.value;}render();});
+    api("/sys/brightness").then(d=>{if(d){S.briHas=d.ok!==false;if(d.ok&&d.level!=null)S.bri=d.level;}render();});
   }
   function setVol(v){v=Math.max(0,Math.min(100,v));S.vol=v;render();clearTimeout(setVol._t);setVol._t=setTimeout(()=>api("/sys/audio",{volume:v}),110);}
-  function setBri(v){if(!S.briHas)return;v=Math.max(0,Math.min(100,v));S.bri=v;render();clearTimeout(setBri._t);setBri._t=setTimeout(()=>api("/sys/brightness",{value:v}),110);}
+  function setBri(v){if(!S.briHas)return;v=Math.max(0,Math.min(100,v));S.bri=v;render();clearTimeout(setBri._t);setBri._t=setTimeout(()=>api("/sys/brightness",{level:v}),110);}
   function setPerf(d){var m=["battery","balanced","performance"],i=Math.max(0,Math.min(2,m.indexOf(S.perf)+d));S.perf=m[i];render();api("/sys/perf",{mode:S.perf});}
-  function move(d){foc=(foc+d+items.length)%items.length;render();}
+  function focusVisible(){var el=document.querySelector(".row.focus");if(el&&el.scrollIntoView)el.scrollIntoView({block:"nearest",inline:"nearest"});}
+  function move(d){foc=(foc+d+items.length)%items.length;render();focusVisible();}
+  // which visual card a focusable item lives in — for L1/R1 ([ / ]) section hopping
+  function secOf(it){if(!it)return"sys";if(it.k==="vol"||it.k==="bri")return"av";if(it.type==="seg")return"sys";return it.card||"sys";}
+  function jumpSection(d){if(!items.length)return;
+    var order=[];items.forEach(function(it){var s=secOf(it);if(order.indexOf(s)<0)order.push(s);});
+    var ci=order.indexOf(secOf(items[foc])),ns=order[(ci+d+order.length)%order.length];
+    var ni=items.findIndex(function(it){return secOf(it)===ns;});
+    if(ni>=0){foc=ni;render();focusVisible();}}
   function adjust(d){var it=items[foc];if(!it)return;if(it.k==="vol")setVol(S.vol+d*5);else if(it.k==="bri")setBri((S.bri||0)+d*5);else if(it.type==="seg")setPerf(d);}
   function enter(){var it=items[foc];if(!it)return;
     if(it.savestate){say(it.savestate==="save"?"Saving state…":"Loading state…");
@@ -191,10 +214,16 @@
     if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
     else if(k==="ArrowRight")adjust(1);else if(k==="ArrowLeft")adjust(-1);
     else if(k==="Enter"||k===" ")enter();
-    else return;e.preventDefault();});
+    else if(k==="]"||k==="PageDown")jumpSection(1);
+    else if(k==="["||k==="PageUp")jumpSection(-1);
+    else return;e.preventDefault();},true);
   build();refresh();setInterval(refresh,2000);
+  refreshPerf();setInterval(refreshPerf,1200);   // live host perf while the bar is open (stays under /sys/perf 60/60 limit)
   api("/capture/buffer").then(d=>{if(d){S.buffer=!!d.running;build();}});   // reflect replay-buffer state on open
   loadSlots();   // populate the saved-states thumbnails when the Game Bar opens over a game
+  try{document.body.tabIndex=-1;window.focus();document.body.focus();}catch(e){}   // make sure keys land here
+  (function(){var done=false;function go(){if(done)return;done=true;requestAnimationFrame(function(){document.body.classList.add("ready");});}
+    var im=new Image();im.onload=go;im.onerror=go;im.src="_gbg.jpg?"+bgn;setTimeout(go,240);})();   // reveal once the frozen frame is ready (or 240ms cap)
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>
