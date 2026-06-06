@@ -61,7 +61,7 @@
   .toast.show{opacity:1}
 </style></head>
 <body>
-  <div class="top"><img class="lg" src="assets/brand/gose-core-mark.png" alt="GOSE Core">
+  <div class="top"><img class="lg" src="assets/brand/gose-crystal.png" alt="GOSE">
     <div><h1>Settings</h1><div class="s">GOSE · personalize, sound, network, time, power, privacy, accounts &amp; more</div></div>
     <div class="home"><span class="ic" data-i="layout-grid"></span><span>B / Esc — back to desktop</span></div>
   </div>
@@ -73,6 +73,7 @@
     <span class="h"><b>↑↓</b> move · <b>→</b> enter · <b>←</b> back to list · <b>Esc</b> desktop</span></div>
   <div class="toast" id="toast"></div>
 <script src="assets/platform.js"></script>
+<script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
@@ -122,7 +123,11 @@
       {ic:"volume-2", nm:"Output device", sub:"Where audio plays", t:"cycle", v:["Auto","Speakers","HDMI","Headphones","Bluetooth"]},
       {ic:"volume-2", nm:"Master volume", sub:"System-wide level", t:"cycle", v:["25%","50%","75%","100%"], i:2},
       {ic:"bluetooth", nm:"Bluetooth audio", sub:"Pair wireless headphones / earbuds", t:"cycle", v:["On","Off"]},
-      {ic:"bell", nm:"UI sounds", sub:"Clicks and navigation feedback", t:"cycle", v:["On","Off"], apply:"sounds"},
+      {ic:"moon", nm:"Quiet mode", sub:"Silence ALL GOSE sounds — overrides the per-category levels", t:"cycle", v:["Off","On"], apply:"snd_quiet"},
+      {ic:"power", nm:"System sounds", sub:"Boot, login, sleep / wake, shutdown & restart", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_system"},
+      {ic:"bell", nm:"Notification sounds", sub:"Pings, downloads done, warnings & errors", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_notify"},
+      {ic:"battery", nm:"Battery alerts", sub:"Charging, low & critical battery", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_battery"},
+      {ic:"gamepad-2", nm:"UI & navigation sounds", sub:"Clicks and cursor feedback (auto-ducked while a game is open)", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_ui"},
     ]},
     {id:"net", ic:"wifi", nm:"Network & internet", rows:[
       {ic:"globe", nm:"Status", sub:"Active connection (live, via connman)", t:"info", val:"—", live:"net"},
@@ -246,7 +251,7 @@
       pane.appendChild(el);
     });
   }
-  function paintIcons(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function paintIcons(){if(window.GICON){GICON.paint(document);return;}document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function render(){buildRail();buildPane();paintIcons();}
   function showToast(m){toast.textContent=m;toast.classList.add("show");clearTimeout(showToast._t);
     showToast._t=setTimeout(()=>toast.classList.remove("show"),1600);}
@@ -281,7 +286,9 @@
       if(r.post){
         if(r.confirm && r._armed!==true){ r._armed=true; showToast("Press again to "+r.nm.toLowerCase());
           clearTimeout(r._t); r._t=setTimeout(()=>{r._armed=false;},2500); return; }
-        r._armed=false; showToast(r.act||"OK"); post(r.post, r.body||{});
+        r._armed=false; showToast(r.act||"OK");
+        if(r.body&&r.body.action&&window.GOSESOUND)GOSESOUND.play(r.body.action,{force:true});
+        post(r.post, r.body||{});
       } else showToast(r.act||"OK");
     }
     else if(r.t==="sys"){doSys(r);}
@@ -337,8 +344,13 @@
       showToast("Clock: "+(f==="24"?"24-hour":"12-hour"));}
     else if(r.apply==="live"){const names=["off","aurora","starfield","particles","nebula"];
       localStorage.setItem("gose-live",names[r.i||0]);showToast("Live wallpaper: "+r.v[r.i]);}
-    else if(r.apply==="sounds"){const off=(r.i===1);localStorage.setItem("gose-sounds",off?"off":"on");
-      showToast("UI sounds: "+(off?"Off":"On"));if(!off&&window.GOSE&&GOSE.sound)GOSE.sound("select");}
+    else if(r.apply==="snd_quiet"){const on=(r.i===1);if(window.GOSESOUND)GOSESOUND.setQuiet(on);
+      showToast("Quiet mode: "+(on?"On — all sounds off":"Off"));if(!on&&window.GOSESOUND)GOSESOUND.play("notify");}
+    else if(r.apply&&r.apply.indexOf("snd_")===0){const cat=r.apply.slice(4);const vmap=[0,25,50,75,100];const v=vmap[r.i||0];
+      if(window.GOSESOUND){GOSESOUND.setMute(cat,r.i===0);if(r.i>0)GOSESOUND.setVol(cat,v);}
+      if(cat==="ui")localStorage.setItem("gose-sounds",r.i===0?"off":"on");   // keep the legacy UI toggle in sync
+      showToast(r.nm+": "+r.v[r.i]);
+      if(r.i>0&&window.GOSESOUND){const prev={system:"login",notify:"notify",battery:"charging",ui:"select"}[cat];if(prev)GOSESOUND.play(prev);}}
     else if(r.apply==="bt"){const on=(r.i===0);post("/bt",{action:"power",on});  // v:["On","Off"]
       showToast("Bluetooth: "+(on?"On":"Off"));}
     else if(r.apply==="airplane"){const on=(r.i===1);post("/bt",{action:"power",on:!on});  // v:["Off","On"]
@@ -367,7 +379,13 @@
     const rc=findRow("clockfmt","apply"); if(rc)rc.i=(localStorage.getItem("gose-clockfmt")==="24")?1:0;
     const rl=findRow("live","apply"); const lv=["off","aurora","starfield","particles","nebula"].indexOf(localStorage.getItem("gose-live"));
     if(rl&&lv>=0)rl.i=lv;
-    const rsnd=findRow("sounds","apply"); if(rsnd)rsnd.i=(localStorage.getItem("gose-sounds")==="off")?1:0;
+    // sound surface: read straight from localStorage (the manager may load async)
+    const SDEF={system:75,notify:75,battery:100,ui:50};
+    function volIdxLS(cat){ if(localStorage.getItem("gose-snd-mute-"+cat)==="1")return 0;
+      let v=parseInt(localStorage.getItem("gose-snd-vol-"+cat)||SDEF[cat],10); if(isNaN(v))v=SDEF[cat];
+      return v<=0?0:v<37?1:v<63?2:v<88?3:4; }
+    const rq=findRow("snd_quiet","apply"); if(rq)rq.i=(localStorage.getItem("gose-snd-quiet")==="1")?1:0;
+    ["system","notify","battery","ui"].forEach(cat=>{const rr=findRow("snd_"+cat,"apply"); if(rr)rr.i=volIdxLS(cat);});
     const onoff=(k)=>localStorage.getItem(k)==="on"?1:0;
     const rsc=findRow("a11y_scale","apply"); if(rsc){const k=["1","1.15","1.3","1.5"].indexOf(localStorage.getItem("gose-ui-scale")||"1");rsc.i=k<0?0:k;}
     const rct=findRow("a11y_contrast","apply"); if(rct)rct.i=onoff("gose-contrast");

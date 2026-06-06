@@ -46,8 +46,8 @@
 </style></head>
 <body>
   <div class="wrap">
-    <div class="head"><img src="assets/brand/gose-core-mark.png" alt="GOSE"><h1>Apps</h1>
-      <span class="x"><span class="ic" data-i="layout-grid"></span> Esc — desktop</span></div>
+    <div class="head"><img src="assets/brand/gose-crystal.png" alt="GOSE"><h1>Apps</h1>
+      <span class="x"><span class="ic" data-i="apps"></span> Esc — desktop</span></div>
     <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search apps…" autofocus></div>
     <div class="ph" id="ph">ALL APPS</div>
     <div class="grid" id="grid"></div>
@@ -59,27 +59,28 @@
   </div>
   <div class="foot"><b>↑↓←→</b> move · <b>Enter</b> open · type to search · <b>Esc</b> desktop</div>
   <div class="toast" id="toast"></div>
+<script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const $=id=>document.getElementById(id);
   const APPS=[
-    {nm:"Library",  ds:"Your games, by system",        ic:"layout-grid", href:"gose-library.html"},
-    {nm:"Files",    ds:"Browse, open & edit files + storage map", ic:"folder", href:"gose-files.html"},
+    {nm:"Library",  ds:"Your games, by system",        ic:"library", href:"gose-library.html"},
+    {nm:"Files",    ds:"Browse, open & edit files + storage map", ic:"files", href:"gose-files.html"},
     {nm:"Task Manager", ds:"Processes, performance, kill tasks", ic:"cpu", href:"gose-taskman.html"},
     {nm:"Peripherals", ds:"Controllers, USB, Wi-Fi & Bluetooth", ic:"usb", href:"gose-peripherals.html"},
-    {nm:"Settings", ds:"Personalize the whole OS",      ic:"settings",   href:"gose-settings.html"},
-    {nm:"Gallery",  ds:"Screenshots & game clips",       ic:"image",    href:"gose-gallery.html"},
+    {nm:"Settings", ds:"Personalize the whole OS",      ic:"settings-app",   href:"gose-settings.html"},
+    {nm:"Gallery",  ds:"Screenshots & game clips",       ic:"gallery",    href:"gose-gallery.html"},
     {nm:"Splice",   ds:"Lossless video trim",           ic:"scissors", href:"gose-splice.html"},
-    {nm:"Store",    ds:"Get more apps from Flathub",     ic:"download", href:"gose-store.html"},
-    {nm:"Terminal", ds:"Command line — the real shell",  ic:"terminal", href:"gose-term.html"},
+    {nm:"Store",    ds:"Get more apps from Flathub",     ic:"store", href:"gose-store.html"},
+    {nm:"Terminal", ds:"Command line — the real shell",  ic:"terminal-app", href:"gose-term.html"},
     {nm:"Licenses", ds:"Open-source credits & licenses", ic:"file-text", href:"gose-licenses.html"},
     {nm:"Beam",     ds:"Send files to phone & devices", ic:"send",     soon:true},
-    {nm:"AI Players", ds:"Wren, Ava, Iris — join & play", ic:"sparkles", soon:true},
-    {nm:"Emulators", ds:"Cores & systems — license-aware store", ic:"gamepad-2", href:"gose-store.html?tab=emulators"},
+    {nm:"AI Players", ds:"Wren, Ava, Iris — join & play", ic:"ai", soon:true},
+    {nm:"Emulators", ds:"Cores & systems — license-aware store", ic:"emulators", href:"gose-store.html?tab=emulators"},
   ];
   let shown=APPS.slice(), foc=0;
-  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function paint(){if(window.GICON){GICON.paint(document);return;}document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1800);}
   function render(){
     $("grid").innerHTML=shown.length?shown.map((a,i)=>`<div class="app ${i===foc?'focus':''}" data-i2="${i}">

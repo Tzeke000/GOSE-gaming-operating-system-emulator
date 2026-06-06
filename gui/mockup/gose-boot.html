@@ -33,8 +33,11 @@
   <div class="word"><b>GOSE</b></div>
   <div class="sub">Game Operating System Emulator</div>
   <div class="bar"><i></i></div>
+<script src="assets/sound.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  // boot chime on kiosk start (autoplay is permitted in the GOSE kiosk WebView)
+  try{ if(window.GOSESOUND)GOSESOUND.play("boot",{force:true}); }catch(e){}
   // animate, then hand off. On a fresh install (no .oobe-done flag) land on the first-boot
   // wizard; otherwise the desktop. The server is the source of truth (so a reset re-runs OOBE).
   var dest="gose-home.html";

@@ -31,8 +31,9 @@
   var WAV  = { nav:1, select:1, back:1, launch:1 };      // these are .wav; the rest are Zeke's .mp3
   // important alerts still fire while a game is foreground (don't duck these)
   var BYPASS_DUCK = { 'battery-critical':1, 'battery-low':1, error:1, warning:1 };
-  // per-category default volume 0..100: UI ticks quiet (they fire constantly), alerts loud
-  var DEFV = { system:85, notify:80, battery:90, ui:45 };
+  // per-category default volume 0..100: UI ticks quiet (they fire constantly), alerts loud.
+  // Round to the Settings volume steps (25/50/75/100) so the picker matches the stored value.
+  var DEFV = { system:75, notify:75, battery:100, ui:50 };
   var CATS = ['system','notify','battery','ui'];
 
   function lsGet(k,d){ var v=localStorage.getItem(k); return v==null?d:v; }

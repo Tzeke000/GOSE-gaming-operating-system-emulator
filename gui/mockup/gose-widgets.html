@@ -48,6 +48,7 @@
   </div>
   <div class="foot"><span class="ic" data-i="palette"></span> GOSE Widgets
     <span class="h"><b>↑↓</b> move · <b>Enter</b> toggle · <b>Esc</b> desktop</span></div>
+<script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
 <script src="assets/widget.js"></script>
 <script>
@@ -60,7 +61,7 @@
   let en={}; try{en=JSON.parse(localStorage.getItem("gose-wenabled")||"{}");}catch(e){}
   function isOn(id){ return en[id]!==undefined ? !!en[id] : !!(GW.catalog.find(w=>w.id===id)||{}).def; }
   let foc=0;
-  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function paint(){if(window.GICON){GICON.paint(document);return;}document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function render(){
     $("list").innerHTML=WIDGETS.map((w,i)=>`<div class="w ${i===foc?'focus':''}" data-i2="${i}">
       <div class="ai"><span class="ic" data-i="${w.icon}"></span></div>

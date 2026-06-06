@@ -92,14 +92,14 @@
   .toast.show{opacity:1}
 </style></head>
 <body>
-  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+  <div class="top"><img src="assets/brand/gose-crystal.png" alt="GOSE">
     <div><h1>Store</h1><div class="s" id="subtitle">Install apps, emulator cores & free games</div></div>
-    <div class="home"><span class="ic" data-i="download"></span> Esc — desktop</div>
+    <div class="home"><span class="ic" data-i="store"></span> Esc — desktop</div>
   </div>
   <div class="tabs" id="tabs">
-    <div class="tab" data-tab="apps"><span class="ic" data-i="download"></span> Apps</div>
-    <div class="tab" data-tab="emulators"><span class="ic" data-i="gamepad-2"></span> Emulators</div>
-    <div class="tab" data-tab="games"><span class="ic" data-i="layout-grid"></span> Games</div>
+    <div class="tab" data-tab="apps"><span class="ic" data-i="apps"></span> Apps</div>
+    <div class="tab" data-tab="emulators"><span class="ic" data-i="emulators"></span> Emulators</div>
+    <div class="tab" data-tab="games"><span class="ic" data-i="games"></span> Games</div>
     <div class="ltrig"><b>L1</b>/<b>R1</b> switch tabs</div>
   </div>
   <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search…" autofocus></div>
@@ -107,14 +107,15 @@
   <div class="chiprow" id="chiprow" style="display:none"></div>
   <div class="dlbar" id="dlbar" style="display:none"></div>
   <div class="scroll" id="scroll"><div class="grid" id="grid"></div></div>
-  <div class="foot"><span class="ic" data-i="download"></span> <span id="footlabel">GOSE Store</span>
+  <div class="foot"><span class="ic" data-i="store"></span> <span id="footlabel">GOSE Store</span>
     <span class="h" id="foothint"></span></div>
   <div class="toast" id="toast"></div>
+<script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   var $=function(id){return document.getElementById(id);};
-  function paint(){var ns=document.querySelectorAll("[data-i]");for(var i=0;i<ns.length;i++){var e=ns[i];e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)");}}
+  function paint(){if(window.GICON){GICON.paint(document);return;}var ns=document.querySelectorAll("[data-i]");for(var i=0;i<ns.length;i++){var e=ns[i];e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)");}}
   function say(m){var t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(function(){t.classList.remove("show");},2200);}
 
   var TABS=["apps","emulators","games"];
@@ -331,7 +332,7 @@
     var g=$("grid");
     g.innerHTML=gamesShown.map(function(a,i){
       return '<div class="app '+(i===gamesFoc?'focus':'')+'" data-i2="'+i+'">'
-        +'<div class="ai"><span class="ic" data-i="layout-grid"></span></div>'
+        +'<div class="ai"><span class="ic" data-i="games"></span></div>'
         +'<div class="mid"><div class="nm">'+a.name+'</div><div class="ds">'+(a.desc||"")+'</div>'
         +'<span class="cat">'+a.sysname+' · '+a.license+'</span></div>'
         +'<div class="col">'+gameBtn(a)+'</div></div>';

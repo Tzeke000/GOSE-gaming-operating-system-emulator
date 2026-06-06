@@ -119,6 +119,7 @@
     <span class="keys">D-pad move · <b>A</b> select · <b>B</b> back · <b>R1</b> next · <b>L1</b> back</span>
   </div>
 <script src="assets/platform.js"></script>
+<script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
 <script>
 (function(){
@@ -170,8 +171,9 @@
   function api(path, body){ return fetch(path, body?{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify(body)}:{cache:"no-store"}).then(function(r){return r.json();}).catch(function(){return {ok:false};}); }
   function ico(n){ return '<span class="ic" data-i="'+n+'"></span>'; }
-  function paintIcons(){ document.querySelectorAll("[data-i]").forEach(function(e){
-    e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)"); }); }
+  function paintIcons(){ if(window.GICON){ GICON.paint(document); return; }
+    document.querySelectorAll("[data-i]").forEach(function(e){
+      e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)"); }); }
 
   // ---- spatial roving focus over .focusable (login.html idiom; layout-agnostic) ----
   function focusables(){ return [].slice.call(document.querySelectorAll(".focusable"))
@@ -431,6 +433,8 @@
 
   // ---- finale: persist everything, then go to the desktop with a flourish ----
   function runFinale(){
+    // setup complete -> the welcome flourish (docs/26)
+    try{ if(window.GOSESOUND)GOSESOUND.play("welcome",{force:true}); }catch(e){}
     // theme + locale to localStorage so the desktop reflects the choices immediately
     localStorage.setItem("gose-theme", S.theme);
     document.documentElement.dataset.theme = S.theme;
@@ -472,7 +476,7 @@
     var f=document.createElement("div"); f.className="flash";
     f.innerHTML='<div class="chk">'+ico("check")+'</div><div class="lbl">'+STEPS[idx].name+' done</div>';
     card.appendChild(f); paintIcons();
-    try{ GOSE&&GOSE.sound&&GOSE.sound("select"); }catch(e){}
+    try{ if(window.GOSESOUND){ GOSESOUND.play("step-done"); } else if(GOSE&&GOSE.sound){ GOSE.sound("select"); } }catch(e){}
     setTimeout(cb, 480);
   }
   function next(){
@@ -481,6 +485,8 @@
     if(block){ flashHint(block); refreshGate(); return; }
     if(idx>=STEPS.length-1) return;
     if(STEPS[idx].id==="welcome"){ idx++; render(); return; } // no flash on welcome
+    // account created/confirmed -> the login chime (docs/26)
+    if(STEPS[idx].id==="account"){ try{ if(window.GOSESOUND)GOSESOUND.play("login"); }catch(e){} }
     flashDone(function(){ idx++; render(); });
   }
   function skip(){ captureInputs(); if(idx<STEPS.length-1){ idx++; render(); } }

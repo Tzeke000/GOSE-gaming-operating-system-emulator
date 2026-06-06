@@ -11,6 +11,15 @@
                 read: false, id: Math.random().toString(36).slice(2), t: (n.t || "now") });
     save(a);
     try { window.dispatchEvent(new CustomEvent("gose-notify", { detail: n })); } catch(e){}
+    // sound: caller may pass n.sound ('battery-low' etc.) or false to silence; else map by icon
+    try { if (window.GOSESOUND && n.sound !== false) {
+      var ev = n.sound;
+      if (!ev) { var ic = n.icon || "";
+        ev = ic === "download" ? "download-done"
+           : ic === "triangle-alert" ? "warning"
+           : "notify"; }
+      GOSESOUND.play(ev);
+    } } catch(e){}
     return a;
   };
   GOSE.notifs = load;

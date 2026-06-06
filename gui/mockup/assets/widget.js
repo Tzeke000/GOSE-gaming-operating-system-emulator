@@ -31,15 +31,15 @@
      enabled. Keep ids in sync with the GW.define() calls. ---- */
   var CATALOG=[
     {id:"hub",        name:"Hub",            desc:"Clock, date & quick shortcuts",            icon:"layout-grid", group:"focal",   def:1},
-    {id:"appsgames",  name:"Apps & Games",   desc:"All apps & games, plus your most recent",  icon:"layout-grid", group:"content", def:1},
-    {id:"wemulators", name:"Emulators",      desc:"Most-played & recent systems — start one",  icon:"cpu",         group:"content", def:1},
-    {id:"wlibrary",   name:"Library",        desc:"Recent & most-played games — launch one",   icon:"layout-grid", group:"content", def:1},
-    {id:"wstore",     name:"Store",          desc:"Sample apps, emulators & games to grab",    icon:"download",    group:"content", def:1},
-    {id:"aiplayers",  name:"AI Players",     desc:"Wren, Ava, Iris — status & access tier",    icon:"sparkles",    group:"content", def:1},
+    {id:"appsgames",  name:"Apps & Games",   desc:"All apps & games, plus your most recent",  icon:"apps",        group:"content", def:1},
+    {id:"wemulators", name:"Emulators",      desc:"Most-played & recent systems — start one",  icon:"emulators",   group:"content", def:1},
+    {id:"wlibrary",   name:"Library",        desc:"Recent & most-played games — launch one",   icon:"library",     group:"content", def:1},
+    {id:"wstore",     name:"Store",          desc:"Sample apps, emulators & games to grab",    icon:"store",       group:"content", def:1},
+    {id:"aiplayers",  name:"AI Players",     desc:"Wren, Ava, Iris — status & access tier",    icon:"ai",          group:"content", def:1},
     {id:"steam",      name:"Steam",          desc:"Steam status & library when signed in",     icon:"gamepad-2",   group:"content", def:0},
-    {id:"wterminal",  name:"Terminal",       desc:"Quick-launch the terminal",                 icon:"terminal",    group:"content", def:1},
+    {id:"wterminal",  name:"Terminal",       desc:"Quick-launch the terminal",                 icon:"terminal-app",group:"content", def:1},
     {id:"controllers",name:"Controllers",    desc:"Connected gamepads (count badge when live)",icon:"gamepad-2",   group:"status",  def:1},
-    {id:"notifs",     name:"Notifications",  desc:"Recent notifications (unread-count badge)",  icon:"bell",        group:"status",  def:1},
+    {id:"notifs",     name:"Notifications",  desc:"Recent notifications (unread-count badge)",  icon:"notifications",group:"status", def:1},
     {id:"system",     name:"System",         desc:"Live laptop CPU / GPU / RAM / temp monitor",icon:"cpu",         group:"status",  def:1},
     {id:"battery",    name:"Battery & Power", desc:"Charge, time left & suspend / restart / shutdown",icon:"battery",  group:"status",  def:1}
   ];
@@ -51,8 +51,10 @@
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
   function fmtPlay(s){s=s||0;var h=Math.floor(s/3600),m=Math.floor(s%3600/60);
     return h?(h+'h'+(m?' '+m+'m':'')):(m?m+'m':'<1m');}
-  function paintIcons(el){if(!el)return;el.querySelectorAll('[data-i]').forEach(function(e){
-    e.style.setProperty('--u','url(assets/icons/'+e.dataset.i+'.svg)');});}
+  function paintIcons(el){if(!el)return;
+    if(window.GICON){GICON.paint(el);return;}                 // brand PNGs + lucide masks
+    el.querySelectorAll('[data-i]').forEach(function(e){
+      e.style.setProperty('--u','url(assets/icons/'+e.dataset.i+'.svg)');});}
   function enabled(){var en={};try{en=JSON.parse(localStorage.getItem('gose-wenabled')||'{}');}catch(e){}
     return function(id){return en[id]!==undefined?!!en[id]:defOn(id);};}
 

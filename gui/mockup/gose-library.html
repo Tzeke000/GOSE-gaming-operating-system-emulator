@@ -55,16 +55,17 @@
   .gopt .save.focus{box-shadow:var(--focusglow);border-color:#fff}
 </style></head>
 <body>
-  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+  <div class="top"><img src="assets/brand/gose-crystal.png" alt="GOSE">
     <div><h1>Library</h1><div class="s" id="sub">scanning your games…</div></div>
-    <div class="home"><span class="ic" data-i="layout-grid"></span> B / Esc — home</div>
+    <div class="home"><span class="ic" data-i="library"></span> B / Esc — home</div>
   </div>
   <div class="wrap"><div class="rail" id="rail"></div><div class="pane" id="pane"></div></div>
-  <div class="foot"><span class="ic" data-i="gamepad-2"></span> GOSE Library
+  <div class="foot"><span class="ic" data-i="games"></span> GOSE Library
     <span class="h">D-pad move · <b>A</b> launch · <b>X/F</b> favorite · <b>Y/O</b> options · <b>L1/R1</b> system · <b>S</b> scrape art · <b>B</b> home</span></div>
   <div class="toast" id="toast"></div>
   <div class="gopt" id="gopt"><div class="box" id="gopt-box"></div></div>
 <script src="assets/platform.js"></script>
+<script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
@@ -73,7 +74,7 @@
   let SYS=[],cat=0,foc=0;
   function say(m){toast.textContent=m;toast.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove("show"),1600);}
   function fmtPlay(s){if(!s)return"new";var m=Math.round(s/60);if(m<1)return"<1m";if(m<60)return m+"m played";return Math.floor(m/60)+"h "+(m%60)+"m played";}
-  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function paint(){if(window.GICON){GICON.paint(document);return;}document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function buildRail(){rail.innerHTML=SYS.map((s,i)=>
     `<div class="sys ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.logo?`<img src="${s.logo}" alt="" style="height:13px;width:auto;max-width:104px;vertical-align:-2px;margin-right:7px;opacity:.9" onerror="this.remove()">`:''}${s.name}</span><span class="c">${s.games.length}</span></div>`).join("");
     [...rail.children].forEach(el=>el.onclick=()=>{cat=+el.dataset.i2;foc=0;render();});}
