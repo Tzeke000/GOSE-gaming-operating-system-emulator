@@ -86,13 +86,36 @@ license-aware installs).
 
 ## 5. Step-3 gaps (honest list)
 
-1. **Battery/power management** — charge %, low-battery warning, suspend/resume
-   on power button. `[needs hardware]` — the VM has no battery.
-2. **Controller firmware breadth** — bake `xpadneo` (Xbox pads) into the image;
-   PS4/PS5 are kernel-native. `[needs image build]`
+1. **Battery/power management — APPROVED, must be baked into step 3** (Zeke
+   2026-06-06): charge %, low-battery warning, suspend/resume on power button.
+   The *software* layer (read `/sys/class/power_supply`, battery widget,
+   warnings) is buildable + mockable in the VM now; live verification is
+   `[needs hardware]` — the VM has no battery.
+2. **Controller breadth — ALL controller types must maneuver the OS on first
+   startup** (Zeke 2026-06-06). Two parts: (a) bake `xpadneo` (Xbox pads) into
+   the image — PS4/PS5 are kernel-native — `[needs image build]`; (b) the
+   pad→menu bridge must accept ANY detected pad during OOBE: the admin-pad
+   arbitration (docs/07) only locks in AFTER a user exists — pre-OOBE there is
+   no admin yet, so the first pad that navigates becomes the admin candidate.
 3. **Storage auto-import** — udev already *sees* an inserted SD/USB; the missing
    piece is a rule + UI offer: "ROMs found on this card — add to your Library?"
    **Approved to build** (works in the VM via USB passthrough; task on the list).
+
+## 5b. Widget nav order (Zeke, 2026-06-06 — required fix)
+
+Cycling focus across desktop widgets must follow **spatial order: left→right,
+top→down — computed from the widgets' CURRENT positions**. Widgets are
+drag-movable with persisted positions (docs/21), so the order is recomputed
+from live geometry whenever a widget moves — never a hardcoded list. Folded
+into windowing chunk B (same nav code).
+
+## 5c. Standing test discipline
+
+When testing the OS, the AI tester (Wren) drives it **with her own virtual
+pad end-to-end** — every new surface gets actually navigated, not just
+rendered — so get-stuck-in-navigation traps are caught and fixed before Zeke
+hits them. (A window/page op that can't be done on the pad does not exist —
+docs/23 §1.6.)
 
 ## 6. Build order
 
