@@ -75,7 +75,7 @@
     {nm:"Licenses", ds:"Open-source credits & licenses", ic:"file-text", href:"gose-licenses.html"},
     {nm:"Beam",     ds:"Send files to phone & devices", ic:"send",     soon:true},
     {nm:"AI Players", ds:"Wren, Ava, Iris — join & play", ic:"sparkles", soon:true},
-    {nm:"Emulators", ds:"Cores & systems",              ic:"gamepad-2",  soon:true},
+    {nm:"Emulators", ds:"Cores & systems — license-aware store", ic:"gamepad-2", href:"gose-store.html?tab=emulators"},
   ];
   let shown=APPS.slice(), foc=0;
   function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}

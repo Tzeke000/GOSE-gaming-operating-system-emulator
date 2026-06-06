@@ -46,6 +46,8 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/net/scan": (10, 60), "/launch": (30, 60), "/store/install": (20, 60),
            "/splice/cut": (10, 120), "/fs/op": (60, 60), "/scrape": (6, 120),
            "/store/uninstall": (15, 60), "/ai/request": (6, 60),
+           "/emulators/install": (10, 60), "/emulators/uninstall": (15, 60),
+           "/games/install": (12, 60),
            "/game/screenshot": (30, 60), "/game/record/toggle": (12, 60),
            "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300)}
 
@@ -1764,6 +1766,317 @@ def game_exit():
     except Exception: pass
     return {"ok": True, "killed": killed}
 
+# ===== Emulator Store: license-aware libretro-core catalog + install/swap (docs/19, docs/20) =====
+# The license audit (docs/19) is canonical: 11 cores are non-commercial (EXCLUDE from a paid
+# build), 3 need review (EXCLUDE from the paid base until resolved), the rest are commercial-OK.
+# The store lets a user (re)install any excluded core for PERSONAL use, or any other libretro
+# core from libretro's own buildbot. Installs are confined to the libretro dir.
+LIBRETRO_DIR = "/usr/lib/libretro"
+BUILDBOT_BASE = "https://buildbot.libretro.com/nightly/linux/x86_64/latest/"
+
+# Verbatim per-core license strings from docs/19 §2 (read off the device's .info files).
+_CORE_LICENSE = {
+    "81": "GPLv3", "a5200": "GPLv2", "arduous": "GPLv3", "atari800": "GPLv2",
+    "beetle-saturn": "GPLv2", "bennugd": "GPLv3", "bk": "BSD", "blastem": "GPLv3",
+    "bluemsx": "GPLv2", "boom3": "GPLv2", "boom3_xp": "GPLv2", "bsnes_hd": "GPLv3",
+    "bsnes": "GPLv3", "cap32": "GPLv2", "desmume": "GPLv2", "dice": "GPLv3",
+    "dolphin": "GPLv2+", "dosbox_pure": "GPLv2", "easyrpg": "GPLv3", "emuscv": "GPLv3",
+    "fake08": "MIT", "fbneo": "Non-commercial", "fceumm": "GPLv2", "flycast": "GPLv2",
+    "fmsx": "Non-commercial", "freechaf": "GPLv3", "freeintv": "GPLv3", "fuse": "GPLv3",
+    "gambatte": "GPLv2", "gearcoleco": "GPLv3", "gearsystem": "GPLv3",
+    "genesisplusgx-expanded": "Non-commercial", "genesisplusgx-wide": "Non-commercial",
+    "genesisplusgx": "Non-commercial", "gw": "zlib", "handy": "Zlib", "hatari": "GPLv2",
+    "hatarib": "(unverified — empty license field)", "holani": "GPLv3", "kronos": "GPLv2",
+    "lowresnx": "zlib", "lutro": "MIT", "mame078plus": "MAME Noncommercial", "mame": "GPLv2+",
+    "mednafen_lynx": "Zlib|GPLv2", "mednafen_ngp": "GPLv2", "mednafen_psx": "GPLv2",
+    "mednafen_supergrafx": "GPLv2", "mednafen_wswan": "GPLv2", "melonds": "GPLv3",
+    "melondsds": "GPLv3+", "mesen-s": "GPLv3", "mesen": "GPLv3", "mgba": "MPLv2.0",
+    "minivmac": "GPLv2", "mrboom": "MIT", "mupen64plus-next": "GPLv2", "neocd": "LGPLv3",
+    "nestopia": "GPLv2", "np2kai": "MIT", "nxengine": "GPLv3", "o2em": "Artistic License",
+    "opera": "LGPL/Non-commercial", "parallel_n64": "GPLv2", "pce_fast": "GPLv2", "pce": "GPLv2",
+    "pcfx": "GPLv2", "pcsx2": "GPL", "pcsx_rearmed": "GPLv2", "pd777": "MIT", "picodrive": "MAME",
+    "play": "MIT", "pokemini": "GPLv3", "potator": "Public Domain", "ppsspp": "GPLv2",
+    "prboom": "GPLv2", "prosystem": "GPLv2", "puae2021": "GPLv2", "puae": "GPLv2",
+    "px68k": "Custom Non-Commercial", "quasi88": "BSD 3-Clause and MAME non-commercial",
+    "reminiscence": "GPLv3", "same_cdi": "GPLv2+", "sameduck": "MIT", "scummvm": "GPLv3",
+    "smsplus": "GPLv2", "snes9x": "Non-commercial", "snes9x_next": "Non-commercial",
+    "stella": "GPLv2", "superbroswar": "GPLv2", "swanstation": "GPLv3", "tgbdual": "GPLv2",
+    "theodore": "GPLv3", "tic80": "MIT", "tyrquake": "GPLv2", "uzem": "MIT", "vb": "GPLv2",
+    "vba-m": "GPLv2", "vecx": "GPLv3", "vice_x128": "GPLv2", "vice_x64": "GPLv2",
+    "vice_x64sc": "GPLv2", "vice_xpet": "GPLv2", "vice_xplus4": "GPLv2", "vice_xscpu64": "GPLv2",
+    "vice_xvic": "GPLv2", "vircon32": "3-clause BSD", "virtualjaguar": "GPLv3",
+    "vitaquake2-rogue": "GPLv2", "vitaquake2-xatrix": "GPLv2", "vitaquake2-zaero": "GPLv2",
+    "vitaquake2": "GPLv2", "wasm4": "ISC", "x1": "BSD", "xrick": "GPLv3", "yabasanshiro": "GPLv2",
+    "zc210": "(unverified — empty license field)",
+}
+# The 11 non-commercial blockers (docs/19 §1) + the 3 review cores (§3) — both kept OUT of a paid
+# base image; the store re-adds them at the user's discretion for personal use.
+_EXCLUDE_CORES = {"snes9x", "snes9x_next", "genesisplusgx", "genesisplusgx-expanded",
+                  "genesisplusgx-wide", "fbneo", "fmsx", "mame078plus", "opera", "px68k", "quasi88"}
+_REVIEW_CORES = {"picodrive", "hatarib", "zc210"}
+# Clean commercial-OK default core per system (docs/19 §5B) — the swap the paid build ships with.
+_CORE_SWAP = {"snes": "bsnes", "megadrive": "blastem", "mastersystem": "gearsystem",
+              "gamegear": "gearsystem", "sg1000": "gearsystem", "neogeo": "mame", "arcade": "mame"}
+# Systems with NO clean commercial-OK libretro core on the image → store-only personal-use add-ons.
+_NO_CLEAN_SWAP = {"megacd": "Sega CD", "sega32x": "Sega 32X", "3do": "3DO", "x68000": "Sharp X68000",
+                  "pc88": "PC-8801", "fbneo": "FinalBurn Neo arcade"}
+# Systems the store always surfaces (audit-relevant) on top of any the user has ROMs for.
+_AUDIT_SYSTEMS = set(_CORE_SWAP) | set(_NO_CLEAN_SWAP) | {"msx1", "msx2", "msxturbor", "colecovision"}
+_CORE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_+\-]{1,63}$")
+_SYS_EMU = dict(_SYS, mastersystem="Master System", gamegear="Game Gear", sg1000="SG-1000",
+                neogeo="Neo Geo", arcade="Arcade", megacd="Sega CD", sega32x="Sega 32X",
+                segacd="Sega CD", fbneo="FinalBurn Neo", msx1="MSX", msx2="MSX2",
+                msxturbor="MSX turbo R", colecovision="ColecoVision", x68000="Sharp X68000",
+                pc88="PC-8801", **{"3do": "3DO"})
+
+def _commercial_ok(core):
+    return core not in _EXCLUDE_CORES and core not in _REVIEW_CORES
+
+def _verdict(core):
+    if core in _EXCLUDE_CORES:
+        return "personal-use"   # non-commercial: fine for the user, not for a paid build
+    if core in _REVIEW_CORES:
+        return "review"
+    return "commercial-ok"
+
+def _installed_cores():
+    try:
+        suf = "_libretro.so"
+        return {f[:-len(suf)] for f in os.listdir(LIBRETRO_DIR) if f.endswith(suf)}
+    except Exception:
+        return set()
+
+def _effective_default(system):
+    # what configgen will actually use: an explicit batocera.conf override, else the es_systems default
+    return _bconf_get(system + ".core") or system_cores(system)["default"]
+
+def emulators_list():
+    installed = _installed_cores()
+    rom_dirs = set()
+    try:
+        rom_dirs = {s for s in os.listdir(ROMS) if os.path.isdir(os.path.join(ROMS, s))}
+    except Exception:
+        pass
+    systems = []
+    for sysname in sorted(rom_dirs | _AUDIT_SYSTEMS):
+        sc = system_cores(sysname)
+        if not sc["cores"]:
+            continue                       # not a real system on this image
+        eff = _effective_default(sysname)
+        cores = [{"core": c, "license": _CORE_LICENSE.get(c, "unknown"),
+                  "verdict": _verdict(c), "commercial_ok": _commercial_ok(c),
+                  "installed": c in installed, "active": c == eff} for c in sc["cores"]]
+        systems.append({"system": sysname, "name": _SYS_EMU.get(sysname, sysname),
+                        "default": eff, "default_commercial_ok": _commercial_ok(eff),
+                        "clean_default": _CORE_SWAP.get(sysname),
+                        "no_clean": _NO_CLEAN_SWAP.get(sysname),
+                        "has_games": sysname in rom_dirs, "cores": cores})
+    return {"ok": True, "systems": systems, "buildbot": BUILDBOT_BASE,
+            "excluded": sorted(_EXCLUDE_CORES), "review": sorted(_REVIEW_CORES), "swap": _CORE_SWAP}
+
+def emulator_install(payload):
+    core = (payload or {}).get("core", "").strip()
+    if not _CORE_NAME_RE.match(core):
+        return {"ok": False, "error": "invalid core name"}
+    out_path = os.path.join(LIBRETRO_DIR, core + "_libretro.so")
+    # hard confinement: the resolved write target must live directly inside the libretro dir
+    if os.path.realpath(out_path) != out_path or not out_path.startswith(LIBRETRO_DIR + "/"):
+        return {"ok": False, "error": "refused: path escapes the libretro directory"}
+    if os.path.isfile(out_path):
+        return {"ok": True, "core": core, "installed": True, "already": True,
+                "source": "bundled", "note": "already installed"}
+    url = BUILDBOT_BASE + core + "_libretro.so.zip"
+    try:
+        with urllib.request.urlopen(url, timeout=90) as r:
+            data = r.read()
+    except Exception as e:
+        return {"ok": False, "error": "libretro buildbot fetch failed: %s" % e, "url": url}
+    import io, zipfile
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+        member = next((n for n in zf.namelist() if n.endswith(".so")), None)
+        if not member:
+            return {"ok": False, "error": "no .so found in the downloaded archive (is '%s' a real core?)" % core}
+        blob = zf.read(member)
+    except Exception as e:
+        return {"ok": False, "error": "unzip failed: %s" % e}
+    if len(blob) < 4096:
+        return {"ok": False, "error": "downloaded core looks corrupt (%d bytes)" % len(blob)}
+    try:
+        tmp = out_path + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(blob); f.flush(); os.fsync(f.fileno())
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, out_path)
+    except Exception as e:
+        return {"ok": False, "error": "write failed: %s" % e}
+    LOG.info("EMULATOR INSTALL %s -> %s (%d bytes from buildbot)", core, out_path, len(blob))
+    return {"ok": True, "core": core, "installed": True, "bytes": len(blob),
+            "source": "libretro buildbot", "path": out_path, "commercial_ok": _commercial_ok(core)}
+
+def emulator_set_default(payload):
+    system = (payload or {}).get("system", "").strip()
+    core = (payload or {}).get("core", "").strip()
+    if not system or not _CORE_NAME_RE.match(core):
+        return {"ok": False, "error": "system + valid core required"}
+    if core not in _installed_cores():
+        return {"ok": False, "error": "%s isn't installed — install it first" % core}
+    sc = system_cores(system)
+    warn = None if (not sc["cores"] or core in sc["cores"]) else \
+        "%s isn't listed for %s in es_systems; configgen may ignore it" % (core, system)
+    _bconf_set(system + ".core", core)
+    LOG.info("EMULATOR DEFAULT %s.core=%s", system, core)
+    return {"ok": True, "system": system, "core": core, "warn": warn,
+            "commercial_ok": _commercial_ok(core)}
+
+def emulator_uninstall(payload):
+    core = (payload or {}).get("core", "").strip()
+    if not _CORE_NAME_RE.match(core):
+        return {"ok": False, "error": "invalid core name"}
+    p = os.path.join(LIBRETRO_DIR, core + "_libretro.so")
+    if os.path.realpath(p) != p or not p.startswith(LIBRETRO_DIR + "/") or not os.path.isfile(p):
+        return {"ok": False, "error": "core not installed"}
+    using = _core_default_users(core)
+    if using and not (payload or {}).get("force"):
+        return {"ok": False, "error": "%s is the default core for: %s — set another default first "
+                "(or pass force:true)" % (core, ", ".join(using))}
+    try:
+        os.remove(p)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    LOG.info("EMULATOR UNINSTALL %s", core)
+    return {"ok": True, "core": core, "removed": True}
+
+def _core_default_users(core):
+    # which shown systems currently resolve their default to this core (so we never strand a system)
+    out = []
+    try:
+        rom_dirs = {s for s in os.listdir(ROMS) if os.path.isdir(os.path.join(ROMS, s))}
+    except Exception:
+        rom_dirs = set()
+    for system in sorted(rom_dirs | _AUDIT_SYSTEMS):
+        if system_cores(system)["cores"] and _effective_default(system) == core:
+            out.append(system)
+    return out
+
+def apply_core_swap():
+    # Write the clean commercial-OK default core for every system that has one (the paid-build swap).
+    # Merge-safe (per-key), and skips a system if its clean core isn't installed on this image.
+    installed = _installed_cores()
+    applied, skipped = {}, {}
+    for system, core in _CORE_SWAP.items():
+        sc = system_cores(system)
+        if not sc["cores"]:
+            skipped[system] = "no such system on this image"; continue
+        if core not in installed:
+            skipped[system] = "clean core '%s' not installed" % core; continue
+        was = _effective_default(system)
+        _bconf_set(system + ".core", core)
+        applied[system] = {"core": core, "was": was}
+    LOG.info("CORE SWAP applied=%s skipped=%s", list(applied), list(skipped))
+    return {"ok": True, "applied": applied, "skipped": skipped, "no_clean_swap": _NO_CLEAN_SWAP}
+
+# ===== Games Store: curated FREE / homebrew downloads (no commercial ROMs) =====
+# Every entry is a genuinely free, redistributable game with a verified direct download URL.
+# Installs are confined to /userdata/roms/<system>/ — no path escapes, no arbitrary URLs.
+# "direct" writes the fetched bytes as <dest>; "zip" extracts the named member as <dest>.
+GAMES_CATALOG = [
+    {"id": "freedoom1", "name": "Freedoom: Phase 1", "system": "prboom",
+     "desc": "Free, complete Doom-engine IWAD (single-player). BSD-style licensed.",
+     "license": "Freedoom (BSD-style)", "cat": "FPS", "dest": "freedoom1.wad",
+     "kind": "zip", "member": "freedoom-0.13.0/freedoom1.wad",
+     "url": "https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.13.0.zip"},
+    {"id": "freedoom2", "name": "Freedoom: Phase 2", "system": "prboom",
+     "desc": "Free Doom II-style IWAD with 32 levels. BSD-style licensed.",
+     "license": "Freedoom (BSD-style)", "cat": "FPS", "dest": "freedoom2.wad",
+     "kind": "zip", "member": "freedoom-0.13.0/freedoom2.wad",
+     "url": "https://github.com/freedoom/freedoom/releases/download/v0.13.0/freedoom-0.13.0.zip"},
+    {"id": "ucity", "name": "µCity", "system": "gbc",
+     "desc": "Open-source SimCity-style city builder for Game Boy Color.",
+     "license": "GPLv3", "cat": "Strategy", "dest": "ucity.gbc",
+     "kind": "direct",
+     "url": "https://github.com/AntonioND/ucity/releases/download/v1.3/ucity.gbc"},
+    {"id": "libbet", "name": "Libbet and the Magic Floor", "system": "gb",
+     "desc": "Homebrew puzzle game for the original Game Boy.",
+     "license": "zlib", "cat": "Puzzle", "dest": "libbet.gb",
+     "kind": "direct",
+     "url": "https://github.com/pinobatch/libbet/releases/download/v0.08/libbet.gb"},
+]
+_GAMES_BY_ID = {g["id"]: g for g in GAMES_CATALOG}
+
+def _game_dest_path(g):
+    d = os.path.join(ROMS, g["system"])
+    return os.path.join(d, g["dest"])
+
+def games_catalog():
+    out = []
+    for g in GAMES_CATALOG:
+        p = _game_dest_path(g)
+        e = {k: g[k] for k in ("id", "name", "system", "desc", "license", "cat")}
+        e["sysname"] = _SYS_EMU.get(g["system"], _SYS.get(g["system"], g["system"]))
+        e["installed"] = os.path.isfile(p)
+        out.append(e)
+    return {"ok": True, "games": out,
+            "note": "Curated free & homebrew games with verified download links. "
+                    "No commercial ROMs are distributed."}
+
+def games_install(payload):
+    gid = (payload or {}).get("id", "").strip()
+    g = _GAMES_BY_ID.get(gid)
+    if not g:
+        return {"ok": False, "error": "unknown game id"}
+    sysdir = os.path.join(ROMS, g["system"])
+    out_path = _game_dest_path(g)
+    # hard confinement: resolved write target must live directly inside the system's roms dir
+    if os.path.realpath(out_path) != out_path or not out_path.startswith(sysdir + os.sep):
+        return {"ok": False, "error": "refused: path escapes the roms directory"}
+    if os.path.isfile(out_path):
+        return {"ok": True, "id": gid, "installed": True, "already": True,
+                "path": out_path, "note": "already installed"}
+    try:
+        os.makedirs(sysdir, exist_ok=True)
+        with urllib.request.urlopen(g["url"], timeout=120) as r:
+            data = r.read()
+    except Exception as e:
+        return {"ok": False, "error": "download failed: %s" % e, "url": g["url"]}
+    if g["kind"] == "zip":
+        import io, zipfile
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(data))
+            blob = zf.read(g["member"])
+        except Exception as e:
+            return {"ok": False, "error": "extract failed: %s" % e}
+    else:
+        blob = data
+    if len(blob) < 256:
+        return {"ok": False, "error": "downloaded game looks corrupt (%d bytes)" % len(blob)}
+    try:
+        tmp = out_path + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(blob); f.flush(); os.fsync(f.fileno())
+        os.replace(tmp, out_path)
+    except Exception as e:
+        return {"ok": False, "error": "write failed: %s" % e}
+    LOG.info("GAME INSTALL %s -> %s (%d bytes)", gid, out_path, len(blob))
+    return {"ok": True, "id": gid, "installed": True, "bytes": len(blob), "path": out_path}
+
+def games_uninstall(payload):
+    gid = (payload or {}).get("id", "").strip()
+    g = _GAMES_BY_ID.get(gid)
+    if not g:
+        return {"ok": False, "error": "unknown game id"}
+    out_path = _game_dest_path(g)
+    sysdir = os.path.join(ROMS, g["system"])
+    if os.path.realpath(out_path) != out_path or not out_path.startswith(sysdir + os.sep) \
+            or not os.path.isfile(out_path):
+        return {"ok": False, "error": "not installed"}
+    try:
+        os.remove(out_path)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    LOG.info("GAME UNINSTALL %s", gid)
+    return {"ok": True, "id": gid, "removed": True}
+
 class H(http.server.SimpleHTTPRequestHandler):
     # static assets (fonts/icons/css/brand art) — only served from the static dir
     _CACHE_EXT = (".woff2", ".woff", ".ttf", ".svg", ".png", ".jpg", ".jpeg",
@@ -1873,6 +2186,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(splice_probe(self._qs().get("path")))
         if route == "/store/catalog":
             return self._json(store_catalog())
+        if route == "/emulators":
+            return self._json(emulators_list())
+        if route == "/games/catalog":
+            return self._json(games_catalog())
         if route == "/queue.json":
             return self._json(queue_state())
         if route == "/net.json":
@@ -1956,6 +2273,28 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json(store_install(payload.get("id")))
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)})
+        if route in ("/emulators/install", "/emulators/default", "/emulators/uninstall", "/emulators/swap"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/emulators/install":
+                return self._json(emulator_install(payload))
+            if route == "/emulators/default":
+                return self._json(emulator_set_default(payload))
+            if route == "/emulators/uninstall":
+                return self._json(emulator_uninstall(payload))
+            return self._json(apply_core_swap())
+        if route in ("/games/install", "/games/uninstall"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/games/install":
+                return self._json(games_install(payload))
+            return self._json(games_uninstall(payload))
         if route == "/term/exec":
             try:
                 n = int(self.headers.get("Content-Length", 0))

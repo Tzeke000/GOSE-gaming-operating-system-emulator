@@ -18,13 +18,28 @@
   .top{display:flex;align-items:center;gap:12px;padding:18px 34px 4px}
   .top img{width:32px;height:32px}.top h1{font-size:19px;margin:0}.top .s{color:var(--muted);font-size:12px}
   .top .home{margin-left:auto;color:var(--muted);font-size:13px}
-  .search{display:flex;align-items:center;gap:10px;margin:10px 34px 0;background:var(--surface);
+  /* tab bar */
+  .tabs{display:flex;gap:8px;margin:12px 34px 0}
+  .tab{display:flex;align-items:center;gap:8px;background:var(--surface);border:2px solid transparent;
+    border-radius:11px;padding:9px 18px;font-weight:700;font-size:14px;color:var(--muted);cursor:pointer}
+  .tab .ic{font-size:16px}
+  .tab.on{color:var(--text);background:var(--surface2);border-color:var(--accent)}
+  .tab.focus{box-shadow:var(--focusglow);border-color:var(--accent)}
+  .tab .ct{font-size:11px;font-weight:700;color:var(--muted);background:#ffffff10;border-radius:7px;padding:1px 6px}
+  .ltrig{margin-left:auto;color:var(--muted);font-size:12px;align-self:center}
+  .ltrig b{color:var(--text)}
+  .search{display:flex;align-items:center;gap:10px;margin:12px 34px 0;background:var(--surface);
     border:1px solid var(--line);border-radius:12px;padding:11px 15px}
   .search input{flex:1;background:transparent;border:0;outline:none;color:var(--text);font-size:15px}
+  .banner{margin:12px 34px 0;background:var(--surface2);border:1px solid var(--line);border-radius:11px;
+    padding:11px 16px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .banner b{color:var(--text)}
   .dlbar{margin:12px 34px 0;background:var(--surface2);border:1px solid var(--accent);border-radius:11px;
     padding:10px 16px;font-size:13px;color:var(--text);display:flex;align-items:center;gap:9px}
   .dlbar b{color:var(--accent)}
-  .grid{flex:1;overflow:auto;margin:14px 34px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-content:start}
+  .scroll{flex:1;overflow:auto;margin:14px 34px 0}
+  /* apps + games grid */
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;align-content:start}
   .app{background:var(--surface);border:2px solid transparent;border-radius:14px;padding:16px;display:flex;gap:13px}
   .app.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
   .app .ai{width:46px;height:46px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;
@@ -39,87 +54,365 @@
   .app .btn.busy{background:var(--surface2);color:var(--muted);cursor:default}
   .app .btn.unins{background:transparent;color:#ff8e8e;border-color:#ff8e8e55}
   .col{display:flex;flex-direction:column;align-items:flex-end;gap:6px;justify-content:space-between}
+  /* emulators: system cards with core rows */
+  .sys{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:13px}
+  .sys.flag{border-color:#ffb86b66}
+  .sys .sh{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .sys .sh .snm{font-weight:700;font-size:15px}
+  .sys .sh .sid{color:var(--muted);font-size:11px}
+  .sys .sh .def{margin-left:auto;font-size:11px;color:var(--muted)}
+  .sys .sh .def b{color:var(--text)}
+  .core{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:11px;border:2px solid transparent;
+    background:var(--surface2)}
+  .core+.core{margin-top:7px}
+  .core.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .core .cn{font-weight:700;font-size:13.5px;min-width:130px}
+  .core .lic{font-size:11px;color:var(--muted)}
+  .badge{font-size:10px;font-weight:700;border-radius:7px;padding:2px 8px;white-space:nowrap}
+  .badge.ok{color:#7fe7b0;background:#3ddc8420;border:1px solid #3ddc8455}
+  .badge.pu{color:#ffcf8b;background:#ffb86b1c;border:1px solid #ffb86b55}
+  .badge.rev{color:#9fb6ff;background:#6a8bff1c;border:1px solid #6a8bff55}
+  .badge.act{color:#06121a;background:var(--accent);border:none}
+  .core .sp{flex:1}
+  .core .btn{border-radius:9px;padding:6px 12px;font-weight:600;font-size:12.5px;cursor:pointer;border:1px solid var(--line);white-space:nowrap}
+  .core .btn.get{background:var(--accent);color:#06121a;border:none}
+  .core .btn.def{background:var(--surface);color:var(--text);border-color:var(--accent)}
+  .core .btn.busy{background:var(--surface);color:var(--muted);cursor:default}
+  .core .btn.unins{background:transparent;color:#ff8e8e;border-color:#ff8e8e55}
+  .chiprow{display:flex;gap:8px;margin:12px 34px 0;align-items:center}
+  .chip{font-size:12px;font-weight:600;color:var(--muted);background:var(--surface);border:1px solid var(--line);
+    border-radius:9px;padding:6px 12px;cursor:pointer}
+  .chip.on{color:var(--text);border-color:var(--accent)}
   .foot{margin:10px 34px 14px;display:flex;gap:10px;color:var(--muted);font-size:13px;
     background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
   .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .empty{color:var(--muted);padding:24px;font-size:13px}
   .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
     border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.show{opacity:1}
 </style></head>
 <body>
   <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
-    <div><h1>Store</h1><div class="s">Install apps from Flathub — they become launchable in Apps</div></div>
+    <div><h1>Store</h1><div class="s" id="subtitle">Install apps, emulator cores & free games</div></div>
     <div class="home"><span class="ic" data-i="download"></span> Esc — desktop</div>
   </div>
-  <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search apps…" autofocus></div>
+  <div class="tabs" id="tabs">
+    <div class="tab" data-tab="apps"><span class="ic" data-i="download"></span> Apps</div>
+    <div class="tab" data-tab="emulators"><span class="ic" data-i="gamepad-2"></span> Emulators</div>
+    <div class="tab" data-tab="games"><span class="ic" data-i="layout-grid"></span> Games</div>
+    <div class="ltrig"><b>L1</b>/<b>R1</b> switch tabs</div>
+  </div>
+  <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search…" autofocus></div>
+  <div class="banner" id="banner" style="display:none"></div>
+  <div class="chiprow" id="chiprow" style="display:none"></div>
   <div class="dlbar" id="dlbar" style="display:none"></div>
-  <div class="grid" id="grid"></div>
-  <div class="foot"><span class="ic" data-i="download"></span> GOSE Store
-    <span class="h"><b>↑↓←→</b> move · <b>Enter</b> install / open · <b>X</b> remove · <b>Esc</b> desktop</span></div>
+  <div class="scroll" id="scroll"><div class="grid" id="grid"></div></div>
+  <div class="foot"><span class="ic" data-i="download"></span> <span id="footlabel">GOSE Store</span>
+    <span class="h" id="foothint"></span></div>
   <div class="toast" id="toast"></div>
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
-  const $=id=>document.getElementById(id);
-  let apps=[], shown=[], foc=0;
-  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
-  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),2200);}
-  function btnFor(a){
-    if(a.installed) return `<span class="btn open" data-act="open">Open</span><span class="btn unins" data-act="uninstall">Remove</span>`;
-    if(a.installing) return `<span class="btn busy">Installing…</span>`;
-    if(a.queued) return `<span class="btn busy">Queued</span>`;
-    return `<span class="btn get" data-act="get">Install</span>`;
+  var $=function(id){return document.getElementById(id);};
+  function paint(){var ns=document.querySelectorAll("[data-i]");for(var i=0;i<ns.length;i++){var e=ns[i];e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)");}}
+  function say(m){var t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(function(){t.classList.remove("show");},2200);}
+
+  var TABS=["apps","emulators","games"];
+  var TAB="apps";
+  // ---- per-tab state ----
+  var apps=[], appsShown=[], appsFoc=0;
+  var emuSystems=[], emuShown=[], emuFlat=[], emuFoc=0, emuShowAll=false;
+  var games=[], gamesShown=[], gamesFoc=0;
+
+  function setTab(t,push){
+    if(TABS.indexOf(t)<0) t="apps";
+    TAB=t;
+    var els=$("tabs").querySelectorAll(".tab");
+    for(var i=0;i<els.length;i++) els[i].classList.toggle("on",els[i].dataset.tab===t);
+    $("q").value="";
+    $("q").placeholder = t==="apps"?"Search apps…":t==="emulators"?"Search systems & cores…":"Search games…";
+    $("subtitle").textContent = t==="apps"?"Install apps from Flathub — they become launchable in Apps"
+      : t==="emulators"?"Emulator cores per system — swap defaults or add personal-use cores"
+      : "Free & homebrew games — downloaded straight into your library";
+    $("banner").style.display = t==="emulators" ? "" : "none";
+    $("chiprow").style.display = t==="emulators" ? "" : "none";
+    $("dlbar").style.display = (t==="apps" && dlbarActive) ? "" : "none";
+    if(t==="emulators"){
+      $("banner").innerHTML='<b>Commercial-OK</b> cores ship in the paid base. '
+        +'<b>Personal-use</b> cores are non-commercial-licensed — not in the paid build, but anyone can add them here for their own use. '
+        +'A <span class="badge act" style="padding:1px 6px">Default</span> badge marks the core a system currently boots with.';
+    }
+    if(t==="apps"){ $("scroll").innerHTML='<div class="grid" id="grid"></div>'; }
+    else if(t==="games"){ $("scroll").innerHTML='<div class="grid" id="grid"></div>'; }
+    else { $("scroll").innerHTML='<div id="grid"></div>'; }
+    $("foothint").innerHTML = t==="emulators"
+      ? '<b>L1/R1</b> tabs · <b>↑↓</b> move · <b>Enter</b> install / set default · <b>X</b> remove · <b>Esc</b> desktop'
+      : '<b>L1/R1</b> tabs · <b>↑↓←→</b> move · <b>Enter</b> install / open · <b>X</b> remove · <b>Esc</b> desktop';
+    render();
+    if(push!==false){ try{history.replaceState(null,"","?tab="+t);}catch(e){} }
   }
-  function render(){
-    $("grid").innerHTML=shown.map((a,i)=>`<div class="app ${i===foc?'focus':''}" data-i2="${i}">
-      <div class="ai">${a.installed
-        ? `<img src="/appicon?id=${a.id}" style="width:32px;height:32px;border-radius:8px;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block'"><span class="ic" data-i="${a.icon}" style="display:none"></span>`
-        : `<span class="ic" data-i="${a.icon}"></span>`}</div>
-      <div class="mid"><div class="nm">${a.name}</div><div class="ds">${a.desc}</div><span class="cat">${a.cat}</span></div>
-      <div class="col">${btnFor(a)}</div></div>`).join("")||'<div class="ds" style="padding:20px">No apps match.</div>';
-    [...$("grid").children].forEach(el=>{if(el.dataset.i2===undefined)return;const i=+el.dataset.i2;
-      el.onclick=()=>{foc=i;act();};
-      const ub=el.querySelector(".btn.unins"); if(ub)ub.onclick=(ev)=>{ev.stopPropagation();foc=i;uninstall();};});
-    const f=$("grid").querySelector(".app.focus");if(f)f.scrollIntoView({block:"nearest"});
+
+  // ---------- APPS ----------
+  function appBtn(a){
+    if(a.installed) return '<span class="btn open" data-act="open">Open</span><span class="btn unins" data-act="uninstall">Remove</span>';
+    if(a.installing) return '<span class="btn busy">Installing…</span>';
+    if(a.queued) return '<span class="btn busy">Queued</span>';
+    return '<span class="btn get" data-act="get">Install</span>';
+  }
+  function renderApps(){
+    var g=$("grid");
+    g.innerHTML=appsShown.map(function(a,i){
+      var icon = a.installed
+        ? '<img src="/appicon?id='+a.id+'" style="width:32px;height:32px;border-radius:8px;object-fit:contain" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-block\'"><span class="ic" data-i="'+a.icon+'" style="display:none"></span>'
+        : '<span class="ic" data-i="'+a.icon+'"></span>';
+      return '<div class="app '+(i===appsFoc?'focus':'')+'" data-i2="'+i+'">'
+        +'<div class="ai">'+icon+'</div>'
+        +'<div class="mid"><div class="nm">'+a.name+'</div><div class="ds">'+a.desc+'</div><span class="cat">'+a.cat+'</span></div>'
+        +'<div class="col">'+appBtn(a)+'</div></div>';
+    }).join("")||'<div class="empty">No apps match.</div>';
+    var kids=g.children;
+    for(var i=0;i<kids.length;i++){(function(el){
+      if(el.dataset.i2===undefined)return;var idx=+el.dataset.i2;
+      el.onclick=function(){appsFoc=idx;appsAct();};
+      var ub=el.querySelector(".btn.unins"); if(ub)ub.onclick=function(ev){ev.stopPropagation();appsFoc=idx;appsUninstall();};
+    })(kids[i]);}
+    var f=g.querySelector(".app.focus");if(f)f.scrollIntoView({block:"nearest"});
     paint();
   }
-  function act(){const a=shown[foc];if(!a)return;
+  function appsAct(){var a=appsShown[appsFoc];if(!a)return;
     if(a.installed){say("Opening "+a.name+"…");
       fetch("/launch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd:"flatpak run "+a.id})})
-        .then(r=>r.json()).then(d=>say(d.ok?("Opening "+a.name):("Couldn't open: "+(d.error||"?"))));}
+        .then(function(r){return r.json();}).then(function(d){say(d.ok?("Opening "+a.name):("Couldn't open: "+(d.error||"?")));});}
     else if(a.installing){say(a.name+" is installing…");}
     else{say("Installing "+a.name+" — this can take a few minutes");
       fetch("/store/install",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:a.id})})
-        .then(r=>r.json()).then(d=>{if(d.ok){a.installing=true;render();}else say("Install failed: "+(d.error||"?"));});}
+        .then(function(r){return r.json();}).then(function(d){if(d.ok){a.installing=true;render();}else say("Install failed: "+(d.error||"?"));});}
   }
-  function filter(){const q=$("q").value.toLowerCase().trim();
-    shown=apps.filter(a=>!q||a.name.toLowerCase().includes(q)||a.desc.toLowerCase().includes(q)||a.cat.toLowerCase().includes(q));
-    if(foc>=shown.length)foc=0;render();}
-  function load(){
-    fetch("/store/catalog",{cache:"no-store"}).then(r=>r.json()).then(d=>{apps=d.apps||[];filter();});
-    fetch("/queue.json",{cache:"no-store"}).then(r=>r.json()).then(q=>{const b=$("dlbar");
-      if(q.current){b.style.display="";b.innerHTML=`<span class="ic" data-i="download"></span> Downloading <b>${q.current_name}</b>${q.pending.length?(" · "+q.pending.length+" queued"):""}`;
-        b.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
-      else b.style.display="none";}).catch(()=>{});}
-  function uninstall(){const a=shown[foc];if(!a||!a.installed)return;
+  function appsUninstall(){var a=appsShown[appsFoc];if(!a||!a.installed)return;
     say("Removing "+a.name+"…");
     fetch("/store/uninstall",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:a.id})})
-      .then(r=>r.json()).then(d=>{say(d.ok?(a.name+" removed"):("Remove failed: "+(d.error||"?")));setTimeout(load,500);}).catch(()=>say("Remove failed"));}
-  function move(d){if(!shown.length)return;foc=(foc+d+shown.length)%shown.length;render();}
-  $("q").addEventListener("input",filter);
-  addEventListener("keydown",e=>{const k=e.key;
-    if(k==="Escape")location.href="gose-home.html";
-    else if(k==="ArrowRight")move(1);else if(k==="ArrowLeft")move(-1);
-    else if(k==="ArrowDown")move(3);else if(k==="ArrowUp")move(-3);
+      .then(function(r){return r.json();}).then(function(d){say(d.ok?(a.name+" removed"):("Remove failed: "+(d.error||"?")));setTimeout(loadApps,500);}).catch(function(){say("Remove failed");});}
+  function filterApps(){var q=$("q").value.toLowerCase().trim();
+    appsShown=apps.filter(function(a){return !q||a.name.toLowerCase().indexOf(q)>=0||a.desc.toLowerCase().indexOf(q)>=0||a.cat.toLowerCase().indexOf(q)>=0;});
+    if(appsFoc>=appsShown.length)appsFoc=0;renderApps();}
+  var dlbarActive=false;
+  function loadApps(){
+    fetch("/store/catalog",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){apps=d.apps||[];if(TAB==="apps")filterApps();});
+    fetch("/queue.json",{cache:"no-store"}).then(function(r){return r.json();}).then(function(q){var b=$("dlbar");
+      if(q.current){dlbarActive=true;if(TAB==="apps")b.style.display="";
+        b.innerHTML='<span class="ic" data-i="download"></span> Downloading <b>'+q.current_name+'</b>'+(q.pending&&q.pending.length?(" · "+q.pending.length+" queued"):"");
+        var ns=b.querySelectorAll("[data-i]");for(var i=0;i<ns.length;i++)ns[i].style.setProperty("--u","url(assets/icons/"+ns[i].dataset.i+".svg)");}
+      else {dlbarActive=false;b.style.display="none";}}).catch(function(){});}
+
+  // ---------- EMULATORS ----------
+  function dedupeCores(cores){var seen={},out=[];for(var i=0;i<cores.length;i++){var c=cores[i];if(seen[c.core])continue;seen[c.core]=1;out.push(c);}return out;}
+  function emuRelevant(s){return (!s.default_commercial_ok)||s.clean_default||s.no_clean;}
+  function filterEmu(){
+    var q=$("q").value.toLowerCase().trim();
+    var list=emuSystems.filter(function(s){
+      if(q) return s.system.toLowerCase().indexOf(q)>=0||(s.name||"").toLowerCase().indexOf(q)>=0
+              ||s.cores.some(function(c){return c.core.toLowerCase().indexOf(q)>=0;});
+      return emuShowAll||emuRelevant(s);
+    });
+    // flagged (personal-use default) first, then alpha
+    list.sort(function(a,b){
+      var fa=a.default_commercial_ok?1:0, fb=b.default_commercial_ok?1:0;
+      if(fa!==fb)return fa-fb;
+      return (a.name||a.system).localeCompare(b.name||b.system);
+    });
+    emuShown=list;
+    if(emuFoc>=emuFlatLen())emuFoc=0;
+    renderEmu();
+  }
+  function emuFlatLen(){var n=0;for(var i=0;i<emuShown.length;i++)n+=dedupeCores(emuShown[i].cores).length;return n;}
+  function coreBadge(c,isDefault){
+    if(isDefault) return '<span class="badge act">Default</span>';
+    if(c.verdict==="review") return '<span class="badge rev">Review</span>';
+    if(c.commercial_ok) return '<span class="badge ok">Commercial-OK</span>';
+    return '<span class="badge pu">Personal-use</span>';
+  }
+  function coreBtns(c,sys){
+    if(c.busy) return '<span class="btn busy">Working…</span>';
+    if(!c.installed) return '<span class="btn get" data-cact="install">Install</span>';
+    var h="";
+    if(!c.active) h+='<span class="btn def" data-cact="default">Set default</span>';
+    h+='<span class="btn unins" data-cact="uninstall">Remove</span>';
+    return h;
+  }
+  function renderEmu(){
+    var root=$("grid");
+    if(!emuShown.length){root.innerHTML='<div class="empty">No systems match.</div>';paint();return;}
+    var flat=[],html="";
+    for(var i=0;i<emuShown.length;i++){
+      var s=emuShown[i], cores=dedupeCores(s.cores);
+      var defName=s.default;
+      var rows="";
+      for(var j=0;j<cores.length;j++){
+        var c=cores[j], fi=flat.length;
+        flat.push({sys:s.system,core:c.core,c:c});
+        rows+='<div class="core '+(fi===emuFoc?'focus':'')+'" data-fi="'+fi+'">'
+          +'<span class="cn">'+c.core+'</span>'
+          +coreBadge(c,c.active)
+          +'<span class="lic">'+c.license+'</span>'
+          +'<span class="sp"></span>'+coreBtns(c,s.system)+'</div>';
+      }
+      html+='<div class="sys '+(s.default_commercial_ok?'':'flag')+'">'
+        +'<div class="sh"><span class="snm">'+(s.name||s.system)+'</span><span class="sid">'+s.system+'</span>'
+        +'<span class="def">default: <b>'+defName+'</b>'+(s.default_commercial_ok?'':' · personal-use')+'</span></div>'
+        +rows+'</div>';
+    }
+    emuFlat=flat;
+    root.innerHTML=html;
+    var rowsEls=root.querySelectorAll(".core");
+    for(var k=0;k<rowsEls.length;k++){(function(el){
+      var fi=+el.dataset.fi;
+      el.onclick=function(){emuFoc=fi;renderEmu();};
+      var btns=el.querySelectorAll("[data-cact]");
+      for(var b=0;b<btns.length;b++){(function(btn){
+        btn.onclick=function(ev){ev.stopPropagation();emuFoc=fi;emuDo(btn.dataset.cact);};
+      })(btns[b]);}
+    })(rowsEls[k]);}
+    var f=root.querySelector(".core.focus");if(f)f.scrollIntoView({block:"nearest"});
+    paint();
+  }
+  function emuPrimary(){ // Enter behaviour
+    var it=emuFlat[emuFoc];if(!it)return;
+    if(!it.c.installed) emuDo("install");
+    else if(!it.c.active) emuDo("default");
+    else say(it.core+" is already the default for "+it.sys);
+  }
+  function emuDo(act){
+    var it=emuFlat[emuFoc];if(!it)return;var c=it.c;
+    if(act==="install"){
+      c.busy=true;renderEmu();say("Installing "+it.core+" from the libretro buildbot…");
+      fetch("/emulators/install",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({core:it.core})})
+        .then(function(r){return r.json();}).then(function(d){
+          say(d.ok?(it.core+(d.already?" already installed":" installed")):("Install failed: "+(d.error||"?")));
+          setTimeout(loadEmu,400);}).catch(function(){c.busy=false;say("Install failed");renderEmu();});
+    } else if(act==="default"){
+      say("Setting "+it.core+" as default for "+it.sys+"…");
+      fetch("/emulators/default",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:it.sys,core:it.core})})
+        .then(function(r){return r.json();}).then(function(d){
+          say(d.ok?(it.sys+" now boots with "+it.core+(d.warn?(" — "+d.warn):"")):("Failed: "+(d.error||"?")));
+          setTimeout(loadEmu,400);});
+    } else if(act==="uninstall"){
+      say("Removing "+it.core+"…");
+      fetch("/emulators/uninstall",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({core:it.core})})
+        .then(function(r){return r.json();}).then(function(d){
+          say(d.ok?(it.core+" removed"):(d.error||"Remove failed"));setTimeout(loadEmu,400);});
+    }
+  }
+  function loadEmu(){
+    fetch("/emulators",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+      emuSystems=d.systems||[];if(TAB==="emulators")filterEmu();});
+  }
+  function renderChips(){
+    $("chiprow").innerHTML='<span class="chip '+(emuShowAll?'on':'')+'" id="chipall">'
+      +(emuShowAll?"Showing all "+emuSystems.length+" systems":"Show all systems")+'</span>'
+      +'<span class="chip" id="chipswap" title="Re-apply the clean commercial-OK defaults">Apply clean defaults</span>';
+    $("chipall").onclick=function(){emuShowAll=!emuShowAll;renderChips();filterEmu();};
+    $("chipswap").onclick=function(){say("Applying clean commercial-OK defaults…");
+      fetch("/emulators/swap",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
+        .then(function(r){return r.json();}).then(function(d){
+          say(d.ok?("Clean defaults applied to "+Object.keys(d.applied||{}).length+" systems"):("Failed: "+(d.error||"?")));
+          setTimeout(loadEmu,400);});};
+  }
+
+  // ---------- GAMES ----------
+  function gameBtn(g){
+    if(g.busy) return '<span class="btn busy">Downloading…</span>';
+    if(g.installed) return '<span class="btn open" data-gact="installed">Installed</span><span class="btn unins" data-gact="uninstall">Remove</span>';
+    return '<span class="btn get" data-gact="install">Get</span>';
+  }
+  function filterGames(){var q=$("q").value.toLowerCase().trim();
+    gamesShown=games.filter(function(g){return !q||g.name.toLowerCase().indexOf(q)>=0||(g.desc||"").toLowerCase().indexOf(q)>=0||(g.sysname||"").toLowerCase().indexOf(q)>=0;});
+    if(gamesFoc>=gamesShown.length)gamesFoc=0;renderGames();}
+  function renderGames(){
+    var g=$("grid");
+    g.innerHTML=gamesShown.map(function(a,i){
+      return '<div class="app '+(i===gamesFoc?'focus':'')+'" data-i2="'+i+'">'
+        +'<div class="ai"><span class="ic" data-i="layout-grid"></span></div>'
+        +'<div class="mid"><div class="nm">'+a.name+'</div><div class="ds">'+(a.desc||"")+'</div>'
+        +'<span class="cat">'+a.sysname+' · '+a.license+'</span></div>'
+        +'<div class="col">'+gameBtn(a)+'</div></div>';
+    }).join("")||'<div class="empty">No games match.</div>';
+    var kids=g.children;
+    for(var i=0;i<kids.length;i++){(function(el){
+      if(el.dataset.i2===undefined)return;var idx=+el.dataset.i2;
+      el.onclick=function(){gamesFoc=idx;gamesAct();};
+      var ub=el.querySelector(".btn.unins"); if(ub)ub.onclick=function(ev){ev.stopPropagation();gamesFoc=idx;gamesUninstall();};
+    })(kids[i]);}
+    var f=g.querySelector(".app.focus");if(f)f.scrollIntoView({block:"nearest"});
+    paint();
+  }
+  function gamesAct(){var a=gamesShown[gamesFoc];if(!a)return;
+    if(a.installed){say(a.name+" is installed — open it from the Library"); return;}
+    if(a.busy)return;
+    a.busy=true;renderGames();say("Downloading "+a.name+"…");
+    fetch("/games/install",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:a.id})})
+      .then(function(r){return r.json();}).then(function(d){
+        say(d.ok?(a.name+(d.already?" already installed":" added to your library")):("Download failed: "+(d.error||"?")));
+        setTimeout(loadGames,400);}).catch(function(){a.busy=false;say("Download failed");renderGames();});
+  }
+  function gamesUninstall(){var a=gamesShown[gamesFoc];if(!a||!a.installed)return;
+    say("Removing "+a.name+"…");
+    fetch("/games/uninstall",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:a.id})})
+      .then(function(r){return r.json();}).then(function(d){say(d.ok?(a.name+" removed"):("Remove failed: "+(d.error||"?")));setTimeout(loadGames,400);});}
+  function loadGames(){
+    fetch("/games/catalog",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+      games=d.games||[];if(TAB==="games")filterGames();});
+  }
+
+  // ---------- shared nav ----------
+  function render(){
+    if(TAB==="apps") renderApps();
+    else if(TAB==="emulators"){ renderChips(); renderEmu(); }
+    else renderGames();
+  }
+  function curMax(){return TAB==="apps"?appsShown.length:TAB==="emulators"?emuFlat.length:gamesShown.length;}
+  function getFoc(){return TAB==="apps"?appsFoc:TAB==="emulators"?emuFoc:gamesFoc;}
+  function setFoc(v){if(TAB==="apps")appsFoc=v;else if(TAB==="emulators")emuFoc=v;else gamesFoc=v;}
+  function move(d){var n=curMax();if(!n)return;setFoc((getFoc()+d+n)%n);render();}
+  function act(){if(TAB==="apps")appsAct();else if(TAB==="emulators")emuPrimary();else gamesAct();}
+  function uninstall(){if(TAB==="apps")appsUninstall();else if(TAB==="emulators")emuDo("uninstall");else gamesUninstall();}
+  function switchTab(d){var i=TABS.indexOf(TAB);setTab(TABS[(i+d+TABS.length)%TABS.length]);}
+
+  $("q").addEventListener("input",function(){if(TAB==="apps")filterApps();else if(TAB==="emulators")filterEmu();else filterGames();});
+  var tabEls=$("tabs").querySelectorAll(".tab");
+  for(var ti=0;ti<tabEls.length;ti++){(function(el){el.onclick=function(){setTab(el.dataset.tab);};})(tabEls[ti]);}
+
+  var step = function(){return TAB==="emulators"?1:3;};
+  addEventListener("keydown",function(e){var k=e.key;
+    if(k==="Escape"){location.href="gose-home.html";}
+    else if(k==="ArrowRight")move(TAB==="emulators"?1:1);
+    else if(k==="ArrowLeft")move(TAB==="emulators"?-1:-1);
+    else if(k==="ArrowDown")move(step());
+    else if(k==="ArrowUp")move(-step());
     else if(k==="Enter")act();
     else if(k==="x"||k==="X"||k==="Delete")uninstall();
+    else if(k==="["||k==="q"||k==="Q")switchTab(-1);
+    else if(k==="]"||k==="e"||k==="E")switchTab(1);
     else return;e.preventDefault();});
-  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if(tap(15))move(1);if(tap(14))move(-1);if(tap(13))move(3);if(tap(12))move(-3);
+
+  // gamepad: dpad move, A act, X uninstall, B home, L1(4)/R1(5) switch tabs
+  var prev={},primed=false;(function pad(){var gps=navigator.getGamepads&&navigator.getGamepads();var gp=null;
+    if(gps)for(var i=0;i<gps.length;i++)if(gps[i]){gp=gps[i];break;}
+    if(gp){var tap=function(i){return primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];};
+      if(tap(15))move(1);if(tap(14))move(-1);if(tap(13))move(step());if(tap(12))move(-step());
       if(tap(0))act();if(tap(2))uninstall();if(tap(1))location.href="gose-home.html";
-      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
-  load(); setInterval(load, 4000);   // refresh install/installed state
+      if(tap(4))switchTab(-1);if(tap(5))switchTab(1);
+      for(var j=0;j<gp.buttons.length;j++)prev[j]=gp.buttons[j].pressed;primed=true;}
+    requestAnimationFrame(pad);})();
+
+  // initial tab from ?tab= or #hash
+  function initialTab(){
+    var m=(location.search.match(/[?&]tab=([a-z]+)/)||[])[1];
+    if(!m){var h=(location.hash||"").replace("#","");if(TABS.indexOf(h)>=0)m=h;}
+    return TABS.indexOf(m)>=0?m:"apps";
+  }
+  loadApps(); loadEmu(); loadGames();
+  setTab(initialTab(), false);
+  setInterval(function(){loadApps();if(TAB==="emulators")loadEmu();if(TAB==="games")loadGames();}, 5000);
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>
