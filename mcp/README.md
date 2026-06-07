@@ -1,11 +1,11 @@
 # GOSE MCP server
 
-How **Ava / Wren / Iris** (and Claude) drive the Odin 2: a **Model Context
+How **your AI agents** (and Claude) drive the Odin 2: a **Model Context
 Protocol** server over stdio that exposes the GOSE Agent's capabilities as MCP
 tools. Zero dependencies; mirrors the agent's design so it runs on the device.
 
 ```
-MCP client (Ava/Wren/Iris/Claude)  ──stdio JSON-RPC──▶  gose_mcp_server.py
+MCP client (AI agent / Claude)    ──stdio JSON-RPC──▶  gose_mcp_server.py
                                                           │  GoseClient (TCP)
                                                           ▼
                                                    GOSE Agent daemon ──▶ Odin 2
@@ -50,6 +50,6 @@ printf '%s\n%s\n' \
 
 ## Status / next
 - ✅ Implemented + tested (`agent/tests/test_mcp.py`).
-- ⬜ Once Ava/Wren/Iris's exact MCP expectations are known, add any auth/transport
+- ⬜ Once the AI agents' exact MCP expectations are known, add any auth/transport
   they require (e.g., HTTP/SSE transport instead of stdio) — the tool layer stays
   the same.

@@ -9,7 +9,7 @@ widgets) and `gui/mockup/gose-widgets.html` (the enable/disable toggles).
 > requirement (e.g. "every item needs an icon") is defined **once** in the base
 > and therefore applies to **all** widgets — no per-widget hiccups.
 
-This doc is Zeke's to review and extend.
+This doc is the owner's to review and extend.
 
 ---
 
@@ -135,7 +135,7 @@ drag header             → updates and persists position (localStorage gose-wpo
 - **Placement** persists per-widget; bumping `LAYOUT_V` in `widget.js` discards
   stale saved positions once so new defaults take effect.
 - **Navigation zones** = `[Menu (sidebar)] + visible widgets (spatial order) + [Dock]`.
-  Spatial order (docs/25 §5b, Zeke 2026-06-06): **left→right, top→down**, computed
+  Spatial order (docs/25 §5b, 2026-06-06): **left→right, top→down**, computed
   from the widgets' **current live positions** (they're drag-movable) — columns run
   left→right, focus walks each column top→down. Recomputed whenever a widget moves;
   never a hardcoded list.

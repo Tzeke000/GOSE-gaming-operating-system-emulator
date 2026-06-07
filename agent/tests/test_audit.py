@@ -49,9 +49,9 @@ class TestAuditAppend(unittest.TestCase):
             return [json.loads(l) for l in fh.read().splitlines() if l]
 
     def test_creates_file_and_writes_record(self):
-        srv.audit_append("Wren", "ping", True, path=self.path)
+        srv.audit_append("Agent-A", "ping", True, path=self.path)
         (rec,) = self._lines()
-        self.assertEqual(rec["name"], "Wren")
+        self.assertEqual(rec["name"], "Agent-A")
         self.assertEqual(rec["op"], "ping")
         self.assertIs(rec["ok"], True)
         self.assertNotIn("code", rec)

@@ -63,8 +63,8 @@ def build_qemu_cmd(cfg, accel):
         "-drive", f"file={cfg.image},if=virtio,format=raw",
         # user-mode net so the GOSE agent is reachable over TCP (Wi-Fi-like).
         # host 8731 -> guest 8731: the agent binds 8731 by default (config.py;
-        # GOSE_AGENT_PORT), which is also where Wren's MCP server
-        # (D:\Wren\.mcp.json) connects. host 2222 -> guest 22 lets the GOSE layer
+        # GOSE_AGENT_PORT), which is also where the AI agent's MCP server
+        # (<agent-home>\.mcp.json) connects. host 2222 -> guest 22 lets the GOSE layer
         # be pushed in over SSH on Windows (no Linux loop-mount).
         "-netdev", "user,id=net0,hostfwd=tcp::8731-:8731,hostfwd=tcp::2222-:22",
         "-device", "virtio-net-pci,netdev=net0",

@@ -52,7 +52,7 @@ See `07-controllers.md` for the full input architecture.
 ## 6. AI / control (our custom layer + ecosystem)
 | Tool | Why | Tag |
 |------|-----|-----|
-| **MCP Python SDK** (github.com/modelcontextprotocol/python-sdk) | The standard Ava/Wren/Iris/Claude speak. Our `mcp/gose_mcp_server.py` is zero-dep, but the SDK is the reference. | [ref] |
+| **MCP Python SDK** (github.com/modelcontextprotocol/python-sdk) | The standard AI agents/Claude speak. Our `mcp/gose_mcp_server.py` is zero-dep, but the SDK is the reference. | [ref] |
 | **mcp-retroarch** (glama.ai/mcp/servers/dmang-dev/mcp-retroarch) | Existing MCP server for RetroArch; validated our approach. | [ref] |
 | **stable-retro** (github.com/Farama-Foundation/stable-retro) | Hundreds of RAM maps for the game-state interface; we import them. | [adopt now] |
 | **pyraco** (github.com/sopoforic/pyraco) | Python RetroArch NCI client; optional transport. | [ref] |

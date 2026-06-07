@@ -1,6 +1,6 @@
 # 11 — GOSE on PC (virtual machine) + boot-time input chooser
 
-> Zeke (2026-06): "Make GOSE a downloadable PC app — I'll use that first until I
+> The owner (2026-06): "Make GOSE a downloadable PC app — I'll use that first until I
 > get the Odin 2 — and it should be **more like a virtual machine**. At boot you
 > pick how to navigate; default is native on the device, keyboard on PC, and it
 > accepts peripherals (keyboard/controller, Bluetooth/dongle/wired)."
@@ -28,7 +28,7 @@ Why a VM (and why a *separate x86 image*):
 QEMU is scriptable, cross-platform, and bundleable. Accelerator auto-detected:
 **KVM** (Linux), **HVF** (macOS), **WHPX** (Windows), `tcg` fallback. Display via
 **virtio-gpu-gl**; user-mode networking forwards TCP **5555** so the GOSE agent
-(and Ava/Wren/Iris) is reachable exactly like over Wi-Fi on the device. A host
+(and the AI agents) is reachable exactly like over Wi-Fi on the device. A host
 folder mounts into the guest (virtio-9p, tag `gose-share`) for ROMs/saves.
 
 Launcher: **`scripts/gose_vm.py`** (command builder + accel detection are

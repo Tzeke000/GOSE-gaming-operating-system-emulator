@@ -254,7 +254,7 @@ class SeatManager:
 def make_input(force_mock: bool = False) -> SeatManager:
     def factory(seat: int = 1) -> BaseInput:
         # Per-seat device name: "AI virtual controller N" (N = 1..MAX_SEATS), so up
-        # to four AIs (Wren/Ava/Iris + a human guest) each get a distinctly-named pad
+        # to four players (AI agents + a human guest) each get a distinctly-named pad
         # while the Xbox-360 IDENTITY (vendor/product/version → GUID) is shared/unchanged.
         name = "AI virtual controller %d" % int(seat)
         if not force_mock:

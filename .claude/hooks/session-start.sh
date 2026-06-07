@@ -26,6 +26,6 @@ fi
 echo
 echo "Immediate next actions (see ROADMAP.md):"
 echo " 1. Confirm Odin 2 variant + start with ROCKNIX."
-echo " 2. Get Ava/Wren/Iris API spec to unblock ai-bridge/."
+echo " 2. Get the AI-agent API spec to unblock ai-bridge/."
 echo " 3. Build the Windows-like ES theme + real agent backends."
 exit 0

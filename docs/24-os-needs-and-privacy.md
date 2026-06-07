@@ -1,9 +1,9 @@
 # 24 — OS Needs & Privacy (privacy-first, reuse-first) `[CUSTOM]`
 
-> Status: **RESEARCH + ROADMAP (2026-06-06, Wren).** Zeke's framing: *"Privacy is a big thing for
+> Status: **RESEARCH + ROADMAP (2026-06-06).** The owner's framing: *"Privacy is a big thing for
 > this project"* and *"if it's already made, just download and use it."* So this doc leads with
 > privacy, and every gap names the existing tool/standard/library to **adopt**, not reinvent.
-> **This is Zeke's to drive from** — nothing here is built; it's the prioritized needs list for a
+> **This is the owner's to drive from** — nothing here is built; it's the prioritized needs list for a
 > distributable GOSE.
 >
 > Scope note: GOSE is a Batocera-derived, controller-first handheld OS aiming to be a downloadable
@@ -41,7 +41,7 @@ starting posture).
 
 ---
 
-# 1. PRIVACY (lead section — Zeke's emphasis) ⭐
+# 1. PRIVACY (lead section — the owner's emphasis) ⭐
 
 GOSE starts from a genuinely good place: it's local-first by nature (a handheld, not a cloud app),
 ships **zero** analytics/tracker SDKs, and most network features are already user-initiated. The
@@ -341,7 +341,7 @@ LAN/tailnet exposure an explicit opt-in. (S)
 ### 7.1 Accessibility completeness
 - **Status:** ✅ text scale, high-contrast, colorblind palettes (libDaltonLens / Okabe-Ito).
   🟡 missing: **screen reader / TTS**, full controller-only reachability audit, larger hit targets.
-- **Reuse:** **espeak-ng / Piper** for TTS readout (Piper is already in the Wren stack); **Orca** is
+- **Reuse:** **espeak-ng / Piper** for TTS readout (Piper is already in the owner's agent stack); **Orca** is
   the Linux SR but heavy — a lightweight focus-readout via Piper fits the kiosk better. WCAG as the
   checklist.
 - **Effort:** M.
@@ -467,7 +467,7 @@ LAN/tailnet exposure an explicit opt-in. (S)
 
 ---
 
-> **Bottom line for Zeke:** GOSE's privacy posture is already strong (no trackers, loopback binds,
+> **Bottom line for the owner:** GOSE's privacy posture is already strong (no trackers, loopback binds,
 > local-first, most network use is opt-in). The honest gaps are **two automatic outbound calls** —
 > the **boot art-scraper that sends your game list to libretro.com**, and a **Google-DNS reachability
 > probe** — plus the **agent listening on `0.0.0.0` by default**. Fix those three (all small), make

@@ -6,7 +6,7 @@ LOG=/userdata/system/logs/gose-agent.log
 
 case "$1" in
   start)
-    # Start the GOSE agent so Ava/Wren/Iris (and Claude) can drive the VM over TCP
+    # Start the GOSE agent so AI agents (and Claude) can drive the VM over TCP
     # 8731 — the agent's default port (gose_agent reads GOSE_AGENT_* env only; it
     # has no CLI flags), which scripts/gose_vm.py forwards to the host.
     if [ -d "$GOSE/agent" ]; then

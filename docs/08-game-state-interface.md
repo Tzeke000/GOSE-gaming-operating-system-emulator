@@ -1,6 +1,6 @@
 # Game-State Interface — "Mineflayer for retro games" `[CUSTOM]`
 
-Goal (Zeke, 2026-06-03): let the AI play/observe games **without screenshots** by
+Goal (owner, 2026-06-03): let the AI play/observe games **without screenshots** by
 reading the game's **state directly from emulator memory** — positions, scores,
 health, board state — for tractable games like Pong, chess, and Mario 64. Not
 every game can offer this (just like Mineflayer only works for Minecraft); we
@@ -28,7 +28,7 @@ Researched 2026-06-03; decision in ADR-0006. Prior art we build on:
 |---------|------------------|---------------|
 | **stable-retro** (Farama, gym-retro fork) | RAM maps for **hundreds of games** as `data.json` (`address` + numpy-style `type` like `">u4"`) | Our profile engine **natively accepts stable-retro type descriptors**; `agent/tools/import_stable_retro.py` converts their maps into GOSE profiles. The hard part (finding addresses) is reused. |
 | **pyraco** (PyPI) | A Python client for the RetroArch NCI | Reference + optional drop-in transport. Our built-in client is zero-dep so it always works on the device; pyraco can replace it. |
-| **mcp-retroarch** | An **MCP server** bridging Claude/MCP clients to RetroArch (memory, savestates, screenshots, frame-advance) | Validates the approach and is a strong fit for **how Ava/Wren/Iris connect** (MCP). Plan: expose the GOSE Agent over MCP too (it controls the *whole device*, a superset of RetroArch-only). |
+| **mcp-retroarch** | An **MCP server** bridging Claude/MCP clients to RetroArch (memory, savestates, screenshots, frame-advance) | Validates the approach and is a strong fit for **how the AI agents connect** (MCP). Plan: expose the GOSE Agent over MCP too (it controls the *whole device*, a superset of RetroArch-only). |
 | **RetroAchievements** memory maps / Memory Inspector | Verified addresses + a tool to find/verify them | The recommended way to verify/fix profile addresses on hardware. |
 
 ## Profiles (RAM maps)

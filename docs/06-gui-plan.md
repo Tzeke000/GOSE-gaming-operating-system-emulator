@@ -26,7 +26,7 @@ system's library → title → auto-launch. Plus a tucked-away **Tools** area
     with tiles + taskbar" UI, GLES/Vulkan on Adreno. Strong candidate.
   - Web/Electron-ish (heavy on a handheld) — avoid unless needed.
   - SDL2 + a UI lib (lightweight, more manual).
-- Pros: real desktop metaphor, exactly Zeke's vision, reusable AI-overlay surface.
+- Pros: real desktop metaphor, exactly the owner's vision, reusable AI-overlay surface.
 - Cons: must re-implement library/scraping/launching/on-screen keyboard the front-
   ends give for free.
 

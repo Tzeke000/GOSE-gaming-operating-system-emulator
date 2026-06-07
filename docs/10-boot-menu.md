@@ -1,6 +1,6 @@
 # 10 — Boot Menu / "BIOS" (controller-driven, PC-style)
 
-> Goal (Zeke, 2026-06): "Hold two side buttons at power-on to get into a
+> Goal (owner, 2026-06): "Hold two side buttons at power-on to get into a
 > bootloader, like a Windows PC." This doc describes the layered boot model and
 > the **GOSE Boot Menu** we build to deliver that feel.
 

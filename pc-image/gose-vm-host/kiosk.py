@@ -6,7 +6,7 @@ from gi.repository import Gtk, WebKit2, Gdk
 url = sys.argv[1] if len(sys.argv) > 1 else "file:///userdata/gose-ui/gose-home.html"
 # GOSE base dark — used for the window AND the WebView so the frame between page
 # loads is dark, never white. (WebKit paints its base color before a page's first
-# paint; default is white = the flash Zeke saw on every navigation.)
+# paint; default is white = the flash seen on every navigation.)
 GOSE_DARK = Gdk.RGBA(); GOSE_DARK.parse('#07070f')
 win = Gtk.Window(); win.set_title("GOSE")
 win.set_decorated(False)

@@ -1,6 +1,6 @@
 """GoseClient: a tiny stdlib client for the GOSE Agent JSON-lines protocol.
 
-This is what the AI bridge (Ava/Wren/Iris adapter) imports to drive the device,
+This is what the AI bridge (the AI-agent adapter) imports to drive the device,
 and what cli.py uses for manual testing. No external dependencies.
 
     from gose_client import GoseClient

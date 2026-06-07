@@ -6,8 +6,8 @@ GOSE turns an **AYN Odin 2** (and any PC, via a virtual machine) into an
 tinker with it like the real Linux box it is; play **local multiplayer with friends
 on any mix of controllers** (Switch, PlayStation, Xbox, 8BitDo, retro — all in one
 session); and even play **with or against an AI** (a **Claude Code / Codex** session
-joining as a real player). It's also **driven by the owner's AI agents (Ava, Wren,
-Iris)** over Wi-Fi or a cable. **Local-first today; online comes later, per game.**
+joining as a real player). It's also **driven by the owner's AI agents** over
+Wi-Fi or a cable. **Local-first today; online comes later, per game.**
 
 > **This is not "write an OS from scratch."** GOSE flashes a mature handheld Linux
 > distro (**ROCKNIX**) to SD and *configures + extends* it; the PC edition is a
@@ -17,7 +17,7 @@ Iris)** over Wi-Fi or a cable. **Local-first today; online comes later, per game
 > reproducible build/setup scripts. We ship the GOSE OS + tools only — **never**
 > BIOS, ROMs, or other people's games; you bring your own.
 
-Owner: **Zeke (Tzeke000)** · created by **Ezekiel Angeles-Gonzalez**, Tzeke000 Studios.
+Created by **Ezekiel Angeles-Gonzalez**, Tzeke000 Studios.
 
 ---
 
@@ -64,7 +64,7 @@ Develop there, commit with clear messages, push; don't open a PR unless asked.
   per game (e.g. RetroArch netplay), with the seam already designed for it.
 - **A console-like handheld OS** on the Odin 2: boot into a clean, controller-driven,
   Windows-style desktop instead of fiddly menus.
-- **AI-operable** — agents (Ava/Wren/Iris) or Claude can *play* and *fix/tinker with
+- **AI-operable** — your AI agents (or Claude) can *play* and *fix/tinker with
   the OS* over Wi-Fi or USB through the **GOSE Agent**.
 
 ## How we got here (project history)
@@ -74,7 +74,7 @@ Built across one long session; full rationale in `docs/04-decision-log.md`.
   a device-side daemon the AI drives (input injection, shell, game launch, status,
   screen capture) with **mock backends** so it runs/tests anywhere.
 - **AI control** — newline-JSON-over-TCP protocol, a Python client SDK/CLI, an
-  **MCP server** (Ava/Wren/Iris/Claude → tools), and a **game-state interface**
+  **MCP server** (AI agents/Claude → tools), and a **game-state interface**
   ("Mineflayer for retro": read emulator RAM, no screenshots).
 - **GUI** — navigable HTML prototypes + rendered concept PNGs for a Windows-like,
   controller-first experience: **boot splash → boot menu ("BIOS") → input chooser →
@@ -103,7 +103,7 @@ Built across one long session; full rationale in `docs/04-decision-log.md`.
   peripheral enumeration, on-device theme tuning. Marked as such in the docs.
 - 🧱 **`[needs build]`** — run `pc-image/build-gose-pc.sh` on a Linux host (network +
   root + qemu) to produce the actual `GOSE-PC.img` / `GOSE-PC.ova`.
-- ❓ **Blocked on Zeke** — the Ava/Wren/Iris API/transport spec (to finish `ai-bridge/`).
+- ❓ **Blocked on the owner** — the AI-agent API/transport spec (to finish `ai-bridge/`).
 
 ## Repo map
 | Path | What |
@@ -112,8 +112,8 @@ Built across one long session; full rationale in `docs/04-decision-log.md`.
 | `ROADMAP.md` | Live status checklist across all phases. |
 | `docs/` | Brief, research+sources, install runbook, architecture, control protocol, GUI/controller plans, **decision log (ADRs)**, boot menu, PC-app+input. |
 | `agent/` | **GOSE Agent**: device-side AI-control daemon + client SDK + CLI + tests + game-state profiles. Mock backends run anywhere. |
-| `mcp/` | Zero-dep **MCP server** — how Ava/Wren/Iris/Claude drive the device. |
-| `ai-bridge/` | Adapter mapping Ava/Wren/Iris ↔ the agent (reference skeleton; needs their API). |
+| `mcp/` | Zero-dep **MCP server** — how AI agents/Claude drive the device. |
+| `ai-bridge/` | Adapter mapping your AI agents ↔ the agent daemon (reference skeleton; needs their API). |
 | `gui/mockup/` | Navigable **HTML prototypes** + concept PNGs + renderers: `boot`, `bootmenu`, `input-select`, `login`, `desktop`; `assets/themes.css`, brand logo. |
 | `gui/theme-windows/` | Windows-like front-end notes. |
 | `scripts/` | Device setup + mock-testable logic: `gose_bootmenu.py`, `gose_input.py`, `gose_vm.py` (VM launcher), `gose-preview.py` (UI preview). |
@@ -135,7 +135,7 @@ See `agent/README.md` + `docs/05-ai-control-protocol.md` for the protocol, and
 ## Next actions (see ROADMAP.md for the full list)
 1. **Build the GOSE-PC image** on a Linux host: `sudo ./pc-image/build-gose-pc.sh`
    → produces the downloadable `.ova`. (Pinned to Batocera 42.)
-2. **Open items for Zeke:** confirm the Odin 2 variant; share the Ava/Wren/Iris
+2. **Open items for the owner:** confirm the Odin 2 variant; share the AI-agent
    API/transport (stdio vs HTTP/SSE MCP, auth) to finish `ai-bridge/`.
 3. **GUI polish:** per-system box art for the ES theme; push the carousel toward the
    Windows-tile look; build the "GOSE Setup (BIOS)" sub-screen.

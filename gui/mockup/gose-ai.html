@@ -87,10 +87,10 @@
   const $=id=>document.getElementById(id);
   const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const PLAYERS=[
-    {nm:"Zeke", k:null,  acc:"#ffce5c", on:true,  role:"Owner", sub:"You — host of this device. You grant and revoke every AI's access.", mode:null, tier:null},
-    {nm:"Wren", k:"Wren",acc:"#5cd0ff", on:false, role:"AI",    sub:"Reachable over MCP — can watch the live feed and drive the device.", mode:null, tier:"observe", seat:null},
-    {nm:"Ava",  k:"Ava", acc:"#7d8cff", on:false, role:"AI",    sub:"Voice + MCP capable. Joins as a player when connected.", mode:null, tier:"observe", seat:null},
-    {nm:"Iris", k:"Iris",acc:"#37d39b", on:false, role:"AI",    sub:"Sister session on the tower — joins when reachable.", mode:null, tier:"observe", seat:null},
+    {nm:"Owner", k:null,  acc:"#ffce5c", on:true,  role:"Owner", sub:"You — host of this device. You grant and revoke every AI's access.", mode:null, tier:null},
+    {nm:"Agent A", k:"Agent A",acc:"#5cd0ff", on:false, role:"AI",    sub:"Reachable over MCP — can watch the live feed and drive the device.", mode:null, tier:"observe", seat:null},
+    {nm:"Agent B", k:"Agent B", acc:"#7d8cff", on:false, role:"AI",    sub:"Voice + MCP capable. Joins as a player when connected.", mode:null, tier:"observe", seat:null},
+    {nm:"Agent C", k:"Agent C",acc:"#37d39b", on:false, role:"AI",    sub:"Remote AI agent — joins when reachable.", mode:null, tier:"observe", seat:null},
   ];
   let EXTRA=[];   // AIs that paired by request and aren't in the built-in roster
   let REQS=[];    // pending pairing requests (owner approves/denies)

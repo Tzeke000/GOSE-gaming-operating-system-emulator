@@ -1,9 +1,9 @@
 # 26 — Brand Assets & Sound
 
-Zeke's hand-made art + sound set, integrated into the OS, plus the sound manager
+The owner's hand-made art + sound set, integrated into the OS, plus the sound manager
 that plays it. Source art lives in `OneDrive/Documents/stuff for GESO/`
 (brand mark, system icons, sounds). Processing script:
-`D:/Wren/scratch/key_icons.py`.
+`<agent-home>/scratch/key_icons.py`.
 
 ## Icon set
 
@@ -16,7 +16,7 @@ canvas (icons 256², crystal 512²).
 
 Files (`gui/mockup/assets/icons/brand/`) — named by GOSE's real category:
 
-| Zeke's folder | file | used for |
+| Source folder | file | used for |
 |---|---|---|
 | AI players | `ai.png` | AI Players |
 | apps | `apps.png` | Apps launcher / Apps & Games |
@@ -62,7 +62,7 @@ localStorage), and **auto-duck** while a game is foreground via `/game/running`
 legacy `GOSE.sound()` UI ticks (cursor.js) route through the manager, so
 Settings → Sound is the one control surface.
 
-Clips (`gui/mockup/assets/sounds/`, copied from Zeke's set, renamed):
+Clips (`gui/mockup/assets/sounds/`, copied from the owner's set, renamed):
 
 | event | file | category | fires on |
 |---|---|---|---|
@@ -96,7 +96,7 @@ the UI picker (`gose-sounds` kept in sync for back-compat).
 
 ## Corrections / pending
 
-- **Gallery + System icons (2026-06-07)** — the first integration ran before Zeke
+- **Gallery + System icons (2026-06-07)** — the first integration ran before the owner
   fixed a source swap: `pictures/` then held the system art and `system/` was
   empty, so Gallery wore the wrong icon and System had none. Re-cut from the
   corrected source: `gallery.png` now carries the real pictures/gallery art, and

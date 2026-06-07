@@ -1,7 +1,7 @@
-"""Reference AI bridge: Ava/Wren/Iris intents -> GOSE Agent calls.
+"""Reference AI bridge: AI-agent intents -> GOSE Agent calls.
 
 This is a runnable skeleton. The `AgentConnector` is a stand-in for the real
-Ava/Wren/Iris client — replace it once their API spec is known (see README).
+AI-agent client — replace it once the agent's API spec is known (see README).
 The GOSE side (`GoseClient`) is real and final.
 
 Run a local demo against a mock agent:
@@ -20,7 +20,7 @@ from gose_client import GoseClient  # noqa: E402
 
 
 # ---- GOSE op exposed to the AI as a tool schema (pattern 1) -------------------
-# When Ava/Wren/Iris support tool/function-calling, advertise these and route the
+# When the connected AI agents support tool/function-calling, advertise these and route the
 # tool calls straight into handle_intent().
 GOSE_TOOLS = [
     {"name": "gose.launch", "args": {"system": "str", "game": "str"}},
@@ -60,13 +60,13 @@ def handle_intent(gose: GoseClient, name: str, args: Dict[str, Any]) -> Dict[str
 
 
 class AgentConnector:
-    """STUB for Ava/Wren/Iris. Replace with their real client when spec is known.
+    """STUB for the AI-agent side. Replace with the real client when the spec is known.
 
     Expected to yield (intent_name, args) tuples from the agent, and accept
     results back. Here we just replay a scripted demo.
     """
 
-    def __init__(self, name: str = "ava"):
+    def __init__(self, name: str = "agent"):
         self.name = name
 
     def demo_intents(self):
@@ -78,7 +78,7 @@ class AgentConnector:
 
 
 def run_demo(host: str, port: int, token: str | None):
-    connector = AgentConnector("ava")
+    connector = AgentConnector("agent")
     with GoseClient(host, port, token=token) as gose:
         for name, args in connector.demo_intents():
             result = handle_intent(gose, name, args)
@@ -97,7 +97,7 @@ def main():
     if a.demo:
         run_demo(a.host, a.port, a.token)
     else:
-        print("Provide --demo, or wire AgentConnector to the real Ava/Wren/Iris API.")
+        print("Provide --demo, or wire AgentConnector to the real AI-agent API.")
         print("Available GOSE tools:", [t["name"] for t in GOSE_TOOLS])
 
 

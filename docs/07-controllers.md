@@ -32,7 +32,7 @@ emulators see as just another pad — so the AI shares the exact same input path
 physical controllers. No special emulator support needed.
 
 ## Input architecture — driving the OS with pad + mouse/keyboard + PS5
-The Windows-style desktop and the games must be navigable three ways (Zeke's
+The Windows-style desktop and the games must be navigable three ways (the owner's
 requirement). All ride on standard Linux input (`evdev`); the front-end and
 emulators read them via SDL2.
 

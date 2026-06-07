@@ -4,7 +4,7 @@ Append-only. Newest at top. Each: context → decision → status. Revisit freel
 mark superseded ones rather than deleting.
 
 ## ADR-0013 — GOSE on PC = a virtual machine (x86_64 image in QEMU) + boot input chooser
-**Context:** Zeke (2026-06-03): make GOSE a downloadable PC app to use first
+**Context:** the owner (2026-06-03): make GOSE a downloadable PC app to use first
 before the Odin 2 arrives, and it "should be more like a virtual machine." Plus a
 boot-time choice of how to navigate. **Decision:** GOSE-PC is a **separate x86_64
 GOSE image** (base: Batocera x86_64 + the GOSE custom layer) booted in a **QEMU
@@ -20,7 +20,7 @@ the GOSE-PC image is **[needs build]**; per-OS peripheral enum **[needs hardware
 See `docs/11-pc-app-and-input.md`. **Status:** accepted; image build is next.
 
 ## ADR-0012 — Single Linux OS = ROCKNIX; dual-boot ROCKNIX + Android (supersedes ADR-0001)
-**Context:** Zeke (2026-06-03) dropped the run-both-in-parallel plan: "just choose
+**Context:** the owner (2026-06-03) dropped the run-both-in-parallel plan: "just choose
 the best Linux one for now and we'll just have Android and that one." **Decision:**
 ship a **single Linux OS = ROCKNIX** alongside stock **Android** (the device's
 natural dual-boot: ROCKNIX on microSD, Android on internal). ROCKNIX chosen as
@@ -32,7 +32,7 @@ custom code remains distro-agnostic so a swap is cheap. Boot Menu trimmed to
 ADR-0001. Variant still TBD until hardware purchase.
 
 ## ADR-0011 — PC-style boot access: GOSE Boot Menu ("BIOS") over firmware fastboot
-**Context:** Zeke wants to hold two side buttons at power-on to reach a
+**Context:** the owner wants to hold two side buttons at power-on to reach a
 bootloader, like a Windows PC. Two layers exist: the Qualcomm firmware bootloader
 (fastboot/EDL, fixed combo, used to flash GOSE — can't restyle) and an OS-level
 menu we control. **Decision:** build a **GOSE Boot Menu** shown when a trigger
@@ -45,7 +45,7 @@ evdev/GPIO read + OS-switch commands are `[needs hardware]`. Mockups:
 **Status:** accepted (logic + UI prototype); I/O glue at hardware bring-up.
 
 ## ADR-0010 — GUI: sleek-black default + switchable themes; boot + login screens
-**Context:** Zeke wants a "really cool Windows PC" look that's clean/black by
+**Context:** the owner wants a "really cool Windows PC" look that's clean/black by
 default but lets users choose other themes in Settings; plus a boot splash and a
 controller-driven login. **Decision:** a shared **theme-token system**
 (`gui/mockup/assets/themes.css`) with **Onyx (sleek black) as default** and
@@ -56,14 +56,14 @@ PNGs rendered via a shared `_render_common.py` (Inter + Lucide via cairosvg).
 **Status:** accepted (prototype); ports to the device front-end in Phase 5.
 
 ## ADR-0009 — AI connects via MCP (primary), with SSH/console as alternates
-**Context:** Zeke confirmed (2026-06-03) Ava/Wren/Iris "most likely will use MCP,
+**Context:** the owner confirmed (2026-06-03) the AI agents "most likely will use MCP,
 or maybe SSH/console in." **Decision:** build a **zero-dependency MCP stdio server**
 (`mcp/gose_mcp_server.py`) that proxies to the GOSE Agent daemon, exposing its
 capabilities as MCP tools. Keep SSH (CLI + `system.run`) as first-class alternates.
 **Alternatives:** official MCP Python SDK (heavier dep, harder to deploy on the
 device) — kept as [ref]; we hand-roll the small tools-only stdio subset like we did
 for the JSON-lines protocol. **Status:** accepted, implemented + tested. Transport
-specifics (stdio vs HTTP/SSE) to confirm with Zeke; tool layer is transport-agnostic.
+specifics (stdio vs HTTP/SSE) to confirm with the owner; tool layer is transport-agnostic.
 
 ## ADR-0008 — Multi-input: focus-nav + gamepad-pointer + mouse/keyboard + PS5
 **Context:** the Windows-style desktop must be driven by the native Odin pad, a
@@ -75,7 +75,7 @@ The HTML prototype implements both (Y toggles). **Status:** accepted; AntiMicroX
 profile is `[on device]`.
 
 ## ADR-0007 — Game-state interface via RetroArch memory (no screenshots)
-**Context:** Zeke wants the AI to play/observe games from **game state, not pixels**
+**Context:** the owner wants the AI to play/observe games from **game state, not pixels**
 (Mineflayer-style), at least for simple games (Pong, chess, Mario 64).
 **Decision:** add a `state` capability that uses RetroArch's Network Command
 Interface (UDP 55355) to read/write core memory, decoded through per-game RAM-map
@@ -86,7 +86,7 @@ accepted, implemented + tested against a mock RetroArch; real-address verificati
 is `[needs hardware]`.
 
 ## ADR-0006 — Adopt the existing ecosystem instead of reinventing
-**Context:** Zeke: "research and see if there's anything like this already and just
+**Context:** the owner: "research and see if there's anything like this already and just
 import that if you can." There is. **Decision:** build on prior art —
 - **stable-retro** (gym-retro fork): reuse its hundreds of `data.json` RAM maps;
   our profile engine accepts its `>u4`-style type descriptors and we ship a
@@ -94,7 +94,7 @@ import that if you can." There is. **Decision:** build on prior art —
 - **pyraco** (PyPI): reference/optional transport for the RetroArch NCI (our
   built-in client stays zero-dep for guaranteed on-device operation).
 - **mcp-retroarch**: an existing MCP server for RetroArch — validates the design
-  and points to MCP as the likely **Ava/Wren/Iris** connection path; plan to expose
+  and points to MCP as the likely **AI-agent** connection path; plan to expose
   the GOSE Agent over MCP (it controls the whole device, a superset).
 **Status:** accepted. stable-retro type compat + converter implemented; pyraco/MCP
 adoption tracked in ROADMAP.
@@ -117,7 +117,7 @@ testable); upgrade to WebSocket+TLS once the shape stabilizes. **Status:** accep
 ## ADR-0003 — AI control agent in Python
 **Context:** The agent needs robust input injection (`uinput`), shell, and quick
 iteration. **Decision:** Python — best `evdev`/`uinput` bindings, readable for
-Zeke, ships on both distros. **Alternatives:** Go/Rust (single static binary, nicer
+the owner, ships on both distros. **Alternatives:** Go/Rust (single static binary, nicer
 to deploy) considered for later if startup time/footprint matters. **Status:**
 accepted for v0.
 
@@ -131,7 +131,7 @@ internals. Distro-specific bits (theme format, paths) are isolated in config +
 ## ADR-0001 — Base distro: run BOTH in parallel, then bench  ·  ⚠️ SUPERSEDED by ADR-0012
 **Context:** As of 2026-06 both support the Odin 2; ROCKNIX is officially stable on
 all three variants, Batocera v42 (SM8550) has the bigger library but is newer to
-the device. **Decision (Zeke, 2026-06-03):** stand up **ROCKNIX and Batocera on
+the device. **Decision (owner, 2026-06-03):** stand up **ROCKNIX and Batocera on
 two SD cards in parallel** and benchmark PSP/PS2/Switch on each, then pick the
 daily driver from real results. Device is **not yet acquired**, so all work stays
 **variant-agnostic** (Odin 2 / Mini / Portal). **Status:** accepted, pending

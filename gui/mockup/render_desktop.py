@@ -88,9 +88,9 @@ def main():
         nonlocal tx; tx -= 18; img.alpha_composite(icon(name, 18, TEXT), (int(tx), H - 38)); tx -= 8
     tt("14:32", font(14, 600), TEXT)
     ti("battery"); tt("82%", font(13), MUTED); ti("volume-2"); ti("wifi")
-    tt("Iris", font(13), MUTED); d.ellipse([tx-14,H-31,tx-6,H-23], fill=(58,62,76)); tx-=22
-    tt("Wren", font(13), TEXT);  d.ellipse([tx-14,H-31,tx-6,H-23], fill=ACC); tx-=22
-    tt("Ava", font(13), TEXT);   d.ellipse([tx-14,H-31,tx-6,H-23], fill=ACC); tx-=26
+    tt("Agent C", font(13), MUTED); d.ellipse([tx-14,H-31,tx-6,H-23], fill=(58,62,76)); tx-=22
+    tt("Agent A", font(13), TEXT);  d.ellipse([tx-14,H-31,tx-6,H-23], fill=ACC); tx-=22
+    tt("Agent B", font(13), TEXT);   d.ellipse([tx-14,H-31,tx-6,H-23], fill=ACC); tx-=26
     tt("Focus", font(13, 600), ACC); ti("target")
 
     hint = "Focus: D-pad move  ·  A select  ·  B back  ·  Start menu  ·  Y > pointer"

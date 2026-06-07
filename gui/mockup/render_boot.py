@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render the GOSE boot splash concept -> boot-concept.png.
 
-Recreates Zeke's brand splash: hexagon "G" mark with a gamepad, violet->blue
+Recreates the GOSE brand splash: hexagon "G" mark with a gamepad, violet->blue
 gradient, italic GOSE wordmark, capability icons, and the credit line. The live
 animated version is boot.html. To use the exact logo art instead of this
 recreation, drop a PNG at assets/brand/gose-logo.png (see boot.html).
@@ -135,7 +135,7 @@ def main():
         img.alpha_composite(g, (sx + i * gap - sz // 2, 548))
 
     text_c(d, "POWERED BY EMULATION.  DRIVEN BY AI.", font(13, 600), (140, 110, 190), 612, tracking=4)
-    text_c(d, "by Ezekiel Angeles-Gonzalez  ·  powered by Tzeke000 Studios",
+    text_c(d, "GOSE  ·  Gaming Operating System Emulator",
            font(13, 500), (110, 96, 140), 662, tracking=2)
 
     img.convert("RGB").save(OUT)

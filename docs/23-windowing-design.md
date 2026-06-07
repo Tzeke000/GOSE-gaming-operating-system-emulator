@@ -1,8 +1,8 @@
 # 23 — Windowing & Multitasking Design `[CUSTOM]`
 
-> Status: **DESIGN / RESEARCH (2026-06-06, Wren).** Zeke's ask: "make windowing/multitasking
+> Status: **DESIGN / RESEARCH (2026-06-06).** The owner's ask: "make windowing/multitasking
 > like what Windows has, or better — like whatever OS does this best." This doc is the research
-> synthesis + the chosen architecture + a phased build plan. **It is Zeke's to approve before
+> synthesis + the chosen architecture + a phased build plan. **It is the owner's to approve before
 > any build starts.** This is roadmap item **B** (docs/17 §B) — "the biggest architectural lift."
 > Nothing here is built yet.
 
@@ -287,7 +287,7 @@ defaults to suspend, a deeper act-out = free (§5).
 
 ---
 
-## 5. The widget↔window-memory model (Zeke's design), integrated
+## 5. The widget↔window-memory model (the owner's design), integrated
 
 This is the spine that makes widgets and windows **one continuum** instead of two systems.
 
@@ -410,8 +410,8 @@ WinBox's (mouse-first, dock-less) UX wholesale.
 
 ## 9. Phased build plan
 
-Effort estimates are focused-session days for one builder (Wren), excluding live-on-hardware tuning
-(needs the Odin / Zeke's eye, like the voice work).
+Effort estimates are focused-session days for one builder, excluding live-on-hardware tuning
+(needs the Odin / the owner's eye).
 
 ### Phase 0 — Spine (~0.5–1 day)
 - **Window registry** data model (§4.1) + **`GET /windows`** (merge: web-window list from the WebView
@@ -493,7 +493,7 @@ Effort estimates are focused-session days for one builder (Wren), excluding live
 
 ---
 
-## 11. Open questions for Zeke (approve / steer before build)
+## 11. Open questions for the owner (approve / steer before build)
 
 1. **Default multitask depth:** Switch-style "one focus, suspend the rest" as the *default* (best for
    handheld RAM/battery), with full snap-multitask as an opt-in mode? Or full-multitask default?

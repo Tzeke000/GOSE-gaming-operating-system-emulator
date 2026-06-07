@@ -1,6 +1,6 @@
 # GOSE Agent
 
-The device-side daemon that lets your AI agents (Ava / Wren / Iris) **control the
+The device-side daemon that lets your AI agents **control the
 whole Odin 2** — play games and fix the OS — over Wi-Fi/Ethernet or a USB cable.
 
 See `../docs/03-architecture.md` and `../docs/05-ai-control-protocol.md` for the

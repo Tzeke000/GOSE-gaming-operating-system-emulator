@@ -191,10 +191,11 @@ def info():
     out.update(gpu())
     return out
 
-FFMPEG = (r"C:\Users\Tzeke\AppData\Local\Microsoft\WinGet\Packages"
-          r"\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1-full_build\bin\ffmpeg.exe")
-if not os.path.isfile(FFMPEG):
-    FFMPEG = "ffmpeg"
+# Prefer a winget-installed ffmpeg for the current user; fall back to PATH.
+_ffmpeg_hits = glob.glob(os.path.join(
+    os.path.expandvars(r"%LOCALAPPDATA%"), "Microsoft", "WinGet", "Packages",
+    "Gyan.FFmpeg*", "*", "bin", "ffmpeg.exe"))
+FFMPEG = _ffmpeg_hits[0] if _ffmpeg_hits else "ffmpeg"
 
 def qemu_title():
     # gdigrab needs the exact window title; it carries a "- Press Ctrl-Alt-G..." suffix, so read it live

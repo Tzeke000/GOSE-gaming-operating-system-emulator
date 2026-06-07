@@ -11,7 +11,7 @@ window.GOSE = (function () {
 
   const qs = new URLSearchParams(location.search);
   // The PC app sets ?platform=pc (or localStorage). Default to PC — that's what
-  // Zeke uses until the Odin 2 arrives.
+  // the owner uses until the Odin 2 arrives.
   let platform = qs.get("platform") || localStorage.getItem("gose-platform") || PC;
   if (platform !== DEVICE && platform !== PC) platform = PC;
   localStorage.setItem("gose-platform", platform);

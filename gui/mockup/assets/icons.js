@@ -1,6 +1,6 @@
 /* GOSE icon resolver.
    Most icons are monochrome SVG masks tinted with currentColor
-   (assets/icons/<name>.svg). A small set of APP-IDENTITY icons are Zeke's
+   (assets/icons/<name>.svg). A small set of APP-IDENTITY icons are the owner's
    full-color hand-made PNGs (assets/icons/brand/<file>.png) — a coloured PNG
    can't be a mask (a mask would flatten it to the accent colour), so those render
    as a contained background-image instead. Brand tokens are namespaced so they

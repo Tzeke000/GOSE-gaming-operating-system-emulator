@@ -1,17 +1,17 @@
-# AI Bridge — Ava / Wren / Iris ↔ GOSE Agent  `[CUSTOM]` 🧱 blocked
+# AI Bridge — your AI agents ↔ GOSE Agent  `[CUSTOM]` 🧱 blocked
 
 This is the thin adapter that connects **your AI agents** to the device. It maps
 their intents into `GoseClient` calls (`launch`, `tap`, `run`, `status`,
 `screenshot`, ...) and streams device state/screens back to them.
 
 ```
-Ava / Wren / Iris  ──their API──▶  ai-bridge  ──GoseClient──▶  GOSE Agent ──▶ Odin 2
+Your AI agents     ──their API──▶  ai-bridge  ──GoseClient──▶  GOSE Agent ──▶ Odin 2
    (your server)                  (this dir)   (JSON-lines)      (daemon)
 ```
 
 ## Status: blocked on the agent spec
 The GOSE Agent + `gose_client` fully define and exercise **our** side — the device
-is controllable today via the CLI/SDK. What's missing is **how Ava/Wren/Iris
+is controllable today via the CLI/SDK. What's missing is **how the AI agents
 expose themselves**:
 
 - Transport: HTTP REST? WebSocket? gRPC? message queue?
@@ -26,7 +26,7 @@ Drop that spec in `docs/` and this bridge becomes a small, well-defined adapter.
 `bridge.py` — a runnable **reference adapter** showing the shape: it exposes a
 minimal "intent" function (`handle_intent`) that translates structured intents
 into GOSE Agent calls, plus a fake agent connector you replace with the real
-Ava/Wren/Iris client. This lets us build and test the device side of the bridge
+AI-agent client. This lets us build and test the device side of the bridge
 before the agent API is finalized.
 
 ## Two integration patterns (pick when the spec lands)

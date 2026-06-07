@@ -176,8 +176,8 @@
       {ic:"hard-drive", nm:"Clear local data", sub:"Saves, cache, pairing tokens", t:"action", val:"clear", act:"Local data cleared (demo)"},
     ]},
     {id:"accounts", ic:"users", nm:"Accounts", rows:[
-      {ic:"user", nm:"You", sub:"Primary account on this device", t:"info", val:"Zeke"},
-      {ic:"sparkles", nm:"AI players", sub:"Wren, Ava, Iris — manage in the AI Hub", t:"agents"},
+      {ic:"user", nm:"You", sub:"Primary account on this device", t:"info", val:"Owner"},
+      {ic:"sparkles", nm:"AI players", sub:"Your AI agents — manage in the AI Hub", t:"agents"},
       {ic:"users", nm:"Add account", sub:"A person or an AI can have their own account", t:"action", val:"add", act:"Opens first-time account setup (OOBE)"},
       {ic:"lock", nm:"Sign-in", sub:"How accounts unlock this device", t:"cycle", v:["None","PIN","Password"]},
     ]},
@@ -203,7 +203,7 @@
       {ic:"cpu", nm:"Memory", sub:"RAM in use", t:"info", val:"—", live:"mem"},
     ]},
   ];
-  const AGENTS=[{n:"Wren",c:"var(--accent)",on:true},{n:"Ava",c:"var(--accent)",on:true},{n:"Iris",c:"#3a3e4c",on:false}];
+  const AGENTS=[{n:"Agent A",c:"var(--accent)",on:true},{n:"Agent B",c:"var(--accent)",on:true},{n:"Agent C",c:"#3a3e4c",on:false}];
 
   const rail=document.getElementById("rail"), pane=document.getElementById("pane"), toast=document.getElementById("toast");
   let cat=0, foc=0, zone="rail";   // two-pane: zone is "rail" (categories) or "pane" (settings)

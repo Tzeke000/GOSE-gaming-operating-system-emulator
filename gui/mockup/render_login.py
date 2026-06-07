@@ -9,9 +9,9 @@ from _render_common import (base, font, icon, panel, text, brand_logo,
 W, H = 1280, 720
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "login-concept.png")
 
-USERS = [("Zeke", "user", "Administrator", True),
+USERS = [("Owner", "user", "Administrator", True),
          ("Guest", "user", "Limited session", False),
-         ("AI Session", "sparkles", "Ava / Wren / Iris", False)]
+         ("AI Session", "sparkles", "AI agents", False)]
 
 
 def avatar(img, d, cx, cy, ic, sel):

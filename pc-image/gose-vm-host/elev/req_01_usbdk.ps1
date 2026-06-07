@@ -1,4 +1,4 @@
-# Auto-runs when the elevated agent starts (Zeke's one UAC click via elev_launch.bat).
+# Auto-runs when the elevated agent starts (the owner's one UAC click via elev_launch.bat).
 # Silent-installs USBDk so QEMU can pass the laptop's Bluetooth radio into the GOSE VM.
 $ErrorActionPreference = "Continue"
 $msi = "D:\gose-vm\UsbDk_1.0.22_x64.msi"

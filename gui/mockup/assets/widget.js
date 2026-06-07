@@ -35,7 +35,7 @@
     {id:"wemulators", name:"Emulators",      desc:"Most-played & recent systems — start one",  icon:"emulators",   group:"content", def:1},
     {id:"wlibrary",   name:"Library",        desc:"Recent & most-played games — launch one",   icon:"library",     group:"content", def:1},
     {id:"wstore",     name:"Store",          desc:"Sample apps, emulators & games to grab",    icon:"store",       group:"content", def:1},
-    {id:"aiplayers",  name:"AI Players",     desc:"Wren, Ava, Iris — status & access tier",    icon:"ai",          group:"content", def:1},
+    {id:"aiplayers",  name:"AI Players",     desc:"Your AI agents — status & access tier",    icon:"ai",          group:"content", def:1},
     {id:"steam",      name:"Steam",          desc:"Steam status & library when signed in",     icon:"gamepad-2",   group:"content", def:0},
     {id:"wterminal",  name:"Terminal",       desc:"Quick-launch the terminal",                 icon:"terminal-app",group:"content", def:1},
     {id:"controllers",name:"Controllers",    desc:"Connected gamepads (count badge when live)",icon:"gamepad-2",   group:"status",  def:1},
@@ -188,7 +188,7 @@
       if(it.click)it.click();}
     function visibleWidgets(){
       var ws=[].slice.call(document.querySelectorAll('.gw')).filter(function(w){return !w.hidden&&w.style.display!=='none';});
-      // SPATIAL order (docs/25 §5b, Zeke 2026-06-06): left→right, top→down, computed
+      // SPATIAL order (docs/25 §5b, 2026-06-06): left→right, top→down, computed
       // from the widgets' CURRENT live positions — never a hardcoded list. Widgets are
       // clustered into columns by x (COL_TOL, same tolerance the auto-flow uses) so a
       // few px of drag drift doesn't reorder; columns run left→right, and within a

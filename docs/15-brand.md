@@ -1,6 +1,6 @@
 # 15 — Brand: the GOSE Core `[CUSTOM]`
 
-> Direction set by Zeke, 2026-06-04 (with a reference render). The whole OS is
+> Direction set by the owner, 2026-06-04 (with a reference render). The whole OS is
 > branded around one symbol — the **GOSE Core** — the way Apple uses the apple.
 > No letters, no controllers: a platform artifact, not "another emulator frontend."
 
@@ -16,7 +16,7 @@ AI core / emulator kernel / gateway — what GOSE actually is.
 - `gui/mockup/assets/brand/gose-core-mark.svg` — crystal + core only, square viewBox.
   Use for **headers, taskbar Start, login, and the tiny Core next to each AI's name**.
 - Built as SVG on purpose: scales 16px→splash, themeable, and **animates** (the boot
-  splash grows the Core in then floats it — Zeke's "Seed" idea, `boot.html`).
+  splash grows the Core in then floats it — the owner's "Seed" idea, `boot.html`).
 
 ## Where it appears (rebranded 2026-06-04, replacing the old hexagon/gamepad logo)
 boot splash · boot menu · BIOS (gose-setup) · first-time setup (gose-oobe) · login ·

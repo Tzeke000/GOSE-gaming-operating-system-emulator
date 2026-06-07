@@ -5,7 +5,7 @@
 <title>GOSE — Boot</title>
 <style>
   /* Boot splash is brand-fixed (always black + violet->blue), independent of the
-     UI theme picker. To use Zeke's exact art, replace assets/brand/gose-logo.png. */
+     UI theme picker. To use your own logo art, replace assets/brand/gose-logo.png. */
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
   @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
@@ -47,7 +47,7 @@
     <span class="ic" data-i="globe"></span><span class="ic" data-i="cloud"></span>
   </div>
   <div class="powered">POWERED BY EMULATION. &nbsp;DRIVEN BY AI.</div>
-  <div class="credit">by Ezekiel Angeles-Gonzalez &nbsp;·&nbsp; powered by Tzeke000 Studios</div>
+  <div class="credit">GOSE &nbsp;·&nbsp; Gaming Operating System Emulator</div>
 <script>
   document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));
   // flow: boot menu -> this splash -> choose navigation -> login.

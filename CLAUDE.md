@@ -11,9 +11,8 @@
 Gen 2) into a console-like, controller-driven gaming + tinkering device running a
 **flashable Linux OS**, with a Windows-style controller-only GUI, broad emulation,
 universal controller support, and the ability to be **driven by the owner's AI
-agents (Ava, Wren, Iris)** over Wi-Fi or cable.
+agents** over Wi-Fi or cable.
 
-Owner: **Zeke (Tzeke000)** · tzeke000@gmail.com
 Full original brief: `docs/00-project-brief.md`
 
 **This is NOT writing an OS from scratch.** It is: flash a mature handheld Linux
@@ -37,17 +36,17 @@ AI control agent, and the reproducible setup scripts.
   keep a direct USB-C→HDMI adapter as fallback. Dock USB/Ethernet more reliable.
 
 ## Current decision (revisit anytime)
-- **Base distro: ROCKNIX only + Android** (Zeke, 2026-06-03, ADR-0012 — supersedes
+- **Base distro: ROCKNIX only + Android** (owner, 2026-06-03, ADR-0012 — supersedes
   the earlier "both in parallel" plan). One Linux slot, pick the best → **ROCKNIX**
   (verified-stable, officially supported on Odin 2). Dual-boot = ROCKNIX (microSD) +
   stock Android (internal). **Batocera = documented fallback** only. Custom code
   stays **distro-agnostic** so a swap stays cheap.
-- **Device not yet acquired** (Zeke, 2026-06-03) — keep everything
+- **Device not yet acquired** (owner, 2026-06-03) — keep everything
   **variant-agnostic** (Odin 2 / Mini / Portal all viable). No hardware-specific
   assumptions until the unit is in hand.
-- **GOSE on PC = a virtual machine** (Zeke, 2026-06-03, ADR-0013) — a separate
+- **GOSE on PC = a virtual machine** (owner, 2026-06-03, ADR-0013) — a separate
   **x86_64 GOSE image** (base Batocera x86_64 + GOSE layer) booted in **QEMU**, not
-  a web wrapper or ARM emulation. Zeke uses the PC app first until the Odin 2
+  a web wrapper or ARM emulation. The owner uses the PC app first until the Odin 2
   arrives. Launcher `scripts/gose_vm.py`; UI-only preview `scripts/gose-preview.py`.
   Image build = next milestone `[needs build]`.
 - **Boot-time input chooser** (ADR-0013): device default **Native** (auto-accepts
@@ -63,7 +62,7 @@ AI control agent, and the reproducible setup scripts.
   Odin under ROCKNIX/Batocera. Capabilities: input injection, shell, game launch,
   system status, screen capture. Has **mock backends** so it runs/tests in any
   Linux container (no real `/dev/uinput` needed).
-- `agent/client/` — Python client SDK + CLI for the AI side (Ava/Wren/Iris) and for testing.
+- `agent/client/` — Python client SDK + CLI for the AI side (the AI agents) and for testing.
 - `agent/gose_agent/profiles/` — per-game RAM maps for the **game-state interface**
   ("Mineflayer for retro"): read game state from emulator memory, no screenshots.
   Accepts stable-retro type descriptors; `agent/tools/import_stable_retro.py` imports
@@ -75,7 +74,7 @@ AI control agent, and the reproducible setup scripts.
   Settings). Multi-input: gamepad focus-nav + pointer + mouse + keyboard + PS5.
   See `docs/06-gui-plan.md`; boot/BIOS model in `docs/10-boot-menu.md`.
 - `gui/` — Windows-like front-end work (theme and/or custom app). `[CUSTOM]`
-- `mcp/` — **MCP server**: how Ava/Wren/Iris/Claude drive the device (stdio
+- `mcp/` — **MCP server**: how AI agents/Claude drive the device (stdio
   JSON-RPC, proxies to the agent). Zero-dep. See `mcp/README.md`.
 - `docs/09-toolchain.md` — curated open-source tools to adopt (coding→OS→games→design).
 - `scripts/` — reproducible, idempotent device setup scripts + mock-testable logic:
@@ -89,7 +88,7 @@ AI control agent, and the reproducible setup scripts.
 
 ## How to work in this repo
 - Dev branch: **`claude/odin2-gaming-os-4SWOh`**. Develop, commit, push there. Do
-  NOT open a PR unless Zeke asks.
+  NOT open a PR unless the owner asks.
 - Run the agent test suite (no deps, works in-container):
   `python3 -m unittest discover -s agent/tests -v`
 - Run the agent in mock mode: `python3 -m gose_agent` (from `agent/`), then drive
@@ -97,14 +96,14 @@ AI control agent, and the reproducible setup scripts.
 - Most "real device" steps (flashing, uinput, HDMI) can only be validated on the
   actual Odin 2 — mark those as **[needs hardware]** and keep them in the runbook.
 
-## How the AIs connect (Zeke, 2026-06-03)
-- **Ava/Wren/Iris will most likely use MCP**, or **SSH / console**. → We built an
+## How the AIs connect (owner, 2026-06-03)
+- **The AI agents will most likely use MCP**, or **SSH / console**. → We built an
   MCP server (`mcp/`) + the CLI works over SSH + `system.run` is the console path.
   Remaining: confirm any auth/transport specifics they need (e.g., HTTP/SSE MCP
   transport vs stdio). The tool layer is done either way.
 
-## Open items needing Zeke's input
-- Confirm Ava/Wren/Iris MCP transport (stdio vs HTTP/SSE) + auth, if any.
+## Open items needing the owner's input
+- Confirm the AI agents' MCP transport (stdio vs HTTP/SSE) + auth, if any.
 - Confirm exact Odin 2 variant once acquired (currently NOT yet purchased) —
   affects image + RAM headroom. Stay variant-agnostic until then.
 - Does the Odin 2 support simultaneous OTG + charging? (affects portable multi-dongle).

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """GOSE MCP server — drive the whole Odin 2 from any MCP client.
 
-This is how Ava/Wren/Iris (and Claude) connect: a Model Context Protocol server
+This is how AI agents (e.g. Claude) connect: a Model Context Protocol server
 over stdio (newline-delimited JSON-RPC 2.0) that exposes the GOSE Agent's
 capabilities as MCP tools. It is a thin adapter — it connects to the long-running
 GOSE Agent daemon over localhost TCP (the daemon owns the real device: uinput,

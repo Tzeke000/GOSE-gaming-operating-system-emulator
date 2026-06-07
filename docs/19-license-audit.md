@@ -10,7 +10,7 @@
 > `license` field — that is the authoritative per-core source and is what `scancode-toolkit`
 > would surface anyway, so enumerating the `.info` strings (then spot-verifying the
 > non-commercial ones upstream) is the faster, equally-thorough path. Scan helper:
-> `D:\Wren\scratch\gose_license_scan.py` (host-side, read-only over SSH).
+> `<agent-home>\scratch\gose_license_scan.py` (host-side, read-only over SSH).
 >
 > **Bottom line:** stock Batocera ships **117 libretro cores**; **11 are licensed
 > non-commercial** and MUST be removed/replaced before any paid release, **3 need manual

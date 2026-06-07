@@ -1,24 +1,24 @@
 # 14 — AI Hub (design seed) `[CUSTOM]`
 
-> Status: **requirements captured 2026-06-04 (Zeke), full design deferred.** This is
+> Status: **requirements captured 2026-06-04 (owner), full design deferred.** This is
 > the empty room in the GUI today — the desktop taskbar already shows agent
-> presence dots (Ava/Wren/Iris) + an "AI Hub" tile, but nothing behind them is
+> presence dots (the AI agents) + an "AI Hub" tile, but nothing behind them is
 > designed yet. BIOS/Setup is being built first; this doc holds the vision so it
 > isn't lost. See `docs/06-gui-plan.md`, `docs/12-agent-connection-spec.md`.
 
-## The vision (Zeke, 2026-06-04, verbatim intent)
+## The vision (owner, 2026-06-04, verbatim intent)
 GOSE is **not a single-seat OS**. It's a room any of the household agents can
 enter. The AI Hub is the surface that makes that real.
 
-1. **Join.** Any agent — Wren, Ava, or Iris — can join the owner's live session.
+1. **Join.** Any of the owner's agents can join the owner's live session.
 2. **Scope of control.** A joined agent can drive **either the whole OS** (navigate
    the desktop, launch things, change settings) **or just one running game**, and
    can do it **remotely — from wherever the agent is** (not co-located with the
    device). This builds directly on the agent-connection transport
    (`docs/12-agent-connection-spec.md`): MCP/TCP control of input + screen + launch.
 3. **Play modes.**
-   - **Solo** — Zeke plays alone (agents idle / presence only).
-   - **Co-op** — Zeke + one or more agents in the same OS or game together.
+   - **Solo** — the owner plays alone (agents idle / presence only).
+   - **Co-op** — the owner + one or more agents in the same OS or game together.
    - **Agent-vs/with-agent** — agents play with each other (no human seat required).
 
 ## What that implies (to resolve when we flesh this out)
@@ -34,24 +34,24 @@ enter. The AI Hub is the surface that makes that real.
 - **Remote reach:** "from wherever" = the agent connects over the network to the
   GOSE agent daemon; the BIOS **AI & Remote** section is the enable/allow-list/token
   surface for exactly this. (Designed into the BIOS/Setup screen now.)
-- **The AI Hub tile** itself: roster of the three agents, their status (here / away /
-  paused — e.g. Iris dark), "invite to session," per-agent scope grant, voice toggle.
+- **The AI Hub tile** itself: roster of the device's agents, their status (here / away /
+  paused), "invite to session," per-agent scope grant, voice toggle.
 
-## Account model (Zeke, 2026-06-04): every user is a human OR an AI
+## Account model (owner, 2026-06-04): every user is a human OR an AI
 The foundation under the AI Hub is the **user-account model**: a GOSE account belongs
-to a **person or to an agent** (Ava/Wren/Iris), and both log in the same way. Realized
+to a **person or to an agent**, and both log in the same way. Realized
 in the first-time-setup wizard `gui/mockup/gose-oobe.html` (welcome → Human/AI → password
 → username → identity/accent → **AI link** (agent identity + pairing token + default
 control scope OS/game + approval-to-join + voice) → role (first = Owner) → done). So
-"log in as Wren" is a real account, and the AI Hub's "who can join" roster = the AI
+"log in as your AI" is a real account, and the AI Hub's "who can join" roster = the AI
 accounts on the device.
 - **A user account needs:** type (human/AI), password (+confirm, +optional PIN),
   username + display name, accent color/identity, role (Owner/Standard/Guest); AI
-  accounts additionally need: a **name (any — brand-agnostic**, not assume Ava/Wren/Iris,
+  accounts additionally need: a **name (any — brand-agnostic**, not assume specific agent names,
   since a stranger downloading GOSE brings their own AI), **connection method(s) —
   MCP / SSH / Console, select-all-that-apply**, pairing token, default control scope
   (OS/game), approval-to-join, and a **"let this AI use a human's account / act as
-  them"** permission (Zeke's explicit want for us). The AI block is the device-side half
+  them"** permission (the owner's explicit want). The AI block is the device-side half
   of [[project_gose_2026-06-03]]'s token auth. **Distributable by design** — works for
   anyone's agents, not just ours.
 - **TODO:** the lock screen (`login.html`) is the OLD mockup — update it to show human

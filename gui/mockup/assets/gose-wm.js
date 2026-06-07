@@ -121,7 +121,7 @@
   var AUTOSUSPEND_MS=2500;
   var seq=0;
   var syncT=null;
-  // one id per page LOAD — lets the server (and a debugging Wren) tell which shell
+  // one id per page LOAD — lets the server (and a debugging AI agent) tell which shell
   // instance the registry cache is coming from, and spot a second/stale consumer.
   var INST=(navigator.userAgent.indexOf("Chrome")>=0?"chrome-":"webkit-")+
            Math.random().toString(36).slice(2,8)+"-"+Date.now().toString(36);

@@ -1,6 +1,6 @@
-# GOSE elevated agent — a controllable admin "session" for Wren.
-# Zeke launches this ONCE (one UAC approval, via elev_launch.bat). It then runs elevated and executes
-# whatever command-files Wren drops in D:\gose-vm\elev\, writing their output back. Wren kills it by
+# GOSE elevated agent — a controllable admin "session" for the AI agent.
+# The owner launches this ONCE (one UAC approval, via elev_launch.bat). It then runs elevated and executes
+# whatever command-files the AI agent drops in D:\gose-vm\elev\, writing their output back. The agent kills it by
 # dropping a stop.flag (or just closing it). Scoped to a local file queue; nothing remote can reach it.
 $ErrorActionPreference = "Continue"
 $dir = "D:\gose-vm\elev"

@@ -126,7 +126,7 @@
     </div>
     <div class="tray">
       <span class="mode focusable" id="modebtn" data-act="mode"><span class="ic" data-i="target"></span>Focus</span>
-      <span class="agents">Ava<img class="aicore" src="assets/brand/gose-core-mark.png">Wren<img class="aicore" src="assets/brand/gose-core-mark.png">Iris<img class="aicore off" src="assets/brand/gose-core-mark.png"></span>
+      <span class="agents">Agent A<img class="aicore" src="assets/brand/gose-core-mark.png">Agent B<img class="aicore" src="assets/brand/gose-core-mark.png">Agent C<img class="aicore off" src="assets/brand/gose-core-mark.png"></span>
       <span class="ic" data-i="wifi"></span><span class="ic" data-i="volume-2"></span>
       <span class="ic" data-i="battery"></span><span>82%</span><span id="clock">--:--</span>
     </div>
@@ -148,7 +148,7 @@ const SYS=[["PSP","play"],["PS2","gamepad-2"],["Switch","gamepad-2"],["SNES","ga
   ["Genesis","gamepad-2"],["PS1","gamepad-2"],["GameCube","gamepad-2"],["Mario 64","play"],["Arcade","gamepad-2"],
   ["Terminal","terminal"],["AI Hub","sparkles"]];
 const SETTINGS=[["wifi","Wi-Fi","Connected · HomeNet 6E"],["gamepad-2","Controllers","Odin pad · PS5 · Xbox · mouse/kbd"],
-  ["monitor","Display & HDMI","1080p · dock HDMI fallback ready"],["sparkles","AI Agents","Ava ● Wren ● — via MCP / SSH"],
+  ["monitor","Display & HDMI","1080p · dock HDMI fallback ready"],["sparkles","AI Agents","Agent A ● Agent B ● — via MCP / SSH"],
   ["volume-2","Sound","Speakers · USB mic"],["cpu","System","ROCKNIX · Snapdragon 8 Gen 2"]];
 
 const cards=document.getElementById("cards");
@@ -193,7 +193,7 @@ function activate(el){el=el||current();if(!el)return;const a=el.dataset.act,n=el
   if(a==="win"){document.getElementById("settings").classList.remove("show");document.getElementById("win").classList.remove("hide");if(startOpen)toggleStart();return setFocus(document.querySelector("#cards .focusable"));}
   if(a==="settings"){document.getElementById("settings").classList.add("show");if(startOpen)toggleStart();return setFocus(document.querySelector("#setbody .focusable"));}
   if(a==="term")return toast("Terminal — AI drives this over SSH/console too");
-  if(a==="ai")return toast("AI Hub — Ava/Wren/Iris via MCP or SSH");
+  if(a==="ai")return toast("AI Hub — your AI agents via MCP or SSH");
   if(a==="theme"){setTheme(el.dataset.theme);return toast("Theme: "+el.dataset.theme);}}
 function toggleStart(){startOpen=!startOpen;startEl().classList.toggle("open",startOpen);
   setFocus(startOpen?document.querySelector("#pins .focusable"):document.querySelector(".icons .focusable"));}

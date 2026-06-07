@@ -1,18 +1,18 @@
-# 12 — Agent connection spec (how Ava / Wren / Iris connect)
+# 12 — Agent connection spec (how AI agents connect)
 
-**Status:** RESOLVED for v0 (2026-06-04, by Wren). This is the spec the
+**Status:** RESOLVED for v0 (2026-06-04). This is the spec the
 `ai-bridge/` README and `mcp/README.md` were waiting on. It unblocks the item the
-project CLAUDE.md listed under "Open items needing Zeke's input → Confirm
-Ava/Wren/Iris MCP transport (stdio vs HTTP/SSE) + auth."
+project CLAUDE.md listed under "Open items needing the owner's input → Confirm
+the AI agents' MCP transport (stdio vs HTTP/SSE) + auth."
 
 ## The key realization
-The question "how do Ava/Wren/Iris expose themselves?" was framed as blocked on a
-decision Zeke had to hand down. It isn't — it's answerable by looking at **how the
-agents already connect to everything else.** Wren (and Iris, and Ava) are **Claude
+The question "how do the AI agents expose themselves?" was framed as blocked on a
+decision the owner had to hand down. It isn't — it's answerable by looking at **how the
+agents already connect to everything else.** The owner's agents are **Claude
 Code sessions**. A CC session does not *expose* an API for a device to call; it is
-an **MCP client** that *drives* tools registered in its `.mcp.json`. Wren's voice
-and her sibling post-office both work exactly this way today — FastMCP/JSON-RPC
-**stdio** servers listed in `D:\Wren\.mcp.json`. GOSE already ships the matching
+an **MCP client** that *drives* tools registered in its `.mcp.json`. An agent's voice
+and messaging tools already work exactly this way today — FastMCP/JSON-RPC
+**stdio** servers listed in `<agent-home>\.mcp.json`. GOSE already ships the matching
 piece: `mcp/gose_mcp_server.py`, a zero-dep stdio JSON-RPC MCP server.
 
 So the agents don't need to expose anything. They **register the GOSE MCP server**
@@ -22,8 +22,8 @@ guessing a transport.
 ## v0 transport: MCP over stdio (the agent's machine) → TCP (to the device)
 
 ```
-Wren's CC session            gose_mcp_server.py            GOSE Agent daemon
-(MCP client, stdio)   ──▶    (subprocess on Wren's    ──▶  (on the Odin 2, or a
+The agent's CC session       gose_mcp_server.py            GOSE Agent daemon
+(MCP client, stdio)   ──▶    (subprocess on the agent's ──▶ (on the Odin 2, or a
                               machine, stdio JSON-RPC)      mock; owns the device)
                                      │  GoseClient
                                      └─ newline-delimited JSON over TCP  ──────┘
@@ -31,7 +31,7 @@ Wren's CC session            gose_mcp_server.py            GOSE Agent daemon
 ```
 
 - **MCP layer = stdio, runs on the agent's machine.** The CC session spawns
-  `gose_mcp_server.py` as a child process (same as `wren-voice`). No network for the
+  `gose_mcp_server.py` as a child process (same as its other stdio servers). No network for the
   MCP hop, no HTTP server to stand up, no MCP-level auth surface.
 - **Device hop = the already-built GoseClient TCP** (ADR: newline-delimited JSON
   over asyncio TCP — `docs/05-ai-control-protocol.md`). This is the only hop that
@@ -42,14 +42,14 @@ Wren's CC session            gose_mcp_server.py            GOSE Agent daemon
 
 ### Why not HTTP/SSE for v0
 HTTP/SSE MCP transport only matters if the **MCP server itself** must run somewhere
-other than the agent's machine — e.g. a cloud-hosted Wren, or driving GOSE from a
+other than the agent's machine — e.g. a cloud-hosted agent, or driving GOSE from a
 phone off-LAN. For a home-LAN agent on the same box that spawns the server, stdio is
 strictly simpler and has no auth/exposure surface. HTTP/SSE is a **planned v1
-add-on** (Zeke wants both eventually, 2026-06-04) — the tool layer is identical, so
+add-on** (both are wanted eventually, 2026-06-04) — the tool layer is identical, so
 it's an additive transport, not a rework.
 
-## Concrete: how Wren registers GOSE (live as of 2026-06-04)
-Added to `D:\Wren\.mcp.json` (inert until her CC session relaunches — MCP servers
+## Concrete: how an agent registers GOSE (live as of 2026-06-04)
+Added to `<agent-home>\.mcp.json` (inert until the CC session relaunches — MCP servers
 are spawned at session launch):
 ```json
 "gose": {
@@ -71,12 +71,12 @@ are spawned at session launch):
 - With the mock agent (`GOSE_AGENT_FORCE_MOCK=1 py -3.11 -m gose_agent`) listening
   on `0.0.0.0:8731`, a full `tools/call` chain works:
   `gose_ping` → `{"pong": true}`, `gose_status` → live status object.
-- **Pending:** Wren driving these as *registered MCP tools from inside her own
-  session* — requires her relaunch (the `.mcp.json` add is inert until then).
+- **Pending:** the agent driving these as *registered MCP tools from inside its own
+  session* — requires a relaunch (the `.mcp.json` add is inert until then).
 
 ## What this resolves in the repo
 - `ai-bridge/` "🧱 blocked on the agent spec" → **unblocked.** For LLM tool-callers
-  (Ava/Wren/Iris/Claude), the integration is **pattern 1 (tool/function-calling)
+  (AI agents/Claude), the integration is **pattern 1 (tool/function-calling)
   via the MCP server** — `ai-bridge/bridge.py`'s `AgentConnector` stub is only
   needed for the *non-MCP* "intent translation" path (pattern 2), which is now
   optional, not the primary route.
@@ -85,6 +85,6 @@ are spawned at session launch):
 
 ## Open / next
 - **v1:** add HTTP/SSE transport to `gose_mcp_server.py` for off-machine/off-LAN
-  agents (cloud Wren, phone). Additive; tools unchanged.
+  agents (cloud-hosted agent, phone). Additive; tools unchanged.
 - Decide per-agent identity/token when more than one agent drives one device at once
   (today: one token, loopback-or-shared-secret).

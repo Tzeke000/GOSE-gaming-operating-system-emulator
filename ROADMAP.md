@@ -57,7 +57,7 @@ the cloud container) · 🧱 blocked
 - ✅ Toolchain curated (`docs/09-toolchain.md`); input stack (`docs/07-controllers.md`)
 - ⬜ Ship AntiMicroX profile for desktop pointer; Skyscraper for box art `[on device]`
 - 🟡 Plan written (`docs/06-gui-plan.md`)
-- ⬜ Lock the visual direction with Zeke, then pick Path A vs B
+- ⬜ Lock the visual direction with the owner, then pick Path A vs B
 - ⬜ Path A: Windows-style ES theme (home→system→library→launch, controller-only)
 - ⬜ Tools area (terminal, file manager, network tools, AI bridge launcher)
 - ⬜ Evaluate Path B (custom front-end) where theme falls short
@@ -69,9 +69,9 @@ the cloud container) · 🧱 blocked
 - 🔌 Real backends on device (uinput pad, framebuffer capture, real game launch)
 - 🔌 Verify RAM-map addresses on hardware (Mario 64 via Mupen64Plus-Next)
 - 🔌 USB-cable path (USB gadget networking → `usb0`)
-- ✅ Expose GOSE Agent over **MCP** (`mcp/` — Ava/Wren/Iris/Claude connect via standard)
+- ✅ Expose GOSE Agent over **MCP** (`mcp/` — AI agents/Claude connect via standard)
 - ✅ SSH/console path (CLI over SSH + `system.run`)
-- ⬜ Confirm MCP transport/auth specifics with Zeke (stdio vs HTTP/SSE)
+- ⬜ Confirm MCP transport/auth specifics with the owner (stdio vs HTTP/SSE)
 - 🟡 AI bridge: MCP is the main path now; bridge.py kept for non-MCP/intent style
 
 ## Phase 7 — Reproducibility
@@ -79,6 +79,6 @@ the cloud container) · 🧱 blocked
 - ⬜ Full "re-flash → one script → restored" validated on hardware
 
 ## Immediate next actions
-1. Zeke: confirm Odin 2 variant + whether to start with ROCKNIX (recommended).
-2. Zeke: share the Ava/Wren/Iris API (endpoints, auth, message format) to unblock the bridge.
+1. Owner: confirm Odin 2 variant + whether to start with ROCKNIX (recommended).
+2. Owner: share the AI-agent API (endpoints, auth, message format) to unblock the bridge.
 3. Claude (next session): build the Path-A Windows ES theme; flesh out real agent backends behind feature flags.

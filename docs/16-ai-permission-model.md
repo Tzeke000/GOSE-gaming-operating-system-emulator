@@ -1,11 +1,11 @@
 # 16 — AI Permission & Elevation Model `[CUSTOM]`
 
-> Status: **design proposal, 2026-06-05 (Wren, for Zeke's review before build).**
+> Status: **design proposal, 2026-06-05 (for the owner's review before build).**
 > This is the security layer UNDER the AI Hub (`docs/14-ai-hub.md`) and the
 > credential half of the agent transport (`docs/12-agent-connection-spec.md`).
 > Reuse-first: most of this is an existing capability-token pattern, not new crypto.
 
-## Zeke's requirements (verbatim intent, 2026-06-05)
+## The owner's requirements (verbatim intent, 2026-06-05)
 1. An AI can be granted **Admin permission to GOSE**, toggled on/off by a human,
    **like Windows/UAC.** If the AI has elevated perms it's good; if not, **it cannot
    give itself admin — a human must grant first.** After that, it's trusted.
@@ -64,7 +64,7 @@ This is the standard "a headless device needs a human to approve it" pattern
    + rotate the refresh credential. GOSE checks the revoked flag on **every**
    privileged call, so revocation is **immediate**, not next-boot.
 
-## The saved encrypted grant (no re-ask each boot — Zeke's point 2)
+## The saved encrypted grant (no re-ask each boot — the owner's point 2)
 - **The AI holds:** its ed25519 private key + the refresh credential, stored
   **encrypted at rest** (age / libsodium sealed file) on the AI's own machine. At
   startup it decrypts locally, derives a short-lived access token, and connects.
@@ -120,7 +120,7 @@ This is the standard "a headless device needs a human to approve it" pattern
    boot; human revoke kills it.
 5. **Wire to multiplayer/Hub** — tier decides OS-scope vs game-scope per join.
 
-## Open questions for Zeke
+## Open questions for the owner
 - Default tier for a brand-new paired AI: **Observe** (safe, my rec) vs **Play**?
 - Should **Admin** grants auto-expire (re-confirm every N days) or be permanent
   until revoked? (Windows admin is permanent-until-changed; a gaming device could go

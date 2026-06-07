@@ -47,7 +47,7 @@
   <div class="br" id="power"></div>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
-  const USERS=[["Zeke","user","Administrator"],["Guest","user","Limited session"],["AI Session","sparkles","Ava / Wren / Iris"]];
+  const USERS=[["Owner","user","Administrator"],["Guest","user","Limited session"],["AI Session","sparkles","AI agents"]];
   const POWER=["wifi","settings","rotate-ccw","power"];
   const u=document.getElementById("users");
   USERS.forEach(([n,ic,s],i)=>{const d=document.createElement("div");d.className="user focusable"+(i===0?" focus":"");

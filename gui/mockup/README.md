@@ -16,8 +16,7 @@ Open the HTML in a browser; drive with keyboard, mouse, or a **gamepad** (Odin p
 ## Branding
 The boot splash (`boot.html` / `boot-concept.png`) recreates the GOSE identity:
 hexagon "G" + gamepad mark, violet→blue gradient, italic wordmark, capability
-icons, and the credit **"by Ezekiel Angeles-Gonzalez · powered by Tzeke000
-Studios"**. The mark is exported to `assets/brand/gose-logo.png` for reuse.
+icons, and the credit line. The mark is exported to `assets/brand/gose-logo.png` for reuse.
 To drop in the exact logo art, **replace `assets/brand/gose-logo.png`** (square,
 transparent PNG) — `boot.html` picks it up automatically. The splash is
 brand-fixed (always black + violet/blue), independent of the UI theme picker.
@@ -32,7 +31,7 @@ Add a theme by adding a `[data-theme="…"]` block of CSS vars in `themes.css`.
 A real Windows-desktop vibe: frosted **Explorer-style window** with box-art grid +
 sidebar, a **Windows-11 centered taskbar** (Start in cyan + pinned apps), desktop
 shortcut icons, **Start menu** (search + pinned systems + recents), a **Settings**
-panel, and a system tray with **Ava/Wren/Iris** status, Wi-Fi/volume/battery,
+panel, and a system tray with **AI agent** status, Wi-Fi/volume/battery,
 clock, and the current **input mode**.
 
 ## Multi-input (matches the device requirement)

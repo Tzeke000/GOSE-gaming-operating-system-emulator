@@ -1,5 +1,5 @@
 /* GOSE — Sound Manager.
-   ONE place that owns the system sound set (Zeke's clips in assets/sounds/*.mp3 +
+   ONE place that owns the system sound set (the owner's clips in assets/sounds/*.mp3 +
    the UI tick .wav set). Exposes GOSESOUND.play(event) with:
      - per-category volume (0..100) + per-category mute
      - a global quiet-mode
@@ -28,7 +28,7 @@
     'step-done':'ui'                  // OOBE per-step advance -> reuses the login confirm clip
   };
   var FILE = { welcome:'boot', 'step-done':'login' };   // event -> actual file stem
-  var WAV  = { nav:1, select:1, back:1, launch:1 };      // these are .wav; the rest are Zeke's .mp3
+  var WAV  = { nav:1, select:1, back:1, launch:1 };      // these are .wav; the rest are the owner's .mp3
   // important alerts still fire while a game is foreground (don't duck these)
   var BYPASS_DUCK = { 'battery-critical':1, 'battery-low':1, error:1, warning:1 };
   // per-category default volume 0..100: UI ticks quiet (they fire constantly), alerts loud.

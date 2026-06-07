@@ -1,6 +1,6 @@
 # 17 — What GOSE Still Needs (roadmap) `[CUSTOM]`
 
-> Status: **2026-06-05 (Wren, at Zeke's request: "make a whole list of things the OS needs").**
+> Status: **2026-06-05 (at the owner's request: "make a whole list of things the OS needs").**
 > Honest inventory of the gaps between where GOSE is now and a complete, distributable OS.
 > Legend: ✅ done · 🟡 partial · ⬜ not started · ⭐ high priority.
 
@@ -26,7 +26,7 @@ capture/stream · **AI Hub** (presence + permission tiers + revoke; enforcement 
 ## B. Desktop / windowed multitasking ⭐ (biggest architectural lift)
 - ⬜⭐ GOSE is a single-app kiosk today. Needs a **window manager**: run apps in movable/resizable
   windows, Alt-Tab/switcher, multitask.
-- ⬜⭐ **Zeke's widget↔window model:** widgets and app-windows as one continuum — *maximize a widget
+- ⬜⭐ **The owner's widget↔window model:** widgets and app-windows as one continuum — *maximize a widget
   into a full window*, and when you "act out" of it, it **suspends and frees memory** like closing an
   app. (Memory-aware windowing, not just z-order.)
 - ⬜ Drag-and-drop between windows; clipboard manager.
@@ -42,14 +42,14 @@ capture/stream · **AI Hub** (presence + permission tiers + revoke; enforcement 
   (the dials read host values in the VM; need the device's own sensors).
 - ⬜ Flashable **device image** + install runbook.
 
-## E. Distribution / packaging ⭐ (Zeke: "an app anyone can download, maybe Steam")
+## E. Distribution / packaging ⭐ (owner: "an app anyone can download, maybe Steam")
 - 🟡 **Flashable image / installer** anyone can download (Batocera ships this way; build a GOSE image).
 - 🟡 PC installer / runnable build decoupled from our dev machine — **VM launcher BUILT** (see below).
 - ⬜ **Update mechanism** (OTA / versioned updates) — currently none.
 - ⬜ **Steam listing** path (emulation frontends do live on Steam); store assets, screenshots.
 - 🟡 OOBE polish (brand-agnostic, name-your-own-AI — already designed; finish + test the full first-run).
 
-### Distribution launcher — BUILT (Wren, 2026-06-06) `pc-image/dist/`
+### Distribution launcher — BUILT (2026-06-06) `pc-image/dist/`
 The "downloaded GOSE from Steam/GitHub → double-click → it runs in its own VM" experience.
 GOSE boots **inside a QEMU VM**, so installing/running it **never converts the user's real
 Windows machine**, and launching needs **no admin**.
@@ -118,7 +118,7 @@ Single QEMU instance, no duplicates.
 
 ## Suggested order (my read)
 1. **Finish the AI layer last-mile (A)** — small, and it's the keystone for distribution.
-2. **Desktop/windowing (B)** — the biggest unlock; everything multitask-y depends on it; Zeke's
+2. **Desktop/windowing (B)** — the biggest unlock; everything multitask-y depends on it; the owner's
    widget↔window-memory model is the design.
 3. **Save states + achievements (G)** — high player value, mostly integration not invention.
 4. **Packaging + updater (E)** — turn it into something downloadable; needed before Steam.
@@ -127,7 +127,7 @@ Single QEMU instance, no duplicates.
 6. **Polish + accessibility (F, H, I)** — continuous; tighten before any public release.
 
 Related: `docs/14-ai-hub.md`, `docs/16-ai-permission-model.md`, `gose_production_stack.md`,
-runbook `D:\Wren\notes\gose_vm_runbook.md`, memory `project_gose_distributable_2026-06-05`.
+runbook `<agent-home>\notes\gose_vm_runbook.md`, memory `project_gose_distributable_2026-06-05`.
 
 ## J. Gaps found by comparison with shipped OSes (gap-analysis fan-out, 2026-06-06)
 

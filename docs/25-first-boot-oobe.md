@@ -1,6 +1,6 @@
 # 25 — First Boot, Preloaded Services & the Default App Set `[CUSTOM]`
 
-> Status: **DESIGN — APPROVED by Zeke 2026-06-06** (Discord session, afternoon).
+> Status: **DESIGN — APPROVED by the owner 2026-06-06**.
 > The boot ladder below is modeled on how Windows starts — specifically the rule
 > that **the OS never asks the user a question until the hardware needed to
 > answer it already works.** Step 1–3 facts were verified against the live GOSE
@@ -62,7 +62,7 @@ that navigated you to it).
    token/pairing flow (docs/16); skippable, never nagged
 7. Done → desktop, default apps already installed (§4)
 
-### 3a. Step taxonomy — required vs defaulted vs skippable (Zeke 2026-06-06)
+### 3a. Step taxonomy — required vs defaulted vs skippable (owner 2026-06-06)
 
 Every wizard page carries a visible, controller-readable badge so it's
 unmistakable which steps are blockers and which aren't. Three kinds:
@@ -89,7 +89,7 @@ Continue); L2 was considered as a Skip accelerator but is reserved by the
 windowing snap/modal layer (docs/23), so it isn't reused here. Pad-driven
 end-to-end skip-heavy verification done 2026-06-06.
 
-## 4. The default app set (locked by Zeke, 2026-06-06)
+## 4. The default app set (locked by the owner, 2026-06-06)
 
 **Baked into the image — zero downloads on first boot:**
 
@@ -98,13 +98,13 @@ end-to-end skip-heavy verification done 2026-06-06.
 - **Emulation:** RetroArch + **every core we may ship commercially**
   (the docs/19 license audit's commercial-safe set — already the default after
   the 11-core swap)
-- **Steam** (baked in, not store-download — Zeke's call)
+- **Steam** (baked in, not store-download — owner decision)
 - **Firefox** — **the default browser**
 - **CloakBrowser** — the AI-stealth Chromium, so a paired AI can browse from
   inside GOSE (the agent-side browser; distinct from Firefox which is the
   human's)
 - **VLC** — media playback (plays ~everything, controller-friendly)
-- **Obsidian** — notes/knowledge vault, pre-installed (Zeke's standard)
+- **Obsidian** — notes/knowledge vault, pre-installed (default pick)
 
 **Store-download instead of baked (license-fenced):** the 11 personal-use-only
 cores from docs/19 — a Steam-bought GOSE can't *sell* them pre-installed, so
@@ -114,7 +114,7 @@ license-aware installs).
 ## 5. Step-3 gaps (honest list)
 
 1. **Battery/power management — BUILT (software layer), live on the VM**
-   (Zeke 2026-06-06). Done:
+   (owner 2026-06-06). Done:
    - **Source.** `gose_vm_server.battery_info()` reads real hardware from
      `/sys/class/power_supply/BAT*` (capacity/status + charge_now/current_now
      time-to-empty); in the dev VM (no battery) it sources the laptop's REAL
@@ -140,7 +140,7 @@ license-aware installs).
      (`acpid`) lands on the Odin 2 hardware. Real `/sys/class/power_supply/BAT*`
      readings are also hardware-confirmed there.
 2. **Controller breadth — ALL controller types must maneuver the OS on first
-   startup** (Zeke 2026-06-06). Two parts: (a) bake `xpadneo` (Xbox pads) into
+   startup** (owner 2026-06-06). Two parts: (a) bake `xpadneo` (Xbox pads) into
    the image — PS4/PS5 are kernel-native — `[needs image build]`; (b) the
    pad→menu bridge must accept ANY detected pad during OOBE: the admin-pad
    arbitration (docs/07) only locks in AFTER a user exists — pre-OOBE there is
@@ -186,7 +186,7 @@ license-aware installs).
      the same rule fires from a physical card). USB passthrough of a host stick to
      the dev VM is the other way to exercise it live.
 
-## 5b. Widget nav order (Zeke, 2026-06-06 — required fix)
+## 5b. Widget nav order (owner, 2026-06-06 — required fix)
 
 Cycling focus across desktop widgets must follow **spatial order: left→right,
 top→down — computed from the widgets' CURRENT positions**. Widgets are
@@ -196,9 +196,9 @@ into windowing chunk B (same nav code).
 
 ## 5c. Standing test discipline
 
-When testing the OS, the AI tester (Wren) drives it **with her own virtual
+When testing the OS, the AI tester drives it **with its own virtual
 pad end-to-end** — every new surface gets actually navigated, not just
-rendered — so get-stuck-in-navigation traps are caught and fixed before Zeke
+rendered — so get-stuck-in-navigation traps are caught and fixed before the owner
 hits them. (A window/page op that can't be done on the pad does not exist —
 docs/23 §1.6.)
 

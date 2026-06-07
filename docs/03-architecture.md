@@ -2,11 +2,11 @@
 
 ```
                      ┌─────────────────────────────────────────────┐
-   Zeke's server /   │                AYN Odin 2 (Linux: ROCKNIX/Batocera)
+   Owner's server /  │                AYN Odin 2 (Linux: ROCKNIX/Batocera)
    AI agents         │                                             │
  ┌───────────┐       │   ┌───────────────┐   ┌──────────────────┐  │
- │ Ava / Wren│       │   │  Front-end    │   │  Emulators       │  │
- │ / Iris    │       │   │  (Windows-like│   │  PSP, PS2, ...   │  │
+ │ AI agents │       │   │  Front-end    │   │  Emulators       │  │
+ │           │       │   │  (Windows-like│   │  PSP, PS2, ...   │  │
  │ (LLM host)│       │   │   ES theme or │   │  RetroArch cores │  │
  └─────┬─────┘       │   │   custom app) │   └────────▲─────────┘  │
        │             │   └───────▲───────┘            │ launch     │
@@ -49,7 +49,7 @@ Capabilities:
 
 Connection path for the AI side: today via the JSON-lines protocol; planned to
 also expose over **MCP** (mirroring the existing `mcp-retroarch` project) so
-Ava/Wren/Iris/Claude can drive the whole device through a standard interface.
+AI agents/Claude can drive the whole device through a standard interface.
 Transport = newline-delimited JSON over asyncio TCP, token-authenticated. Same
 protocol whether the AI reaches it over **Wi-Fi/Ethernet** or a **USB cable**
 (USB gadget networking brings up a `usb0` interface; agent just listens on it).
@@ -61,8 +61,8 @@ What the AI side imports/calls. `gose_client.GoseClient` gives high-level method
 (`press`, `tap`, `run`, `launch`, `status`, `screenshot`). `cli.py` is for humans
 to test the agent without an LLM.
 
-### 5. AI bridge (maps Ava/Wren/Iris ↔ GOSE) `[CUSTOM]` — `ai-bridge/` (stub)
-**Blocked on Zeke** providing the Ava/Wren/Iris API (endpoints, auth, message
+### 5. AI bridge (maps AI agents ↔ GOSE) `[CUSTOM]` — `ai-bridge/` (stub)
+**Blocked on the owner** providing the AI-agent API (endpoints, auth, message
 format). Once known, the bridge translates their intents ("open PSP, launch
 God of War, press X") into `gose client` calls, and streams status/screens back.
 Until then, the GOSE Agent + client SDK fully define and exercise OUR side, so the

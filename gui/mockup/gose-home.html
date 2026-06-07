@@ -196,8 +196,8 @@
       if((d.games||[]).length)secs.push({label:"GAMES",items:d.games.slice(0,2).map(g=>t(g.name,g.sysname||g.cat,'games','gamepad-2'))});
       return {sections:secs, footer:{icon:"store",label:"Open Store",go:"gose-store.html"}}; } });
 
-  // ---- AI PLAYERS (content): Wren / Ava / Iris — status + tier + revoke ----
-  const AIS=['Wren','Ava','Iris'], TC={observe:'#9aa3b8',play:'#5cd0ff',admin:'#ffb74d'}, TL={observe:'Observe',play:'Play',admin:'Admin'};
+  // ---- AI PLAYERS (content): your AI agents — status + tier + revoke ----
+  const AIS=['Agent A','Agent B','Agent C'], TC={observe:'#9aa3b8',play:'#5cd0ff',admin:'#ffb74d'}, TL={observe:'Observe',play:'Play',admin:'Admin'};
   GW.define({ id:"aiplayers", title:"AI Players", icon:"ai", size:{w:300}, pos:{x:770,y:440}, poll:5000,
     load:()=>Promise.all([fetch('/ai/grants',{cache:'no-store'}).then(r=>r.json()).catch(()=>({})),
                           fetch('/ai/players',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))])

@@ -314,7 +314,7 @@
   (document.head||document.documentElement).appendChild(s);
 })();
 
-// GOSE UI sounds — subtle nav/select/back blips on EVERY screen (Zeke supplies the .wav set in
+// GOSE UI sounds — subtle nav/select/back blips on EVERY screen (the owner supplies the .wav set in
 // assets/sounds/). Mute via Settings → Sound → UI sounds (localStorage gose-sounds='off').
 (function(){
   if(window.__goseSound) return; window.__goseSound=true;
