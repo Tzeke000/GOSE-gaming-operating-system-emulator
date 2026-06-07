@@ -52,4 +52,18 @@ EOF
     echo "set default browser: firefox" >>"$LOG"
   fi
 fi
+
+# VLC refuses to run as root (the GOSE shell is root); it is launched as the
+# unprivileged `batocera` user (uid 1000) instead — see gose_vm_server._vlc_nonroot_cmd.
+# Make the flatpak system install non-root-readable (Batocera's own intent) and give
+# the user a writable HOME + per-app data dir. Idempotent → safe every boot / fresh image.
+if echo "$(flatpak list --app --columns=application 2>/dev/null)" | grep -qx org.videolan.VLC; then
+  VLC_HOME=/userdata/system/.gose/vlc-home
+  VLC_APPDATA=/userdata/saves/flatpak/data/.var/app/org.videolan.VLC
+  chmod a+rx /userdata /userdata/saves /userdata/saves/flatpak 2>/dev/null
+  chmod -R a+rX /userdata/saves/flatpak/binaries 2>/dev/null   # non-root can READ the install
+  mkdir -p "$VLC_HOME/.local/share/flatpak" "$VLC_HOME/.cache" "$VLC_APPDATA" 2>/dev/null
+  chown -R 1000:1000 "$VLC_HOME" "$VLC_APPDATA" 2>/dev/null
+  echo "prepped VLC non-root launch (user batocera)" >>"$LOG"
+fi
 echo "=== done $(date) ===" >>"$LOG"

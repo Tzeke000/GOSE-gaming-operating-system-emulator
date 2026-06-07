@@ -606,14 +606,58 @@ ELECTRON_FLATPAKS = {
     "com.google.Chrome", "org.chromium.Chromium",
 }
 
+# VLC hard-refuses to run as uid 0 ("VLC is not supposed to be run as root. Sorry.")
+# and exits — there is NO official root-allow flag/env, so the supported fix is to run
+# it as an UNPRIVILEGED user. GOSE's shell is root, so we drop to Batocera's standard
+# non-root account (`batocera`, uid 1000, always present) for VLC only. Batocera
+# deliberately makes the flatpak system install world-readable (batocera-flatpak-update:
+# `chmod -R a+rX .../binaries`), which is what makes a non-root `flatpak run` possible;
+# we add the few writable dirs a non-root flatpak still needs. We do NOT patch the VLC
+# binary (fragile, lost on flatpak update) and do NOT loosen the root shell.
+VLC_FLATPAK = "org.videolan.VLC"
+VLC_USER = "batocera"
+VLC_UID = "1000"
+VLC_HOME = "/userdata/system/.gose/vlc-home"           # user-owned HOME (flatpak user-install + cache)
+# flatpak forces a SYSTEM-installed app's per-app data under the system install's data
+# dir regardless of $HOME, so this exact path must be writable by the non-root user.
+VLC_APPDATA = "/userdata/saves/flatpak/data/.var/app/" + VLC_FLATPAK
+
+def _vlc_nonroot_cmd():
+    # A root sh-script (run by _spawn, which is root) that idempotently preps the
+    # unprivileged user's writable dirs + the per-boot runtime dir (/run is tmpfs →
+    # reset every boot), then su-drops to launch VLC's GUI with display/audio/flatpak
+    # env wired. Idempotent + self-healing, so it works on a fresh image and after a
+    # reboot without depending on boot-script ordering.
+    inner = (
+        "export HOME=" + VLC_HOME +
+        " XDG_RUNTIME_DIR=/run/user/" + VLC_UID +
+        " XDG_DATA_HOME=" + VLC_HOME + "/.local/share" +
+        " XDG_CACHE_HOME=" + VLC_HOME + "/.cache" +
+        " FLATPAK_USER_DIR=" + VLC_HOME + "/.local/share/flatpak" +
+        " DISPLAY=:0 PULSE_SERVER=unix:/run/pulse/native; "
+        "exec flatpak run " + VLC_FLATPAK
+    )
+    return (
+        "mkdir -p " + VLC_HOME + "/.local/share/flatpak " + VLC_HOME + "/.cache "
+        + VLC_APPDATA + " /run/user/" + VLC_UID + " 2>/dev/null; "
+        "chown -R " + VLC_UID + ":" + VLC_UID + " " + VLC_HOME + " " + VLC_APPDATA
+        + " /run/user/" + VLC_UID + " 2>/dev/null; "
+        "chmod 755 /run/user 2>/dev/null; chmod 700 /run/user/" + VLC_UID + " 2>/dev/null; "
+        "chmod a+rx /userdata /userdata/saves /userdata/saves/flatpak 2>/dev/null; "
+        "exec su -s /bin/sh " + VLC_USER + " -c '" + inner + "'"
+    )
+
 def _wrap_flatpak_run(cmd):
     # cmd like "flatpak run <appid> [extra...]". For Electron/Chromium apps, give a
     # session bus (dbus-run-session) + --no-sandbox so the Apps-page tile actually
-    # opens a window instead of crashing. Everything else is returned untouched.
+    # opens a window instead of crashing. VLC refuses to run as root → run it as an
+    # unprivileged user instead. Everything else is returned untouched.
     parts = cmd.split()
-    if len(parts) >= 3 and parts[0] == "flatpak" and parts[1] == "run" \
-            and parts[2] in ELECTRON_FLATPAKS:
-        return "dbus-run-session -- " + cmd + " --no-sandbox"
+    if len(parts) >= 3 and parts[0] == "flatpak" and parts[1] == "run":
+        if parts[2] == VLC_FLATPAK:
+            return _vlc_nonroot_cmd()
+        if parts[2] in ELECTRON_FLATPAKS:
+            return "dbus-run-session -- " + cmd + " --no-sandbox"
     return cmd
 
 _STORE = [
