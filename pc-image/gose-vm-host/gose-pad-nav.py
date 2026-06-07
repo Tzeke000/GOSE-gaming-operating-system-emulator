@@ -388,8 +388,9 @@ class AdminGate:
     AI-admin handling (best-effort, honest limits):
       ai_tokens.json maps token -> {name, tier[, seat]}.  An admin-tier grant
       (tier=="admin") WITH a seat is mapped seat N -> the N-th virtual pad in js
-      order (all AI seat pads share the uinput name "Microsoft Xbox 360 pad", so
-      js order is the only discriminator -- this ordering matches the agent's
+      order (AI seat pads share the Xbox-360 IDENTITY/GUID and differ only by name
+      "AI virtual controller 1..4", so js order is the discriminator the gate uses
+      -- this ordering matches the agent's
       seat-open order but is not cryptographically tied to the seat).  If a
       seated admin grant's seat is out of range of the detected virtual pads we
       cannot map it cleanly, so we fall open for ALL virtual pads (noted in the
@@ -1153,9 +1154,9 @@ def selftest():
          "path": "/dev/input/event20", "js": 0, "is_dev": False},
         {"id": "input22", "name": "8BitDo Pro 2", "source": "bluetooth",
          "path": "/dev/input/event22", "js": 1, "is_dev": False},
-        {"id": "input5", "name": "Microsoft Xbox 360 pad", "source": "virtual",
+        {"id": "input5", "name": "AI virtual controller 1", "source": "virtual",
          "path": "/dev/input/event5", "js": 2, "is_dev": True},      # dev / seat 1
-        {"id": "input6", "name": "Microsoft Xbox 360 pad", "source": "virtual",
+        {"id": "input6", "name": "AI virtual controller 2", "source": "virtual",
          "path": "/dev/input/event6", "js": 3, "is_dev": False},     # seat 2
     ]
 

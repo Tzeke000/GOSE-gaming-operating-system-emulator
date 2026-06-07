@@ -849,7 +849,10 @@ def _virtual_pad_args(max_players=5):
         name_m = re.search(r'Name="([^"]*)"', blk)
         name = name_m.group(1) if name_m else "pad"
         if "py-evdev-uinput" in blk:
-            virt.append(entry + (_XBOX_GUID, "Microsoft Xbox 360 pad"))
+            # AI seat pad. Bind with the Xbox-360 GUID (identity → real button maps),
+            # but report its OWN name ("AI virtual controller N") to the launcher; the
+            # bind keys off the GUID, not the name, so this is purely cosmetic/legible.
+            virt.append(entry + (_XBOX_GUID, name))
         elif not any(s in name.lower() for s in _NON_PADS):
             ids = re.search(r"Bus=(\w+) Vendor=(\w+) Product=(\w+) Version=(\w+)", blk)
             guid = (_sdl_guid(*(int(x, 16) for x in ids.groups())) if ids else _XBOX_GUID)

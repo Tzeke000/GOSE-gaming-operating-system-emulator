@@ -58,7 +58,10 @@ class BaseInput:
 class MockInput(BaseInput):
     backend = "mock"
 
-    def __init__(self):
+    def __init__(self, name: str = "AI virtual controller"):
+        # name accepted (and ignored) so MockInput is a drop-in seat factory, same
+        # signature as EvdevInput — SeatManager calls factory(seat).
+        self.name = name
         self.events: List[Dict] = []  # inspectable in tests
 
     def _record(self, **kw):
@@ -83,7 +86,7 @@ class EvdevInput(BaseInput):
     """Real uinput-backed gamepad/keyboard. Imported lazily; only on device."""
     backend = "evdev"
 
-    def __init__(self):
+    def __init__(self, name: str = "AI virtual controller"):
         import evdev
         from evdev import ecodes as e
         self._e = e
@@ -107,11 +110,14 @@ class EvdevInput(BaseInput):
                 (e.ABS_HAT0Y, evdev.AbsInfo(0, -1, 1, 0, 0, 0)),
             ],
         }
-        # Present as a Microsoft Xbox 360 pad (vendor 045e / product 028e / version 0x0110) so its
-        # SDL GUID (030000005e0400008e02000010010000) matches es_input.cfg → the OS gives it real
-        # button bindings and games actually accept its input. Without a known identity the pad is
-        # only DETECTED, never BOUND (the bug that made "AI plays games" silently not work).
-        self._ui = evdev.UInput(cap, name="Microsoft Xbox 360 pad",
+        # IDENTITY stays an Xbox 360 pad (vendor 045e / product 028e / version 0x0110) so its
+        # SDL GUID (030000005e0400008e02000010010000) matches es_input.cfg + gamecontrollerdb → the
+        # OS gives it real button bindings and games actually accept its input. Without a known
+        # identity the pad is only DETECTED, never BOUND (the bug that made "AI plays games"
+        # silently not work). The device NAME, however, is ours: "AI virtual controller [N]" so it
+        # reads as what it is (an AI seat) in controller lists / the AI Hub. The name is a separate
+        # uinput string and does NOT enter the GUID — keep vendor/product/version IDENTICAL.
+        self._ui = evdev.UInput(cap, name=name,
                                 vendor=0x045e, product=0x028e, version=0x0110)
         self._hat = {  # dpad -> (axis, value)
             "up": (e.ABS_HAT0Y, -1), "down": (e.ABS_HAT0Y, 1),
@@ -178,8 +184,8 @@ class SeatManager:
     MAX_SEATS = 4
 
     def __init__(self, factory):
-        self._factory = factory          # () -> BaseInput
-        self._seats: Dict[int, BaseInput] = {1: factory()}
+        self._factory = factory          # (seat:int) -> BaseInput
+        self._seats: Dict[int, BaseInput] = {1: factory(1)}
 
     @property
     def backend(self) -> str:
@@ -204,7 +210,7 @@ class SeatManager:
         if not 1 <= seat <= self.MAX_SEATS:
             raise AgentError(ERR_ARGS, f"seat must be 1..{self.MAX_SEATS}")
         if seat not in self._seats:
-            self._seats[seat] = self._factory()
+            self._seats[seat] = self._factory(seat)
         return self.seats()
 
     def seat_close(self, seat: int) -> Dict:
@@ -246,12 +252,16 @@ class SeatManager:
 
 
 def make_input(force_mock: bool = False) -> SeatManager:
-    def factory() -> BaseInput:
+    def factory(seat: int = 1) -> BaseInput:
+        # Per-seat device name: "AI virtual controller N" (N = 1..MAX_SEATS), so up
+        # to four AIs (Wren/Ava/Iris + a human guest) each get a distinctly-named pad
+        # while the Xbox-360 IDENTITY (vendor/product/version → GUID) is shared/unchanged.
+        name = "AI virtual controller %d" % int(seat)
         if not force_mock:
             try:
                 if os.access("/dev/uinput", os.W_OK):
                     import evdev  # noqa: F401
-                    return EvdevInput()
+                    return EvdevInput(name=name)
             except Exception:
                 pass
         return MockInput()
