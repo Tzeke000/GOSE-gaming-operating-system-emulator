@@ -36,10 +36,26 @@ from evdev import ecodes
 # CONFIG  (edit here)
 # ---------------------------------------------------------------------------
 
-# A device is a gamepad if its name contains any of these (case-insensitive)...
-NAME_KEYWORDS = ("pad", "controller", "xbox", "gamepad", "joystick")
-# ...OR it advertises one of these EV_KEY capabilities (a real gamepad does).
-GAMEPAD_KEY_CAPS = (ecodes.BTN_GAMEPAD, ecodes.BTN_SOUTH)  # BTN_GAMEPAD == BTN_SOUTH (304)
+# A device drives nav ONLY if it exposes real PAD BUTTONS (EV_KEY codes in the
+# joystick/gamepad/d-pad ranges). Name keywords are NOT sufficient: a composite
+# pad ships sibling nodes — "<pad name> Motion Sensors", "... Touchpad",
+# "... Headset Jack" — whose names also say "Controller" but which can only
+# produce noise. The DualSense motion node streams ~1.4k ev/s constantly and
+# its ACCELEROMETER crosses the stick deadzone whenever the pad is physically
+# handled, emitting phantom arrow keys; each phantom spawns an xdotool process
+# (~50-100ms, serialized), so real presses queued seconds behind garbage — the
+# "7.2s d-pad lag" of 2026-06-07. Universal rule, no per-pad special cases:
+#   BTN_MISC..BTN_MOUSE   (0x100-0x10f)  exotic DInput pads
+#   BTN_JOYSTICK..BTN_DIGI(0x120-0x13f)  classic joystick + gamepad (BTN_SOUTH..)
+#   BTN_DPAD_*            (0x220-0x223)  discrete d-pad buttons
+# Mouse buttons (0x110-0x117, touchpads) and digitizer codes (0x140-0x14f,
+# BTN_TOUCH/BTN_TOOL_FINGER) are deliberately OUTSIDE these ranges, as are
+# plain keyboard keys (< 0x100) and switch-only nodes (headset jacks).
+GAMEPAD_BTN_RANGES = (
+    (ecodes.BTN_MISC, ecodes.BTN_MOUSE),          # 0x100-0x10f
+    (ecodes.BTN_JOYSTICK, ecodes.BTN_DIGI),       # 0x120-0x13f
+    (ecodes.BTN_DPAD_UP, ecodes.BTN_DPAD_RIGHT + 1),  # 0x220-0x223
+)
 
 # Button (EV_KEY) -> X keysym.  Only key-DOWN (value==1) fires; autorepeat
 # (value==2) and release (value==0) are ignored -> debounces button mash.
@@ -709,30 +725,16 @@ class Normalizer:
 
 
 def is_gamepad(dev, db=None):
-    name = (dev.name or "").lower()
-    if any(k in name for k in NAME_KEYWORDS):
-        return True
+    """True only for the BUTTON interface of a controller (see
+    GAMEPAD_BTN_RANGES). A buttonless or wrong-button sibling node (motion
+    sensors, touchpad, headset jack) is rejected no matter what its name says
+    — every real pad (kernel-driver, virtual, generic/DInput, DB-known or not)
+    has buttons inside the accepted ranges, so nothing legitimate is lost."""
     try:
-        keys = dev.capabilities().get(ecodes.EV_KEY, [])
+        keys = dev.capabilities().get(ecodes.EV_KEY, []) or []
     except Exception:
         keys = []
-    if any(c in keys for c in GAMEPAD_KEY_CAPS):
-        return True
-    # Generic/DInput pads that report neither a keyword name nor BTN_SOUTH but ARE
-    # in the SDL DB by GUID are still real controllers -> accept them so the
-    # normalizer can speak their language. (Pure addition; never rejects a pad the
-    # old check accepted.)
-    if db is not None:
-        try:
-            info = dev.info
-            if db.entry_for(info.bustype, info.vendor, info.product,
-                            info.version) is not None:
-                return True
-        except Exception:
-            pass
-    # A bare joystick (BTN_TRIGGER/BTN_JOYSTICK) with absolute axes is very likely
-    # a controller too.
-    return ecodes.BTN_TRIGGER in keys or ecodes.BTN_JOYSTICK in keys
+    return any(lo <= c < hi for c in keys for (lo, hi) in GAMEPAD_BTN_RANGES)
 
 
 # ---------------------------------------------------------------------------
@@ -1188,19 +1190,19 @@ def selftest():
           gate().allows("/dev/input/event99")[0] is True)
 
     # admin-tier AI WITH a seat -> that seat's virtual pad (js order) allowed
-    gseat = gate(tokens={"tok": {"name": "Iris", "tier": "admin", "seat": 2}})
+    gseat = gate(tokens={"tok": {"name": "Agent-B", "tier": "admin", "seat": 2}})
     check("GATE: admin-AI seat 2 -> 2nd virtual pad allowed",
           gseat.allows("/dev/input/event6")[0] is True)
     check("GATE: admin-AI seat 2 does NOT open the friend's native pad",
           gseat.allows("/dev/input/event22")[0] is False)
 
     # admin-tier AI with NO seat -> drives via dev pad; does NOT open other virtuals
-    gnoseat = gate(tokens={"tok": {"name": "Wren", "tier": "admin"}})
+    gnoseat = gate(tokens={"tok": {"name": "Agent-A", "tier": "admin"}})
     check("GATE: no-seat admin-AI grant does NOT open 2nd virtual seat",
           gnoseat.allows("/dev/input/event6")[0] is False)
 
     # seated admin-AI but seat out of range -> best-effort allow-all-virtual
-    goob = gate(tokens={"tok": {"name": "Iris", "tier": "admin", "seat": 9}})
+    goob = gate(tokens={"tok": {"name": "Agent-B", "tier": "admin", "seat": 9}})
     check("GATE: unmappable admin-AI seat -> all-virtual fallback (input6 allowed)",
           goob.allows("/dev/input/event6")[0] is True)
     check("GATE: all-virtual fallback still ignores native friend pad",
@@ -1312,6 +1314,44 @@ def selftest():
     # The new discrete d-pad buttons navigate (for button-d-pad pads).
     check("NORM: BTN_DPAD_UP -> Up", nrec.map_event(E(ecodes.EV_KEY, ecodes.BTN_DPAD_UP, 1)) == ["Up"])
     check("NORM: BTN_DPAD_RIGHT -> Right", nrec.map_event(E(ecodes.EV_KEY, ecodes.BTN_DPAD_RIGHT, 1)) == ["Right"])
+
+    # ----- DEVICE FILTER (is_gamepad) ----------------------------------------
+    # Composite-pad sibling nodes must be REJECTED even though their names say
+    # "Controller" (the 2026-06-07 7.2s-lag bug: the motion node's accelerometer
+    # emitted phantom arrows that queued real presses behind xdotool spawns).
+    class FakeDev:
+        def __init__(self, name, keys=(), info=(3, 0, 0, 0)):
+            self.name = name
+            self._keys = list(keys)
+            self.info = type("I", (), dict(zip(
+                ("bustype", "vendor", "product", "version"), info)))()
+
+        def capabilities(self):
+            return {ecodes.EV_KEY: self._keys} if self._keys else {}
+
+    DS = "Sony Interactive Entertainment DualSense Wireless Controller"
+    check("FILTER: main pad (BTN_SOUTH..) accepted",
+          is_gamepad(FakeDev(DS, [ecodes.BTN_SOUTH, ecodes.BTN_EAST,
+                                  ecodes.BTN_TL, ecodes.BTN_MODE])))
+    check("FILTER: virtual AI pad accepted",
+          is_gamepad(FakeDev("AI virtual controller 1",
+                             [ecodes.BTN_SOUTH, ecodes.BTN_START])))
+    check("FILTER: generic DInput pad (BTN_TRIGGER range) accepted",
+          is_gamepad(FakeDev("USB Joystick", list(range(ecodes.BTN_TRIGGER,
+                                                        ecodes.BTN_TRIGGER + 10)))))
+    check("FILTER: button-d-pad-only pad accepted",
+          is_gamepad(FakeDev("Mini Pad", [ecodes.BTN_DPAD_UP, ecodes.BTN_DPAD_DOWN])))
+    check("FILTER: Motion Sensors node (no EV_KEY) REJECTED despite name",
+          not is_gamepad(FakeDev(DS + " Motion Sensors")))
+    check("FILTER: Touchpad node (mouse/digitizer buttons) REJECTED despite name",
+          not is_gamepad(FakeDev(DS + " Touchpad",
+                                 [ecodes.BTN_LEFT, ecodes.BTN_TOUCH,
+                                  ecodes.BTN_TOOL_FINGER, ecodes.BTN_TOOL_DOUBLETAP])))
+    check("FILTER: Headset Jack node (no buttons) REJECTED despite name",
+          not is_gamepad(FakeDev(DS + " Headset Jack")))
+    check("FILTER: keyboard (KEY_* < BTN_MISC) REJECTED",
+          not is_gamepad(FakeDev("AT Translated Keyboard",
+                                 [ecodes.KEY_A, ecodes.KEY_ENTER])))
 
     print("\n%d test(s) FAILED" % len(failures) if failures else "\nALL TESTS PASSED")
     return 1 if failures else 0
