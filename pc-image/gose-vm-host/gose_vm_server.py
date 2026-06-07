@@ -54,7 +54,13 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/storage/import": (12, 60), "/storage/detected": (30, 60)}
 
 _SKIPDIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_media"}
-_SKIPEXT = {".txt", ".xml", ".cfg", ".dat", ".jpg", ".jpeg", ".png", ".mp4", ".srm", ".state"}
+# .disabled = store-placeholder marker (Game.ext.disabled). splitext only strips the LAST
+# suffix, so the enabled file ("Game.cannonball") keeps its real extension and still lists.
+_SKIPEXT = {".txt", ".xml", ".cfg", ".dat", ".jpg", ".jpeg", ".png", ".mp4", ".srm", ".state",
+            ".disabled"}
+# engine/runtime data shipped alongside roms that is NOT itself a game
+# (prboom.wad is PrBoom's resource wad; game IWADs like doom1_shareware.wad stay listed)
+_ENGINE_DATA = {("prboom", "prboom.wad")}
 # friendly names for common systems
 _SYS = {"nes": "NES", "snes": "SNES", "megadrive": "Genesis", "gba": "Game Boy Advance",
         "gb": "Game Boy", "gbc": "Game Boy Color", "n64": "Nintendo 64", "psx": "PlayStation",
@@ -74,6 +80,33 @@ def system_logo_path(system):
             return p
     return None
 
+def _sys_exts(system):
+    """Launchable rom extensions for a system, from es_systems.cfg (via the cached
+    _ext_sys_map — same source ES uses). e.g. pygame -> {'.pygame'}."""
+    ext_map, _ = _ext_sys_map()
+    return {e for e, syss in ext_map.items() if system in syss}
+
+def _dir_game_rom(system, dirpath):
+    """Directory-shaped games (e.g. pygame: roms/pygame/pygun/pygun.pygame): the launchable
+    rom is a recognized entry file ONE level down (extension from es_systems.cfg). Prefers
+    an entry named after the directory. Returns the entry's full path, or None (not a game)."""
+    exts = _sys_exts(system)
+    if not exts:
+        return None
+    try:
+        names = sorted(os.listdir(dirpath))
+    except Exception:
+        return None
+    dirname = os.path.basename(dirpath).lower()
+    best = None
+    for f in names:
+        stem, ext = os.path.splitext(f)
+        if ext.lower() in exts and os.path.isfile(os.path.join(dirpath, f)):
+            if stem.lower() == dirname:
+                return os.path.join(dirpath, f)
+            best = best or os.path.join(dirpath, f)
+    return best
+
 def list_games():
     try:
         favset = _fav_set()
@@ -82,24 +115,23 @@ def list_games():
             d = os.path.join(ROMS, sysname)
             if not os.path.isdir(d):
                 continue
-            imgdir = os.path.join(d, "images")
-            def find_img(stem):
-                for suf in ("-image.png", "-thumb.png", "-image.jpg", ".png"):
-                    p = os.path.join(imgdir, stem + suf)
-                    if os.path.isfile(p):
-                        return p
-                return None
             games = []
             for f in os.listdir(d):
                 if f.startswith(".") or f in _SKIPDIRS or "gamelist" in f:
                     continue
+                if (sysname, f.lower()) in _ENGINE_DATA:
+                    continue
                 p = os.path.join(d, f)
                 if os.path.isdir(p):
-                    continue
-                if os.path.splitext(f)[1].lower() in _SKIPEXT:
-                    continue
-                stem = os.path.splitext(f)[0]
-                games.append({"name": stem, "img": find_img(stem),
+                    rom = _dir_game_rom(sysname, p)   # directory-shaped game?
+                    if not rom:
+                        continue
+                    stem = os.path.splitext(os.path.basename(rom))[0]
+                else:
+                    if os.path.splitext(f)[1].lower() in _SKIPEXT:
+                        continue
+                    stem = os.path.splitext(f)[0]
+                games.append({"name": stem, "img": _game_img(sysname, stem),
                               "fav": (sysname, stem) in favset})
             if games:
                 systems.append({"system": sysname, "name": _SYS.get(sysname, sysname),
@@ -113,11 +145,17 @@ def list_games():
 RECENT_F = "/userdata/gose-ui/recent.json"
 
 def _game_img(system, game):
+    # art lookup: stem match is CASE-INSENSITIVE (mrboom.png vs stem "MrBoom") and bare
+    # .jpg/.jpeg are accepted (sdlpop.jpg). Single source — Library/recents/widgets all use this.
     d = os.path.join(ROMS, system, "images")
-    for suf in ("-image.png", "-thumb.png", "-image.jpg", ".png"):
-        p = os.path.join(d, game + suf)
-        if os.path.isfile(p):
-            return p
+    try:
+        names = {n.lower(): n for n in os.listdir(d)}
+    except Exception:
+        return None
+    for suf in ("-image.png", "-thumb.png", "-image.jpg", ".png", ".jpg", ".jpeg"):
+        n = names.get((game + suf).lower())
+        if n:
+            return os.path.join(d, n)
     return None
 
 PLAYTIME_F = "/userdata/gose-ui/playtime.json"
@@ -803,7 +841,16 @@ def _rom_file(system, game):
     d = os.path.join(ROMS, system)
     try:
         for f in os.listdir(d):
-            if os.path.splitext(f)[0] == game and os.path.splitext(f)[1].lower() not in _SKIPEXT and "gamelist" not in f:
+            if "gamelist" in f or f.startswith("."):
+                continue
+            if os.path.isdir(os.path.join(d, f)):
+                if f in _SKIPDIRS:
+                    continue
+                r = _dir_game_rom(system, os.path.join(d, f))   # directory-shaped game
+                if r and os.path.splitext(os.path.basename(r))[0] == game:
+                    return os.path.basename(r)
+                continue
+            if os.path.splitext(f)[0] == game and os.path.splitext(f)[1].lower() not in _SKIPEXT:
                 return f
     except Exception:
         pass
@@ -970,8 +1017,18 @@ def launch_game(system, game):
         return {"ok": False, "error": "unknown system"}
     rom = None
     for f in os.listdir(d):
-        if os.path.splitext(f)[0] == game and os.path.splitext(f)[1].lower() not in _SKIPEXT and "gamelist" not in f:
-            rom = os.path.join(d, f); break
+        if "gamelist" in f or f.startswith("."):
+            continue
+        p = os.path.join(d, f)
+        if os.path.isdir(p):
+            if f in _SKIPDIRS:
+                continue
+            r = _dir_game_rom(system, p)   # directory-shaped game: launch its entry file
+            if r and os.path.splitext(os.path.basename(r))[0] == game:
+                rom = r; break
+            continue
+        if os.path.splitext(f)[0] == game and os.path.splitext(f)[1].lower() not in _SKIPEXT:
+            rom = p; break
     if not rom:
         return {"ok": False, "error": "rom not found for " + game}
     try:
