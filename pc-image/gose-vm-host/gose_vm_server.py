@@ -938,7 +938,15 @@ def _virtual_pad_args(max_players=5):
         entry = (int(jss[0]), "/dev/input/event" + evs[0])
         name_m = re.search(r'Name="([^"]*)"', blk)
         name = name_m.group(1) if name_m else "pad"
-        if "py-evdev-uinput" in blk:
+        if "gose-passthrough" in blk:
+            # Host-pad PASSTHROUGH (uinput mirror of the human's physical pad).
+            # Goes to the PHYS list — it IS a human player, lowest player slot —
+            # with its REAL GUID (pt_open recreated the real vendor/product/version,
+            # so the kernel-id GUID matches the launcher DB's entry for that pad).
+            ids = re.search(r"Bus=(\w+) Vendor=(\w+) Product=(\w+) Version=(\w+)", blk)
+            guid = (_sdl_guid(*(int(x, 16) for x in ids.groups())) if ids else _XBOX_GUID)
+            phys.append(entry + (guid, name))
+        elif "py-evdev-uinput" in blk:
             # AI seat pad. Bind with the Xbox-360 GUID (identity → real button maps),
             # but report its OWN name ("AI virtual controller N") to the launcher; the
             # bind keys off the GUID, not the name, so this is purely cosmetic/legible.
@@ -2870,8 +2878,15 @@ def _parse_controllers():
         sysfs = sys_m.group(1) if sys_m else ""
         bus = int(ids.group(1), 16) if ids else 0
         guid = _sdl_guid(*(int(x, 16) for x in ids.groups())) if ids else _XBOX_GUID
-        is_virtual = "py-evdev-uinput" in phys
-        source = "virtual" if is_virtual else ("bluetooth" if bus == 0x05 else "native")
+        # Passthrough pads (host_bridge-side pad_passthrough.py mirroring a PHYSICAL
+        # pad onto guest uinput, phys="gose-passthrough") are ALSO uinput but are NOT
+        # "virtual": they're the human's controller — first-class player, admin-eligible.
+        if "gose-passthrough" in phys:
+            source = "passthrough"
+        elif "py-evdev-uinput" in phys:
+            source = "virtual"
+        else:
+            source = "bluetooth" if bus == 0x05 else "native"
         pads.append({"id": os.path.basename(sysfs) or ("js" + js.group(1)),
                      "name": name_m.group(1) if name_m else "Controller", "guid": guid,
                      "source": source,

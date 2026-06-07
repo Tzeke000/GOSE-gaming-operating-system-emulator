@@ -36,6 +36,10 @@ OP_TIER = {
     "state.status": "observe", "state.read_raw": "observe",
     "input.button": "play", "input.combo": "play", "input.axis": "play", "input.type": "play",
     "input.seats": "observe", "input.seat_open": "play", "input.seat_close": "play",
+    # host-pad passthrough (physical-controller event forwarding) — same tier as
+    # the other input ops; pt_list is read-only.
+    "input.pt_open": "play", "input.pt_event": "play", "input.pt_close": "play",
+    "input.pt_list": "observe",
     "games.launch": "play", "games.stop": "play", "state.write_raw": "play",
     "system.run": "admin", "system.service": "admin",
 }
@@ -165,6 +169,12 @@ class AgentServer:
             if int(args.get("seat", 0)) != int(seat):
                 raise P.AgentError(P.ERR_DENIED,
                     f"this AI is assigned seat {seat}; it cannot manage other seats")
+        elif op in ("input.pt_open", "input.pt_event", "input.pt_close"):
+            # Passthrough pads mirror the HUMAN's physical controller (the host
+            # forwarder uses the owner/dev token). A seat-assigned guest AI has no
+            # business creating or driving them.
+            raise P.AgentError(P.ERR_DENIED,
+                "this AI is assigned a seat; passthrough pads are host/owner-managed")
         return args
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):

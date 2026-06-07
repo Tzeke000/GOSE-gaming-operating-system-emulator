@@ -501,7 +501,13 @@ def usb_list():
                 claimed = False
             if protected and vp != USB_BT_VIDPID:
                 reason = "host input/system device — protected, never claimable"
-            claimable = present and not protected and not claimed
+            if klass == "controller" and vp != USB_BT_VIDPID and not claimed:
+                # Controllers go through INPUT PASSTHROUGH (pad_passthrough.py →
+                # agent input.pt_*): millisecond latency. usb-redir for a 1 kHz pad
+                # measured 4-7 s of input lag — never offer that path for pads.
+                reason = "controllers use input passthrough (instant); USB claim deprecated for pads"
+            claimable = (present and not protected and not claimed
+                         and not (klass == "controller" and vp != USB_BT_VIDPID))
             devs.append({"vid": vid, "pid": pid, "id": vp, "name": name, "class": klass,
                          "is_controller": klass == "controller", "present": present,
                          "claimed": claimed, "protected": protected, "claimable": claimable,
@@ -526,6 +532,10 @@ def usb_claim(vid, pid):
     vp = vid + ":" + pid
     if vp in _USB_PROTECT_VIDPID:
         return {"ok": False, "error": "device is protected (host input / already passed) and cannot be claimed"}
+    if vp in _USB_CONTROLLERS:
+        # enforce what usb_list advertises: pads ride input passthrough, not usb-redir
+        return {"ok": False, "error": "controllers use input passthrough (instant); "
+                                      "USB claim deprecated for pads"}
     with _usb_lock:
         _usb_reap()
         if vp in _usb_claims:

@@ -84,6 +84,12 @@ class Agent:
             "input.seats": lambda ar: self.input.seats(),
             "input.seat_open": lambda ar: self.input.seat_open(a(ar, "seat")),
             "input.seat_close": lambda ar: self.input.seat_close(a(ar, "seat")),
+            # host-pad passthrough (input-level forwarding of a PHYSICAL pad;
+            # replaces usb-redir for controllers — see capabilities/input.py)
+            "input.pt_open": lambda ar: self.input.pt.open(ar),
+            "input.pt_event": lambda ar: self.input.pt.event(a(ar, "pt_id"), a(ar, "events")),
+            "input.pt_close": lambda ar: self.input.pt.close(a(ar, "pt_id")),
+            "input.pt_list": lambda ar: self.input.pt.list(),
             # system
             "system.run": lambda ar: self.system.run(
                 a(ar, "cmd"), int(ar.get("timeout_ms", 10000))),

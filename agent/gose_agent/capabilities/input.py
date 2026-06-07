@@ -173,6 +173,177 @@ class EvdevInput(BaseInput):
         raise AgentError(ERR_BACKEND, "type_text not yet wired on evdev backend")
 
 
+# ---------------------------------------------------------------------------
+# Host-pad PASSTHROUGH (input-level controller forwarding)
+#
+# Why: streaming a physical pad into the VM over usb-redir (USBDk) measured
+# 4-7 s of input lag — a DualSense is a 1 kHz composite USB device and the
+# redirect layer bufferbloats unfixably. So instead of forwarding the USB
+# *device*, the host forwards *input events*: a host daemon (pad_passthrough.py)
+# reads the real pad via SDL and replays its state onto an in-guest uinput
+# device created here. Millisecond round trips; the guest still sees "a real
+# controller".
+#
+# Identity: pt_open creates the uinput device with the REAL pad's
+# vendor/product/version/bustype, so the SDL GUID consumers compute from the
+# kernel ids matches the physical pad → gamecontrollerdb / es_input binds work.
+# The device name is the real pad's name too. What marks it as ours is
+# phys="gose-passthrough" — the controller registry (gose_vm_server) keys off
+# that to classify it source="passthrough" (NOT "virtual": it is the human's
+# pad, first-class player + admin-eligible).
+# ---------------------------------------------------------------------------
+PT_PHYS = "gose-passthrough"
+_PT_EV_KEY = 1   # evdev EV_KEY
+_PT_EV_ABS = 3   # evdev EV_ABS
+
+
+class MockPassthroughDevice:
+    """CI/no-uinput stand-in: records injected events (inspectable in tests)."""
+    backend = "mock"
+
+    def __init__(self, name, vendor, product, version, bustype):
+        self.name, self.vendor, self.product = name, vendor, product
+        self.version, self.bustype = version, bustype
+        self.events: List[tuple] = []
+
+    def inject(self, events):
+        self.events.extend(events)
+
+    def close(self):
+        pass
+
+
+class EvdevPassthroughDevice:
+    """Real uinput device mirroring a physical host pad (full standard caps)."""
+    backend = "evdev"
+
+    def __init__(self, name, vendor, product, version, bustype):
+        import evdev
+        from evdev import ecodes as e
+        self.name, self.vendor, self.product = name, vendor, product
+        self.version, self.bustype = version, bustype
+        cap = {
+            e.EV_KEY: [
+                e.BTN_SOUTH, e.BTN_EAST, e.BTN_WEST, e.BTN_NORTH,
+                e.BTN_TL, e.BTN_TR, e.BTN_TL2, e.BTN_TR2,
+                e.BTN_SELECT, e.BTN_START, e.BTN_MODE,
+                e.BTN_THUMBL, e.BTN_THUMBR,
+                e.BTN_DPAD_UP, e.BTN_DPAD_DOWN, e.BTN_DPAD_LEFT, e.BTN_DPAD_RIGHT,
+            ],
+            e.EV_ABS: [
+                (e.ABS_X, evdev.AbsInfo(0, -32768, 32767, 16, 128, 0)),
+                (e.ABS_Y, evdev.AbsInfo(0, -32768, 32767, 16, 128, 0)),
+                (e.ABS_RX, evdev.AbsInfo(0, -32768, 32767, 16, 128, 0)),
+                (e.ABS_RY, evdev.AbsInfo(0, -32768, 32767, 16, 128, 0)),
+                (e.ABS_Z, evdev.AbsInfo(0, 0, 255, 0, 0, 0)),
+                (e.ABS_RZ, evdev.AbsInfo(0, 0, 255, 0, 0, 0)),
+                (e.ABS_HAT0X, evdev.AbsInfo(0, -1, 1, 0, 0, 0)),
+                (e.ABS_HAT0Y, evdev.AbsInfo(0, -1, 1, 0, 0, 0)),
+            ],
+        }
+        self._ui = evdev.UInput(cap, name=name, vendor=vendor, product=product,
+                                version=version, bustype=bustype, phys=PT_PHYS)
+
+    def inject(self, events):
+        for (etype, code, value) in events:
+            self._ui.write(etype, code, value)
+        self._ui.syn()
+
+    def close(self):
+        try:
+            self._ui.close()
+        except Exception:
+            pass
+
+
+class PassthroughManager:
+    """pt_open/pt_event/pt_close: one uinput mirror per physical host pad."""
+    MAX = 4
+
+    def __init__(self, force_mock: bool = False):
+        self._force_mock = force_mock
+        self._devices: Dict[int, object] = {}
+        self._next_id = 1
+
+    def _make(self, name, vendor, product, version, bustype):
+        if not self._force_mock:
+            try:
+                if os.access("/dev/uinput", os.W_OK):
+                    import evdev  # noqa: F401
+                    return EvdevPassthroughDevice(name, vendor, product, version, bustype)
+            except Exception:
+                pass
+        return MockPassthroughDevice(name, vendor, product, version, bustype)
+
+    @staticmethod
+    def _id16(args, key, default=None):
+        v = args.get(key, default)
+        if v is None:
+            raise AgentError(ERR_ARGS, f"missing required arg '{key}'")
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            raise AgentError(ERR_ARGS, f"'{key}' must be an integer")
+        if not 0 <= v <= 0xFFFF:
+            raise AgentError(ERR_ARGS, f"'{key}' must be 0..65535")
+        return v
+
+    def open(self, args: Dict) -> Dict:
+        if len(self._devices) >= self.MAX:
+            raise AgentError(ERR_ARGS, f"max {self.MAX} passthrough pads already open")
+        name = str(args.get("name") or "Passthrough controller")[:80]
+        dev = self._make(name,
+                         self._id16(args, "vendor"),
+                         self._id16(args, "product"),
+                         self._id16(args, "version", 0),
+                         self._id16(args, "bustype", 3))   # default BUS_USB
+        pt_id = self._next_id
+        self._next_id += 1
+        self._devices[pt_id] = dev
+        return {"pt_id": pt_id, "name": name, "phys": PT_PHYS,
+                "backend": dev.backend, "open": sorted(self._devices)}
+
+    def _dev(self, pt_id):
+        try:
+            pt_id = int(pt_id)
+        except (TypeError, ValueError):
+            raise AgentError(ERR_ARGS, "pt_id must be an integer")
+        dev = self._devices.get(pt_id)
+        if dev is None:
+            raise AgentError(ERR_ARGS,
+                             f"pt_id {pt_id} not open (open: {sorted(self._devices)})")
+        return dev
+
+    def event(self, pt_id, events) -> Dict:
+        dev = self._dev(pt_id)
+        if not isinstance(events, list) or not events:
+            raise AgentError(ERR_ARGS, "events must be a non-empty list")
+        batch = []
+        for ev in events:
+            try:
+                etype, code, value = int(ev["type"]), int(ev["code"]), int(ev["value"])
+            except (TypeError, KeyError, ValueError):
+                raise AgentError(ERR_ARGS,
+                                 "each event needs integer 'type', 'code', 'value'")
+            if etype not in (_PT_EV_KEY, _PT_EV_ABS):
+                raise AgentError(ERR_ARGS, "event type must be EV_KEY(1) or EV_ABS(3)")
+            batch.append((etype, code, value))
+        dev.inject(batch)
+        return {"done": True, "n": len(batch)}
+
+    def close(self, pt_id) -> Dict:
+        dev = self._dev(pt_id)
+        self._devices.pop(int(pt_id), None)
+        dev.close()
+        return {"closed": True, "open": sorted(self._devices)}
+
+    def list(self) -> Dict:
+        return {"open": [{"pt_id": k, "name": d.name, "backend": d.backend,
+                          "vendor": d.vendor, "product": d.product}
+                         for k, d in sorted(self._devices.items())],
+                "max": self.MAX}
+
+
 class SeatManager:
     """Multiplayer seats: one virtual controller per seat (docs/16 + multiplayer plan).
 
@@ -183,9 +354,12 @@ class SeatManager:
     """
     MAX_SEATS = 4
 
-    def __init__(self, factory):
+    def __init__(self, factory, force_mock: bool = False):
         self._factory = factory          # (seat:int) -> BaseInput
         self._seats: Dict[int, BaseInput] = {1: factory(1)}
+        # Host-pad passthrough devices live beside the AI seats (input.pt_* ops).
+        # They are NOT seats: a passthrough pad mirrors a human's physical pad.
+        self.pt = PassthroughManager(force_mock=force_mock)
 
     @property
     def backend(self) -> str:
@@ -265,4 +439,4 @@ def make_input(force_mock: bool = False) -> SeatManager:
             except Exception:
                 pass
         return MockInput()
-    return SeatManager(factory)
+    return SeatManager(factory, force_mock=force_mock)

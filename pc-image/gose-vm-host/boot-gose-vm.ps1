@@ -31,6 +31,19 @@ if (Test-Path $bridge) {
   Write-Host "Host battery/network bridge started on 127.0.0.1:8790."
 }
 
+# controller passthrough: forwards REAL host pads into the guest as input events
+# (agent input.pt_* -> uinput). Replaces usb-redir for controllers — usb-redir on a
+# 1 kHz pad (DualSense) measured 4-7 s of input lag; this path is milliseconds.
+# It waits for the agent itself, so starting it before the VM boots is fine.
+$padpt = $(if ($env:GOSE_PADPT) { $env:GOSE_PADPT } else { "D:\gose-vm\pad_passthrough.py" })
+if (Test-Path $padpt) {
+  Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='py.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like "*pad_passthrough.py*" } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Start-Process py -ArgumentList '-3.11', $padpt -WindowStyle Minimized
+  Write-Host "Controller passthrough started (host pads -> guest uinput, instant)."
+}
+
 $a = @(
   '-name','GOSE-PC','-machine','q35,accel=whpx','-cpu','qemu64','-smp',"$Cpus",'-m',"${Mem}G",
   '-drive',"file=$Image,if=virtio,format=raw",
