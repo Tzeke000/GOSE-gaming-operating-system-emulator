@@ -8,6 +8,11 @@
        linear-gradient(180deg,#08090c,#0a0b10);
   --focusglow:0 0 0 2px var(--accent), 0 0 14px #5cd0ff3d;
   --tile:#15171e;
+  /* icon-cell tile: a faint elevated chip behind every icon so transparent
+     (brand-PNG) and line icons keep definition on the onyx bg — subtle, never
+     competing with content or the blue focus glow (which sits on the item). */
+  --icon-tile:rgba(255,255,255,.055);
+  --icon-tile-bd:rgba(255,255,255,.08);
 }
 [data-theme="midnight"]{
   --accent:#5cc8ff; --accent2:#9b6bff; --text:#eef2ff; --muted:#9aa6c8;
@@ -17,6 +22,8 @@
        linear-gradient(160deg,#0a0e1f,#11183a 55%,#0a1230);
   --focusglow:0 0 0 2px var(--accent), 0 0 22px #5cc8ff66;
   --tile:#262f56;
+  --icon-tile:rgba(255,255,255,.06);
+  --icon-tile-bd:rgba(255,255,255,.10);
 }
 [data-theme="neon"]{
   --accent:#16f2c8; --accent2:#ff3d9a; --text:#eafff8; --muted:#83bcb4;
@@ -26,6 +33,8 @@
        linear-gradient(160deg,#05070a,#070b10);
   --focusglow:0 0 0 2px var(--accent), 0 0 22px #16f2c8aa;
   --tile:#10201d;
+  --icon-tile:rgba(255,255,255,.05);
+  --icon-tile-bd:rgba(22,242,200,.14);
 }
 [data-theme="aurora"]{ /* light */
   --accent:#0a84ff; --accent2:#7d52ff; --text:#0c1020; --muted:#5b637a;
@@ -34,4 +43,6 @@
        linear-gradient(180deg,#eef1f8,#e6ebf5);
   --focusglow:0 0 0 2px var(--accent), 0 0 14px #0a84ff44;
   --tile:#ffffffcc;
+  --icon-tile:rgba(0,0,0,.045);
+  --icon-tile-bd:rgba(0,0,0,.09);
 }

@@ -33,7 +33,8 @@
   /* left sidebar */
   .side{position:absolute;left:0;top:46px;bottom:0;width:92px;display:flex;flex-direction:column;gap:6px;
     padding:14px 8px;backdrop-filter:blur(6px);background:#0a0a16aa;border-right:1px solid #ffffff12;z-index:5}
-  .nav{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 4px;border-radius:12px;color:#9aa0c0;cursor:pointer}
+  .nav{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 4px;border-radius:12px;color:#9aa0c0;cursor:pointer;
+    background:var(--icon-tile);box-shadow:inset 0 0 0 1px var(--icon-tile-bd)}
   .nav .ic{font-size:21px}.nav span{font-size:11px}
   .nav.on{background:#6a4dff2e;color:#fff}.nav.on .ic{color:var(--accent)}
   /* centerpiece core + reflection */
@@ -45,7 +46,7 @@
   /* bottom dock */
   .dock{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;gap:8px;
     background:#0c0c1ed0;border:1px solid #ffffff16;border-radius:16px;padding:8px 12px;backdrop-filter:blur(10px);z-index:6}
-  .dock .d{width:44px;height:44px;border-radius:12px;background:#ffffff0c;display:flex;align-items:center;justify-content:center}
+  .dock .d{width:44px;height:44px;border-radius:12px;background:var(--icon-tile);box-shadow:inset 0 0 0 1px var(--icon-tile-bd);display:flex;align-items:center;justify-content:center}
   .dock .d .ic{font-size:22px;color:#cdd2ea}.dock .d.on{background:#6a4dff3a}.dock .d.on .ic{color:#fff}
   .dock img{width:26px;height:26px}
   /* notifications tray bell + slide-in center */

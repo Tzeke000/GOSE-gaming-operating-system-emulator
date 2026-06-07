@@ -11,6 +11,7 @@ html[data-bold="1"] body, html[data-bold="1"] body * { font-weight: 600 !importa
 html[data-contrast="high"]{
   --text:#ffffff; --muted:#dde2f0; --line:#ffffff66; --accent:#7fe6ff;
   --surface:#0b0d12; --surface2:#14171f; --tile:#14171f;
+  --icon-tile:#1b1f29; --icon-tile-bd:#ffffff66;
   --focusglow:0 0 0 3px #ffffff, 0 0 0 5px var(--accent);
 }
 html[data-contrast="high"] .glass, html[data-contrast="high"] .card,
