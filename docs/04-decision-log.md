@@ -3,6 +3,34 @@
 Append-only. Newest at top. Each: context → decision → status. Revisit freely;
 mark superseded ones rather than deleting.
 
+## ADR-0014 — Per-game auto-resume is DEFAULT-ON (`global.autosave=1`)
+**Context:** the owner (task 21, 2026-06-07): "each game should do this already" —
+quit a game, relaunch it, be back where you were. Batocera ships it OFF by default.
+**Decision:** GOSE ships `global.autosave=1` in the gose-layer batocera.conf seed
+(`pc-image/gose-layer/system/batocera.conf.gose`), applied to the live VM too.
+Mechanism (verified on Batocera 43.1, configgen `libretroConfig.py`): the conf key
+maps 1:1 to RetroArch `savestate_auto_save` + `savestate_auto_load`, regenerated
+into `retroarchcustom.cfg` on every launch — so it covers every libretro launch
+through `emulatorlauncher` (the `/launch` path) with no server/bridge changes.
+**Verified live end-to-end** (pong1k2p, NES/fceumm): play to 3–7, SIGTERM quit →
+`pong1k2p.state.auto` written at exit-time mtime → relaunch → RAM shows the same
+score/paddle positions resumed (cold boot = all zeros on title until Start).
+**Honest caveats, addressed:**
+- *Netplay:* RetroArch netplay + autosave is a known crash/desync
+  (libretro/RetroArch#15248). GOSE doesn't expose RA netplay today; any future
+  netplay launch must pass `autosave=0` for that session.
+- *Hard kills / power loss:* SIGKILL skips the exit-save — you resume from the
+  last CLEAN exit (SIGTERM saves correctly; verified). No corruption risk to the
+  rom's normal `.srm` battery saves, which are separate.
+- *Disk:* the auto slot is one `<rom>.state.auto` (+ thumbnail `.png`) per game,
+  overwritten each exit — bounded growth (pong's was 823 bytes).
+- *Coverage:* libretro cores fully; Batocera 41+ also several standalones
+  (Dolphin/PPSSPP/PCSX2/Mupen64Plus); ports (prboom, tyrian, mrboom, sdlpop,
+  cannonball) and moonlight streaming ignore the key — harmless no-op.
+- *Opt-out:* per-system `<system>.autosave=0`, per-game via the ES game menu;
+  the ES savestate manager still allows a from-scratch boot.
+**Status:** accepted; shipped in the seed + live VM.
+
 ## ADR-0013 — GOSE on PC = a virtual machine (x86_64 image in QEMU) + boot input chooser
 **Context:** the owner (2026-06-03): make GOSE a downloadable PC app to use first
 before the Odin 2 arrives, and it "should be more like a virtual machine." Plus a

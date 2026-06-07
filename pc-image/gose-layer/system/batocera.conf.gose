@@ -17,3 +17,22 @@ splash.screen.enabled=1
 
 # Input: keyboard/mouse is the PC-VM default (mirrors scripts/gose_input.py);
 # controllers are auto-detected when connected/passed through.
+
+# Auto-resume (task 21, 2026-06-07): every game saves an "auto" savestate on
+# clean exit and resumes from it on the next launch. Batocera's configgen maps
+# this 1:1 to RetroArch savestate_auto_save + savestate_auto_load, regenerated
+# into retroarchcustom.cfg at every launch (verified on Batocera 43.1,
+# libretroConfig.py). Scope + honest caveats:
+#   - Libretro cores: full support. Batocera 41+ also covers several
+#     standalones (Dolphin/PPSSPP/PCSX2/Mupen64Plus). Ports (prboom, tyrian,
+#     mrboom, sdlpop, cannonball) and streaming (moonlight) simply ignore it.
+#   - NETPLAY: RetroArch netplay + autosave is known to crash/desync
+#     (libretro/RetroArch#15248). GOSE doesn't expose RA netplay today; if it
+#     ever does, that launch path must pass autosave=0 for the session.
+#   - Hard kills (SIGKILL/power loss) skip the exit-save; you resume from the
+#     last CLEAN exit. SIGTERM (normal quit, gose stop) saves correctly.
+#   - Disk: the auto slot is ONE <rom>.state.auto (+ .png) per game,
+#     overwritten on each exit — bounded growth.
+#   - Per-system off-switch: <system>.autosave=0; per-game via ES game menu.
+#     A user can always cold-boot from the ES savestate manager / reset.
+global.autosave=1
