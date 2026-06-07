@@ -9,8 +9,14 @@ and distro-agnostic (the same layer concept maps onto ROCKNIX on the device).
 | `system/custom.sh` | `/userdata/system/custom.sh` | Autostart the GOSE agent (TCP 5555) at boot |
 | `system/batocera.conf.gose` | merged into `/userdata/system/batocera.conf` | Hostname, theme, splash, SSH, input defaults |
 | `system/configs/emulationstation/es_input.cfg` | `/userdata/system/configs/emulationstation/es_input.cfg` | Seed launcher pad config (known-good DualSense entry); further pads auto-register at `input.pt_open` |
-| `splash/gose-splash.png` | `/userdata/splash/` | Boot splash (the GOSE brand screen) |
-| `splash/gose-logo.png` | `/userdata/splash/` | Logo asset for the theme |
+| `splash/gose-splash.png` | `/userdata/splash/` | Boot splash (the GOSE crystal brand screen, matches `gose-boot.html`) |
+| `system-splash/boot-logo*.png` | `/usr/share/batocera/splash/` (rootfs — needs overlay/squashfs bake, see `system-splash/README.md`) | Replaces Batocera's early S03 splash with the crystal |
+
+**Splash rule:** keep exactly ONE image in `splash/`. Batocera's S28 splash service
+picks a *random* file from `/userdata/splash/` — a second image (the old
+`gose-logo.png` that used to live here) is what caused the stale-logo flash during
+boot (fixed 2026-06-07). Regenerate all splash PNGs from the current brand mark
+with `py -3.11 _make_splash.py` (source: `gui/mockup/assets/brand/gose-crystal.png`).
 | `themes/gose/` *(next)* | `/userdata/themes/gose/` | Windows-like EmulationStation theme |
 | *(repo)* `agent/` | `/userdata/system/gose/agent/` | The GOSE agent, copied by the build |
 
