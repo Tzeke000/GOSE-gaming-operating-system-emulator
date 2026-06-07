@@ -24,6 +24,7 @@ import sys
 import time
 import glob
 import json
+import struct
 import select
 import subprocess
 import urllib.request
@@ -49,6 +50,15 @@ BUTTON_KEYMAP = {
     ecodes.BTN_TR:     "bracketright",  # R1  -> next store tab
     ecodes.BTN_START:  "Return",        # Start (also activates)
     ecodes.BTN_SELECT: "Escape",        # Select (optional back)
+    # Discrete d-pad buttons (BTN_DPAD_*): only ever reported by pads that expose
+    # the d-pad as buttons instead of ABS_HAT0 (some generic/DInput pads, and the
+    # target the DB normalizer remaps a button-d-pad to). The virtual pad + every
+    # kernel-driver pad (Xbox/DS4/DualSense/Switch/8BitDo) use ABS_HAT0 instead, so
+    # these are inert for them -> pure addition, zero regression.
+    ecodes.BTN_DPAD_UP:    "Up",
+    ecodes.BTN_DPAD_DOWN:  "Down",
+    ecodes.BTN_DPAD_LEFT:  "Left",
+    ecodes.BTN_DPAD_RIGHT: "Right",
 }
 
 # Axis (EV_ABS) -> directional keysyms.  'stick' axes use a deadzone around
@@ -103,6 +113,50 @@ WM_FROM_KEYSYM = {
     "Left": "wm.left", "Right": "wm.right", "Up": "wm.up", "Down": "wm.down",
     "Return": "wm.select", "Escape": "wm.cancel",
     "bracketleft": "wm.prev", "bracketright": "wm.next",
+}
+
+# --- UNIVERSAL controller normalization (SDL_GameControllerDB) ---------------
+# "One button language" for ANY pad — the software 8BitDo-dongle. We DON'T write
+# per-controller mappings; we adopt the community SDL_GameControllerDB
+# (gabomdq/SDL_GameControllerDB, `gamecontrollerdb.txt`, vendored beside this file
+# and deployed to /userdata/gose-ui). Each connected pad is identified by its SDL
+# GUID (computed from the evdev bus/vendor/product/version); the DB row says which
+# standard button (a/b/x/y/dpad/L1/start/guide/...) each of that pad's physical
+# inputs is. The Normalizer turns every pad's RAW evdev codes into the STANDARD
+# evdev codes the rest of this bridge already speaks (BTN_SOUTH, ABS_HAT0X, ...),
+# so map_event/WMLayer/AdminGate are untouched and a DualSense's Cross == Xbox A
+# == Enter without any controller-specific code.
+#
+# Linux kernel HID drivers (xpadneo/hid-playstation/hid-nintendo/native 8BitDo)
+# already report position-standard evdev codes (bottom face button == BTN_SOUTH,
+# d-pad == ABS_HAT0). For those pads (which is ALL of Xbox/PS4/PS5/Switch/8BitDo)
+# the normalizer is the IDENTITY — the proven path is unchanged (zero regression,
+# incl. the virtual Xbox-360 test pad). The DB-driven remap only engages for a pad
+# whose evdev codes are NON-standard (no BTN_SOUTH) yet known to the DB, e.g. a
+# cheap generic/DInput pad. Unknown pads fall back to the sane evdev defaults.
+GCDB_PATHS = (
+    "/userdata/gose-ui/gamecontrollerdb.txt",          # our deployed copy (canonical)
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "gamecontrollerdb.txt"),
+    "/usr/share/sdl-jstest/gamecontrollerdb.txt",       # image fallbacks
+    "/usr/share/ppsspp/PPSSPP/gamecontrollerdb.txt",
+)
+
+# Standard SDL button/axis name -> the STANDARD evdev code the bridge expects.
+STD_BTN_TO_EVDEV = {
+    "a": ecodes.BTN_SOUTH, "b": ecodes.BTN_EAST,
+    "x": ecodes.BTN_WEST,  "y": ecodes.BTN_NORTH,
+    "leftshoulder": ecodes.BTN_TL, "rightshoulder": ecodes.BTN_TR,
+    "lefttrigger": ecodes.BTN_TL2, "righttrigger": ecodes.BTN_TR2,
+    "start": ecodes.BTN_START, "back": ecodes.BTN_SELECT,
+    "guide": ecodes.BTN_MODE,
+    "leftstick": ecodes.BTN_THUMBL, "rightstick": ecodes.BTN_THUMBR,
+    "dpup": ecodes.BTN_DPAD_UP, "dpdown": ecodes.BTN_DPAD_DOWN,
+    "dpleft": ecodes.BTN_DPAD_LEFT, "dpright": ecodes.BTN_DPAD_RIGHT,
+}
+STD_AXIS_TO_EVDEV = {
+    "leftx": ecodes.ABS_X, "lefty": ecodes.ABS_Y,
+    "rightx": ecodes.ABS_RX, "righty": ecodes.ABS_RY,
+    "lefttrigger": ecodes.ABS_Z, "righttrigger": ecodes.ABS_RZ,
 }
 
 
@@ -468,7 +522,192 @@ class AdminGate:
         return False, "not OS-admin"
 
 
-def is_gamepad(dev):
+# ---------------------------------------------------------------------------
+# UNIVERSAL NORMALIZATION  (SDL_GameControllerDB-driven, evdev-native)
+# ---------------------------------------------------------------------------
+def _sdl_guid(bustype, vendor, product, version):
+    """The 16-byte SDL2 joystick GUID (hex) for a bus device, zero-crc form —
+    the format used by gamecontrollerdb.txt rows (e.g. an Xbox 360 pad
+    045e:028e bus3 v0110 -> 030000005e0400008e02000010010000)."""
+    return struct.pack("<HHHHHHHH",
+                       bustype & 0xFFFF, 0, vendor & 0xFFFF, 0,
+                       product & 0xFFFF, 0, version & 0xFFFF, 0).hex()
+
+
+def _guid_zero_crc(guid):
+    """Same GUID with bytes 2-3 (the optional name-crc16) zeroed, so a modern
+    SDL dump that embeds a crc still matches a classic zero-crc DB row."""
+    return guid[:4] + "0000" + guid[8:] if len(guid) == 32 else guid
+
+
+def _sdl_button_index_map(keycodes):
+    """Reproduce SDL2's Linux evdev->joystick-button-index enumeration
+    (src/joystick/linux/SDL_sysjoystick.c): scan [BTN_JOYSTICK..KEY_MAX) then
+    [BTN_MISC..BTN_JOYSTICK), assigning b0,b1,... in that order. This is what
+    gamecontrollerdb's `bN` values are indexed against on Linux."""
+    order = []
+    for c in range(ecodes.BTN_JOYSTICK, ecodes.KEY_MAX):
+        if c in keycodes:
+            order.append(c)
+    for c in range(ecodes.BTN_MISC, ecodes.BTN_JOYSTICK):
+        if c in keycodes:
+            order.append(c)
+    return {c: i for i, c in enumerate(order)}
+
+
+def _sdl_axis_index_map(abscodes):
+    """SDL2's Linux evdev->joystick-axis-index enumeration: ascending ABS code,
+    skipping the ABS_HAT* pairs (SDL treats those as hats h0..h3, not axes)."""
+    axes = [c for c in sorted(abscodes)
+            if not (ecodes.ABS_HAT0X <= c <= ecodes.ABS_HAT3Y)]
+    return {c: i for i, c in enumerate(axes)}
+
+
+class _NEvent(object):
+    """Tiny read-only event shim (the only thing the bridge reads off an event is
+    .type/.code/.value), used when the normalizer rewrites a raw code."""
+    __slots__ = ("type", "code", "value")
+
+    def __init__(self, t, c, v):
+        self.type, self.code, self.value = t, c, v
+
+
+class ControllerDB:
+    """Parsed SDL_GameControllerDB (Linux rows) keyed by SDL GUID.
+
+    entry_for(bustype,vendor,product,version) -> {std_name: ("b", idx) | ("a", idx)}
+    for the button/axis bindings of that controller (hats are already the standard
+    ABS_HAT0, so we don't need them here), or None when the pad isn't in the DB.
+    """
+
+    def __init__(self, paths=GCDB_PATHS, text=None):
+        self.by_guid = {}      # exact GUID -> bindings
+        self.by_guid_z = {}    # zero-crc GUID -> bindings
+        self.path = None
+        self.count = 0
+        if text is not None:
+            self._parse(text)
+        else:
+            for p in paths:
+                try:
+                    with open(p, "r", encoding="utf-8", errors="replace") as fh:
+                        self._parse(fh.read())
+                    self.path = p
+                    break
+                except Exception:
+                    continue
+
+    def _parse(self, text):
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "platform:Linux" not in line:
+                continue
+            parts = line.split(",")
+            if len(parts) < 3 or len(parts[0]) != 32:
+                continue
+            guid = parts[0].lower()
+            binds = {}
+            for fld in parts[2:]:
+                if ":" not in fld:
+                    continue
+                name, val = fld.split(":", 1)
+                if not val:
+                    continue
+                if val[0] == "b" and val[1:].isdigit():
+                    binds[name] = ("b", int(val[1:]))
+                elif val[0] == "a":
+                    num = val[1:].lstrip("+-").rstrip("~")
+                    if num.isdigit():
+                        binds[name] = ("a", int(num))
+                # hats (hN.M) intentionally skipped: ABS_HAT0 is already standard
+            if binds:
+                self.by_guid[guid] = binds
+                self.by_guid_z.setdefault(_guid_zero_crc(guid), binds)
+                self.count += 1
+
+    def entry_for(self, bustype, vendor, product, version):
+        guid = _sdl_guid(bustype, vendor, product, version)
+        return (self.by_guid.get(guid)
+                or self.by_guid_z.get(_guid_zero_crc(guid)))
+
+
+class Normalizer:
+    """Turns ANY pad into the bridge's standard evdev language.
+
+    For a pad that already reports position-standard codes (BTN_SOUTH present —
+    true for every kernel-driver pad: Xbox/DS4/DualSense/Switch/8BitDo, AND the
+    virtual Xbox-360 test pad) the remap is EMPTY -> events pass through untouched
+    (the proven, zero-regression path). For a non-standard pad (no BTN_SOUTH) that
+    the DB knows, we build a raw-evdev-code -> standard-evdev-code remap from the
+    DB row, so its Cross/A becomes BTN_SOUTH, its d-pad buttons become BTN_DPAD_*,
+    its sticks become ABS_X/Y, etc. Unknown non-standard pads keep their raw codes
+    (sane evdev defaults). Per-device remap is cached by dev path.
+    """
+
+    def __init__(self, db=None):
+        self.db = db if db is not None else ControllerDB()
+        self._cache = {}      # dev_path -> remap dict (possibly empty)
+
+    @staticmethod
+    def build_remap(db, bustype, vendor, product, version, keycodes, abscodes):
+        if ecodes.BTN_SOUTH in keycodes:
+            return {}          # position-standard kernel pad -> identity
+        entry = db.entry_for(bustype, vendor, product, version)
+        if not entry:
+            return {}          # unknown pad -> sane evdev defaults (identity)
+        inv_btn = {i: c for c, i in _sdl_button_index_map(keycodes).items()}
+        inv_axis = {i: c for c, i in _sdl_axis_index_map(abscodes).items()}
+        remap = {}
+        for std, (kind, idx) in entry.items():
+            if kind == "b":
+                raw = inv_btn.get(idx)
+                tgt = STD_BTN_TO_EVDEV.get(std)
+                if raw is not None and tgt is not None and raw != tgt:
+                    remap[(ecodes.EV_KEY, raw)] = tgt
+            elif kind == "a":
+                raw = inv_axis.get(idx)
+                tgt = STD_AXIS_TO_EVDEV.get(std)
+                if raw is not None and tgt is not None and raw != tgt:
+                    remap[(ecodes.EV_ABS, raw)] = tgt
+        return remap
+
+    def for_device(self, dev):
+        path = getattr(dev, "path", None) or repr(dev)
+        if path in self._cache:
+            return self._cache[path]
+        try:
+            info = dev.info
+            caps = dev.capabilities()
+            keycodes = set(caps.get(ecodes.EV_KEY, []) or [])
+            abscodes = set(c for (c, _info) in (caps.get(ecodes.EV_ABS, []) or []))
+        except Exception:
+            self._cache[path] = {}
+            return {}
+        remap = self.build_remap(self.db, info.bustype, info.vendor,
+                                 info.product, info.version, keycodes, abscodes)
+        self._cache[path] = remap
+        guid = _sdl_guid(info.bustype, info.vendor, info.product, info.version)
+        known = self.db.entry_for(info.bustype, info.vendor, info.product,
+                                  info.version) is not None
+        log("normalize %r guid=%s db=%s remap=%d %s" % (
+            getattr(dev, "name", "?"), guid,
+            "known" if known else "unknown", len(remap),
+            "(identity)" if not remap else ""))
+        return remap
+
+    def normalize(self, event, dev):
+        remap = self.for_device(dev)
+        if not remap:
+            return event
+        tgt = remap.get((event.type, event.code))
+        if tgt is None:
+            return event
+        return _NEvent(event.type, tgt, event.value)
+
+
+def is_gamepad(dev, db=None):
     name = (dev.name or "").lower()
     if any(k in name for k in NAME_KEYWORDS):
         return True
@@ -476,7 +715,23 @@ def is_gamepad(dev):
         keys = dev.capabilities().get(ecodes.EV_KEY, [])
     except Exception:
         keys = []
-    return any(c in keys for c in GAMEPAD_KEY_CAPS)
+    if any(c in keys for c in GAMEPAD_KEY_CAPS):
+        return True
+    # Generic/DInput pads that report neither a keyword name nor BTN_SOUTH but ARE
+    # in the SDL DB by GUID are still real controllers -> accept them so the
+    # normalizer can speak their language. (Pure addition; never rejects a pad the
+    # old check accepted.)
+    if db is not None:
+        try:
+            info = dev.info
+            if db.entry_for(info.bustype, info.vendor, info.product,
+                            info.version) is not None:
+                return True
+        except Exception:
+            pass
+    # A bare joystick (BTN_TRIGGER/BTN_JOYSTICK) with absolute axes is very likely
+    # a controller too.
+    return ecodes.BTN_TRIGGER in keys or ecodes.BTN_JOYSTICK in keys
 
 
 # ---------------------------------------------------------------------------
@@ -639,6 +894,9 @@ def run():
     _threading.Thread(target=_wm_post_worker, daemon=True).start()
     gate = AdminGate().allows
     nav = PadNav(gate=gate, wm=WMLayer(gate=gate))
+    db = ControllerDB()
+    norm = Normalizer(db)
+    log("controller DB loaded: %s (%d Linux entries)" % (db.path, db.count))
     devices = {}   # path -> InputDevice
     last_scan = 0.0
 
@@ -650,7 +908,7 @@ def run():
                 dev = evdev.InputDevice(path)
             except Exception:
                 continue
-            if is_gamepad(dev):
+            if is_gamepad(dev, db):
                 try:
                     dev.grab  # noqa: we intentionally do NOT grab -- RetroArch
                               # needs the same evdev when a game runs.
@@ -695,7 +953,10 @@ def run():
             try:
                 for event in dev.read():
                     if event.type in (ecodes.EV_KEY, ecodes.EV_ABS):
-                        nav.feed(event, path, dev.name)
+                        # UNIVERSAL NORMALIZATION: rewrite this pad's raw codes to
+                        # the bridge's standard evdev language (identity for every
+                        # position-standard pad, incl. the virtual test pad).
+                        nav.feed(norm.normalize(event, dev), path, dev.name)
             except OSError:
                 log("detached %s (read error)" % path)
                 try:
@@ -971,6 +1232,85 @@ def selftest():
     rec.clear()
     fnav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), "/dev/input/event20", "Xbox Wireless Controller")
     check("GATE: feed() emits for admin button", rec == ["Return"])
+
+    # ----- UNIVERSAL NORMALIZATION (SDL_GameControllerDB) --------------------
+    # SDL GUID computation matches the DB row format.
+    check("GUID: Xbox 360 045e:028e bus3 v0110",
+          _sdl_guid(3, 0x045e, 0x028e, 0x0110) == "030000005e0400008e02000010010000")
+    check("GUID: DualSense 054c:0ce6 bus3 v8111 (hid-playstation)",
+          _sdl_guid(3, 0x054c, 0x0ce6, 0x8111) == "030000004c050000e60c000011810000")
+    check("GUID: zero-crc fold leaves classic rows intact",
+          _guid_zero_crc("030000005e0400008e02000010010000")
+          == "030000005e0400008e02000010010000")
+
+    # A tiny DB fixture exercises parse + lookup independent of the deployed file.
+    FIX = "\n".join([
+        "030000005e0400008e02000010010000,Xbox 360,a:b0,b:b1,x:b2,y:b3,"
+        "leftshoulder:b4,rightshoulder:b5,start:b7,back:b6,guide:b8,"
+        "dpup:h0.1,leftx:a0,lefty:a1,platform:Linux,",
+        # DualSense, modern hid-playstation variant -> position-standard a:b0
+        "030000004c050000e60c000011810000,PS5 Controller,a:b0,b:b1,x:b3,y:b2,"
+        "leftshoulder:b4,rightshoulder:b5,start:b9,back:b8,guide:b10,"
+        "dpup:h0.1,leftx:a0,lefty:a1,lefttrigger:a2,platform:Linux,",
+        # A generic/DInput pad that does NOT report BTN_SOUTH -> needs remap.
+        # GUID = _sdl_guid(3, 0x1234, 0x5678, 0x0001) (vendor/product little-endian).
+        "03000000341200007856000001000000,Generic DInput Pad,a:b0,b:b1,x:b3,y:b2,"
+        "leftshoulder:b4,rightshoulder:b5,start:b9,back:b8,guide:b10,"
+        "dpup:h0.1,leftx:a0,lefty:a1,platform:Linux,",
+        "deadbeef,broken,platform:Windows,",   # ignored (not Linux / bad guid)
+    ])
+    fdb = ControllerDB(text=FIX)
+    check("DB: parses Linux rows only", fdb.count == 3)
+    check("DB: DualSense found by GUID (PS5 0ce6)",
+          fdb.entry_for(3, 0x054c, 0x0ce6, 0x8111) is not None)
+    check("DB: DualSense Cross == standard A (a:b0)",
+          fdb.entry_for(3, 0x054c, 0x0ce6, 0x8111).get("a") == ("b", 0))
+    check("DB: Xbox 360 found by GUID",
+          fdb.entry_for(3, 0x045e, 0x028e, 0x0110) is not None)
+    check("DB: unknown GUID -> None",
+          fdb.entry_for(3, 0xDEAD, 0xBEEF, 0x0000) is None)
+
+    # SDL index enumeration (Linux): [BTN_JOYSTICK..) then [BTN_MISC..BTN_JOYSTICK)
+    bmap = _sdl_button_index_map({ecodes.BTN_SOUTH, ecodes.BTN_EAST,
+                                  ecodes.BTN_NORTH, ecodes.BTN_WEST})
+    check("ENUM: BTN_SOUTH is b0 in a contiguous standard set",
+          bmap[ecodes.BTN_SOUTH] == 0 and bmap[ecodes.BTN_EAST] == 1)
+
+    # Position-standard pad (has BTN_SOUTH) -> IDENTITY remap (zero regression).
+    std_keys = {ecodes.BTN_SOUTH, ecodes.BTN_EAST, ecodes.BTN_NORTH,
+                ecodes.BTN_WEST, ecodes.BTN_TL, ecodes.BTN_TR,
+                ecodes.BTN_START, ecodes.BTN_SELECT, ecodes.BTN_MODE}
+    std_abs = {ecodes.ABS_X, ecodes.ABS_Y, ecodes.ABS_HAT0X, ecodes.ABS_HAT0Y}
+    check("NORM: kernel-standard pad (virtual Xbox/DS4/DualSense) -> identity",
+          Normalizer.build_remap(fdb, 3, 0x045e, 0x028e, 0x0110,
+                                 std_keys, std_abs) == {})
+    check("NORM: DualSense (modern, BTN_SOUTH present) -> identity too",
+          Normalizer.build_remap(fdb, 3, 0x054c, 0x0ce6, 0x8111,
+                                 std_keys, std_abs) == {})
+
+    # Generic pad with NO BTN_SOUTH: buttons live at BTN_TRIGGER(0x120)+ ->
+    # build a remap that rewrites them to the standard face-button codes.
+    gen_keys = set(range(ecodes.BTN_TRIGGER, ecodes.BTN_TRIGGER + 10))  # 0x120..0x129
+    gen_abs = {ecodes.ABS_X, ecodes.ABS_Y}
+    gremap = Normalizer.build_remap(fdb, 3, 0x1234, 0x5678, 0x0001,
+                                    gen_keys, gen_abs)
+    # a:b0 -> raw BTN_TRIGGER(0x120) must remap to BTN_SOUTH; b:b1 -> BTN_EAST
+    check("NORM: generic pad A(b0) remaps to BTN_SOUTH",
+          gremap.get((ecodes.EV_KEY, ecodes.BTN_TRIGGER)) == ecodes.BTN_SOUTH)
+    check("NORM: generic pad B(b1) remaps to BTN_EAST",
+          gremap.get((ecodes.EV_KEY, ecodes.BTN_TRIGGER + 1)) == ecodes.BTN_EAST)
+    # ...and after that remap the SAME map_event yields the SAME keysym as Xbox A.
+    nrec = PadNav(emit=None, game_check=lambda: False)
+    check("NORM: remapped generic A -> Return (same language as Xbox/DualSense)",
+          nrec.map_event(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1)) == ["Return"])
+
+    # Unknown non-standard pad -> identity (sane defaults, never crashes).
+    check("NORM: unknown non-standard pad -> identity",
+          Normalizer.build_remap(fdb, 3, 0xAAAA, 0xBBBB, 0x1, gen_keys, gen_abs) == {})
+
+    # The new discrete d-pad buttons navigate (for button-d-pad pads).
+    check("NORM: BTN_DPAD_UP -> Up", nrec.map_event(E(ecodes.EV_KEY, ecodes.BTN_DPAD_UP, 1)) == ["Up"])
+    check("NORM: BTN_DPAD_RIGHT -> Right", nrec.map_event(E(ecodes.EV_KEY, ecodes.BTN_DPAD_RIGHT, 1)) == ["Right"])
 
     print("\n%d test(s) FAILED" % len(failures) if failures else "\nALL TESTS PASSED")
     return 1 if failures else 0
