@@ -69,22 +69,10 @@ emits arrow keysyms. Mechanics (single source: the `CURSOR_*` constants in
   (`CURSOR_CLICK_WINDOW`). Otherwise A stays `Return` for focus-nav, and Start
   is *always* `Return`, so Accept is never lost.
 - **Auto-hide:** after **5 s** (`CURSOR_HIDE_S`) of pointer idle the X cursor is
-  hidden via the **XFixes** extension (`XFixesHideCursor`); **any pointer
-  activity wakes it** (task 26, 2026-06-07) — stick motion, **external motion
-  the bridge didn't make** (a real host mouse/tablet: each bridge tick compares
-  one `QueryPointer` — 0.77 ms measured in-guest — against the last position,
-  with the bridge's own XTEST moves excluded by baseline invalidation so stick
-  motion can never read as external and pin the cursor visible), and any
-  pressed **pointer button**; every wake resets the idle timer. The wake honours
-  the same suppression as motion (game / WM modal stays cursor-quiet, and the
-  baseline dies while suppressed so in-game mouse motion can't phantom-SHOW at
-  game exit). **No code path may leave the cursor permanently hidden:** the
-  show/hide transitions fail VISIBLE, the engine's hide is idempotent per X
-  connection (XFixes hide is refcounted — a stacked hide would eat a later
-  show), and a hide dies with its client connection (a reconnect auto-reveals).
-  Hiding by parking the pointer in a corner is **forbidden** — parking is real
-  motion and fires hover side-effects. If XFixes is missing the cursor simply
-  stays visible (honest limitation, logged at startup).
+  hidden via the **XFixes** extension (`XFixesHideCursor`); any stick motion
+  shows it again. Hiding by parking the pointer in a corner is **forbidden** —
+  parking is real motion and fires hover side-effects. If XFixes is missing the
+  cursor simply stays visible (honest limitation, logged at startup).
 - **Layer rules apply unchanged (§4):** while a game owns the pad, stick motion
   and A-clicks are suppressed exactly like keys; while a WM modal is open the
   modal owns the whole pad and the cursor is frozen.
