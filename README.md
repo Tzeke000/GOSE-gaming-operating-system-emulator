@@ -1,16 +1,21 @@
 # GOSE — Gaming Operating System Emulator
 
-Turn an **AYN Odin 2** (Snapdragon 8 Gen 2 handheld) into a console-like,
-controller-driven gaming + tinkering device running a **flashable Linux OS** — with
-a **Windows-style, controller-only GUI**, broad emulation, universal controller
-support, and the ability to be **driven by the owner's AI agents (Ava, Wren, Iris)**
-over Wi-Fi or a cable. There's also a **downloadable PC version that runs as a
-virtual machine**, so you can use GOSE before the handheld arrives.
+GOSE turns an **AYN Odin 2** (and any PC, via a virtual machine) into an
+**open-source pocket computer for play**: run almost every emulator — *plus* low-end
+**PC, Steam, and Windows games** — behind a **Windows-style, controller-only GUI**;
+tinker with it like the real Linux box it is; play **local multiplayer with friends
+on any mix of controllers** (Switch, PlayStation, Xbox, 8BitDo, retro — all in one
+session); and even play **with or against an AI** (a **Claude Code / Codex** session
+joining as a real player). It's also **driven by the owner's AI agents (Ava, Wren,
+Iris)** over Wi-Fi or a cable. **Local-first today; online comes later, per game.**
 
 > **This is not "write an OS from scratch."** GOSE flashes a mature handheld Linux
-> distro (**ROCKNIX**) to SD and *configures + extends* it. The genuinely custom
-> pieces are: the Windows-like front-end, the **AI control agent**, the boot/BIOS +
-> login + input-chooser screens, and the reproducible build/setup scripts.
+> distro (**ROCKNIX**) to SD and *configures + extends* it; the PC edition is a
+> separate x86_64 image (Batocera x86_64 + the GOSE layer) run as a VM. The
+> genuinely custom pieces are: the Windows-like front-end, the **AI control +
+> multiplayer agent**, the boot/BIOS + login + input-chooser screens, and the
+> reproducible build/setup scripts. We ship the GOSE OS + tools only — **never**
+> BIOS, ROMs, or other people's games; you bring your own.
 
 Owner: **Zeke (Tzeke000)** · created by **Ezekiel Angeles-Gonzalez**, Tzeke000 Studios.
 
@@ -25,7 +30,7 @@ Owner: **Zeke (Tzeke000)** · created by **Ezekiel Angeles-Gonzalez**, Tzeke000 
 Then prove the project runs locally (no hardware, no network):
 ```bash
 pip install -r requirements-dev.txt          # only needed for the render scripts
-python3 -m unittest discover -s agent/tests -v   # expect 79 passing
+python3 -m unittest discover -s agent/tests -v   # expect 122 passing
 python3 scripts/gose-preview.py               # click through the UI in a browser
 python3 scripts/gose_vm.py --dry-run          # see the GOSE-PC VM launch command
 ./pc-image/build-gose-pc.sh --dry-run         # see the image-build plan
@@ -36,13 +41,31 @@ Develop there, commit with clear messages, push; don't open a PR unless asked.
 
 ---
 
-## What GOSE is for
-- **A console-like handheld OS** you flash to the Odin 2: boot into a clean,
-  controller-driven, Windows-style desktop instead of fiddly menus.
-- **Broad emulation** (PSP/PS2/N64/Switch/etc.) on a mature Linux base.
-- **AI-operable**: your agents (Ava/Wren/Iris) — or Claude — can *play games* and
-  *fix/tinker with the OS* remotely, over Wi-Fi or USB, through the **GOSE Agent**.
-- **Usable today on a PC** as a virtual machine, before the hardware is in hand.
+## What GOSE is for (the full vision)
+*Deeper detail in `docs/17-os-roadmap.md`, `docs/18-roadmap-build-plans.md`, and
+`docs/24-os-needs-and-privacy.md`.*
+
+- **Play almost everything** — universal emulation (retro → PSP/PS2/GC/N64, Switch
+  best-effort) **plus low-end PC / Steam / Windows games** via translation (Box64 +
+  Wine/Proton on the handheld; Wine/Proton on the PC VM). Honest ceiling: light and
+  indie titles, not heavy AAA — especially inside a VM.
+- **A pocket computer you can tinker with** — a real Linux box (desktop, files,
+  terminal, dev tools, networking), not a locked appliance. Mess with it, fix it.
+- **Open source, and on Steam** — the PC edition runs as a **virtual machine** and
+  ships on **Steam**, so anyone can use GOSE on a normal computer.
+- **Couch multiplayer with mismatched controllers** — friends bring *any* pads
+  (Switch / PlayStation / Xbox / 8BitDo / retro) and all play together in one
+  session. Headline target: **Mario Kart**, co-op or versus. (Design:
+  `docs/18` — SeatManager pins each player, human and AI, to a fixed slot.)
+- **Play with or against an AI** — a **Claude Code / Codex** session joins a local
+  game as a real player (its own virtual controller, driven over MCP using the
+  game-state interface). AI-vs-you, AI co-op, or AI-vs-AI.
+- **Local-first, online later** — everything is local today; online play arrives
+  per game (e.g. RetroArch netplay), with the seam already designed for it.
+- **A console-like handheld OS** on the Odin 2: boot into a clean, controller-driven,
+  Windows-style desktop instead of fiddly menus.
+- **AI-operable** — agents (Ava/Wren/Iris) or Claude can *play* and *fix/tinker with
+  the OS* over Wi-Fi or USB through the **GOSE Agent**.
 
 ## How we got here (project history)
 Built across one long session; full rationale in `docs/04-decision-log.md`.
@@ -72,7 +95,7 @@ Built across one long session; full rationale in `docs/04-decision-log.md`.
   + GOSE layer → `.img` + importable `.ova`, with a sleek-black EmulationStation theme.
 
 ## Current state
-- ✅ **Runs/tests green off-device** — 79 tests, zero required deps for the core.
+- ✅ **Runs/tests green off-device** — 122 tests, zero required deps for the core.
 - ✅ **GUI prototypes + concept renders** for every screen, on the onyx theme + logo.
 - ✅ **GOSE-PC scaffolding** — VM launcher (`scripts/gose_vm.py`), image build
   (`pc-image/`), ES theme — all dry-run/tested.
