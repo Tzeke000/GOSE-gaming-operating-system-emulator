@@ -23,8 +23,11 @@ INPUT MODEL (docs/27 §1): the d-pad moves FOCUS (arrow keysyms); the LEFT STICK
 moves a real X POINTER (XTEST relative motion, >=60Hz while deflected, linear
 accel up to CURSOR_MAX_SPEED). A clicks at the pointer when the cursor is active
 (moved within CURSOR_CLICK_WINDOW); otherwise A stays Enter for focus-nav. The
-cursor auto-hides after CURSOR_HIDE_S idle (XFixes hide/show) and reappears on
-stick motion. Cursor motion obeys the same game-suppression as keys.
+cursor auto-hides after CURSOR_HIDE_S idle (XFixes hide/show) and WAKES on any
+pointer activity: stick motion, EXTERNAL pointer motion the bridge didn't make
+(a real host mouse/tablet -- one QueryPointer per bridge tick against a baseline
+that excludes our own XTEST moves), or a pressed pointer button. Cursor motion
+AND the wake obey the same game-suppression as keys.
 
 Config (device match + keymaps) is in editable dicts at the top of this file.
 The mapping is pure/unit-testable via PadNav.map_event (no X required) -- see
@@ -500,6 +503,12 @@ class XTestEngine:
         self._display_name = display
         self._kc = {}                  # keysym name -> keycode cache
         self.can_hide = False
+        # pointer-button bits ONLY (Button1..5 = 0x100..0x1000).  The low bits
+        # of QueryPointer's mask are MODIFIERS — NumLock (Mod2, 0x10) is on in
+        # the guest, so masking anything below 0x100 would read as a held
+        # button forever and pin the cursor visible.
+        self._btn_mask = (_X.Button1Mask | _X.Button2Mask | _X.Button3Mask |
+                          _X.Button4Mask | _X.Button5Mask)
         self._connect()
 
     def _connect(self):
@@ -509,6 +518,10 @@ class XTestEngine:
             raise RuntimeError("X server has no XTEST extension")
         self.root = self.d.screen().root
         self._kc.clear()
+        # Fresh connection => the server-side XFixes hide refcount FOR THIS
+        # CLIENT is 0 (hides are per-client and auto-undone at disconnect), so
+        # a reconnect can never inherit a hidden cursor it can't show again.
+        self._hidden = False
         # XFixes (cursor hide/show) is optional: probe honestly, never assume.
         self.can_hide = False
         try:
@@ -568,13 +581,40 @@ class XTestEngine:
             return (q.root_x, q.root_y)
         return self._retry(op)
 
+    def pointer_state(self):
+        """((x, y), any-pointer-button-down) in ONE QueryPointer round-trip
+        (measured 0.77 ms/call on the guest, 2026-06-07).  Used by the
+        external-wake check on the existing tick cadence — and skipped
+        entirely on the 60Hz self-motion path, so it adds zero hot-path cost."""
+        def op():
+            q = self.root.query_pointer()
+            return ((q.root_x, q.root_y), bool(q.mask & self._btn_mask))
+        return self._retry(op)
+
     def hide_cursor(self):
-        if self.can_hide:
-            self._retry(lambda: (self.root.xfixes_hide_cursor(), self.d.flush()))
+        """Idempotent PER CONNECTION: XFixes hide is refcounted, so a re-issued
+        hide would stack the count and eat a later show — the 'permanently
+        invisible' failure class.  _hidden gates it to at most one outstanding
+        hide; a reconnect inside _retry resets _hidden because the dead
+        client's hide died with it (server auto-reveals)."""
+        if not self.can_hide:
+            return
+        def op():
+            if not self._hidden:
+                self.root.xfixes_hide_cursor()
+                self.d.flush()
+                self._hidden = True
+        self._retry(op)
 
     def show_cursor(self):
-        if self.can_hide:
-            self._retry(lambda: (self.root.xfixes_show_cursor(), self.d.flush()))
+        if not self.can_hide:
+            return
+        def op():
+            if self._hidden:           # nothing to undo on a fresh connection
+                self.root.xfixes_show_cursor()
+                self.d.flush()
+                self._hidden = False
+        self._retry(op)
 
 
 class XdotoolEngine:
@@ -609,6 +649,11 @@ class XdotoolEngine:
             return (int(parts["x"]), int(parts["y"]))
         except Exception:
             return (0, 0)
+
+    def pointer_state(self):
+        # xdotool reports no button state; honest False.  Moot anyway: with
+        # can_hide=False the cursor is never hidden, so the wake check skips.
+        return (self.pointer_pos(), False)
 
     def hide_cursor(self):
         pass                            # honest no-op (limitation logged once)
@@ -1220,6 +1265,9 @@ class PadNav:
         self._fps_t = 0.0                   # last FPS log line ts
         self._cursor_blocked_log = None     # last logged block reason (de-spam)
         self._gate_denied_logged = set()    # dev paths whose stick we logged once
+        # --- external-wake (task 26): a REAL mouse must wake a hidden cursor --
+        self._self_moved = False            # we moved the pointer since last check
+        self._ptr_pos = None                # wake baseline; None = re-baseline first
 
     # --- pause rule ---------------------------------------------------------
     def is_paused(self):
@@ -1427,6 +1475,74 @@ class PadNav:
             return "game running"
         return None
 
+    # --- cursor visibility transitions (task 26: never stuck invisible) ------
+    def _cursor_show(self, why):
+        """The ONLY show transition.  The flag flips to visible FIRST so an
+        exception in the X call cannot strand the state machine hidden — a
+        wrong 'visible' flag merely costs a redundant hide later (the engine's
+        per-connection idempotence makes re-issued calls harmless), while a
+        wrong 'hidden' flag would freeze the cursor invisible, the exact bug
+        class this kills.  An engine reconnect auto-reveals regardless (XFixes
+        hides die with their client), so every failure path ends VISIBLE."""
+        if self.cursor_visible:
+            return
+        self.cursor_visible = True
+        try:
+            self.pointer.show_cursor()
+            log("cursor SHOW (%s)" % why if self.pointer.can_hide
+                else "cursor active (engine cannot hide/show; X cursor stays as-is)")
+        except Exception as e:
+            log("cursor show failed (%s) -> engine reconnect will auto-reveal" % e)
+
+    def _cursor_hide(self, why):
+        """The ONLY hide transition.  The flag flips only AFTER the X call
+        succeeds: a failed hide leaves us honestly visible and simply retries
+        next tick — never a hidden screen behind a 'visible' flag."""
+        if not self.cursor_visible:
+            return
+        try:
+            self.pointer.hide_cursor()
+            self.cursor_visible = False
+            log("cursor HIDE (%s)" % why)
+        except Exception as e:
+            log("cursor hide failed (%s) -> stays visible" % e)
+
+    def _external_wake(self, now):
+        """docs/27 §1.1 wake rule (task 26): pointer motion the bridge did NOT
+        make (a real host mouse/tablet — or any other X client) wakes the
+        cursor: SHOW if hidden + idle-timer reset.  A pressed pointer button
+        wakes it too (failsafe).  Runs on the EXISTING tick cadence — one
+        QueryPointer round-trip (0.77 ms measured in-guest), and NOT EVEN THAT
+        on the 60Hz stick path: after any tick in which we moved the pointer
+        ourselves the check only invalidates its baseline (no query, no
+        judgement), so our own XTEST motion can never read as external (which
+        would reset the idle timer forever and the cursor would never hide).
+        While suppressed (game owns the pad / WM modal) it neither queries nor
+        wakes, and the baseline dies — so motion accumulated during a game
+        cannot fire a phantom SHOW at game exit."""
+        if not self.pointer.can_hide:
+            return                  # cursor can never be hidden -> nothing to wake
+        if self._self_moved:
+            self._self_moved = False
+            self._ptr_pos = None    # our own XTEST motion -> re-baseline later
+            return
+        if self._cursor_blocked() is not None:
+            self._ptr_pos = None    # suppressed: no wake; stale baselines die
+            return
+        try:
+            pos, buttons = self.pointer.pointer_state()
+        except Exception:
+            self._ptr_pos = None    # can't read -> never guess; re-baseline later
+            return
+        if self._ptr_pos is None:
+            self._ptr_pos = pos     # re-baseline only; judge from the NEXT tick
+            return
+        moved = pos != self._ptr_pos
+        self._ptr_pos = pos
+        if moved or buttons:
+            self.cursor_last_move = now      # reset the idle timer
+            self._cursor_show("external motion" if moved else "pointer button")
+
     def _cursor_tick(self, now):
         if self.pointer is None:
             return
@@ -1447,17 +1563,11 @@ class PadNav:
                 if dx or dy:
                     self._fx -= dx
                     self._fy -= dy
-                    if not self.cursor_visible:
-                        try:
-                            self.pointer.show_cursor()
-                        except Exception:
-                            pass
-                        self.cursor_visible = True
-                        log("cursor SHOW (stick motion)" if self.pointer.can_hide
-                            else "cursor active (engine cannot hide/show; X cursor stays as-is)")
+                    self._cursor_show("stick motion")
                     try:
                         self.pointer.move(dx, dy)
                         self.cursor_last_move = now
+                        self._self_moved = True   # OUR motion: never "external"
                         self._move_count += 1
                     except Exception as e:
                         log("cursor move failed: %s" % e)
@@ -1468,17 +1578,15 @@ class PadNav:
                                                           now - self._fps_t))
             self._fps_t = now
             self._move_count = 0
+        # wake on EXTERNAL pointer activity (real mouse / button) — checked
+        # BEFORE the hide so a fresh wake resets the idle timer this same tick
+        self._external_wake(now)
         # auto-hide after idle (honest visibility: XFixes only — parking the
         # pointer is FORBIDDEN, it fires hover side-effects)
         if (self.cursor_visible and self.pointer.can_hide
                 and now - self.cursor_last_move > CURSOR_HIDE_S):
-            try:
-                self.pointer.hide_cursor()
-                self.cursor_visible = False
-                log("cursor HIDE (idle %.1fs)" % (now - self.cursor_last_move)
-                    if self.cursor_last_move else "cursor HIDE (startup, unused)")
-            except Exception as e:
-                log("cursor hide failed: %s" % e)
+            self._cursor_hide("idle %.1fs" % (now - self.cursor_last_move)
+                              if self.cursor_last_move else "startup, unused")
 
     def tick(self):
         """Auto-repeat held directions + cursor motion. Call frequently (the
@@ -2005,9 +2113,12 @@ def selftest():
 
         def __init__(self):
             self.moves, self.clicks, self.vis = [], [], []
+            self.pos = (100, 100)       # the fake X pointer position
+            self.buttons = False        # any pointer button held
 
         def move(self, dx, dy):
             self.moves.append((dx, dy))
+            self.pos = (self.pos[0] + dx, self.pos[1] + dy)
 
         def click(self, b=1):
             self.clicks.append(b)
@@ -2019,7 +2130,10 @@ def selftest():
             self.vis.append("show")
 
         def pointer_pos(self):
-            return (0, 0)
+            return self.pos
+
+        def pointer_state(self):
+            return (self.pos, self.buttons)
 
     def cnav(game=False, gate_fn=None, wm=None):
         p = FakePtr()
@@ -2111,6 +2225,64 @@ def selftest():
     mtick(hn, 0.1)
     check("CURSOR: stick motion re-shows the cursor",
           "show" in hp.vis and hn.cursor_visible and len(hp.moves) > 0)
+
+    # ----- EXTERNAL POINTER WAKE (task 26: any pointer motion wakes it) ------
+    # a REAL mouse moving while the cursor is hidden -> SHOW + idle-timer reset
+    en, ep = cnav()
+    en.cursor_visible = False
+    mtick(en, 0.016)                              # tick 1: baselines ep.pos
+    ep.pos = (ep.pos[0] + 25, ep.pos[1])          # an external (non-bridge) move
+    en.cursor_last_move = time.time() - (CURSOR_HIDE_S + 2.0)
+    mtick(en, 0.016)                              # tick 2: detects + wakes
+    check("EXT: external motion while hidden -> SHOW",
+          ep.vis[-1:] == ["show"] and en.cursor_visible)
+    check("EXT: external motion resets the idle timer (no instant re-hide)",
+          time.time() - en.cursor_last_move < 1.0)
+    # our own XTEST motion must NOT read as external (else: never hides)
+    xn, xp = cnav()
+    xn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 32767), DEV)
+    mtick(xn, 0.1)                                # bridge self-moves the pointer
+    xn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 0), DEV)
+    mtick(xn, 0.016)                              # quiet tick: re-baselines only
+    xp.vis.clear()
+    xn.cursor_last_move = time.time() - (CURSOR_HIDE_S + 1.0)
+    mtick(xn, 0.016)                              # no wake -> idle hide fires
+    check("EXT: self (XTEST) motion is not external -> idle hide still fires",
+          xp.vis[-1:] == ["hide"] and not xn.cursor_visible)
+    # a pressed pointer button wakes the hidden cursor (failsafe)
+    bn, bp = cnav()
+    mtick(bn, 0.016)                              # baseline
+    bn.cursor_visible = False
+    bp.buttons = True                             # a held real mouse button
+    mtick(bn, 0.016)
+    check("EXT: pointer button while hidden -> SHOW",
+          bp.vis[-1:] == ["show"] and bn.cursor_visible)
+    # suppression respected: external motion during a game must NOT wake
+    egn, egp = cnav(game=True)
+    egn.cursor_visible = False
+    mtick(egn, 0.016)
+    egp.pos = (600, 500)
+    mtick(egn, 0.016)
+    check("EXT: external motion during a game -> suppressed (no SHOW)",
+          egp.vis == [] and not egn.cursor_visible)
+    # ...and motion accumulated DURING the game can't phantom-SHOW at game exit
+    eflag = {"g": True}
+    epp = FakePtr()
+    epn = PadNav(emit=rec.append, game_check=lambda: eflag["g"],
+                 gamebar_check=lambda: False, wm_check=lambda: False,
+                 pointer=epp)
+    epn.cursor_visible = False
+    mtick(epn, 0.016)                             # blocked: baseline stays dead
+    epp.pos = (50, 50)                            # mouse moved during the game
+    eflag["g"] = False
+    time.sleep(GAME_CACHE_S + 0.05)               # let the game cache expire
+    mtick(epn, 0.016)                             # first free tick: re-baseline
+    check("EXT: in-game motion does not phantom-SHOW at game exit",
+          epp.vis == [] and not epn.cursor_visible)
+    epp.pos = (60, 50)                            # a FRESH external move
+    mtick(epn, 0.016)
+    check("EXT: after re-baseline a new external move shows again",
+          epp.vis[-1:] == ["show"] and epn.cursor_visible)
 
     # GameWatch: the off-hot-path game check (refresh() is the testable core)
     gw = GameWatch(check=lambda: True)

@@ -69,10 +69,22 @@ emits arrow keysyms. Mechanics (single source: the `CURSOR_*` constants in
   (`CURSOR_CLICK_WINDOW`). Otherwise A stays `Return` for focus-nav, and Start
   is *always* `Return`, so Accept is never lost.
 - **Auto-hide:** after **5 s** (`CURSOR_HIDE_S`) of pointer idle the X cursor is
-  hidden via the **XFixes** extension (`XFixesHideCursor`); any stick motion
-  shows it again. Hiding by parking the pointer in a corner is **forbidden** —
-  parking is real motion and fires hover side-effects. If XFixes is missing the
-  cursor simply stays visible (honest limitation, logged at startup).
+  hidden via the **XFixes** extension (`XFixesHideCursor`); **any pointer
+  activity wakes it** (task 26, 2026-06-07) — stick motion, **external motion
+  the bridge didn't make** (a real host mouse/tablet: each bridge tick compares
+  one `QueryPointer` — 0.77 ms measured in-guest — against the last position,
+  with the bridge's own XTEST moves excluded by baseline invalidation so stick
+  motion can never read as external and pin the cursor visible), and any
+  pressed **pointer button**; every wake resets the idle timer. The wake honours
+  the same suppression as motion (game / WM modal stays cursor-quiet, and the
+  baseline dies while suppressed so in-game mouse motion can't phantom-SHOW at
+  game exit). **No code path may leave the cursor permanently hidden:** the
+  show/hide transitions fail VISIBLE, the engine's hide is idempotent per X
+  connection (XFixes hide is refcounted — a stacked hide would eat a later
+  show), and a hide dies with its client connection (a reconnect auto-reveals).
+  Hiding by parking the pointer in a corner is **forbidden** — parking is real
+  motion and fires hover side-effects. If XFixes is missing the cursor simply
+  stays visible (honest limitation, logged at startup).
 - **Layer rules apply unchanged (§4):** while a game owns the pad, stick motion
   and A-clicks are suppressed exactly like keys; while a WM modal is open the
   modal owns the whole pad and the cursor is frozen.
@@ -328,6 +340,39 @@ virtual-pad drive** — enter the surface from where a user would, traverse
 **every focusable element** with directions only, activate, back out with B all
 the way to where you started. Rendering is not navigability; getting stuck IS
 the bug, and it must be found by the tester's own pad, not by the user's.
+
+### 7.1 The tester surface — `gose-padtest.html` (tasks #40 + #56, 2026-06-07)
+
+A user-facing diagnostic for this standard: a pad diagram that lights as the §1
+vocabulary arrives, honestly labeled **"what GOSE hears"** — it visualizes the
+bridge's synthesized keys (the only thing pages ever receive, §2.1), never the
+pad itself. Accept lights A *and* Start, Back lights B *and* Select (both map to
+one key — the diagram shows the meaning, not a guess at the physical button).
+Never-synthesized controls render dashed with their real owner labeled (left
+stick = the X pointer §1.1 — shown live from pointer events; Guide/L2 = WM
+layers; X/Y = reserved; R2/right stick = unused). Connected pads come from
+`GET /controllers` with source chips (passthrough / virtual / bluetooth /
+native, + OS-admin / dev-pad badges). A second tab measures **in-page input
+latency** (key event → next frame callback) and displays the known chain
+numbers honestly: passthrough p50 2.17 ms / p95 4.33 ms (commit `cec3bdf`),
+XTEST synthesis sub-ms (~0.4 ms; vs ~50–100 ms per xdotool spawn), display
+scan-out ≤1 refresh — unmeasurable from JS, so no fake total. "Test inputs" /
+"Start sampling" are modal capture layers under the §3.10 contract: B lights on
+the diagram **and** closes the layer (one level per press — the B test *is* the
+exit).
+
+- **Deferred (integrator pass):** the Settings row —
+  `{ic:"gamepad-2", nm:"Controller test & latency", sub:"See what GOSE hears + measure input lag", t:"link", go:"gose-padtest.html"}`
+  in `gose-settings.html` → `CATS` → the `controllers` category. The page
+  already Escapes back to `gose-settings.html#controllers`.
+- **Deferred (needs a server build):** raw per-button/axis testing below the
+  vocabulary. Pages must not read `/dev/input` (§2.1), so this needs a registry
+  endpoint — proposed: `GET /controllers/raw?id=<registry id>` streaming
+  line-delimited JSON `{"t": <epoch ms>, "type": "key"|"abs", "code": <evdev
+  code>, "name": "BTN_SOUTH", "value": <int>}` (read-only `evdev` tap of that
+  one node, admin-gated like menus §6, auto-closing when the client drops or a
+  game takes the pad — layer 1 must win here too). The page already probes the
+  route and degrades to an honest `[needs server]` card.
 
 ## 8. Adding a new surface — checklist
 

@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Controller Test</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:16px 36px 4px}
+  .top img{width:30px;height:30px}.top h1{font-size:19px;margin:0}
+  .top .sub{color:var(--muted);font-size:12.5px;margin-left:2px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .tabs{display:flex;gap:9px;align-items:center;padding:6px 36px}
+  .chip{background:var(--surface);border:2px solid transparent;border-radius:11px;padding:9px 16px;
+    font-weight:600;font-size:13.5px;cursor:pointer;color:var(--muted)}
+  .chip.sel{background:var(--surface2);color:var(--text)}
+  .chip.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .tabs .hint{margin-left:auto;color:var(--muted);font-size:12px}
+  .bar{display:flex;gap:9px;align-items:center;padding:6px 36px 0}
+  .ab{display:flex;align-items:center;gap:8px;background:var(--surface);border:2px solid transparent;
+    border-radius:11px;padding:10px 16px;font-weight:600;font-size:13.5px;cursor:pointer}
+  .ab.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .bar .hint{margin-left:auto;color:var(--muted);font-size:12px;max-width:52%;text-align:right}
+  .main{flex:1;display:flex;gap:12px;margin:8px 36px 0;min-height:0}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;min-height:0}
+  .diag{flex:1.25;display:flex;flex-direction:column;padding:10px 14px;overflow:hidden}
+  .diag svg{flex:1;width:100%;min-height:0}
+  .side{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:auto;min-height:0}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:11px 14px 3px}
+  .dev{display:flex;align-items:center;gap:11px;padding:9px 14px;border:2px solid transparent;cursor:pointer}
+  .dev.focus{border-color:var(--accent);background:#5cd0ff14}
+  .dev .ic{font-size:18px;color:#ffd479;flex:none}
+  .dev .nm{font-weight:600;font-size:13.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dev .sub{color:var(--muted);font-size:11.5px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dev .col{flex:1;min-width:0}
+  .src{font-size:10.5px;font-weight:700;border-radius:8px;padding:3px 8px;border:1px solid currentColor;flex:none}
+  .src.passthrough{color:#3fe0a0}.src.virtual{color:#b18cff}.src.bluetooth{color:#5cd0ff}.src.native{color:#ffd479}
+  .src.adm{color:var(--accent)}.src.dis{color:#6b7180}
+  .empty{color:var(--muted);padding:18px;text-align:center;line-height:1.5;font-size:12.5px}
+  /* vocabulary counters */
+  .legend{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:8px 12px 12px}
+  .lg{background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:7px 9px;font-size:11.5px}
+  .lg b{display:block;font-size:12px}.lg .c{color:var(--accent);font-weight:700}
+  .lg .k{color:var(--muted)}
+  .etchrow{color:var(--muted);font-size:11.5px;padding:3px 14px;line-height:1.45}
+  .etchrow b{color:var(--text);font-weight:600}
+  /* event log */
+  .log{font-size:11.5px;color:var(--muted);padding:4px 14px 10px;line-height:1.7;overflow:auto}
+  .log b{color:var(--text)}
+  /* SVG pad */
+  .k{fill:#161a24;stroke:#2c3344;stroke-width:2;transition:fill .12s,stroke .12s,filter .12s}
+  .k.lit{fill:var(--accent);stroke:var(--accent);filter:drop-shadow(0 0 7px var(--accent))}
+  .e{fill:#10131b;stroke:#3a4156;stroke-width:1.6;stroke-dasharray:4 3}
+  .e.live{stroke:var(--accent);stroke-dasharray:none;filter:drop-shadow(0 0 6px var(--accent))}
+  .shell{fill:none;stroke:#272d3c;stroke-width:2.5}
+  .svgt{fill:#8d94ab;font-size:11px;font-weight:600;font-family:Inter,system-ui,sans-serif;text-anchor:middle;pointer-events:none}
+  .svgs{fill:#5b637a;font-size:8.5px;font-weight:700;letter-spacing:.5px;text-anchor:middle;pointer-events:none}
+  /* latency view */
+  .lwrap{flex:1;display:flex;gap:12px;margin:8px 36px 0;min-height:0}
+  .lleft{flex:1.2;display:flex;flex-direction:column;gap:12px;min-width:0}
+  .flash{flex:1;border-radius:14px;border:1px solid var(--line);background:var(--surface);
+    display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;min-height:90px}
+  .flash.on{background:var(--accent);color:#06121a;border-color:var(--accent)}
+  .stats{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:8px 12px 4px}
+  .st{background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:7px 9px;text-align:center}
+  .st b{display:block;font-size:16px}.st span{font-size:10.5px;color:var(--muted);letter-spacing:.4px}
+  .hist{display:flex;align-items:flex-end;gap:5px;height:74px;padding:6px 14px 4px}
+  .hb{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:3px;height:100%}
+  .hb .bar2{width:100%;background:var(--accent);border-radius:4px 4px 0 0;min-height:2px;opacity:.85}
+  .hb .bl{font-size:9px;color:var(--muted);white-space:nowrap}
+  .chain{padding:4px 14px 12px;font-size:12px;color:var(--muted);line-height:1.65}
+  .chain b{color:var(--text)}.chain .n{color:var(--accent);font-weight:700}
+  .foot{margin:9px 36px 14px;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;
+    transition:opacity .2s;pointer-events:none;max-width:78%;text-align:center;z-index:60}
+  .toast.show{opacity:1}
+  .banner{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:var(--surface2);
+    border:2px solid var(--accent);box-shadow:var(--focusglow);border-radius:12px;padding:10px 20px;
+    font-size:13px;font-weight:600;display:none;z-index:50;max-width:86%;text-align:center}
+  .banner.show{display:block}
+  /* pointer mini-pad */
+  .ptr{display:flex;gap:10px;align-items:center;padding:4px 14px 10px}
+  .ppad{width:74px;height:54px;background:var(--surface2);border:1px solid var(--line);border-radius:8px;position:relative;flex:none}
+  .pdot{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 7px var(--accent);left:50%;top:50%;margin:-4px 0 0 -4px}
+  .ptr .txt{font-size:11.5px;color:var(--muted);line-height:1.5}.ptr .txt b{color:var(--text)}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <h1>Controller Test</h1><span class="sub">— what GOSE hears (the docs/27 vocabulary, after the bridge)</span>
+    <div class="home"><span class="ic" data-i="gamepad-2"></span> B / Esc — back to Settings</div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+
+  <!-- ============ TEST VIEW ============ -->
+  <div id="view-test" style="display:flex;flex-direction:column;flex:1;min-height:0">
+    <div class="bar">
+      <span class="ab" id="ab-test"><span class="ic" data-i="gamepad-2"></span> Test inputs</span>
+      <span class="hint">Pages never read the pad — the bridge turns it into keys. This screen lights what arrives.
+        Nav presses light up too; Test inputs captures everything without moving focus.</span>
+    </div>
+    <div class="main">
+      <div class="panel diag">
+        <svg viewBox="0 0 560 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <rect class="shell" x="40" y="60" width="480" height="185" rx="64"></rect>
+          <!-- triggers / shoulders -->
+          <rect id="g-l2" class="e" x="92" y="12" width="80" height="18" rx="9"></rect>
+          <rect id="g-r2" class="e" x="388" y="12" width="80" height="18" rx="9"></rect>
+          <text class="svgs" x="132" y="25">L2 · SNAP (SYSTEM)</text>
+          <text class="svgs" x="428" y="25">R2 · UNUSED</text>
+          <rect id="g-l1" class="k" x="86" y="38" width="92" height="18" rx="9"></rect>
+          <rect id="g-r1" class="k" x="382" y="38" width="92" height="18" rx="9"></rect>
+          <text class="svgs" x="132" y="51">L1 · TAB ‹</text>
+          <text class="svgs" x="428" y="51">R1 · TAB ›</text>
+          <!-- d-pad -->
+          <rect id="g-up" class="k" x="131" y="98" width="28" height="34" rx="6"></rect>
+          <rect id="g-down" class="k" x="131" y="148" width="28" height="34" rx="6"></rect>
+          <rect id="g-left" class="k" x="89" y="126" width="34" height="28" rx="6"></rect>
+          <rect id="g-right" class="k" x="167" y="126" width="34" height="28" rx="6"></rect>
+          <!-- face -->
+          <circle id="g-y" class="e" cx="415" cy="104" r="17"></circle>
+          <circle id="g-x" class="e" cx="371" cy="140" r="17"></circle>
+          <circle id="g-b" class="k" cx="459" cy="140" r="17"></circle>
+          <circle id="g-a" class="k" cx="415" cy="176" r="17"></circle>
+          <text class="svgt" x="415" y="108">Y</text><text class="svgt" x="371" y="144">X</text>
+          <text class="svgt" x="459" y="144">B</text><text class="svgt" x="415" y="180">A</text>
+          <!-- select / start / guide -->
+          <rect id="g-select" class="k" x="236" y="100" width="30" height="14" rx="7"></rect>
+          <rect id="g-start" class="k" x="294" y="100" width="30" height="14" rx="7"></rect>
+          <text class="svgs" x="251" y="125">SELECT</text><text class="svgs" x="309" y="125">START</text>
+          <circle id="g-guide" class="e" cx="280" cy="152" r="15"></circle>
+          <text class="svgs" x="280" y="180">GUIDE</text>
+          <!-- sticks -->
+          <circle id="g-ls" class="e" cx="207" cy="207" r="24"></circle>
+          <circle cx="207" cy="207" r="12" class="e" style="pointer-events:none"></circle>
+          <circle id="g-rs" class="e" cx="353" cy="207" r="24"></circle>
+          <circle cx="353" cy="207" r="12" class="e" style="pointer-events:none"></circle>
+          <text class="svgs" x="207" y="243">L · POINTER</text>
+          <text class="svgs" x="353" y="243">R · UNUSED</text>
+        </svg>
+        <div class="legend" id="legend"></div>
+        <div class="etchrow"><b>Dashed = never reaches pages</b> (by design, docs/27): left stick moves the
+          <b>system pointer</b> · Guide = window carousel · L2+d-pad = snap · X / Y are reserved by the WM layer ·
+          R2 and the right stick are unused. A = Accept (also Start) · B = Back (also Select).</div>
+        <div class="ptr">
+          <div class="ppad"><div class="pdot" id="pdot"></div></div>
+          <div class="txt"><b>Left stick = the real pointer</b> — shown from live pointer events.<br>
+            <span id="ptxt">pointer: — · 0 px/s · A clicks at the pointer while it's active</span></div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="card" style="flex:1.1">
+          <div class="ph">CONNECTED CONTROLLERS — GET /controllers</div>
+          <div id="pads"><div class="empty">Loading…</div></div>
+          <div class="ph">RAW PER-BUTTON / AXIS STREAM</div>
+          <div id="rawrow"></div>
+        </div>
+        <div class="card" style="flex:1">
+          <div class="ph">LAST HEARD</div>
+          <div class="log" id="log">Nothing yet — press anything.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ LATENCY VIEW ============ -->
+  <div id="view-lat" style="display:none;flex-direction:column;flex:1;min-height:0">
+    <div class="bar">
+      <span class="ab" id="ab-start"><span class="ic" data-i="clock"></span> Start sampling</span>
+      <span class="ab" id="ab-clear"><span class="ic" data-i="rotate-ccw"></span> Clear samples</span>
+      <span class="hint">Measures: synthesized key arriving in this page → the next animation-frame callback
+        (the frame your press paints on). Honest scope below.</span>
+    </div>
+    <div class="lwrap">
+      <div class="lleft">
+        <div class="flash" id="flash">Press Start sampling, then mash the pad — this pad flips color the frame each press lands.</div>
+        <div class="panel" style="overflow:auto">
+          <div class="ph">IN-PAGE SAMPLES <span id="basis" style="font-weight:400;letter-spacing:0"></span></div>
+          <div class="stats" id="stats"></div>
+          <div class="hist" id="hist"></div>
+        </div>
+      </div>
+      <div class="panel" style="flex:1;overflow:auto">
+        <div class="ph">THE KNOWN CHAIN (docs/27)</div>
+        <div class="chain">
+          <b>1 · Physical pad → guest uinput</b> (input passthrough, <i>pad_passthrough.py</i>):
+          measured <span class="n">p50 2.17 ms / p95 4.33 ms</span> over 100 events — call it ~2–3 ms typical.<br>
+          <b>2 · Bridge key synthesis</b> (persistent-X XTEST engine in <i>gose-pad-nav.py</i>):
+          <span class="n">sub-millisecond (~0.4 ms)</span> per key — vs ~50–100 ms for the old per-event xdotool spawn.<br>
+          <b>3 · This page's number</b>: WebKit delivering the key → the next frame callback. It does
+          <b>not</b> include 1 or 2, and the display adds up to one more refresh
+          (<span class="n">~16.7 ms at 60 Hz</span>) of scan-out after the frame callback — that part isn't
+          measurable from JS, so no fake total is shown.<br>
+          <span style="font-size:11px">AI virtual pads skip step 1 (they're already in-guest uinput).
+          Held directions auto-repeat at the bridge (first after 0.40 s, then every 0.18 s) — repeats show up
+          as extra samples; that's the bridge working, not jitter.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot"><span class="ic" data-i="info"></span> This screen tests the standard vocabulary — the only thing
+    pages ever receive (docs/27 §2.1)
+    <span class="h"><b>↑↓←→</b> move · <b>Enter/A</b> activate · <b>[ ] / L1 R1</b> switch tab · <b>Esc/B</b> back</span></div>
+  <div class="toast" id="toast"></div>
+  <div class="banner" id="banner"></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),2600);}
+  function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+
+  // ---------- state ----------
+  let tab=0, foc=0, pads=[], padsOk=null, rawAvail=null;
+  let capturing=false, sampling=false;
+  const counts={up:0,down:0,left:0,right:0,accept:0,back:0,tabl:0,tabr:0};
+  let log=[], samples=[], lastBasis=null;
+
+  // ---------- vocabulary → diagram ----------
+  // The bridge synthesizes ONLY these keys (docs/27 §1). A and Start both arrive as
+  // Return; B and Select both arrive as Escape — so both light: GOSE hears the MEANING.
+  function vocab(e){
+    const k=e.key, c=e.code||"";
+    if(k==="ArrowUp"||k==="Up")       return {ids:["g-up"],n:"up",lbl:"Up — focus up"};
+    if(k==="ArrowDown"||k==="Down")   return {ids:["g-down"],n:"down",lbl:"Down — focus down"};
+    if(k==="ArrowLeft"||k==="Left")   return {ids:["g-left"],n:"left",lbl:"Left — focus left"};
+    if(k==="ArrowRight"||k==="Right") return {ids:["g-right"],n:"right",lbl:"Right — focus right"};
+    if(k==="Enter")                   return {ids:["g-a","g-start"],n:"accept",lbl:"Accept (A / Start → Return)"};
+    if(k==="Escape")                  return {ids:["g-b","g-select"],n:"back",lbl:"Back (B / Select → Escape)"};
+    if(k==="["||c==="BracketLeft")    return {ids:["g-l1"],n:"tabl",lbl:"L1 → [ (previous tab)"};
+    if(k==="]"||c==="BracketRight")   return {ids:["g-r1"],n:"tabr",lbl:"R1 → ] (next tab)"};
+    return null;
+  }
+  const litT={};
+  function light(v){
+    counts[v.n]++;
+    v.ids.forEach(id=>{const el=$(id);if(!el)return;el.classList.add("lit");
+      clearTimeout(litT[id]);litT[id]=setTimeout(()=>el.classList.remove("lit"),260);});
+    const d=new Date(), ts=("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2)+":"+("0"+d.getSeconds()).slice(-2)+"."+("00"+d.getMilliseconds()).slice(-3);
+    log.unshift({ts,lbl:v.lbl}); if(log.length>10)log.length=10;
+    renderLegend(); renderLog();
+  }
+  function renderLegend(){
+    const L=[["UP","Up key",counts.up],["DOWN","Down key",counts.down],["LEFT","Left key",counts.left],
+      ["RIGHT","Right key",counts.right],["ACCEPT","A·Start → Return",counts.accept],
+      ["BACK","B·Select → Escape",counts.back],["TAB ‹","L1 → [",counts.tabl],["TAB ›","R1 → ]",counts.tabr]];
+    $("legend").innerHTML=L.map(x=>`<div class="lg"><b>${x[0]} <span class="c">×${x[2]}</span></b><span class="k">${x[1]}</span></div>`).join("");
+  }
+  function renderLog(){
+    $("log").innerHTML=log.length?log.map(e2=>`${e2.ts} · <b>${esc(e2.lbl)}</b>`).join("<br>"):"Nothing yet — press anything.";
+  }
+
+  // ---------- pointer (= left stick, docs/27 §1.1) ----------
+  let pLast=null,pSpeed=0,pLive=null;
+  addEventListener("mousemove",e2=>{
+    const t=performance.now();
+    if(pLast){const dt=(t-pLast.t)||1;
+      pSpeed=Math.round(Math.hypot(e2.clientX-pLast.x,e2.clientY-pLast.y)/dt*1000);}
+    pLast={x:e2.clientX,y:e2.clientY,t};
+    const ls=$("g-ls");ls.classList.add("live");clearTimeout(pLive);pLive=setTimeout(()=>{ls.classList.remove("live");pSpeed=0;ptxt();},300);
+    const pd=$("pdot");pd.style.left=(e2.clientX/innerWidth*100)+"%";pd.style.top=(e2.clientY/innerHeight*100)+"%";
+    ptxt();
+  });
+  function ptxt(){$("ptxt").textContent="pointer: "+(pLast?Math.round(pLast.x)+", "+Math.round(pLast.y):"—")
+    +" · "+pSpeed+" px/s · A clicks at the pointer while it's active";}
+  addEventListener("click",()=>{ if(capturing||sampling)return;
+    light({ids:["g-a"],n:"accept",lbl:"Click (A at pointer, or mouse)"}); },true);
+
+  // ---------- focus model: one flat wrapping list per tab (docs/27 §3.1) ----------
+  function items(){
+    if(tab===0){const a=["tab0","tab1","ab-test"];pads.forEach((p,i)=>a.push("pad:"+i));a.push("raw");return a;}
+    return ["tab0","tab1","ab-start","ab-clear"];
+  }
+  function clampFoc(){const n=items().length;if(foc>=n)foc=n-1;if(foc<0)foc=0;}
+  function move(d){const n=items().length;foc=(foc+d+n)%n;render();}
+  function setTab(t){tab=t;foc=t;render();}
+  function switchTab(d){setTab((tab+d+2)%2);}
+
+  function srcChip(p){
+    const m={passthrough:"Passthrough",virtual:"AI virtual",bluetooth:"Bluetooth",native:"Native"};
+    return `<span class="src ${esc(p.source)}">${m[p.source]||esc(p.source)}</span>`;
+  }
+  function render(){
+    clampFoc();const it=items();
+    $("tabs").innerHTML=
+      `<span class="chip ${tab===0?'sel':''} ${it[foc]==='tab0'?'focus':''}" id="tc0">Controller test</span>`+
+      `<span class="chip ${tab===1?'sel':''} ${it[foc]==='tab1'?'focus':''}" id="tc1">Latency</span>`+
+      `<span class="hint">L1 / R1 — switch tab</span>`;
+    $("tc0").onclick=()=>setTab(0); $("tc1").onclick=()=>setTab(1);
+    $("view-test").style.display=tab===0?"flex":"none";
+    $("view-lat").style.display=tab===1?"flex":"none";
+    if(tab===0){
+      $("ab-test").className="ab"+(it[foc]==="ab-test"?" focus":"");
+      $("ab-test").onclick=()=>startCapture();
+      let h="";
+      if(padsOk===false) h='<div class="empty">Controller registry unreachable — is the OS server up?</div>';
+      else if(!pads.length&&padsOk!==null) h='<div class="empty">No controllers connected. Pair one (or plug in) — passthrough pads appear here within a few seconds.</div>';
+      else if(padsOk===null) h='<div class="empty">Loading…</div>';
+      pads.forEach((p,i)=>{
+        const f=it[foc]===("pad:"+i);
+        const extra=(p.is_os_admin?'<span class="src adm">OS admin</span>':"")+(p.is_dev?'<span class="src adm">dev pad</span>':"");
+        h+=`<div class="dev ${f?'focus':''}" data-pi="${i}"><span class="ic" data-i="gamepad-2"></span>
+          <div class="col"><div class="nm">${esc(p.name)}</div>
+          <div class="sub">js${p.js} · ${esc(p.path||"no event node")}</div></div>${extra}${srcChip(p)}</div>`;
+      });
+      $("pads").innerHTML=h;
+      [...$("pads").querySelectorAll(".dev")].forEach(el=>{el.onclick=()=>{foc=it.indexOf("pad:"+el.dataset.pi);render();activate();};});
+      const rf=it[foc]==="raw";
+      $("rawrow").innerHTML=`<div class="dev ${rf?'focus':''}" id="rawdev"><span class="ic" data-i="${rawAvail?'plug-zap':'triangle-alert'}"></span>
+        <div class="col"><div class="nm">Raw evdev test ${rawAvail?'':'<span class="src dis">[needs server]</span>'}</div>
+        <div class="sub">${rawAvail?'Streams per-button / per-axis events below the vocabulary':'Beyond the vocabulary, raw buttons/axes only exist OS-side (/dev/input) — needs a server endpoint'}</div></div></div>`;
+      $("rawdev").onclick=()=>{foc=it.indexOf("raw");render();activate();};
+      const fe=document.querySelector(".dev.focus");if(fe)fe.scrollIntoView({block:"nearest"});
+    } else {
+      $("ab-start").className="ab"+(it[foc]==="ab-start"?" focus":"");
+      $("ab-clear").className="ab"+(it[foc]==="ab-clear"?" focus":"");
+      $("ab-start").onclick=()=>startSampling(); $("ab-clear").onclick=()=>{samples=[];lastBasis=null;renderLat();say("Samples cleared");};
+      renderLat();
+    }
+    paint();
+  }
+  function activate(){
+    const id=items()[foc];
+    if(id==="tab0")setTab(0); else if(id==="tab1")setTab(1);
+    else if(id==="ab-test")startCapture();
+    else if(id==="ab-start")startSampling();
+    else if(id==="ab-clear"){samples=[];lastBasis=null;renderLat();say("Samples cleared");}
+    else if(id==="raw"){
+      say(rawAvail?"Raw endpoint detected, but this page predates it — update gose-padtest.html to consume it."
+        :"Not on this build: pages can't read /dev/input (docs/27 §2.1 — and that's the law, not a gap). A bridge/server endpoint spec is filed for follow-up; the vocabulary test above is exactly what GOSE itself receives.");
+    }
+    else if(id&&id.indexOf("pad:")===0){
+      const p=pads[+id.slice(4)];if(!p)return;
+      say(p.name+" — "+p.source+" · js"+p.js+" · "+(p.path||"no node")+" · GUID "+p.guid+
+        (p.is_os_admin?" · OS admin":"")+(p.is_dev?" · dev pad":""));
+    }
+  }
+
+  // ---------- capture layers (modal contract, docs/27 §3.10) ----------
+  function modal(on){
+    if(window.GOSE&&GOSE.modalPush&&GOSE.modalPop){ on?GOSE.modalPush():GOSE.modalPop(); }
+    else if(on)document.body.dataset.goseModal="1"; else delete document.body.dataset.goseModal;
+  }
+  function banner(msg){const b=$("banner");if(msg){b.textContent=msg;b.classList.add("show");}else b.classList.remove("show");}
+  function startCapture(){ if(capturing||sampling)return; capturing=true; modal(true);
+    banner("TEST MODE — every input lights as GOSE hears it · B / Esc = Back: it lights, then leaves test mode (that IS the B test)"); }
+  function endCapture(){ capturing=false; modal(false); banner(null); render(); }
+  function startSampling(){ if(capturing||sampling)return; sampling=true; modal(true);
+    banner("SAMPLING — mash any pad input · B / Esc stops (not counted)");
+    $("flash").textContent="…"; }
+  function endSampling(){ sampling=false; modal(false); banner(null);
+    $("flash").classList.remove("on");
+    $("flash").textContent="Stopped — "+samples.length+" sample"+(samples.length===1?"":"s")+" kept. Start sampling to add more.";
+    render(); }
+
+  // ---------- latency measurement (#56) — honest in-page number ----------
+  function measure(e2){
+    const now=performance.now();
+    let t0=e2.timeStamp, basis="event→frame";
+    // some engines stamp events on the epoch clock — fall back to handler time, honestly labeled
+    if(!(t0>0)||Math.abs(t0-now)>5000){t0=now;basis="dispatch→frame";}
+    $("flash").classList.toggle("on");
+    requestAnimationFrame(ts=>{
+      let d2=ts-t0; if(d2<0)d2=0; if(d2>1000)return; // a tab-hidden stall is not a sample
+      samples.push(d2); if(samples.length>500)samples.shift();
+      lastBasis=basis; renderLat();
+    });
+  }
+  function q(sorted,p){ if(!sorted.length)return 0; const i=Math.min(sorted.length-1,Math.floor(p*sorted.length)); return sorted[i]; }
+  function renderLat(){
+    const s=[...samples].sort((a,b)=>a-b), n=samples.length;
+    const f1=x=>n?x.toFixed(1):"—";
+    const med=q(s,.5),p95=q(s,.95),mn=s[0]||0,mx=s[n-1]||0,last=n?samples[samples.length-1]:0;
+    $("stats").innerHTML=[["samples",n||"—"],["last",f1(last)],["median",f1(med)],["p95",f1(p95)],["min",f1(mn)],["max",f1(mx)]]
+      .map((x,i)=>`<div class="st"><b>${x[1]}</b><span>${x[0]}${i?" ms":""}</span></div>`).join("");
+    $("basis").textContent=lastBasis?("— basis: "+lastBasis+(lastBasis==="dispatch→frame"?" (event timestamp unusable on this engine; queue delay not included)":"")):"";
+    const B=[[0,4],[4,8],[8,12],[12,16],[16,24],[24,32],[32,1e9]];
+    const cts=B.map(b=>s.filter(v=>v>=b[0]&&v<b[1]).length), top=Math.max(1,...cts);
+    $("hist").innerHTML=B.map((b,i)=>`<div class="hb"><div class="bar2" style="height:${Math.round(cts[i]/top*100)}%"></div>
+      <div class="bl">${b[1]>1e8?"32+":b[0]+"–"+b[1]}</div></div>`).join("");
+  }
+
+  // ---------- input: capture phase first (test/sampling layers own the pad) ----------
+  document.addEventListener("keydown",e2=>{
+    if(!capturing&&!sampling)return;
+    e2.preventDefault();e2.stopPropagation();
+    const isB=(e2.key==="Escape"||e2.key==="Backspace");
+    if(capturing){
+      const v=vocab(e2); if(v)light(v);
+      else log.unshift({ts:"",lbl:"(non-vocabulary key: "+e2.key+" — keyboard only, the bridge never sends this)"}),log.length=Math.min(log.length,10),renderLog();
+      if(isB)endCapture();           // B backs out one level — the layer closes; nothing traps (§3.2)
+    }else{
+      if(isB){endSampling();return;} // stop — not counted
+      measure(e2);
+    }
+  },true);
+  // browse-mode nav + passive visualizer (bubble phase — capture layers stopPropagation past it)
+  document.addEventListener("keydown",e2=>{
+    const v=vocab(e2); if(v&&tab===0)light(v);   // nav presses are real vocabulary — show them
+    const k=e2.key;
+    if(k==="ArrowDown"||k==="Down"||k==="ArrowRight"||k==="Right")move(1);
+    else if(k==="ArrowUp"||k==="Up"||k==="ArrowLeft"||k==="Left")move(-1);
+    else if(k==="Enter"||k===" ")activate();
+    else if(k==="["||e2.code==="BracketLeft")switchTab(-1);
+    else if(k==="]"||e2.code==="BracketRight")switchTab(1);
+    else if(k==="Escape"||k==="Backspace")location.href="gose-settings.html#controllers";
+    else return; e2.preventDefault();
+  });
+  // No getGamepads / gamepad events anywhere on this page — the bridge is the single
+  // input authority (docs/27 §2.1); this page is a visualizer of its output, not a second reader.
+
+  // ---------- data ----------
+  function loadPads(){
+    fetch("/controllers",{cache:"no-store"}).then(r=>r.json()).then(d2=>{
+      padsOk=!!(d2&&d2.ok); pads=(d2&&d2.controllers)||[];
+      clampFoc(); if(tab===0)render();           // keep focus across refreshes (§3.9)
+    }).catch(()=>{padsOk=false;pads=[];clampFoc();if(tab===0)render();});
+  }
+  fetch("/controllers/raw",{cache:"no-store"}).then(r=>{rawAvail=r.ok;if(tab===0)render();})
+    .catch(()=>{rawAvail=false;if(tab===0)render();});
+  setInterval(loadPads,3000);
+
+  renderLegend();renderLog();renderLat();render();loadPads();
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>
