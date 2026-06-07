@@ -23,6 +23,7 @@
   .ph{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);padding:6px 8px}
   .vid{padding:9px 10px;border-radius:9px;border:2px solid transparent;cursor:pointer}
   .vid:hover{background:#ffffff08}.vid.on{border-color:var(--accent);background:#5cd0ff14}
+  .vid.focus{border-color:var(--accent);box-shadow:var(--focusglow,0 0 0 2px var(--accent))}
   .vid .nm{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .vid .sub{color:var(--muted);font-size:11px}
   .stage{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
@@ -35,9 +36,10 @@
   .track .ph{position:absolute;top:-3px;width:3px;height:20px;background:#fff;border-radius:2px}
   .track .mk{position:absolute;top:-4px;width:2px;height:22px;background:#37d39b}
   .btns{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .btns button{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:10px;
+  .btns button{background:var(--surface2);border:2px solid var(--line);color:var(--text);border-radius:10px;
     padding:9px 14px;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px}
   .btns button:hover{border-color:var(--accent)}
+  .btns button.focus{border-color:var(--accent);box-shadow:var(--focusglow,0 0 0 2px var(--accent))}
   .btns .exp{background:var(--accent);color:#06121a;border:none}
   .btns .sp{margin-left:auto;color:var(--muted);font-size:13px}
   .btns b{color:var(--accent)}
@@ -60,9 +62,11 @@
       <div class="ctrl">
         <div class="track" id="track"><div class="sel" id="sel"></div><div class="mk" id="mkin" style="left:0"></div><div class="mk" id="mkout" style="left:100%"></div><div class="ph" id="ph" style="left:0"></div></div>
         <div class="btns">
+          <button id="b-rew">−5s</button>
           <button id="b-in"><span class="ic" data-i="chevron-right"></span>Set In <b id="t-in">0:00</b></button>
           <button id="b-out">Set Out <b id="t-out">0:00</b></button>
           <button id="b-play">Play/Pause</button>
+          <button id="b-fwd">+5s</button>
           <span class="sp">selection <b id="t-len">0:00</b> · keyframe-snapped</span>
           <button class="exp" id="b-exp"><span class="ic" data-i="scissors"></span>Export clip</button>
         </div>
@@ -70,7 +74,7 @@
     </div>
   </div>
   <div class="foot"><span class="ic" data-i="scissors"></span> GOSE Splice
-    <span class="h"><b>Space</b> play · <b>I</b> set in · <b>O</b> set out · <b>E</b> export · <b>Esc</b> home</span></div>
+    <span class="h"><b>↑↓←→</b> move · <b>A</b> pick/activate · <b>B</b> home · kbd: <b>Space</b> play · <b>I/O</b> in/out · <b>E</b> export</span></div>
   <div class="toast" id="toast"></div>
 <script src="assets/cursor.js"></script>
 <script>
@@ -81,14 +85,25 @@
   function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),2400);}
   function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   let videos=[], cur=null, vid=null, IN=0, OUT=0, dur=0;
+  // ---- the standard focus model (docs/27 §3.1): two spatial zones, every control
+  // arrow-reachable. zone "list" = the video rail (↑↓, wraps; A opens; → to transport);
+  // zone "ctl" = the transport row (←→ across −5s/Set In/Set Out/Play/+5s/Export; ← past
+  // the first lands back on the list; A activates). Escape exits (never traps). ----
+  let zone="list", lfoc=0, cfoc=0;
+  const CTL=["b-rew","b-in","b-out","b-play","b-fwd","b-exp"];
+  function markFocus(){
+    [...$("list").children].forEach((el,i)=>el.classList.toggle("focus",zone==="list"&&el.dataset.i2!==undefined&&+el.dataset.i2===lfoc));
+    CTL.forEach((id,i)=>$(id).classList.toggle("focus",zone==="ctl"&&i===cfoc));
+    if(zone==="list"){const f=$("list").querySelector(".focus");if(f)f.scrollIntoView({block:"nearest"});}}
 
   function loadList(){fetch("/splice/videos",{cache:"no-store"}).then(r=>r.json()).then(d=>{
     videos=d.videos||[];
+    if(lfoc>=videos.length)lfoc=Math.max(0,videos.length-1);   // keep place across refreshes (§3.9)
     $("list").innerHTML=videos.length?videos.map((v,i)=>`<div class="vid ${cur===v.path?'on':''}" data-i2="${i}">
       <div class="nm">${v.name}</div><div class="sub">${fmtB(v.bytes)}</div></div>`).join("")
       :'<div class="sub" style="padding:10px">No videos in /userdata yet.</div>';
-    [...$("list").children].forEach(el=>el.dataset.i2!==undefined&&(el.onclick=()=>open(videos[+el.dataset.i2])));
-    paint();
+    [...$("list").children].forEach(el=>el.dataset.i2!==undefined&&(el.onclick=()=>{zone="list";lfoc=+el.dataset.i2;open(videos[+el.dataset.i2]);}));
+    paint();markFocus();
   });}
   function open(v){cur=v.path;
     $("player").innerHTML=`<video id="v" src="/fs/file?path=${encodeURIComponent(v.path)}" controls></video>`;
@@ -105,6 +120,8 @@
   $("b-in").onclick=()=>{if(vid){IN=vid.currentTime;if(OUT<IN)OUT=dur;updateMarks();}};
   $("b-out").onclick=()=>{if(vid){OUT=vid.currentTime;if(OUT<IN)IN=0;updateMarks();}};
   $("b-play").onclick=()=>{if(vid)vid.paused?vid.play():vid.pause();};
+  $("b-rew").onclick=()=>{if(vid)vid.currentTime=Math.max(0,vid.currentTime-5);};
+  $("b-fwd").onclick=()=>{if(vid)vid.currentTime=Math.min(dur||1e9,vid.currentTime+5);};
   $("track").onclick=e=>{if(!vid||!dur)return;const r=e.currentTarget.getBoundingClientRect();vid.currentTime=(e.clientX-r.left)/r.width*dur;};
   $("b-exp").onclick=()=>{if(!cur)return say("Pick a video first");
     if(OUT-IN<=0)return say("Set an In before Out");
@@ -113,14 +130,19 @@
       body:JSON.stringify({path:cur,start:IN,end:OUT})}).then(r=>r.json()).then(d=>{
         if(d.ok){say("Saved "+d.name+" ("+fmtB(d.bytes)+")");loadList();}else say("Export failed: "+(d.error||"?"));});};
   addEventListener("keydown",e=>{const k=e.key;
-    if(k==="Escape"){location.href="gose-home.html";}
+    if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}          // never traps
+    else if(k==="ArrowDown"){ if(zone==="list"&&videos.length){ if(lfoc<videos.length-1)lfoc++; else {zone="ctl";cfoc=0;} }
+      else if(zone==="ctl"){zone="list";lfoc=0;} markFocus(); }
+    else if(k==="ArrowUp"){ if(zone==="ctl"){zone="list";lfoc=Math.max(0,videos.length-1);}
+      else if(videos.length){ if(lfoc>0)lfoc--; else {zone="ctl";cfoc=0;} } markFocus(); }
+    else if(k==="ArrowRight"){ if(zone==="list"){zone="ctl";cfoc=0;} else cfoc=Math.min(CTL.length-1,cfoc+1); markFocus(); }
+    else if(k==="ArrowLeft"){ if(zone==="ctl"){ if(cfoc>0)cfoc--; else zone="list"; } markFocus(); }
+    else if(k==="Enter"){ if(zone==="list"){ if(videos[lfoc])open(videos[lfoc]); } else $(CTL[cfoc]).click(); }
     else if(!vid)return;
-    else if(k===" "){vid.paused?vid.play():vid.pause();}
+    else if(k===" "){vid.paused?vid.play():vid.pause();}      // keyboard conveniences below
     else if(k==="i"||k==="I"){IN=vid.currentTime;if(OUT<IN)OUT=dur;updateMarks();}
     else if(k==="o"||k==="O"){OUT=vid.currentTime;if(OUT<IN)IN=0;updateMarks();}
     else if(k==="e"||k==="E"){$("b-exp").click();}
-    else if(k==="ArrowRight"){vid.currentTime+=2;}
-    else if(k==="ArrowLeft"){vid.currentTime-=2;}
     else return; e.preventDefault();});
   paint(); loadList();
 </script>

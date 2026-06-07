@@ -12,18 +12,34 @@
   *{box-sizing:border-box}
   html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
   body{font-family:Inter,system-ui,sans-serif;color:#eaf0ff;background:#07070f;display:flex;
-    flex-direction:column;align-items:center;justify-content:center;cursor:none}
+    flex-direction:column;align-items:center;justify-content:center}
   canvas#bg{position:fixed;inset:0;z-index:0}
-  .clock{position:relative;z-index:2;font-size:96px;font-weight:700;letter-spacing:-2px;text-shadow:0 2px 24px #000a}
-  .date{position:relative;z-index:2;color:#aeb4d2;font-size:20px;margin-top:-6px}
-  .user{position:relative;z-index:2;margin-top:54px;display:flex;flex-direction:column;align-items:center;gap:12px}
-  .av{width:78px;height:78px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-    font-size:30px;font-weight:700;color:#06121a;box-shadow:0 0 26px var(--accent)}
-  .name{font-size:19px;font-weight:600}
-  .pin{display:flex;gap:12px;margin-top:6px}
+  .clock{position:relative;z-index:2;font-size:86px;font-weight:700;letter-spacing:-2px;text-shadow:0 2px 24px #000a}
+  .date{position:relative;z-index:2;color:#aeb4d2;font-size:19px;margin-top:-6px}
+  .user{position:relative;z-index:2;margin-top:34px;display:flex;flex-direction:column;align-items:center;gap:11px}
+  .av{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:28px;font-weight:700;color:#06121a;box-shadow:0 0 26px var(--accent)}
+  .name{font-size:18px;font-weight:600}
+  .pin{display:flex;gap:12px;margin-top:2px;min-height:14px}
   .pin .d{width:14px;height:14px;border-radius:50%;border:2px solid #ffffff55}
   .pin .d.on{background:var(--accent);border-color:var(--accent)}
-  .hint{position:fixed;bottom:46px;z-index:2;color:#8b92b0;font-size:14px;animation:pulse 2.4s infinite}
+  .pin.shake{animation:shake .3s}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-9px)}75%{transform:translateX(9px)}}
+  /* pad-drivable PIN pad — 3x4 digit grid (docs/27 §3.1: arrow focus + Enter/A; the
+     numpad-as-controller translator turns numpad digits into arrows, so a focusable
+     grid is the ONLY way a pad can enter digits) */
+  .pad{position:relative;z-index:2;display:none;grid-template-columns:repeat(3,76px);gap:9px;margin-top:14px}
+  .pad.on{display:grid}
+  .pad .k{height:56px;border-radius:13px;background:#161826cc;border:2px solid #ffffff1e;
+    display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:600;cursor:pointer;
+    user-select:none;backdrop-filter:blur(8px)}
+  .pad .k:hover{border-color:var(--accent)}
+  .pad .k.focus{border-color:var(--accent);box-shadow:var(--focusglow,0 0 0 2px var(--accent));background:#1d2238}
+  .pad .k.fn{font-size:15px;color:#aeb4d2}
+  .pad.locked .k{opacity:.35;pointer-events:none}
+  .hint{position:fixed;bottom:42px;z-index:2;color:#8b92b0;font-size:14px;animation:pulse 2.4s infinite;
+    max-width:80vw;text-align:center}
+  .hint.err{color:#ff9e9e;animation:none}
   @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
   .logo{position:fixed;top:30px;z-index:2;display:flex;align-items:center;gap:10px;color:#aeb4d2;font-weight:600;letter-spacing:.5px}
   .logo img{width:26px;height:26px}
@@ -36,8 +52,9 @@
   <div class="user">
     <div class="av" id="av">Z</div>
     <div class="name" id="name">Owner</div>
-    <div class="pin" id="pin" style="display:none"><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span></div>
+    <div class="pin" id="pin" style="display:none"></div>
   </div>
+  <div class="pad" id="pad"></div>
   <div class="hint" id="hint">Press any key or click to unlock</div>
 <script src="assets/cursor.js"></script>
 <script>
@@ -60,30 +77,107 @@
     ps.forEach(p=>{p.x+=p.vx;p.y+=p.vy;if(p.x<-p.r)p.x=W+p.r;if(p.x>W+p.r)p.x=-p.r;if(p.y<-p.r)p.y=H+p.r;if(p.y>H+p.r)p.y=-p.r;
       const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);g.addColorStop(0,`hsla(${p.hue},70%,55%,.09)`);g.addColorStop(1,"transparent");
       ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();});requestAnimationFrame(frame);})();
-  // unlock: PIN if set, else any key/click — one keydown path so the mode can flip after
-  // the owner record loads (the old code bound any-key-unlock before the account was known)
-  let pinMode=(localStorage.getItem("gose-signin")==="PIN"), entered="";
-  function unlock(){location.href="gose-home.html";}
-  function paintPin(){[...$("pin").children].forEach((d,i)=>d.classList.toggle("on",i<entered.length));}
-  function enablePin(){pinMode=true;$("pin").style.display="flex";$("hint").textContent="Enter your PIN";}
-  if(pinMode)enablePin();
+  // ---- unlock: REAL PIN (server-verified /auth/pin, scrypt-hashed) or any-key when none ----
+  // Modes: free (no PIN) · enter (verify against the stored hash) · setup/confirm (the
+  // migration path: a has_pin account that never stored a hash — older OOBE only sent the
+  // boolean — finishes PIN setup HERE at its next unlock instead of being locked out) ·
+  // locked (5 misses → 30s server lockout; counts down and re-enables itself, never bricks).
+  // Honest scope: convenience lock, not encryption (recovery = edit accounts.json, docs/24 §1.5).
+  // mode starts at "init": keys are inert until the server answers (closes the old race
+  // where any-key-unlock was live before the account record loaded). The decide() promise
+  // ALWAYS resolves (both fetches catch) and always lands on a real mode — never bricks.
+  let mode="init", entered="", newPin="", pinLen=0, lockT=null;
+  const MAXLEN=8, MINLEN=4;
+  function unlock(){if(window.GOSE&&GOSE.modalPop)GOSE.modalPop();location.href="gose-home.html";}
+  function hint(t,err){const h=$("hint");h.textContent=t;h.classList.toggle("err",!!err);}
+  function dots(){const n=(mode==="enter"&&pinLen)?pinLen:Math.min(MAXLEN,Math.max(MINLEN,entered.length||MINLEN));
+    $("pin").innerHTML=Array.from({length:n},(_,i)=>`<span class="d ${i<entered.length?'on':''}"></span>`).join("");}
+  function shake(){const p=$("pin");p.classList.remove("shake");void p.offsetWidth;p.classList.add("shake");}
+  // --- the 3x4 grid: 1-9, then back/0/OK. Arrow nav wraps; Enter/A activates. ---
+  const KEYS=[["1","2","3"],["4","5","6"],["7","8","9"],[{k:"back",l:"⌫"},"0",{k:"ok",l:"OK"}]];
+  let pr=0,pc=0;
+  function buildPad(){$("pad").innerHTML=KEYS.map((row,ri)=>row.map((c,ci)=>{
+      const k=typeof c==="string"?c:c.k, l=typeof c==="string"?c:c.l;
+      return `<div class="k ${typeof c!=="string"?'fn':''}" data-k="${k}" data-r="${ri}" data-c="${ci}">${l}</div>`;
+    }).join("")).join("");
+    [...$("pad").children].forEach(el=>el.onclick=()=>{pr=+el.dataset.r;pc=+el.dataset.c;mark();act(el.dataset.k);});
+    mark();}
+  function mark(){[...$("pad").children].forEach(el=>el.classList.toggle("focus",+el.dataset.r===pr&&+el.dataset.c===pc));}
+  function moveFocus(dr,dc){pr=(pr+dr+KEYS.length)%KEYS.length;pc=(pc+dc+3)%3;mark();}
+  function showPad(m){const was=$("pad").classList.contains("on");
+    mode=m;$("pad").classList.add("on");$("pin").style.display="flex";dots();
+    if(!was&&window.GOSE&&GOSE.modalPush)GOSE.modalPush();   // modal layer signal (docs/27 §3.10)
+    hint(m==="enter"?"Enter your PIN":(m==="confirm"?"Re-enter your PIN to confirm"
+      :"Set a PIN ("+MINLEN+"–"+MAXLEN+" digits) to finish setting up your lock"));}
+  function digit(d){if(mode==="locked")return;
+    if(entered.length>=MAXLEN)return;
+    entered+=d;dots();
+    if(mode==="enter"&&pinLen&&entered.length===pinLen)setTimeout(submit,150);}
+  function back1(){if(mode==="locked")return;entered=entered.slice(0,-1);dots();}
+  function act(k){if(/^[0-9]$/.test(k))digit(k);else if(k==="back")back1();else if(k==="ok")submit();}
+  function lockout(s){mode="locked";entered="";dots();$("pad").classList.add("locked");
+    let left=Math.ceil(s);clearInterval(lockT);
+    const tickL=()=>{if(left<=0){clearInterval(lockT);$("pad").classList.remove("locked");mode="enter";
+        hint("Enter your PIN");return;}
+      hint("Too many tries — wait "+left+"s",true);left--;};
+    tickL();lockT=setInterval(tickL,1000);}
+  function submit(){
+    if(mode==="locked"||!entered)return;
+    if(mode==="setup"){
+      if(entered.length<MINLEN){hint("PIN must be at least "+MINLEN+" digits",true);shake();return;}
+      newPin=entered;entered="";showPad("confirm");return;}
+    if(mode==="confirm"){
+      if(entered!==newPin){entered="";newPin="";shake();showPad("setup");hint("Didn't match — choose your PIN again",true);return;}
+      const pin=newPin;entered="";newPin="";
+      fetch("/auth/pin/set",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({pin:pin})}).then(r=>r.json()).then(d=>{
+          if(d&&d.ok){unlock();}else{dots();shake();hint((d&&d.error)||"Couldn't save the PIN — try again",true);showPadSoon("setup");}
+        }).catch(()=>{dots();shake();hint("Can't reach sign-in — try again",true);showPadSoon("setup");});
+      return;}
+    // mode === "enter": verify server-side
+    const pin=entered;entered="";
+    fetch("/auth/pin",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pin:pin})}).then(r=>r.json()).then(d=>{
+        if(d&&d.ok&&d.valid){unlock();return;}
+        dots();shake();
+        if(d&&d.locked_for>0){lockout(d.locked_for);return;}
+        if(d&&d.ok===false&&d.set===false){showPad("setup");return;}   // hash vanished → re-setup
+        hint("Wrong PIN"+(d&&d.tries_left?" — "+d.tries_left+" tries left":""),true);
+      }).catch(()=>{dots();shake();hint("Can't reach sign-in — try again",true);});}
+  let _padT=null;function showPadSoon(m){clearTimeout(_padT);_padT=setTimeout(()=>showPad(m),1400);}
+  buildPad();
   addEventListener("keydown",e=>{
-    if(!pinMode){unlock();return;}
-    if(/^[0-9]$/.test(e.key)){entered+=e.key;paintPin();if(entered.length>=4)setTimeout(unlock,180);}
-    else if(e.key==="Backspace"){entered=entered.slice(0,-1);paintPin();}});
-  addEventListener("click",()=>{if(!pinMode)unlock();});
-  // the OWNER record (accounts.json via /oobe/status): the lock screen shows the USERNAME —
-  // the identity GOSE displays everywhere (owner decision 2026-06-07). Older accounts.json
-  // shapes render sensibly: missing fields just keep the defaults already on screen.
-  fetch("/oobe/status",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-    const o=d&&d.owner; if(!o)return;
-    const nm=o.username||o.display||"Owner";
-    $("name").textContent=nm; $("av").textContent=(nm[0]||"?").toUpperCase();
-    // owner accent = FALLBACK only (pre-ui_prefs installs); the canonical store wins
-    if(o.accent&&!localStorage.getItem("gose-accent"))document.documentElement.style.setProperty("--accent",o.accent);
-    if(o.has_pin&&!pinMode)enablePin();
-    if(location.hash.indexOf("dbg")>=0)console.log("[lock] name="+nm+" pin="+!!o.has_pin+" accent="+(o.accent||""));
-  }).catch(()=>{});
+    if(mode==="init")return;                       // waiting on the server's answer
+    if(mode==="free"){unlock();return;}
+    const k=e.key;
+    if(k==="ArrowUp")moveFocus(-1,0);else if(k==="ArrowDown")moveFocus(1,0);
+    else if(k==="ArrowLeft")moveFocus(0,-1);else if(k==="ArrowRight")moveFocus(0,1);
+    else if(k==="Enter"||k===" ")act(KEYS[pr][pc].k||KEYS[pr][pc]);
+    else if(/^[0-9]$/.test(k))digit(k);            // top-row digits (numpad digits arrive as arrows)
+    else if(k==="Backspace"||k==="Escape")back1(); // B backs out one digit; empty = stays locked (it's a lock)
+    else return;e.preventDefault();});
+  addEventListener("click",e=>{if(mode==="free"&&!$("pad").contains(e.target))unlock();});
+  // ---- decide the mode from the server (one Promise so it can't race the key handler) ----
+  // /auth/pin says whether a PIN is wanted + whether a verifiable hash exists; /oobe/status
+  // gives the display identity. Fetch failure = stay in free mode (the lock must never brick).
+  Promise.all([
+    fetch("/auth/pin",{cache:"no-store"}).then(r=>r.json()).catch(()=>null),
+    fetch("/oobe/status",{cache:"no-store"}).then(r=>r.json()).catch(()=>null)
+  ]).then(([st,os])=>{
+    const o=os&&os.owner;
+    if(o){const nm=o.username||o.display||"Owner";
+      $("name").textContent=nm;$("av").textContent=(nm[0]||"?").toUpperCase();
+      // owner accent = FALLBACK only (pre-ui_prefs installs); the canonical store wins
+      if(o.accent&&!localStorage.getItem("gose-accent"))document.documentElement.style.setProperty("--accent",o.accent);}
+    const wanted=(st&&st.enabled)||localStorage.getItem("gose-signin")==="PIN";
+    if(wanted&&st&&st.set){pinLen=st.pin_len||0;
+      if(st.locked_for>0){showPad("enter");lockout(st.locked_for);}else showPad("enter");}
+    else if(wanted&&st&&o)showPad("setup");        // migration: has_pin but no stored hash
+    else mode="free";   // no PIN wanted — or sign-in unreachable (availability over a
+                        // theoretical bypass: it's a convenience lock and the page itself
+                        // came from that same server; never strand the owner)
+    if(location.hash.indexOf("dbg")>=0)console.log("[lock] mode="+mode+" set="+(st&&st.set)+" owner="+(o&&o.username));
+  });
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>

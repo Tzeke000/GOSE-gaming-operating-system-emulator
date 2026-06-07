@@ -38,6 +38,22 @@
   .row .knd{color:var(--muted);font-size:12px;width:70px}
   .row .sz{width:90px;text-align:right;color:var(--muted);font-size:13px}
   .row.cut{opacity:.5}
+  /* the pad-reachable per-row Actions chip (docs/27 §3.5): → focuses it, A opens the menu */
+  .row .act{display:none;flex:none;border:2px solid #ffffff2a;border-radius:8px;padding:3px 10px;
+    font-size:12px;font-weight:700;color:var(--muted);cursor:pointer}
+  .row.focus .act{display:inline-block}
+  .row .act.on{border-color:var(--accent);color:var(--text);box-shadow:var(--focusglow,0 0 0 2px var(--accent))}
+  .row .act:hover{border-color:var(--accent)}
+  .cf{position:fixed;inset:0;background:#06060cc8;display:none;align-items:center;justify-content:center;z-index:75}
+  .cf.on{display:flex}
+  .cf .box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 22px;width:430px;max-width:90vw}
+  .cf h3{margin:0 0 6px;font-size:16px}.cf .sub{color:var(--muted);font-size:13px;margin-bottom:14px}
+  .cf .btns{display:flex;gap:10px;justify-content:flex-end}
+  .cf .btns button{background:var(--surface2);border:2px solid var(--line);color:var(--text);border-radius:9px;
+    padding:8px 16px;font-weight:600;font-family:inherit;font-size:13px}
+  .cf .btns button.focus{border-color:var(--accent);box-shadow:var(--focusglow,0 0 0 2px var(--accent))}
+  .cf .btns .danger{color:#ff8e8e}
+  .ctx button.focus{background:#5cd0ff22;outline:2px solid var(--accent)}
   .sec{color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:13px 16px 4px}
   .sec:first-child{padding-top:8px}
   .empty{color:var(--muted);padding:30px;text-align:center}
@@ -104,10 +120,12 @@
   <div class="map" id="map"></div>
   <div class="wrap" id="wrap"><div class="empty">loading…</div></div>
   <div class="foot"><span class="ic" data-i="folder"></span> GOSE Files — This PC
-    <span class="h"><b>↑↓</b> move · <b>Enter/A</b> open · <b>B</b> back · <b>L1</b> copy · <b>L2</b> cut · <b>R1</b> paste · <b>R2</b> delete · <b>Esc</b> exit</span></div>
+    <span class="h"><b>↑↓</b> move · <b>A</b> open · <b>→</b> actions (copy·paste·rename·delete) · <b>B</b> back · <b>Esc</b> exit · kbd: Ctrl-C/X/V</span></div>
   <div class="ov" id="ov"><div class="vt"><span id="ov-name"></span><span id="ov-actions"></span><span class="x">Esc — close</span></div>
     <div class="body" id="ov-body"></div></div>
   <div class="ctx" id="ctx"></div>
+  <div class="cf" id="cf"><div class="box"><h3 id="cf-t">Delete?</h3><div class="sub" id="cf-s"></div>
+    <div class="btns"><button id="cf-cancel">Cancel</button><button class="danger" id="cf-ok">Delete</button></div></div></div>
   <div class="rn" id="rn"><div class="box"><h3 id="rn-t">Rename</h3><input id="rn-in" spellcheck="false">
     <div class="btns"><button id="rn-cancel">Cancel</button><button class="ok" id="rn-ok">Rename</button></div></div></div>
   <div class="toast" id="toast"></div>
@@ -126,6 +144,11 @@
   function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1700);}
   function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   let cur="THISPC", entries=[], foc=0, parent=null, clip=null, viewing=false, drive=null, quickCount=6;
+  let actOn=false;   // → moved focus onto the row's Actions chip (pad path to file ops)
+  // layered-Escape contract (docs/27 §3.10): every sub-layer (viewer/menu/rename/confirm)
+  // pushes the modal signal so a shell B closes the LAYER, not the Files window.
+  function mPush(){if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();}
+  function mPop(){if(window.GOSE&&GOSE.modalPop)GOSE.modalPop();}
 
   // friendly Windows-style breadcrumb: This PC › Documents (not /userdata/home/Documents)
   function crumbParts(d){
@@ -193,6 +216,7 @@
     // file list
     $("wrap").innerHTML=entries.length?entries.map((e,i)=>`<div class="row ${i===foc?'focus':''} ${clip&&clip.op==='move'&&clip.path===cur+'/'+e.name?'cut':''}" data-i2="${i}">
       ${ICON(KICON[e.kind]||"file-text", e.isdir?'#7cc4ff':'#9aa0b4')}<span class="nm">${e.name}</span>
+      <span class="act ${i===foc&&actOn?'on':''}" data-act="${i}">⋯ Actions</span>
       <span class="knd">${e.isdir?'Folder':e.kind}</span><span class="sz">${fmt(e.bytes)}</span></div>`).join("")
       :'<div class="empty">Empty folder</div>';
     [...$("wrap").querySelectorAll(".row")].forEach(el=>{
@@ -201,6 +225,8 @@
       el.oncontextmenu=(ev)=>{ev.preventDefault();foc=+el.dataset.i2;render();showCtx(ev.clientX,ev.clientY);};
       let lp; el.ontouchstart=()=>{lp=setTimeout(()=>{foc=+el.dataset.i2;render();const r=el.getBoundingClientRect();showCtx(r.left+40,r.top+30);},550);};
       el.ontouchend=()=>clearTimeout(lp);});
+    [...$("wrap").querySelectorAll(".act")].forEach(el=>el.onclick=(ev)=>{ev.stopPropagation();
+      foc=+el.dataset.act;actOn=true;render();const r=el.getBoundingClientRect();showCtx(r.left,r.bottom+6);});
     const f=$("wrap").querySelector(".row.focus"); if(f)f.scrollIntoView({block:"nearest"});
     $("b-paste").disabled=!clip; $("b-up").disabled=!parent;
     paint();
@@ -213,7 +239,7 @@
   function load(path){
     fetch("/fs/list?path="+encodeURIComponent(path),{cache:"no-store"}).then(r=>r.json()).then(d=>{
       if(!d.ok){say("Can't open: "+(d.error||"?"));return;}
-      cur=d.path; entries=d.entries||[]; parent=effParent(d.path,d.parent); foc=0; render();
+      cur=d.path; entries=d.entries||[]; parent=effParent(d.path,d.parent); foc=0; actOn=false; render();
       if(pendingOpen){const i=entries.findIndex(e=>cur+"/"+e.name===pendingOpen);
         if(i>=0){foc=i;render();openFocus();} pendingOpen=null;}
       if(pendingCtx&&entries.length){pendingCtx=false;foc=0;render();showCtx(360,210);}
@@ -265,59 +291,97 @@
       if(d.truncated)say("Large file — showing first 256 KB");
     });
   }
-  function openViewer(name,html,actions){viewing=true;$("ov-name").textContent=name;$("ov-actions").innerHTML=actions||"";$("ov-body").innerHTML=html;$("ov").classList.add("on");}
-  function closeViewer(){viewing=false;$("ov").classList.remove("on");$("ov-body").innerHTML="";$("ov-actions").innerHTML="";}
+  function openViewer(name,html,actions){if(!viewing)mPush();viewing=true;$("ov-name").textContent=name;$("ov-actions").innerHTML=actions||"";$("ov-body").innerHTML=html;$("ov").classList.add("on");}
+  function closeViewer(){if(viewing)mPop();viewing=false;$("ov").classList.remove("on");$("ov-body").innerHTML="";$("ov-actions").innerHTML="";}
   function atPC(){return cur==="THISPC";}
   function up(){if(parent==="THISPC")loadPlaces();else if(parent)load(parent);}
   function op(body,after){fetch("/fs/op",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
     .then(r=>r.json()).then(d=>{if(d.ok){after&&after();}else say("Failed: "+(d.error||"?"));}).catch(e=>say("op failed"));}
+  // delete always goes through a pad-drivable confirm (it's the one unrecoverable op)
+  let cfFoc=0,cfOpen=false;
   function del(){if(atPC())return;const e=entries[foc];if(!e)return;
+    cfOpen=true;cfFoc=0;mPush();
+    $("cf-t").textContent="Delete "+(e.isdir?"folder":"file")+"?";
+    $("cf-s").textContent=e.name+" — this can't be undone.";
+    $("cf").classList.add("on");cfMark();}
+  function cfMark(){$("cf-cancel").classList.toggle("focus",cfFoc===0);$("cf-ok").classList.toggle("focus",cfFoc===1);}
+  function cfClose(){if(!cfOpen)return;cfOpen=false;mPop();$("cf").classList.remove("on");}
+  function cfGo(){const e=entries[foc];cfClose();if(!e)return;
     say("Deleting "+e.name+"…");op({op:"delete",path:cur+"/"+e.name},()=>{say("Deleted "+e.name);load(cur);});}
+  $("cf-cancel").onclick=cfClose;$("cf-ok").onclick=cfGo;
+  addEventListener("keydown",e=>{if(!cfOpen)return;const k=e.key;
+    if(k==="ArrowLeft"||k==="ArrowRight"||k==="ArrowUp"||k==="ArrowDown"){cfFoc=1-cfFoc;cfMark();}
+    else if(k==="Enter")cfFoc===1?cfGo():cfClose();
+    else if(k==="Escape"||k==="Backspace")cfClose();
+    else return;e.preventDefault();e.stopPropagation();},true);
   function copy(cut){if(atPC())return;const e=entries[foc];if(!e)return;clip={op:cut?"move":"copy",path:cur+"/"+e.name,name:e.name};
     say((cut?"Cut ":"Copied ")+e.name);render();}
   function paste(){if(!clip)return;if(atPC()){say("Open a folder to paste into");return;}say("Pasting "+clip.name+"…");
     op({op:clip.op,path:clip.path,dest:cur},()=>{say(clip.name+" pasted");clip=null;load(cur);});}
   function mkdir(){if(atPC()){say("Open a folder first");return;}op({op:"mkdir",path:cur,name:"New folder"},()=>{say("Folder created");load(cur);});}
-  function move(d){if(!entries.length)return;foc=(foc+d+entries.length)%entries.length;render();}
+  function move(d){if(!entries.length)return;actOn=false;foc=(foc+d+entries.length)%entries.length;render();}
 
   $("b-up").onclick=up; $("b-new").onclick=mkdir; $("b-copy").onclick=()=>copy(false);
   $("b-cut").onclick=()=>copy(true); $("b-paste").onclick=paste; $("b-del").onclick=del;
 
-  // right-click / long-press context menu
-  const ctx=$("ctx");
-  function showCtx(x,y){const e=entries[foc]; if(!e||atPC())return;   // no file ops on the This PC landing
-    ctx.innerHTML=`<button data-a="open">${e.isdir?"Open":(e.kind==="run"?"Run":"Open")}</button>`+
+  // the actions menu — one implementation for right-click, long-press AND the pad
+  // (→ focuses the row's ⋯ chip, A opens; arrows + A inside, B closes — docs/27 §3.5/§3.7)
+  const ctx=$("ctx"); let ctxOpen=false, ctxFoc=0;
+  function showCtx(x,y){if(atPC())return;   // no file ops on the This PC landing
+    const e=entries[foc];
+    ctx.innerHTML=e?`<button data-a="open">${e.isdir?"Open":(e.kind==="run"?"Run":"Open")}</button>`+
       `<button data-a="copy">Copy</button><button data-a="cut">Cut</button>`+
       (clip?`<button data-a="paste">Paste into folder</button>`:"")+
       `<button data-a="rename">Rename</button><div class="sep"></div>`+
-      `<button class="danger" data-a="delete">Delete</button>`;
-    ctx.style.left=Math.min(x,innerWidth-180)+"px"; ctx.style.top=Math.min(y,innerHeight-230)+"px"; ctx.classList.add("on");
-    [...ctx.querySelectorAll("button")].forEach(b=>b.onclick=()=>{hideCtx();doCtx(b.dataset.a);});}
-  function hideCtx(){ctx.classList.remove("on");}
+      `<button class="danger" data-a="delete">Delete</button>`
+      // empty folder: folder-level ops so the pad can still paste / make folders here
+      :(clip?`<button data-a="paste">Paste here</button>`:"")+`<button data-a="mkdir">New folder</button>`;
+    ctx.style.left=Math.min(x,innerWidth-180)+"px"; ctx.style.top=Math.min(y,innerHeight-260)+"px"; ctx.classList.add("on");
+    if(!ctxOpen)mPush(); ctxOpen=true; ctxFoc=0; ctxMark();
+    [...ctx.querySelectorAll("button")].forEach((b,i)=>{b.onclick=()=>{hideCtx();doCtx(b.dataset.a);};
+      b.onmouseenter=()=>{ctxFoc=i;ctxMark();};});}
+  function ctxBtns(){return [...ctx.querySelectorAll("button")];}
+  function ctxMark(){ctxBtns().forEach((b,i)=>b.classList.toggle("focus",i===ctxFoc));}
+  function hideCtx(){if(ctxOpen)mPop();ctxOpen=false;ctx.classList.remove("on");}
   function doCtx(a){ if(a==="open")openFocus(); else if(a==="copy")copy(false); else if(a==="cut")copy(true);
-    else if(a==="paste")paste(); else if(a==="delete")del(); else if(a==="rename")startRename(); }
-  addEventListener("click",e=>{ if(!ctx.contains(e.target))hideCtx(); });
-  addEventListener("scroll",hideCtx,true);
+    else if(a==="paste")paste(); else if(a==="delete")del(); else if(a==="rename")startRename();
+    else if(a==="mkdir")mkdir(); }
+  addEventListener("keydown",e=>{if(!ctxOpen)return;const k=e.key,b=ctxBtns();
+    if(k==="ArrowDown"){ctxFoc=(ctxFoc+1)%b.length;ctxMark();}
+    else if(k==="ArrowUp"){ctxFoc=(ctxFoc-1+b.length)%b.length;ctxMark();}
+    else if(k==="Enter"){const a=b[ctxFoc]&&b[ctxFoc].dataset.a;hideCtx();if(a)doCtx(a);}
+    else if(k==="Escape"||k==="Backspace")hideCtx();
+    else return;e.preventDefault();e.stopPropagation();},true);
+  addEventListener("click",e=>{ if(ctxOpen&&!ctx.contains(e.target))hideCtx(); });
+  addEventListener("scroll",()=>{if(ctxOpen)hideCtx();},true);
   function startRename(){if(atPC())return;const e=entries[foc]; if(!e)return; const rn=$("rn"),inp=$("rn-in");
-    $("rn-t").textContent="Rename "+(e.isdir?"folder":"file"); inp.value=e.name; rn.classList.add("on");
+    $("rn-t").textContent="Rename "+(e.isdir?"folder":"file"); inp.value=e.name; rn.classList.add("on"); mPush();
     setTimeout(()=>{inp.focus();inp.select();},60);
-    function done(ok){ rn.classList.remove("on"); inp.onkeydown=null;
+    let closed=false;
+    function done(ok){ if(closed)return; closed=true; rn.classList.remove("on"); inp.onkeydown=null; inp.blur(); mPop();
       if(ok){const nn=inp.value.trim(); if(nn&&nn!==e.name) op({op:"move",path:cur+"/"+e.name,dest:cur+"/"+nn},()=>{say("Renamed to "+nn);load(cur);}); }}
     $("rn-ok").onclick=()=>done(true); $("rn-cancel").onclick=()=>done(false);
     inp.onkeydown=(ev)=>{ ev.stopPropagation(); if(ev.key==="Enter")done(true); else if(ev.key==="Escape")done(false); };}
 
   addEventListener("keydown",e=>{
+    if(ctxOpen||cfOpen||$("rn").classList.contains("on"))return;     // a layer owns the keys (capture handlers above)
     if(viewing){if(e.key==="Escape"){closeViewer();e.preventDefault();}return;}  // editor: don't hijack typing
     const k=e.key;
     if(k==="ArrowDown")move(1); else if(k==="ArrowUp")move(-1);
-    else if(k==="Enter")openFocus();
-    else if(k==="Backspace")up();                   // B / numpad-0 = back one folder (never exit)
+    else if(k==="ArrowRight"){ if(atPC())return;
+      if(entries.length){ if(!actOn){actOn=true;render();} }
+      else showCtx(360,260); }                       // empty folder: → opens the folder menu
+    else if(k==="ArrowLeft"){ if(actOn){actOn=false;render();} }
+    else if(k==="Enter"){ if(actOn){const el=$("wrap").querySelector(".act.on");
+        if(el){const r=el.getBoundingClientRect();showCtx(r.left,r.bottom+6);}else openFocus(); }
+      else openFocus(); }
+    else if(k==="Backspace"){ if(actOn){actOn=false;render();} else up(); }   // B: chip → row, else up a folder
     else if(k==="Delete")del();
-    else if(k==="Escape")location.href="gose-home.html";   // Esc = exit Files
-    else if(k==="GoseL1"||(e.ctrlKey&&k==="c"))copy(false);   // L1 = copy
-    else if(k==="GoseL2"||(e.ctrlKey&&k==="x"))copy(true);    // L2 = cut
-    else if(k==="GoseR1"||(e.ctrlKey&&k==="v"))paste();       // R1 = paste
-    else if(k==="GoseR2")del();                               // R2 = delete
+    else if(k==="Escape"){ if(actOn){actOn=false;render();} else location.href="gose-home.html"; }   // Esc = exit Files
+    else if(k==="GoseL1"||(e.ctrlKey&&k==="c"))copy(false);   // keyboard conveniences (numpad 7/9/1/3 on Files)
+    else if(k==="GoseL2"||(e.ctrlKey&&k==="x"))copy(true);
+    else if(k==="GoseR1"||(e.ctrlKey&&k==="v"))paste();
+    else if(k==="GoseR2")del();
     else return; e.preventDefault();});
   // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
   // a page-level getGamepads() loop is a second input path that double-fires (docs/27).

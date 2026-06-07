@@ -36,6 +36,14 @@
   .game .fav{position:absolute;top:5px;right:8px;color:#ffd23f;font-size:16px;text-shadow:0 1px 3px #000}
   .game .sub{color:var(--muted);font-size:11px;margin-top:5px}
   .empty{color:var(--muted);font-size:14px;padding:30px}
+  /* pad-reachable game actions (docs/27 §3.5 — X/Y/letters are keyboard-only): the tiles
+     live at the END of the grid's focus space, act on the last-focused game */
+  .acts{display:flex;gap:10px;margin-top:16px}
+  .acts .ab{display:flex;align-items:center;gap:8px;background:var(--surface2);border:2px solid var(--line);
+    border-radius:11px;padding:10px 14px;font-weight:600;font-size:13px;cursor:pointer;max-width:240px}
+  .acts .ab .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .acts .ab:hover{border-color:var(--accent)}
+  .acts .ab.focus{border-color:var(--accent);box-shadow:var(--focusglow,0 0 0 2px var(--accent))}
   .foot{margin:8px 36px 14px;display:flex;gap:10px;color:var(--muted);font-size:13px;
     background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
   .foot .h{margin-left:auto}.foot b{color:var(--text)}
@@ -61,7 +69,7 @@
   </div>
   <div class="wrap"><div class="rail" id="rail"></div><div class="pane" id="pane"></div></div>
   <div class="foot"><span class="ic" data-i="games"></span> GOSE Library
-    <span class="h">D-pad move · <b>A</b> launch · <b>X/F</b> favorite · <b>Y/O</b> options · <b>L1/R1</b> system · <b>S</b> scrape art · <b>B</b> home</span></div>
+    <span class="h">D-pad move · <b>A</b> launch/activate · <b>L1/R1</b> system · <b>B</b> home · kbd: <b>F</b> fav · <b>O</b> options · <b>S</b> scrape</span></div>
   <div class="toast" id="toast"></div>
   <div class="gopt" id="gopt"><div class="box" id="gopt-box"></div></div>
 <script src="assets/platform.js"></script>
@@ -78,14 +86,29 @@
   function buildRail(){rail.innerHTML=SYS.map((s,i)=>
     `<div class="sys ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.logo?`<img src="${s.logo}" alt="" style="height:13px;width:auto;max-width:104px;vertical-align:-2px;margin-right:7px;opacity:.9" onerror="this.remove()">`:''}${s.name}</span><span class="c">${s.games.length}</span></div>`).join("");
     [...rail.children].forEach(el=>el.onclick=()=>{cat=+el.dataset.i2;foc=0;render();});}
+  // focus space = games 0..N-1 then the action tiles (favorite=N, options=N+1, scrape=N+2);
+  // the tiles act on the LAST-FOCUSED game (named on the tile so it's never ambiguous)
+  let lastG=0;
+  function nGames(){const s=SYS[cat];return s?s.games.length:0;}
+  function total(){return nGames()+3;}
+  function tgtGame(){const s=SYS[cat];if(!s)return null;return s.games[Math.min(lastG,s.games.length-1)]||null;}
   function buildPane(){const s=SYS[cat]; if(!s){pane.innerHTML='<div class="empty">No games found. Drop ROMs into /userdata/roms/&lt;system&gt;.</div>';return;}
-    pane.innerHTML=`<div class="ph">${s.logo?`<img src="${s.logo}" alt="${s.name}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode('${s.name.toUpperCase()} '))">`:s.name.toUpperCase()+' '}— ${s.games.length} GAME${s.games.length!=1?'S':''}</div><div class="grid" id="grid"></div>`;
+    if(foc<s.games.length)lastG=foc;
+    const gm0=tgtGame(), nm0=gm0?gm0.name:"";
+    pane.innerHTML=`<div class="ph">${s.logo?`<img src="${s.logo}" alt="${s.name}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode('${s.name.toUpperCase()} '))">`:s.name.toUpperCase()+' '}— ${s.games.length} GAME${s.games.length!=1?'S':''}</div><div class="grid" id="grid"></div>`+
+      `<div class="acts">`+
+      `<div class="ab ${foc===s.games.length?'focus':''}" id="a-fav">${gm0&&gm0.fav?'☆':'★'}<span class="t">${gm0&&gm0.fav?'Unfavorite':'Favorite'} — ${esc(nm0)}</span></div>`+
+      `<div class="ab ${foc===s.games.length+1?'focus':''}" id="a-opt"><span class="t">Options — ${esc(nm0)}</span></div>`+
+      `<div class="ab ${foc===s.games.length+2?'focus':''}" id="a-scr"><span class="t">Scrape art — ${esc(s.name)}</span></div></div>`;
     const g=$("grid");
     g.innerHTML=s.games.map((gm,i)=>`<div class="game ${i===foc?'focus':''}" data-g="${i}">
       <div class="art" style="${gm.img?`background:#0c0c1e url('/fs/file?path=${encodeURIComponent(gm.img)}') center/cover no-repeat`:`background:linear-gradient(135deg,${COLORS[i%COLORS.length]},#0c0c1e)`}">${gm.fav?'<span class="fav">★</span>':''}${gm.img?'':gm.name}</div>
       <div class="sub">${gm.plays?('▶ '+gm.plays+'× · '+fmtPlay(gm.secs||0)):gm.name}</div></div>`).join("");
-    [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.g;render();launch();});}
-  function render(){buildRail();buildPane();paint();const f=pane.querySelector(".game.focus");if(f)f.scrollIntoView({block:"nearest"});}
+    [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.g;render();launch();});
+    $("a-fav").onclick=()=>{foc=s.games.length;render();toggleFav();};
+    $("a-opt").onclick=()=>{foc=s.games.length+1;render();openOptions();};
+    $("a-scr").onclick=()=>{foc=s.games.length+2;render();scrapeArt();};}
+  function render(){buildRail();buildPane();paint();const f=pane.querySelector(".game.focus,.ab.focus");if(f)f.scrollIntoView({block:"nearest"});}
   function launch(){const s=SYS[cat];if(!s||!s.games[foc])return;const gm=s.games[foc];const g=gm.name;
     const sys=gm.system||s.system;
     say("Launching "+g+"…");
@@ -93,7 +116,7 @@
       body:JSON.stringify({system:sys,game:g})}).then(r=>r.json())
       .then(d=>say(d.ok?("Launching "+g+" — "+s.name):("Couldn't launch: "+(d.error||"?"))))
       .catch(e=>say("Launch failed"));}
-  function toggleFav(){const s=SYS[cat];if(!s||!s.games[foc])return;const gm=s.games[foc];
+  function toggleFav(){const s=SYS[cat],gm=tgtGame();if(!s||!gm)return;
     const sys=gm.system||s.system, game=gm.name, on=!gm.fav;
     say((on?"★ Favorited ":"☆ Removed ")+game);
     fetch("/game/favorite",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -109,13 +132,14 @@
   // ---- per-game options modal ----
   function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
   let GOPT={open:false,foc:0,items:[],sys:"",game:"",data:null,cores:[],default:null};
-  function openOptions(){const s=SYS[cat];if(!s||!s.games[foc])return;const gm=s.games[foc];
+  function openOptions(){const s=SYS[cat],gm=tgtGame();if(!s||!gm)return;
     const sys=gm.system||s.system, game=gm.name;
     fetch("/game/options?system="+encodeURIComponent(sys)+"&game="+encodeURIComponent(game),{cache:"no-store"})
       .then(r=>r.json()).then(d=>{ if(!d.ok||!(d.cores&&d.cores.length)){say("No options for this system");return;}
         GOPT={open:true,foc:0,items:[],sys:sys,game:game,cores:d.cores,default:d.default,
               data:{core:d.core,ratio:d.ratio,shaders:d.shaders,rewind:d.rewind}};
-        renderOpt(); $("gopt").classList.add("on");
+        renderOpt(); if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();   // docs/27 §3.10
+        $("gopt").classList.add("on");
       }).catch(()=>say("Options offline"));}
   const RATIOS=["auto","4/3","16/9","core"], SHADERS=["none","scanlines","crt","lcd"];
   function renderOpt(){
@@ -139,12 +163,23 @@
     if(it.t==="core"){GOPT.data.core=it.val;renderOpt();}
     else if(it.t==="cycle")goptCycle(1);
     else saveOptions();}
-  function goptClose(){GOPT.open=false;$("gopt").classList.remove("on");}
+  function goptClose(){if(GOPT.open&&window.GOSE&&GOSE.modalPop)GOSE.modalPop();GOPT.open=false;$("gopt").classList.remove("on");}
   function saveOptions(){fetch("/game/options",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({system:GOPT.sys,game:GOPT.game,core:GOPT.data.core,ratio:GOPT.data.ratio,shaders:GOPT.data.shaders,rewind:GOPT.data.rewind})})
     .then(r=>r.json()).then(d=>{goptClose();say(d.ok?("Saved — "+GOPT.data.core+" · applies next launch"):"Save failed");}).catch(()=>{goptClose();say("Save failed");});}
-  function moveCat(d){if(!SYS.length)return;cat=(cat+d+SYS.length)%SYS.length;foc=0;render();}
-  function moveFoc(d){const s=SYS[cat];if(!s||!s.games.length)return;foc=(foc+d+s.games.length)%s.games.length;buildPane();paint();const f=pane.querySelector(".game.focus");if(f)f.scrollIntoView({block:"nearest"});}
+  function moveCat(d){if(!SYS.length)return;cat=(cat+d+SYS.length)%SYS.length;foc=0;lastG=0;render();}
+  function moveFoc(d){const s=SYS[cat];if(!s)return;const n=total();if(n<=0)return;
+    if(Math.abs(d)>1&&foc<s.games.length){           // row jump from the grid
+      const t=foc+d;
+      if(t>=s.games.length&&d>0){foc=s.games.length;render();return;}   // off the bottom → actions
+      if(t<0&&d<0){foc=s.games.length;render();return;}                  // off the top → actions (wrap)
+    }else if(Math.abs(d)>1){foc=d>0?0:Math.max(0,s.games.length-1);render();return;}  // actions ↑↓ → grid
+    foc=(foc+d+n)%n;render();}
+  function activate(){const s=SYS[cat];if(!s)return;
+    if(foc===s.games.length)toggleFav();
+    else if(foc===s.games.length+1)openOptions();
+    else if(foc===s.games.length+2)scrapeArt();
+    else launch();}
   addEventListener("keydown",e=>{const k=e.key;
     if(GOPT.open){
       if(k==="ArrowDown")goptMove(1);else if(k==="ArrowUp")goptMove(-1);
@@ -155,8 +190,8 @@
     if(k==="ArrowRight")moveFoc(1);else if(k==="ArrowLeft")moveFoc(-1);
     else if(k==="ArrowDown")moveFoc(4);else if(k==="ArrowUp")moveFoc(-4);
     else if(k==="]"||k==="PageDown")moveCat(1);else if(k==="["||k==="PageUp")moveCat(-1);
-    else if(k==="Enter"||k===" ")launch();
-    else if(k==="s"||k==="S")scrapeArt();
+    else if(k==="Enter"||k===" ")activate();
+    else if(k==="s"||k==="S")scrapeArt();          // keyboard conveniences (tiles cover the pad)
     else if(k==="f"||k==="F")toggleFav();
     else if(k==="o"||k==="O")openOptions();
     else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
@@ -165,8 +200,10 @@
   // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
   paint();
   function loadAll(keep){
-    // remember the focused system+game so a reload (e.g. after a favorite toggle) keeps your place
-    const cur=keep&&SYS[cat]?{sys:SYS[cat].system,game:(SYS[cat].games[foc]||{}).name}:null;
+    // remember the focused system+game (or action tile) so a reload — e.g. after a favorite
+    // toggle fired FROM the tile — keeps your place instead of yanking focus to game 0 (§3.9)
+    const cur=keep&&SYS[cat]?{sys:SYS[cat].system,game:(SYS[cat].games[foc]||{}).name,
+      tile:foc>=SYS[cat].games.length?foc-SYS[cat].games.length:-1,lg:lastG}:null;
     return Promise.all([
       fetch("/games.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
       fetch("/recent.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
@@ -179,7 +216,8 @@
       if(favs.length) SYS.unshift({name:"★ Favorites",system:"__fav",games:favs});
       $("sub").textContent=d.ok?`${d.total||0} games · ${(d.systems||[]).length} systems${favs.length?" · "+favs.length+"★":""}${recent.length?" · "+recent.length+" recent":""}`:"couldn't read games";
       if(cur){let ci=SYS.findIndex(s=>s.system===cur.sys);cat=ci<0?0:ci;
-        const gi=cur.game?SYS[cat].games.findIndex(g=>g.name===cur.game):-1;foc=gi<0?0:gi;}
+        if(cur.tile>=0){foc=SYS[cat].games.length+cur.tile;lastG=Math.min(cur.lg,Math.max(0,SYS[cat].games.length-1));}
+        else{const gi=cur.game?SYS[cat].games.findIndex(g=>g.name===cur.game):-1;foc=gi<0?0:gi;}}
       render();
     }).catch(()=>{$("sub").textContent="library offline";render();});
   }

@@ -32,6 +32,12 @@
     font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;gap:4px}
   .shot .sub{color:var(--muted);font-size:11px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .empty{color:var(--muted);font-size:14px;padding:30px}
+  /* pad-reachable capture actions (docs/27 §3.5) — live in the same focus space as the grid */
+  .acts{display:flex;gap:10px;margin-top:16px}
+  .acts .ab{display:flex;align-items:center;gap:8px;background:var(--surface2);border:2px solid var(--line);
+    border-radius:11px;padding:10px 16px;font-weight:600;font-size:13px;cursor:pointer}
+  .acts .ab:hover{border-color:var(--accent)}
+  .acts .ab.focus{border-color:var(--accent);box-shadow:var(--focusglow,0 0 0 2px var(--accent))}
   .foot{margin:8px 36px 14px;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:13px;
     background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
   .foot .h{margin-left:auto}.foot b{color:var(--text)}
@@ -57,7 +63,7 @@
   <div class="pane" id="pane"></div>
   <div class="foot"><span class="ic" data-i="image"></span> GOSE Gallery
     <span class="rec" id="recind"><i></i> REC</span>
-    <span class="h">D-pad move · <b>A</b> open · <b>S</b> screenshot · <b>R</b> record · <b>B</b> home</span></div>
+    <span class="h">D-pad move · <b>A</b> open/activate · <b>B</b> home · kbd: <b>S</b> shot · <b>R</b> record</span></div>
   <div class="toast" id="toast"></div>
   <div class="lb" id="lb"><div id="lb-body"></div><div class="cap" id="lb-cap"></div></div>
 <script src="assets/platform.js"></script>
@@ -71,30 +77,42 @@
   function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function fmtSize(n){if(n<1024)return n+" B";if(n<1048576)return Math.round(n/1024)+" KB";return (n/1048576).toFixed(1)+" MB";}
   function fmtWhen(t){const d=new Date(t*1000);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+" "+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
+  // focus space = grid items 0..N-1, then the action buttons (Screenshot = N, Record = N+1)
+  // — same wrap-modulo walk, so the pad reaches capture even with an EMPTY gallery (§3.5).
+  function total(){return ITEMS.length+2;}
   function render(){
-    if(!ITEMS.length){pane.innerHTML='<div class="empty">No captures yet. Launch a game, then press <b>S</b> here (or use the in-game Guide) to take a screenshot.</div>';paint();return;}
-    pane.innerHTML='<div class="ph">CAPTURES — '+ITEMS.length+' ITEM'+(ITEMS.length!=1?'S':'')+'</div><div class="grid" id="grid"></div>';
-    const g=$("grid");
-    g.innerHTML=ITEMS.map((it,i)=>{
-      const art=it.kind==="image"
-        ? `<div class="art" style="background-image:url('${it.url}')"><span class="badge"><span class="ic" data-i="image"></span></span></div>`
-        : `<div class="art"><span class="vic ic" data-i="film"></span><span class="badge"><span class="ic" data-i="film"></span> CLIP</span></div>`;
-      return `<div class="shot ${i===foc?'focus':''}" data-s="${i}">${art}<div class="sub">${esc(it.name)}</div></div>`;
-    }).join("");
-    [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.s;render();open();});
+    const actHtml='<div class="acts">'+
+      `<div class="ab ${foc===ITEMS.length?'focus':''}" id="a-shot"><span class="ic" data-i="image"></span>Take screenshot</div>`+
+      `<div class="ab ${foc===ITEMS.length+1?'focus':''}" id="a-rec"><span class="ic" data-i="film"></span>${recording?'Stop recording':'Start recording'}</div></div>`;
+    if(!ITEMS.length){pane.innerHTML='<div class="empty">No captures yet. Launch a game, then take a screenshot from here (or the in-game Guide).</div>'+actHtml;}
+    else{
+      pane.innerHTML='<div class="ph">CAPTURES — '+ITEMS.length+' ITEM'+(ITEMS.length!=1?'S':'')+'</div><div class="grid" id="grid"></div>'+actHtml;
+      const g=$("grid");
+      g.innerHTML=ITEMS.map((it,i)=>{
+        const art=it.kind==="image"
+          ? `<div class="art" style="background-image:url('${it.url}')"><span class="badge"><span class="ic" data-i="image"></span></span></div>`
+          : `<div class="art"><span class="vic ic" data-i="film"></span><span class="badge"><span class="ic" data-i="film"></span> CLIP</span></div>`;
+        return `<div class="shot ${i===foc?'focus':''}" data-s="${i}">${art}<div class="sub">${esc(it.name)}</div></div>`;
+      }).join("");
+      [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.s;render();open();});
+    }
+    $("a-shot").onclick=()=>{foc=ITEMS.length;render();shoot();};
+    $("a-rec").onclick=()=>{foc=ITEMS.length+1;render();recToggle();};
     paint();
-    const f=pane.querySelector(".shot.focus");if(f)f.scrollIntoView({block:"nearest"});
+    const f=pane.querySelector(".shot.focus,.ab.focus");if(f)f.scrollIntoView({block:"nearest"});
   }
   function open(){const it=ITEMS[foc];if(!it)return;
     if(it.kind==="image"){$("lb-body").innerHTML=`<img src="${it.url}" alt="">`;}
     else{$("lb-body").innerHTML=`<div class="vbox"><span class="ic" data-i="film"></span><div style="margin-top:10px;font-weight:600">${esc(it.name)}</div><div style="color:var(--muted);font-size:12px;margin-top:6px">Game clip — open in Files or Splice to play/trim</div></div>`;}
     $("lb-cap").textContent=it.name+" · "+fmtSize(it.size)+" · "+fmtWhen(it.mtime);
+    if(!$("lb").classList.contains("on")&&window.GOSE&&GOSE.modalPush)GOSE.modalPush();  // docs/27 §3.10
     $("lb").classList.add("on");paint();}
-  function closeLb(){$("lb").classList.remove("on");}
+  function closeLb(){if($("lb").classList.contains("on")&&window.GOSE&&GOSE.modalPop)GOSE.modalPop();
+    $("lb").classList.remove("on");}
   function load(){fetch("/game/gallery",{cache:"no-store"}).then(r=>r.json()).then(d=>{
     ITEMS=(d.items||[]);recording=!!d.recording;updateRec();
     $("sub").textContent=ITEMS.length?(ITEMS.length+" captures · newest first"):"no captures yet";
-    if(foc>=ITEMS.length)foc=Math.max(0,ITEMS.length-1);
+    if(foc>=total())foc=total()-1;   // clamp, never reset — the poll must not steal focus (§3.9)
     render();
   }).catch(()=>{$("sub").textContent="gallery offline";render();});}
   function updateRec(){$("recind").classList.toggle("on",recording);}
@@ -106,13 +124,24 @@
     if(d.ok){recording=!!d.recording;updateRec();say(recording?"Recording started":"Recording saved");if(!recording)setTimeout(load,600);}
     else say(d.error||"Record failed — is a game running?");
   }).catch(()=>say("Record failed"));}
-  function moveFoc(d){if(!ITEMS.length)return;foc=(foc+d+ITEMS.length)%ITEMS.length;render();}
+  function moveFoc(d){const n=total();foc=(foc+d+n)%n;render();}
+  function rowJump(dir){            // ↓/↑ between grid rows, then into/out of the action row
+    if(foc<ITEMS.length){           // in the grid
+      const t=foc+dir*COLS;
+      foc=(t>=0&&t<ITEMS.length)?t:ITEMS.length;            // off either edge → the action row
+    }else if(ITEMS.length){foc=dir>0?0:ITEMS.length-1;}     // action row → wrap into the grid
+    else{foc=foc===ITEMS.length?ITEMS.length+1:ITEMS.length;}  // empty gallery: toggle buttons
+    render();}
+  function activate(){
+    if(foc===ITEMS.length)shoot();
+    else if(foc===ITEMS.length+1)recToggle();
+    else open();}
   addEventListener("keydown",e=>{const k=e.key;
     if($("lb").classList.contains("on")){if(k==="Escape"||k==="Backspace"||k==="Enter"||k===" ")closeLb();else return;e.preventDefault();return;}
     if(k==="ArrowRight")moveFoc(1);else if(k==="ArrowLeft")moveFoc(-1);
-    else if(k==="ArrowDown")moveFoc(COLS);else if(k==="ArrowUp")moveFoc(-COLS);
-    else if(k==="Enter"||k===" ")open();
-    else if(k==="s"||k==="S")shoot();
+    else if(k==="ArrowDown")rowJump(1);else if(k==="ArrowUp")rowJump(-1);
+    else if(k==="Enter"||k===" ")activate();
+    else if(k==="s"||k==="S")shoot();     // keyboard conveniences (also focusable buttons above)
     else if(k==="r"||k==="R")recToggle();
     else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
     else return;e.preventDefault();});

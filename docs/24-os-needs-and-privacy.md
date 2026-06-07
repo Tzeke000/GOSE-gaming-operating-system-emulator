@@ -124,6 +124,14 @@ LAN/tailnet exposure an explicit opt-in. (S)
   agent tokens and any stored secrets** must be encrypted at rest.
 - **Status:** ⬜ — `/userdata` is plain ext4; the dev agent token currently sits in cleartext
   (`/userdata/system/gose/token`, and in `.mcp.json`).
+- **What DOES exist (2026-06-07, honest scope):** the lock-screen **PIN is real auth now** —
+  per-account salted **scrypt** hash in `accounts.json` (`pin_salt`/`pin_hash`, never cleartext),
+  verified server-side at `POST /auth/pin` with a 5-try → 30 s lockout; set/changed at
+  `POST /auth/pin/set` (changing requires the current PIN; a has_pin-without-hash account from
+  an older OOBE finishes PIN setup at its next unlock instead of being locked out). **It is a
+  convenience lock, NOT encryption:** it gates the lock-screen UI only — the disk stays readable
+  to anyone with shell/SSH access, and deleting the owner record's `pin_*` keys is the documented
+  forgot-my-PIN recovery. Real lost-device protection is this section's LUKS work, unchanged.
 - **Reuse:** two tiers, both already named in docs/16/19:
   - **Secrets/tokens:** **age** (or libsodium sealed files) for the AI grant + signing keys —
     decrypt-at-boot, **TPM-sealed** on the Odin 2 if it has a TPM, software-encrypted otherwise.

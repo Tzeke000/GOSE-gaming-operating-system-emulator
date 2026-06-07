@@ -51,6 +51,13 @@
   tbody tr.focus{background:#5cd0ff18;box-shadow:inset 3px 0 0 var(--accent)}
   td{padding:8px 14px;white-space:nowrap}
   td.nm{font-weight:600}
+  /* pad-reachable row actions (docs/27 §3.5): → focuses End task / Force kill on the row */
+  .rowact{display:inline-flex;gap:6px;margin-left:10px;vertical-align:middle}
+  .rowact span{border:2px solid #ffffff2a;border-radius:7px;padding:2px 9px;font-size:11px;font-weight:700;
+    color:var(--muted);cursor:pointer}
+  .rowact span:hover{border-color:var(--accent)}
+  .rowact span.on{border-color:var(--accent);color:var(--text);box-shadow:var(--focusglow,0 0 0 2px var(--accent))}
+  .rowact span.kill{color:#ff8e8e}
   td.cpu b{color:var(--accent)} .hot{color:#ff9e6e!important}
   .pid{color:var(--muted);font-variant-numeric:tabular-nums}
   .foot{margin:10px 30px 12px;display:flex;gap:10px;color:var(--muted);font-size:12px;
@@ -90,7 +97,7 @@
     <div class="gcard"><div class="gh"><span class="gk">GPU MEMORY</span><span class="gv" id="g-gmem">—</span></div><canvas id="cv-gmem"></canvas><div class="gs" id="gs-gmem"></div></div>
   </div>
   <div class="foot"><span class="ic" data-i="cpu"></span> GOSE Task Manager — live from /proc
-    <span class="h"><b>Tab</b> switch view · <b>↑↓</b> select · <b>X</b> end task · <b>F</b> force · <b>B</b> home</span></div>
+    <span class="h"><b>L1/R1</b> view · <b>↑↓</b> select · <b>→</b> end-task actions (<b>A</b>×2 confirms) · <b>B</b> home · kbd: X/F</span></div>
   <div class="toast" id="toast"></div>
 <script src="assets/cursor.js"></script>
 <script>
@@ -100,7 +107,7 @@
   function fmt(b){if(b==null)return"—";const u=["B","KB","MB","GB","TB"];let i=0,n=b;while(n>=1024&&i<4){n/=1024;i++;}return (n>=100||i==0?Math.round(n):n.toFixed(1))+" "+u[i];}
   function say(m,warn){const t=$("toast");t.textContent=m;t.className="toast show"+(warn?" warn":"");clearTimeout(say._t);say._t=setTimeout(()=>t.className="toast",2200);}
   function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
-  let procs=[], focPid=null, armPid=null, armSig=15, armT=0;
+  let procs=[], focPid=null, armPid=null, armSig=15, armT=0, actFoc=null;
   const HIST={cpu:[],gpu:[],mem:[],gmem:[]}; let curTab="proc", lastS={};
 
   function renderHeader(d){
@@ -123,12 +130,16 @@
     $("t-proc").textContent=procs.length;
     if(focPid==null&&procs.length)focPid=procs[0].pid;
     $("rows").innerHTML=procs.map(p=>`<tr class="${p.pid===focPid?'focus':''}" data-pid="${p.pid}">
-      <td class="r pid">${p.pid}</td><td class="nm">${p.name}</td>
+      <td class="r pid">${p.pid}</td><td class="nm">${p.name}${p.pid===focPid?
+        `<span class="rowact"><span class="${actFoc===0?'on':''}" data-ra="0">End task</span>`+
+        `<span class="kill ${actFoc===1?'on':''}" data-ra="1">Force kill</span></span>`:''}</td>
       <td class="r cpu"><b class="${p.cpu>=50?'hot':''}">${p.cpu.toFixed(1)}%</b></td>
       <td class="r">${fmt(p.rss)} <span class="pid">(${p.mem_pct}%)</span></td>
       <td>${STATE[p.state]||p.state}</td></tr>`).join("");
-    [...$("rows").children].forEach(tr=>{tr.onclick=()=>{focPid=+tr.dataset.pid;renderRows();};
+    [...$("rows").children].forEach(tr=>{tr.onclick=()=>{focPid=+tr.dataset.pid;actFoc=null;renderRows();};
       tr.ondblclick=()=>{focPid=+tr.dataset.pid;endTask(15);};});
+    [...$("rows").querySelectorAll(".rowact span")].forEach(sp=>sp.onclick=(ev)=>{ev.stopPropagation();
+      actFoc=+sp.dataset.ra;renderRows();endTask(actFoc===1?9:15);});
     const f=$("rows").querySelector("tr.focus");if(f)f.scrollIntoView({block:"nearest"});
   }
   function pushHist(s){const cap=60;
@@ -171,15 +182,20 @@
       fetch("/proc/kill",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pid:focPid,sig})})
         .then(r=>r.json()).then(d=>{say(d.ok?(`Ended ${nm} (PID ${focPid})`):("Couldn't end: "+(d.error||"?")),!d.ok);armPid=null;poll();});
     }else{armPid=focPid;armSig=sig;armT=Date.now();
-      say(`${sig===9?'Force-kill':'End'} ${curName()} (PID ${focPid})? Press ${sig===9?'F':'X'} again to confirm`,true);}
+      say(`${sig===9?'Force-kill':'End'} ${curName()} (PID ${focPid})? Activate again to confirm`,true);}
   }
-  function move(d){if(!procs.length)return;let i=procs.findIndex(p=>p.pid===focPid);i=(i+d+procs.length)%procs.length;focPid=procs[i].pid;renderRows();}
+  function move(d){if(!procs.length)return;actFoc=null;let i=procs.findIndex(p=>p.pid===focPid);i=(i+d+procs.length)%procs.length;focPid=procs[i].pid;renderRows();}
   addEventListener("keydown",e=>{const k=e.key;
     if(k==="Tab"||k==="["||k==="]"){setTab(curTab==="proc"?"perf":"proc");}   // [ ] = pad L1/R1 (two tabs → both toggle)
-    else if(k==="Escape"||k==="Backspace")location.href="gose-home.html";
+    else if(k==="Escape"||k==="Backspace"){
+      if(curTab==="proc"&&actFoc!=null){actFoc=null;renderRows();}            // B backs off the chips first
+      else location.href="gose-home.html";}
     else if(curTab==="perf")return;   // graphs view: no row actions
     else if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
-    else if(k==="x"||k==="X"||k==="Delete")endTask(15);
+    else if(k==="ArrowRight"){if(focPid!=null){actFoc=actFoc==null?0:Math.min(1,actFoc+1);renderRows();}}   // → = row actions
+    else if(k==="ArrowLeft"){if(actFoc!=null){actFoc=actFoc===0?null:0;renderRows();}}
+    else if(k==="Enter"){if(actFoc!=null)endTask(actFoc===1?9:15);}           // A on a chip = the two-press confirm
+    else if(k==="x"||k==="X"||k==="Delete")endTask(15);                       // keyboard conveniences
     else if(k==="f"||k==="F")endTask(9);
     else return;e.preventDefault();});
   // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;

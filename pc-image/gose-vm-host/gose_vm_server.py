@@ -51,7 +51,9 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/game/screenshot": (30, 60), "/game/record/toggle": (12, 60),
            "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300),
            "/sys/perf": (60, 60), "/widgets/store": (30, 60), "/widgets/steam": (30, 60),
-           "/storage/import": (12, 60), "/storage/detected": (30, 60)}
+           "/storage/import": (12, 60), "/storage/detected": (30, 60),
+           # coarse backstop only — the real brute-force guard is the 5-try/30s PIN lockout
+           "/auth/pin": (30, 60), "/auth/pin/set": (10, 60)}
 
 _SKIPDIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_media"}
 # .disabled = store-placeholder marker (Game.ext.disabled). splitext only strips the LAST
@@ -1721,13 +1723,19 @@ def ai_audit(limit=100):
 # defaults (opt-IN only — docs/24), and optionally issues the first AI pairing token.
 # Reset = remove the flag (also done by factory reset) -> next boot re-runs the wizard.
 OOBE_DONE_FLAG = "/userdata/system/gose/.oobe-done"
-ACCOUNTS_F = "/userdata/system/gose/accounts.json"
+# env override = test seam: PIN/account flows get verified against a sandbox accounts file
+# on an isolated instance (GOSE_UI_PORT) without ever touching the owner's real record.
+ACCOUNTS_F = os.environ.get("GOSE_ACCOUNTS_FILE") or "/userdata/system/gose/accounts.json"
 
 def _accounts_load():
     try:
         return json.load(open(ACCOUNTS_F))
     except Exception:
         return {"users": []}
+
+def _owner_record(acc=None):
+    acc = acc if acc is not None else _accounts_load()
+    return next((u for u in acc.get("users", []) if u.get("role") == "owner"), None)
 
 def oobe_status():
     done = os.path.exists(OOBE_DONE_FLAG)
@@ -1737,8 +1745,13 @@ def oobe_status():
             info = json.load(open(OOBE_DONE_FLAG)) or {}
         except Exception:
             info = {}
-    acc = _accounts_load()
-    owner = next((u for u in acc.get("users", []) if u.get("role") == "owner"), None)
+    raw = _owner_record()
+    owner = None
+    if raw:
+        # never serve the PIN salt/hash to pages — expose only the booleans the lock
+        # screen needs (has_pin = a PIN was chosen; pin_set = a verifiable hash exists)
+        owner = {k: v for k, v in raw.items() if not k.startswith("pin_")}
+        owner["pin_set"] = bool(raw.get("pin_hash"))
     return {"ok": True, "done": done, "completed_at": info.get("completed_at"), "owner": owner}
 
 def _apply_oobe_privacy(privacy):
@@ -1760,13 +1773,20 @@ def oobe_complete(payload):
     acct = p.get("account") or {}
     username = (acct.get("username") or "owner").strip()[:32] or "owner"
     display = (acct.get("display") or username).strip()[:48]
-    # The owner account = the canonical account store the lock screen reads later. Passwords/PINs
-    # are NOT stored in cleartext here; real hashing lands with the auth backend (docs/24 §1.5) —
-    # OOBE records only that they were set.
+    # The owner account = the canonical account store the lock screen reads later. PINs are
+    # stored as salted scrypt hashes (never cleartext). Today's wizard sends only has_pin
+    # (the raw PIN never leaves its page), so a has_pin-without-hash account finishes PIN
+    # setup at the lock screen's first unlock (the migration path, /auth/pin/set). If a
+    # future wizard sends account.pin, it is hashed right here and the lock asks from day 1.
     users = [{"username": username, "display": display, "role": "owner",
               "accent": acct.get("accent") or "#5cd0ff",
               "has_password": bool(acct.get("has_password")), "has_pin": bool(acct.get("has_pin")),
               "created_at": int(time.time())}]
+    raw_pin = str(acct.get("pin") or "")
+    if PIN_RE.match(raw_pin):
+        salt = secrets.token_hex(16)
+        users[0].update({"pin_salt": salt, "pin_hash": _pin_compute(raw_pin, salt),
+                         "pin_algo": PIN_ALGO, "has_pin": True})
     write_json_atomic(ACCOUNTS_F, {"users": users,
                                    "device_name": (p.get("device_name") or "GOSE").strip()[:48],
                                    "locale": p.get("locale"), "keyboard": p.get("keyboard"),
@@ -1832,6 +1852,109 @@ def oobe_reset(payload=None):
     LOG.info("OOBE reset: removed=%s", removed)
     return {"ok": True, "removed": removed, "note": "next boot will re-run the first-boot wizard"}
 
+# ---- PIN auth (the lock screen; docs/24 §1.5) --------------------------------------------
+# HONEST SCOPE: this is a CONVENIENCE LOCK, not encryption. The PIN gates the lock-screen
+# UI only — the disk is not encrypted and anyone with SSH/shell access can edit
+# accounts.json (that is also the documented recovery path for a forgotten PIN: delete the
+# pin_* keys from the owner record and the lock screen re-runs PIN setup).
+# Storage: per-account random salt + scrypt hash in the owner's accounts.json record
+# (pin_salt / pin_hash / pin_algo / pin_len). Brute force: 5 consecutive misses lock
+# verification for 30 s (in-memory — a server restart clears it, which is fine for a
+# convenience lock and means the lockout can never brick the lock screen permanently).
+PIN_RE = re.compile(r"^\d{4,8}$")
+PIN_ALGO = "scrypt-16384-8-1"
+PIN_MAX_TRIES = 5
+PIN_LOCKOUT_S = 30
+_PIN_GUARD = threading.Lock()
+_PIN_FAILS = {"n": 0, "until": 0.0}
+
+def _pin_compute(pin, salt_hex):
+    import hashlib
+    return hashlib.scrypt(pin.encode("utf-8"), salt=bytes.fromhex(salt_hex),
+                          n=16384, r=8, p=1, dklen=32).hex()
+
+def _pin_locked_for():
+    return max(0.0, _PIN_FAILS["until"] - time.time())
+
+def pin_status():
+    o = _owner_record()
+    with _PIN_GUARD:
+        lf = _pin_locked_for()
+        left = 0 if lf > 0 else max(0, PIN_MAX_TRIES - _PIN_FAILS["n"])
+    out = {"ok": True, "enabled": bool(o and o.get("has_pin")),
+           "set": bool(o and o.get("pin_hash") and o.get("pin_salt")),
+           "locked_for": round(lf, 1), "tries_left": left}
+    if out["set"] and o.get("pin_len"):
+        out["pin_len"] = o["pin_len"]   # lets the lock pad auto-submit at the right length
+    return out
+
+def pin_verify(payload):
+    """POST /auth/pin {pin} -> {ok, valid, tries_left?, locked_for?}. Constant-time compare;
+    consecutive misses arm the lockout. A success resets the counter."""
+    pin = str((payload or {}).get("pin") or "")
+    o = _owner_record()
+    if not (o and o.get("pin_hash") and o.get("pin_salt")):
+        return {"ok": False, "error": "no PIN is set", "set": False}
+    with _PIN_GUARD:
+        lf = _pin_locked_for()
+        if lf > 0:
+            return {"ok": True, "valid": False, "locked_for": round(lf, 1), "tries_left": 0}
+        valid = False
+        if PIN_RE.match(pin):
+            try:
+                import hmac
+                valid = hmac.compare_digest(_pin_compute(pin, o["pin_salt"]), o["pin_hash"])
+            except Exception as e:
+                LOG.error("pin verify failed: %s", e)
+        if valid:
+            _PIN_FAILS["n"] = 0
+            _PIN_FAILS["until"] = 0.0
+            LOG.info("PIN ok (owner %s)", o.get("username"))
+            return {"ok": True, "valid": True}
+        _PIN_FAILS["n"] += 1
+        if _PIN_FAILS["n"] >= PIN_MAX_TRIES:
+            _PIN_FAILS["n"] = 0
+            _PIN_FAILS["until"] = time.time() + PIN_LOCKOUT_S
+            LOG.warning("PIN lockout armed (%ss)", PIN_LOCKOUT_S)
+            return {"ok": True, "valid": False, "locked_for": float(PIN_LOCKOUT_S), "tries_left": 0}
+        LOG.warning("PIN wrong (%d/%d)", _PIN_FAILS["n"], PIN_MAX_TRIES)
+        return {"ok": True, "valid": False, "tries_left": PIN_MAX_TRIES - _PIN_FAILS["n"]}
+
+def pin_set(payload):
+    """POST /auth/pin/set {pin, current?}. First set (no hash yet — fresh account or the
+    has_pin-only migration) needs no current PIN: there is no secret to check against, and
+    the alternative is locking the owner out of his own device. CHANGING an existing PIN
+    requires the current one, verified through the same rate-limited path (so the change
+    endpoint can't be used to brute-force either)."""
+    p = payload or {}
+    pin = str(p.get("pin") or "")
+    if not PIN_RE.match(pin):
+        return {"ok": False, "error": "PIN must be 4-8 digits"}
+    acc = _accounts_load()
+    o = _owner_record(acc)
+    if not o:
+        return {"ok": False, "error": "no owner account yet — finish first-boot setup"}
+    if o.get("pin_hash") and o.get("pin_salt"):
+        cur = pin_verify({"pin": str(p.get("current") or "")})
+        if not cur.get("valid"):
+            out = {"ok": False, "error": "current PIN required to change the PIN"}
+            for k in ("locked_for", "tries_left"):
+                if k in cur:
+                    out[k] = cur[k]
+            return out
+    salt = secrets.token_hex(16)
+    o["pin_salt"] = salt
+    o["pin_hash"] = _pin_compute(pin, salt)
+    o["pin_algo"] = PIN_ALGO
+    o["pin_len"] = len(pin)
+    o["has_pin"] = True
+    write_json_atomic(ACCOUNTS_F, acc)
+    with _PIN_GUARD:
+        _PIN_FAILS["n"] = 0
+        _PIN_FAILS["until"] = 0.0
+    LOG.info("PIN set for owner %s (len %d)", o.get("username"), len(pin))
+    return {"ok": True, "set": True}
+
 # ---- UI prefs — the CANONICAL personalization store (Settings overhaul, task 14) --------
 # One server-side dict so theme/accent/etc survive kiosk reloads and EVERY page (incl.
 # lock) reads the same values: assets/a11y.js GETs /ui/prefs on each page load, mirrors
@@ -1845,11 +1968,21 @@ _PREF_KEY_RE = re.compile(
     r"^gose-(theme|accent|wp|live|glow|tz|clockfmt|signin|input|platform|sounds|ai-remote|"
     r"ui-scale|contrast|bold|cb|motion|opaque|focus|snd-quiet|"
     r"snd-(?:vol|mute)-(?:system|notify|battery|ui))$")
+# NEVER server-synced (deliberately outside the whitelist above, and stripped on load in
+# case a stale/hand-edited prefs file carries them): these localStorage keys are LIVE
+# page-side state — gose-wenabled (widget toggles, docs/23 §4.5) applies via storage
+# events the moment it changes; a server echo through a11y.js's mirror would overwrite
+# live toggles with a stale copy. Same for widget placement/descriptors.
+_PREF_NEVER_SYNC = {"gose-wenabled", "gose-wpos", "gose-wdesc"}
 
 def _ui_prefs_load():
     try:
         d = json.load(open(UI_PREFS_F))
-        return d if isinstance(d, dict) else {}
+        if not isinstance(d, dict):
+            return {}
+        for k in _PREF_NEVER_SYNC:
+            d.pop(k, None)
+        return d
     except Exception:
         return {}
 
@@ -1881,6 +2014,9 @@ def ui_prefs_set(payload):
         return {"ok": False, "error": "set must be a non-empty object"}
     clean = {}
     for k, v in m.items():
+        if isinstance(k, str) and k in _PREF_NEVER_SYNC:
+            return {"ok": False,
+                    "error": "%s is page-local live state — never server-synced (docs/23 §4.5)" % k}
         if not (isinstance(k, str) and _PREF_KEY_RE.match(k)):
             return {"ok": False, "error": "unknown pref key: %r" % (k,)}
         if v is None:
@@ -3376,7 +3512,10 @@ WM_EVENTS = {
 # come into being; they're shell-queue-only, not in the §4.2 table).
 WM_VERBS_WEB_ONLY = {"open", "winify", "next", "prev", "overview", "resummon",
                      "carousel", "select", "cancel", "left", "right", "up", "down",
-                     "snapmode", "act"}
+                     "snapmode", "act",
+                     # full shell refresh (asset deploys / recovery) — the shell's run()
+                     # already handles it (gose-wm.js); this makes POST /wm/reload reach it
+                     "reload"}
 WM_VERBS = {"focus", "move", "resize", "maximize", "restore", "minimize", "snap",
             "close", "suspend", "free"} | WM_VERBS_WEB_ONLY
 
@@ -3725,6 +3864,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(game_options(q.get("system", ""), q.get("game", "")))
         if route == "/oobe/status":
             return self._json(oobe_status())
+        if route == "/auth/pin":
+            return self._json(pin_status())
         if route == "/storage.json":
             return self._json(storage_info())
         if route == "/storage/pending":
@@ -3948,6 +4089,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/oobe/complete":
                 return self._json(oobe_complete(payload))
             return self._json(oobe_reset(payload))
+        if route in ("/auth/pin", "/auth/pin/set"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/auth/pin/set":
+                return self._json(pin_set(payload))
+            return self._json(pin_verify(payload))
         if route == "/guide/toggle":
             return self._json(guide_toggle())
         if route == "/game/exit":
@@ -4080,6 +4230,7 @@ h = functools.partial(H, directory=ROOT)
 ensure_user_dirs()   # Desktop/Documents/Downloads/Pictures/Music/Videos exist on boot
 threading.Thread(target=_queue_worker, daemon=True).start()   # download queue: one install at a time
 threading.Thread(target=auto_scrape_boot, daemon=True).start()   # auto-fill missing cover art on boot
-print("serving GOSE UI + live /status.json on 127.0.0.1:8780 (threaded)")
+_PORT = int(os.environ.get("GOSE_UI_PORT") or 8780)   # override = isolated test instances
+print("serving GOSE UI + live /status.json on 127.0.0.1:%d (threaded)" % _PORT)
 # threaded: a slow /fs/sizes (du) or the 4s agent socket no longer blocks page loads
-Server(("127.0.0.1", 8780), h).serve_forever()
+Server(("127.0.0.1", _PORT), h).serve_forever()
