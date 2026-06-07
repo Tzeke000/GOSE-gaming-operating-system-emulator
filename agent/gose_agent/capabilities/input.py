@@ -202,6 +202,19 @@ PT_PHYS = "gose-passthrough"
 _PT_EV_KEY = 1   # evdev EV_KEY
 _PT_EV_ABS = 3   # evdev EV_ABS
 
+# The full EV_KEY capability set every passthrough uinput device exposes —
+# EvdevPassthroughDevice builds its caps from THIS list, and the es_input
+# button ids are computed from THIS list (udev_button_indices below), so the
+# two can never drift apart. Numeric kernel keycodes (stable ABI), so the
+# module needs no evdev import: BTN_SOUTH..BTN_THUMBR + BTN_DPAD_*.
+PT_KEYS = [
+    0x130, 0x131, 0x133, 0x134,  # BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST
+    0x136, 0x137, 0x138, 0x139,  # BTN_TL, BTN_TR, BTN_TL2, BTN_TR2
+    0x13a, 0x13b, 0x13c,         # BTN_SELECT, BTN_START, BTN_MODE
+    0x13d, 0x13e,                # BTN_THUMBL, BTN_THUMBR
+    0x220, 0x221, 0x222, 0x223,  # BTN_DPAD_UP/DOWN/LEFT/RIGHT
+]
+
 
 class MockPassthroughDevice:
     """CI/no-uinput stand-in: records injected events (inspectable in tests)."""
@@ -229,13 +242,7 @@ class EvdevPassthroughDevice:
         self.name, self.vendor, self.product = name, vendor, product
         self.version, self.bustype = version, bustype
         cap = {
-            e.EV_KEY: [
-                e.BTN_SOUTH, e.BTN_EAST, e.BTN_WEST, e.BTN_NORTH,
-                e.BTN_TL, e.BTN_TR, e.BTN_TL2, e.BTN_TR2,
-                e.BTN_SELECT, e.BTN_START, e.BTN_MODE,
-                e.BTN_THUMBL, e.BTN_THUMBR,
-                e.BTN_DPAD_UP, e.BTN_DPAD_DOWN, e.BTN_DPAD_LEFT, e.BTN_DPAD_RIGHT,
-            ],
+            e.EV_KEY: list(PT_KEYS),
             e.EV_ABS: [
                 (e.ABS_X, evdev.AbsInfo(0, -32768, 32767, 16, 128, 0)),
                 (e.ABS_Y, evdev.AbsInfo(0, -32768, 32767, 16, 128, 0)),
@@ -270,10 +277,8 @@ class EvdevPassthroughDevice:
 # for GUID", hit on the first real DualSense launch (2026-06-07). Stock
 # Batocera only knows stock GUIDs; a passthrough pad carries the REAL pad's
 # vid/pid, so ANY brand the owner plugs in needs its entry added. pt_open does
-# it automatically: every passthrough uinput device exposes the byte-identical
-# standard capability set (EvdevPassthroughDevice above), so the binds below —
-# mirroring Batocera's "Microsoft Xbox 360 pad" entry — are correct for every
-# pt device regardless of brand.
+# it automatically, computing the button ids from the device's ACTUAL key set
+# (see udev_button_indices below).
 #
 # Safety (this file gates ALL pads' launches — corruption is the catastrophic
 # failure): parse + append via ElementTree preserving existing entries AND
@@ -284,33 +289,70 @@ class EvdevPassthroughDevice:
 # ---------------------------------------------------------------------------
 ES_INPUT_CFG = "/userdata/system/configs/emulationstation/es_input.cfg"
 
-# Binds mirroring the stock "Microsoft Xbox 360 pad" entry (and the known-good
-# hand-written DualSense entry deployed 2026-06-07) — valid for every pt device
-# because they all expose the identical standard caps.
-_ES_BINDS = [
+
+def udev_button_indices(keys: List[int]) -> Dict[int, int]:
+    """Map each EV_KEY code to the button index its consumers will use.
+
+    The es_input `id` for a button is NOT free-form: configgen copies it
+    verbatim into RetroArch's `input_playerN_*_btn`, and RetroArch runs
+    `input_joypad_driver = udev` (libretroConfig.py), whose driver assigns
+    button indices by SCANNING THE DEVICE'S ACTUAL EV_KEY SET IN ASCENDING
+    KEYCODE ORDER — first the cursor block KEY_UP..KEY_DOWN, then
+    BTN_MISC..KEY_MAX (RetroArch udev_joypad.c). SDL2 (ES menus + sdl2-based
+    emulators) enumerates the same ascending order for gamepad-range codes.
+
+    So the index of e.g. BTN_START depends on WHICH OTHER KEYS the device
+    exposes. A real Xbox 360 pad (11 keys, no BTN_TL2/TR2/DPAD_*) puts
+    BTN_START at index 7 — the stock entry's id. Our passthrough mirrors
+    expose 17 keys, so BTN_TL2(0x138)/BTN_TR2(0x139) land at 6/7 and shift
+    select/start/hotkey/l3/r3 to 8/9/10/11/12. Copying the Xbox ids was the
+    2026-06-07 shifted-labels bug: in-game "start" landed on R2-click
+    (empirically proven — BTN_TR2 started pong, BTN_START did nothing).
+    """
+    keys = set(keys)
+    order = [k for k in range(103, 109) if k in keys]        # KEY_UP..KEY_DOWN
+    order += [k for k in range(0x100, 0x300) if k in keys]   # BTN_MISC..KEY_MAX
+    return {code: i for i, code in enumerate(order)}
+
+
+# ES bind name -> EV_KEY code (Batocera's semantic layout, same naming its
+# stock entries use: "a"=BTN_EAST, "b"=BTN_SOUTH, pageup/pagedown=L1/R1...).
+_ES_BUTTON_CODES = [
+    ("a", 0x131), ("b", 0x130), ("x", 0x134), ("y", 0x133),
+    ("pageup", 0x136), ("pagedown", 0x137),
+    ("select", 0x13a), ("start", 0x13b), ("hotkey", 0x13c),
+    ("l3", 0x13d), ("r3", 0x13e),
+]
+
+# Axis/hat binds are NOT computed per-device: every pt device exposes the same
+# EV_ABS set (X/Y/RX/RY/Z/RZ/HAT0X/HAT0Y), which the udev driver indexes 0-5
+# in ABS-code order with HAT0 as hat 0 — identical to the Xbox-360 layout
+# these ids describe. Dpad rides ABS_HAT0 (the host daemon never sends
+# BTN_DPAD_* key events), triggers ride ABS_Z/RZ.
+_ES_AXIS_HAT_BINDS = [
     # (name, type, id, value, code)
-    ("a", "button", "1", "1", "305"),
-    ("b", "button", "0", "1", "304"),
     ("down", "hat", "0", "4", "16"),
-    ("hotkey", "button", "8", "1", "316"),
     ("joystick1left", "axis", "0", "-1", "0"),
     ("joystick1up", "axis", "1", "-1", "1"),
     ("joystick2left", "axis", "3", "-1", "3"),
     ("joystick2up", "axis", "4", "-1", "4"),
     ("l2", "axis", "2", "1", "2"),
-    ("l3", "button", "9", "1", "317"),
     ("left", "hat", "0", "8", "16"),
-    ("pagedown", "button", "5", "1", "311"),
-    ("pageup", "button", "4", "1", "310"),
     ("r2", "axis", "5", "1", "5"),
-    ("r3", "button", "10", "1", "318"),
     ("right", "hat", "0", "2", "16"),
-    ("select", "button", "6", "1", "314"),
-    ("start", "button", "7", "1", "315"),
     ("up", "hat", "0", "1", "16"),
-    ("x", "button", "3", "1", "308"),
-    ("y", "button", "2", "1", "307"),
 ]
+
+
+def es_binds(keys: List[int]) -> List[tuple]:
+    """The (name, type, id, value, code) rows for a pad exposing `keys`,
+    with button ids computed per the udev/SDL ascending-keycode model.
+    Buttons whose keycode the device doesn't expose are omitted."""
+    idx = udev_button_indices(keys)
+    rows = [(n, "button", str(idx[c]), "1", str(c))
+            for n, c in _ES_BUTTON_CODES if c in idx]
+    return sorted(rows + _ES_AXIS_HAT_BINDS)
+
 
 _es_lock = threading.Lock()
 
@@ -324,10 +366,10 @@ def sdl_guid(bustype: int, vendor: int, product: int, version: int) -> str:
             + le(product) + "0000" + le(version) + "0000")
 
 
-def _es_entry(name: str, guid: str) -> ET.Element:
+def _es_entry(name: str, guid: str, binds: List[tuple]) -> ET.Element:
     e = ET.Element("inputConfig",
                    {"type": "joystick", "deviceName": name, "deviceGUID": guid})
-    for n, t, i, v, c in _ES_BINDS:
+    for n, t, i, v, c in binds:
         ET.SubElement(e, "input",
                       {"name": n, "type": t, "id": i, "value": v, "code": c})
     return e
@@ -356,12 +398,20 @@ def _es_write_atomic(path: str, root: ET.Element) -> None:
 
 
 def ensure_es_input_entry(name: str, vendor: int, product: int, version: int,
-                          bustype: int, path: str = ES_INPUT_CFG) -> Dict:
-    """Idempotently ensure es_input.cfg has an <inputConfig> for this device's
-    GUID. Additive: existing entries (incl. hand-written ones) and comments are
-    preserved; idempotency keys on deviceGUID, so a pre-existing entry for the
-    same pad (whatever its deviceName) is left alone."""
+                          bustype: int, path: str = ES_INPUT_CFG,
+                          keys: List[int] = None) -> Dict:
+    """Idempotently ensure es_input.cfg has a CORRECT <inputConfig> for this
+    device's GUID, with button ids computed from the device's key set `keys`
+    (default: the canonical passthrough set PT_KEYS) per the udev model.
+
+    Other entries (incl. hand-written ones) and comments are preserved. An
+    existing entry for the same GUID whose binds disagree with the computed
+    ones is corrected IN PLACE (keeping its deviceName) — this self-heals
+    entries written before the shifted-labels fix. Only entries for the GUID
+    of a pt device this agent opens are ever touched."""
+    keys = PT_KEYS if keys is None else keys
     guid = sdl_guid(bustype, vendor, product, version)
+    want = es_binds(keys)
     with _es_lock:
         root = None
         if os.path.exists(path):
@@ -384,9 +434,25 @@ def ensure_es_input_entry(name: str, vendor: int, product: int, version: int,
         if root is None:
             root = ET.Element("inputList")
         for ic in root.iter("inputConfig"):
-            if ic.get("deviceGUID") == guid:
+            if ic.get("deviceGUID") != guid:
+                continue
+            have = sorted((i.get("name"), i.get("type"), i.get("id"),
+                           i.get("value"), i.get("code"))
+                          for i in ic.findall("input"))
+            if have == want:
                 return {"es_input": "present", "guid": guid}
-        root.append(_es_entry(name, guid))
+            # Stale/mislabelled entry for OUR pt device (pre-fix shape, e.g.
+            # Xbox-copied ids) → rewrite its binds in place, keep its name.
+            for i in list(ic.findall("input")):
+                ic.remove(i)
+            for n, t, i_, v, c in want:
+                ET.SubElement(ic, "input",
+                              {"name": n, "type": t, "id": i_, "value": v, "code": c})
+            _es_write_atomic(path, root)
+            log.info("es_input.cfg: corrected stale binds for '%s' (GUID %s)",
+                     ic.get("deviceName"), guid)
+            return {"es_input": "corrected", "guid": guid}
+        root.append(_es_entry(name, guid, want))
         _es_write_atomic(path, root)
         log.info("es_input.cfg: registered '%s' (GUID %s) for the launcher", name, guid)
         return {"es_input": "added", "guid": guid}

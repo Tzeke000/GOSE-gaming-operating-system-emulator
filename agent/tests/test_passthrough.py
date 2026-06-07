@@ -12,7 +12,8 @@ from unittest import mock
 from gose_agent.agent import Agent
 from gose_agent.config import AgentConfig
 from gose_agent.capabilities.input import (
-    PassthroughManager, PT_PHYS, _ES_BINDS, ensure_es_input_entry, sdl_guid,
+    PassthroughManager, PT_KEYS, PT_PHYS, ensure_es_input_entry, es_binds,
+    sdl_guid, udev_button_indices,
 )
 from gose_agent.protocol import AgentError
 from gose_agent import server as srv
@@ -155,10 +156,10 @@ class TestEsInputAutoRegister(unittest.TestCase):
         self.assertEqual(e.get("deviceName"), "DualSense Wireless Controller")
         self.assertEqual(e.get("deviceGUID"), self.DS_GUID)
         self.assertEqual(e.get("type"), "joystick")
-        # binds mirror the known-good Xbox-360-shaped entry, completely
+        # binds are computed from the pt device's actual key set (udev model)
         binds = {(i.get("name"), i.get("type"), i.get("id"), i.get("value"),
                   i.get("code")) for i in e.findall("input")}
-        self.assertEqual(binds, set(_ES_BINDS))
+        self.assertEqual(binds, set(es_binds(PT_KEYS)))
         # no stray tmp files from the atomic write
         self.assertEqual(sorted(os.listdir(self.dir.name)), ["es_input.cfg"])
 
@@ -238,6 +239,104 @@ class TestEsInputAutoRegister(unittest.TestCase):
             r = pt.open(dict(self.DS))
         self.assertEqual(r["pt_id"], 1)                          # pad still opened
         self.assertTrue(r["es_input"].startswith("error:"))
+
+    # The pre-fix entry shape: Xbox-360 ids copied onto a 17-key pt pad — the
+    # shifted-labels bug (in-game start/select landed on the wrong buttons).
+    SHIFTED = ('<?xml version="1.0"?>\n<inputList>\n'
+               "\t<!-- keep this comment -->\n"
+               '\t<inputConfig type="joystick" deviceName="DualSense Wireless'
+               ' Controller" deviceGUID="%s">\n'
+               '\t\t<input name="a" type="button" id="1" value="1" code="305" />\n'
+               '\t\t<input name="start" type="button" id="7" value="1" code="315" />\n'
+               '\t\t<input name="select" type="button" id="6" value="1" code="314" />\n'
+               "\t</inputConfig>\n</inputList>\n")
+
+    def test_stale_entry_corrected_in_place(self):
+        with open(self.cfg, "w", encoding="utf-8") as fh:
+            fh.write(self.SHIFTED % self.DS_GUID)
+        r = self.ensure(name="renamed pad")
+        self.assertEqual(r["es_input"], "corrected")
+        (e,) = self.entries()                                    # not duplicated
+        self.assertEqual(e.get("deviceName"),
+                         "DualSense Wireless Controller")        # name kept
+        ids = {i.get("name"): i.get("id") for i in e.findall("input")
+               if i.get("type") == "button"}
+        self.assertEqual(
+            ids, {"a": "1", "b": "0", "x": "3", "y": "2", "pageup": "4",
+                  "pagedown": "5", "select": "8", "start": "9",
+                  "hotkey": "10", "l3": "11", "r3": "12"})
+        text = open(self.cfg, encoding="utf-8").read()
+        self.assertIn("keep this comment", text)                 # comment survived
+        self.assertEqual(self.ensure()["es_input"], "present")   # now canonical
+
+    def test_custom_keys_compute_custom_ids(self):
+        r = ensure_es_input_entry("mini pad", 1, 2, 0, 3, path=self.cfg,
+                                  keys=[0x130, 0x131, 0x13B])
+        self.assertEqual(r["es_input"], "added")
+        (e,) = self.entries()
+        ids = {i.get("name"): i.get("id") for i in e.findall("input")
+               if i.get("type") == "button"}
+        self.assertEqual(ids, {"b": "0", "a": "1", "start": "2"})
+
+
+class TestUdevIndexModel(unittest.TestCase):
+    """es_input button ids must follow the consumers' ACTUAL indexing model:
+    configgen copies the id verbatim into retroarch input_playerN_*_btn, and
+    RetroArch's udev joypad driver (input_joypad_driver=udev) indexes buttons
+    by ascending keycode over the device's real EV_KEY set. Copying the
+    Xbox-360 ids onto the 17-key pt mirrors shifted select/start/hotkey/l3/r3
+    by two — the 2026-06-07 in-game shifted-labels bug (proven live on
+    pong1k2p: BTN_TR2 acted as start, BTN_START did nothing)."""
+
+    # A real Xbox 360 pad's key set (xpad): no BTN_TL2/TR2 (triggers are ABS)
+    # and no BTN_DPAD_* (dpad is HAT0) — also exactly EvdevInput's seat-pad set.
+    XBOX_KEYS = [0x130, 0x131, 0x133, 0x134, 0x136, 0x137,
+                 0x13A, 0x13B, 0x13C, 0x13D, 0x13E]
+
+    def test_pt_indices_ascending_keycode(self):
+        self.assertEqual(udev_button_indices(PT_KEYS), {
+            0x130: 0, 0x131: 1, 0x133: 2, 0x134: 3,     # south east north west
+            0x136: 4, 0x137: 5, 0x138: 6, 0x139: 7,     # tl tr tl2 TR2(=7!)
+            0x13A: 8, 0x13B: 9, 0x13C: 10,              # select START(=9) mode
+            0x13D: 11, 0x13E: 12,                       # thumbl thumbr
+            0x220: 13, 0x221: 14, 0x222: 15, 0x223: 16,  # dpad keys
+        })
+
+    def test_pt_binds_not_xbox_shifted(self):
+        ids = {n: i for n, t, i, v, c in es_binds(PT_KEYS) if t == "button"}
+        # unshifted (same as the Xbox entry): face buttons + shoulders
+        self.assertEqual(
+            {k: ids[k] for k in ("a", "b", "x", "y", "pageup", "pagedown")},
+            {"a": "1", "b": "0", "x": "3", "y": "2",
+             "pageup": "4", "pagedown": "5"})
+        # THE FIX: +2 vs the Xbox entry (TL2/TR2 occupy 6/7 on a 17-key pad)
+        self.assertEqual(
+            {k: ids[k] for k in ("select", "start", "hotkey", "l3", "r3")},
+            {"select": "8", "start": "9", "hotkey": "10",
+             "l3": "11", "r3": "12"})
+
+    def test_seat_pads_match_stock_xbox_entry(self):
+        # The AI seat pads (EvdevInput) expose XBOX_KEYS, so the STOCK
+        # "Microsoft Xbox 360 pad" entry's ids are already correct for them —
+        # which is why the seats need no corrected entry of their own.
+        ids = {n: i for n, t, i, v, c in es_binds(self.XBOX_KEYS)
+               if t == "button"}
+        self.assertEqual(ids, {"a": "1", "b": "0", "x": "3", "y": "2",
+                               "pageup": "4", "pagedown": "5", "select": "6",
+                               "start": "7", "hotkey": "8", "l3": "9",
+                               "r3": "10"})
+
+    def test_key_updown_block_scanned_first(self):
+        # udev scans KEY_UP..KEY_DOWN before BTN_MISC..KEY_MAX.
+        self.assertEqual(udev_button_indices([0x130, 103, 108]),
+                         {103: 0, 108: 1, 0x130: 2})
+
+    def test_missing_keycode_drops_bind(self):
+        rows = es_binds([0x130, 0x131])                  # only south + east
+        names = [n for n, t, i, v, c in rows if t == "button"]
+        self.assertEqual(sorted(names), ["a", "b"])
+        # axis/hat rows always present (same ABS set on every pt device)
+        self.assertEqual(len([r for r in rows if r[1] in ("axis", "hat")]), 10)
 
 
 class TestPinSeatDeniesPt(unittest.TestCase):
