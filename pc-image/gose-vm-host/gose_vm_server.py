@@ -65,7 +65,8 @@ _ENGINE_DATA = {("prboom", "prboom.wad")}
 _SYS = {"nes": "NES", "snes": "SNES", "megadrive": "Genesis", "gba": "Game Boy Advance",
         "gb": "Game Boy", "gbc": "Game Boy Color", "n64": "Nintendo 64", "psx": "PlayStation",
         "ps2": "PlayStation 2", "psp": "PSP", "gamecube": "GameCube", "dreamcast": "Dreamcast",
-        "c64": "Commodore 64", "pcengine": "PC Engine", "nds": "Nintendo DS", "mame": "Arcade"}
+        "c64": "Commodore 64", "pcengine": "PC Engine", "nds": "Nintendo DS", "mame": "Arcade",
+        "tyrian": "Tyrian"}
 
 _THEME_LOGOS = "/usr/share/emulationstation/themes/es-theme-carbon/art/logos"
 
@@ -714,6 +715,12 @@ _STORE = [
     {"id": "org.kde.kdenlive", "name": "Kdenlive", "desc": "Video editor", "cat": "Creative", "icon": "scissors"},
     {"id": "com.obsproject.Studio", "name": "OBS Studio", "desc": "Record & stream", "cat": "Creative", "icon": "monitor"},
     {"id": "org.blender.Blender", "name": "Blender", "desc": "3D creation suite", "cat": "Creative", "icon": "sparkles"},
+    # Owner-approved free games (provenance review, docs/19 spirit: nothing commercial).
+    # Both Flathub IDs verified live against flathub.org/api/v2/summary 2026-06-07.
+    # Kapman: GPLv2+ (KDE Games) — fully open-source code AND assets.
+    # SuperTuxKart: GPLv3 code, CC-BY-SA assets — fully open-source.
+    {"id": "org.kde.kapman", "name": "Kapman", "desc": "Maze-chase classic, fully open-source (KDE Games)", "cat": "Games", "icon": "gamepad-2"},
+    {"id": "net.supertuxkart.SuperTuxKart", "name": "SuperTuxKart", "desc": "Open-source kart racer", "cat": "Games", "icon": "gamepad-2"},
 ]
 
 _FLATPAK_APP = "/userdata/saves/flatpak/binaries/app"
@@ -2353,7 +2360,9 @@ def apply_core_swap():
 # ===== Games Store: curated FREE / homebrew downloads (no commercial ROMs) =====
 # Every entry is a genuinely free, redistributable game with a verified direct download URL.
 # Installs are confined to /userdata/roms/<system>/ — no path escapes, no arbitrary URLs.
-# "direct" writes the fetched bytes as <dest>; "zip" extracts the named member as <dest>.
+# "direct" writes the fetched bytes as <dest>; "zip" extracts the named member as <dest>;
+# "zipdir" extracts the archive's <strip>-prefixed members into roms/<system>/<datadir>/
+# and writes <dest> as the marker file ES/the Library lists (directory-data games).
 GAMES_CATALOG = [
     {"id": "freedoom1", "name": "Freedoom: Phase 1", "system": "prboom",
      "desc": "Free, complete Doom-engine IWAD (single-player). BSD-style licensed.",
@@ -2375,6 +2384,25 @@ GAMES_CATALOG = [
      "license": "zlib", "cat": "Puzzle", "dest": "libbet.gb",
      "kind": "direct",
      "url": "https://github.com/pinobatch/libbet/releases/download/v0.08/libbet.gb"},
+    # Tyrian — the FULL commercial game, made freeware by its developer Jason Emery in 2004
+    # (he reacquired the rights; community-hosted at camanis.net, the mirror OpenTyrian's own
+    # README points to). NOT a commercial-ROM exception: redistribution is author-sanctioned.
+    # This image ships OpenTyrian v2.1 (GPLv2 engine, /usr/bin/opentyrian — verified in-guest
+    # 2026-06-07); its Batocera configgen chdirs to roms/tyrian/data, so the Tyrian 2.1 data
+    # set goes there and the .game marker is what ES/the Library lists. (Tyrian 2000's data
+    # needs the opentyrian2000 fork, which this image does NOT ship — hence 2.1, not 2000.)
+    # URL verified 2026-06-07: HEAD 200, application/zip, 4,754,048 bytes; members are a flat
+    # lowercase tyrian21/ tree, exactly the filenames OpenTyrian opens.
+    {"id": "tyrian", "name": "Tyrian", "system": "tyrian",
+     "desc": "Legendary 1995 vertical-scrolling shmup — the full game, freeware since 2004.",
+     "license": "Freeware data (Jason Emery, 2004); GPLv2 engine", "cat": "Shmup",
+     "dest": "Tyrian.game",
+     "kind": "zipdir", "strip": "tyrian21/", "datadir": "data",
+     "url": "https://www.camanis.net/tyrian/tyrian21.zip"},
+    # Blade Buster (NES homebrew shmup) was REVIEWED and SKIPPED 2026-06-07: romhacking.net
+    # (its canonical host) 403s non-browser clients and prohibits hotlinking, so there is no
+    # stable direct URL this installer could honestly use. Revisit if the author publishes
+    # a first-party direct link.
 ]
 _GAMES_BY_ID = {g["id"]: g for g in GAMES_CATALOG}
 
@@ -2413,6 +2441,43 @@ def games_install(payload):
             data = r.read()
     except Exception as e:
         return {"ok": False, "error": "download failed: %s" % e, "url": g["url"]}
+    if g["kind"] == "zipdir":
+        # whole-directory game data (e.g. Tyrian): extract the archive's <strip> members
+        # into roms/<system>/<datadir>/, then write <dest> as the marker the Library lists.
+        import io, zipfile
+        datadir = os.path.join(sysdir, g["datadir"])
+        if os.path.realpath(datadir) != datadir or not datadir.startswith(sysdir + os.sep):
+            return {"ok": False, "error": "refused: data dir escapes the roms directory"}
+        try:
+            zf = zipfile.ZipFile(io.BytesIO(data))
+            members = [m for m in zf.infolist()
+                       if m.filename.startswith(g["strip"]) and not m.is_dir()]
+            if not members:
+                return {"ok": False, "error": "archive had no files under '%s'" % g["strip"]}
+            total = 0
+            for m in members:
+                rel = m.filename[len(g["strip"]):]
+                out = os.path.normpath(os.path.join(datadir, rel))
+                if not out.startswith(datadir + os.sep):    # zip-slip confinement
+                    return {"ok": False, "error": "refused: archive member escapes the data dir"}
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                with open(out, "wb") as f:
+                    f.write(zf.read(m))
+                total += m.file_size
+        except Exception as e:
+            return {"ok": False, "error": "extract failed: %s" % e}
+        try:
+            tmp = out_path + ".tmp"
+            with open(tmp, "w") as f:
+                f.write(g["name"] + "\n")   # marker rom; the data lives in <datadir>
+                f.flush(); os.fsync(f.fileno())
+            os.replace(tmp, out_path)
+        except Exception as e:
+            return {"ok": False, "error": "write failed: %s" % e}
+        LOG.info("GAME INSTALL %s -> %s (%d files, %d bytes) + marker %s",
+                 gid, datadir, len(members), total, out_path)
+        return {"ok": True, "id": gid, "installed": True, "bytes": total,
+                "files": len(members), "path": out_path}
     if g["kind"] == "zip":
         import io, zipfile
         try:
@@ -2448,6 +2513,13 @@ def games_uninstall(payload):
         os.remove(out_path)
     except Exception as e:
         return {"ok": False, "error": str(e)}
+    dd = g.get("datadir")
+    if dd:
+        # zipdir games keep their data beside the marker — remove it too (same confinement)
+        datadir = os.path.join(sysdir, dd)
+        if os.path.realpath(datadir) == datadir and datadir.startswith(sysdir + os.sep) \
+                and os.path.isdir(datadir):
+            shutil.rmtree(datadir, ignore_errors=True)
     LOG.info("GAME UNINSTALL %s", gid)
     return {"ok": True, "id": gid, "removed": True}
 
