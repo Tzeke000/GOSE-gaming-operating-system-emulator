@@ -1,0 +1,28 @@
+GOSE BOOT ANIMATION — "the crystal wakes"
+Target: 6-8 second seamless-loop-capable clip, 1920x1080 (and 1280x800 for
+handheld), dark master. Use the GOSE crystal render as reference image.
+
+PROMPT:
+A flawless faceted crystal gem, deep blue shading into violet, floating
+centered on a pure black void. Inside the crystal a tiny pixelated core
+pulses with soft cyan light, like a heartbeat. The crystal rotates slowly
+and majestically around its vertical axis — one full rotation across the
+clip — while thin beams of refracted light sweep across its facets. Subtle
+particles of light drift upward around it like dust in a projector beam.
+The glow breathes: dim, brighter, dim. No camera movement, no background
+detail, pure black surroundings. Elegant, premium, calm — the feeling of a
+high-end console powering on. Photorealistic render quality, sharp facet
+edges, gentle bloom, no text.
+
+VARIANT A (boot-in): first 2 seconds — the crystal assembles from drifting
+pixel fragments that fly inward from the darkness and lock into facets,
+then the rotation begins.
+VARIANT B (boot-out / handoff to login): final second — the core's light
+swells to fill the crystal, then the whole gem dissolves into a soft cyan
+glow that fades to black (the OS fades in from that black).
+
+NOTES FOR WIRING: the loop section must tile seamlessly (rotation speed
+constant). Mid-loop is what plays during the long mount/services phase, so
+it can repeat 2-5x invisibly. Pair with the existing boot sound (C-G-C
+motif); the core pulse should visually sit near 60 BPM so it never fights
+the audio.

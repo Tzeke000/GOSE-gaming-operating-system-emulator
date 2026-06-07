@@ -1,0 +1,27 @@
+VOICE-OVER LINE SETS (ElevenLabs)
+Voice direction for ALL sets: warm, low-to-mid, unhurried, confident —
+a calm narrator, never a salesperson. Slight smile in the tone.
+
+SET A — TRAILER (see 03-os-trailer-ad.txt for the full script in context):
+  "Every controller you own... already works."
+  "Every game you love... one press away."
+  "No desktop fights. No driver hunts. No menus built for a mouse."
+  "Just pick up a pad — any pad — and play."
+  "And when you want a second player... bring an AI."
+  "GOSE. A whole operating system, built around the way you actually play."
+  "Free. Open. Yours."
+
+SET B — OPTIONAL OOBE GREETING (plays once on the Welcome screen if we
+ever want voice there; generate but wiring is a product decision):
+  "Welcome to GOSE."
+  "Grab the controller you like best — we'll take it from here."
+  "You're all set. Go play."
+
+SET C — SHORT PRODUCT STINGS (5-10s social cuts):
+  "Any pad. Any game. GOSE."
+  "Your games. Your controllers. One OS."
+
+DELIVERY NOTES: generate 2-3 takes per line at slightly different pacing;
+keep the breath before ellipses. Export 48kHz WAV. The OS's quiet-mode and
+volume ducking already exist — any in-OS use routes through the sound
+manager like every other clip.

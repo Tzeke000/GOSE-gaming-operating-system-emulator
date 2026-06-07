@@ -1,0 +1,26 @@
+UI MICRO-ANIMATION REFERENCES — window + cursor motion language
+These are REFERENCE clips for tuning the CSS/JS animations by eye (the real
+implementations are code, not video). Generate at 1080p, dark background,
+2-3 seconds each, slow motion welcome.
+
+1. WINDOW OPEN — "A dark UI window materializes on an onyx desktop: it
+   scales up from 92% to 100% over a quarter second while fading in, with
+   a subtle cyan edge-glow that blooms once and settles. Smooth
+   ease-out-expo motion, premium OS feel, no bounce."
+2. WINDOW CLOSE — "The same window releases: scales down slightly while
+   fading, its edge-glow collapsing into a thin line that winks out.
+   Quick, decisive, calm — under 200ms feel."
+3. WINDOW MINIMIZE (widget tier) — "The window folds toward the dock —
+   scale + slight vertical squash along the travel path, leaving a brief
+   light trail that fades. Playful but restrained."
+4. CURSOR APPEAR/DISAPPEAR — "A small luminous pointer fades in and grows
+   from 80% to 100% with a single soft pulse ring when the stick moves;
+   after idle, it exhales — shrinking slightly while fading out over half
+   a second." (matches the 5s-idle auto-hide behavior)
+5. FOCUS HOP — "The blue focus glow jumps from one tile to a neighbor:
+   the glow leads the jump like a drop of light, stretching slightly
+   toward the target then snapping crisp onto it. 120ms."
+
+NOTE: motion vocabulary must stay consistent: ease-out, sub-250ms,
+glow-leads-motion, nothing bounces. Reduce-motion users get opacity-only
+versions — every one of these needs that fallback when implemented.

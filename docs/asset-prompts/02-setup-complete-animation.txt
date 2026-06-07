@@ -1,0 +1,23 @@
+OOBE SETUP-COMPLETE ANIMATION — "welcome home"
+Target: 4-5 seconds, 1920x1080, plays once at the end of first-boot setup
+(between "Getting ready" and the desktop appearing). Reference image: the
+GOSE crystal render.
+
+PROMPT:
+The GOSE crystal hangs centered in black space, glowing softly. It pulses
+once — a bright ring of cyan-violet light bursts outward from its core like
+a silent shockwave, washing across the frame. As the ring passes, faint
+geometric shapes (window outlines, a game-controller silhouette drawn in
+thin neon lines) bloom into existence around the crystal and settle into a
+loose orbit, like a small constellation assembling around a sun. The
+crystal settles brighter than before — awake now. Premium, warm,
+celebratory but restrained; no confetti, no text. Dark background stays
+pure black. Soft bloom, sharp linework on the neon shapes.
+
+ENDING: everything drifts gently apart and fades, leaving a soft glow that
+matches the desktop's onyx background tone — the desktop fades in over it.
+
+NOTES: this is the user's reward moment after the wizard — it should feel
+like the OS exhaling. Pairs with the login/welcome sound. Respect
+reduce-motion users: the OS already has a static fallback, so this clip is
+the enhanced path only.

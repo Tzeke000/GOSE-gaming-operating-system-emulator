@@ -1,0 +1,46 @@
+GOSE TRAILER / AD — "every controller. every game. one OS."
+Target: 30-45 seconds, 16:9. Mixed approach: AI-generated mood shots +
+real screen captures of the OS (the real UI sells it; captures supplied
+separately). VO + music prompts below are ElevenLabs-ready.
+
+SHOT LIST / GENERATION PROMPTS (one per shot, 3-5s each):
+1. COLD OPEN — "A dark room lit only by a TV's glow. A hand picks up a
+   well-worn game controller from a coffee table. Close on the thumb
+   resting on the stick. Cinematic, shallow depth of field, warm dark
+   tones."
+2. THE CRYSTAL — boot animation excerpt (file 01), 2 seconds of the
+   crystal waking.
+3. REAL CAPTURE — the controller-driven desktop: tiles, widgets, focus
+   glow hopping cell to cell. (screen capture, not generated)
+4. CONTROLLERS RAIN — "Overhead studio shot, matte black surface: a dozen
+   different game controllers laid in a neat grid — modern pads, retro
+   pads, arcade stick — each one's buttons glinting under a slow light
+   sweep. Premium product-photography look."
+5. REAL CAPTURE — a retro game launching instantly from the grid; gameplay
+   for 3 seconds.
+6. THE PLAYERS — "Split-screen game night: two friends on a couch, pads in
+   hand, screen light flickering on their faces, laughing at a close game.
+   Warm, candid, film grain."
+7. AI SEAT (honest, no hype) — REAL CAPTURE: the AI Hub pairing screen,
+   then a Pong rally where one paddle is labeled as the AI player.
+8. CLOSE — the crystal again, settling bright; the wordmark "GOSE" fades
+   in beneath it, then: "Gaming Operating System Emulator — free & open."
+
+VO SCRIPT (ElevenLabs; voice: warm, low, unhurried — trailer-calm not
+movie-epic; ~75 words):
+  "Every controller you own... already works.
+   Every game you love... one press away.
+   No desktop fights. No driver hunts. No menus built for a mouse.
+   Just pick up a pad — any pad — and play.
+   And when you want a second player... bring an AI.
+   GOSE. A whole operating system, built around the way you actually play.
+   Free. Open. Yours."
+
+MUSIC PROMPT (ElevenLabs music): "Warm analog synth pulse at 90 BPM
+building gently for 40 seconds — dark, premium, optimistic. A simple
+three-note rising motif (C-G-C) recurs as the spine. Soft side-chained
+pads, one tasteful bass drop at the 2/3 mark when gameplay appears, clean
+ending on a held warm chord with a single soft chime."
+
+SFX: use the OS's own system sounds for UI moments in the captures —
+the product should sound like itself.
