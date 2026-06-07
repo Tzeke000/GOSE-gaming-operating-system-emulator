@@ -119,13 +119,19 @@
   const SETTINGS=[["Display","display"],["Sound & audio","sound"],["Network & Wi-Fi","net"],
     ["Wallpaper & Personalization","personalize"],["Time & Language","time"],["Power & Battery","power"],
     ["Privacy & Security","privacy"],["Accounts","accounts"],["About this device","about"],["Live wallpaper","personalize"]];
+  // Reset the cursor to cell 0 ONLY when the query actually changes (real typing).
+  // loadInstalled() re-runs filter() with the SAME query every 8s as installed apps
+  // stream in; that background refresh must NOT yank the pad's grid focus back to
+  // the top — clamp foc into range instead so navigation holds.
+  let lastQ=null;
   function filter(){const raw=$("q").value.trim(), q=raw.toLowerCase();
-    if(!q){shown=APPS.slice();foc=0;$("ph").textContent="ALL APPS";render();return;}
+    const qChanged=(q!==lastQ); lastQ=q;
+    if(!q){shown=APPS.slice();foc=qChanged?0:Math.min(foc,shown.length-1);$("ph").textContent="ALL APPS";render();return;}
     const apps=APPS.filter(a=>a.nm.toLowerCase().includes(q)||a.ds.toLowerCase().includes(q));
     const sets=SETTINGS.filter(s=>s[0].toLowerCase().includes(q)||("settings".includes(q)))
       .map(s=>({nm:s[0],ds:"Settings",ic:"settings",href:"gose-settings.html#"+s[1]}));
     const files=[{nm:'Search Files for "'+raw+'"',ds:"Open in Files",ic:"folder",href:"gose-files.html"}];
-    shown=apps.concat(sets).concat(files);foc=0;
+    shown=apps.concat(sets).concat(files);foc=qChanged?0:Math.min(foc,shown.length-1);
     $("ph").textContent="RESULTS — "+(apps.length+sets.length);render();}
   function move(d){if(!shown.length)return;foc=(foc+d+shown.length)%shown.length;render();}
   $("q").addEventListener("input",filter);
@@ -140,11 +146,13 @@
     else if(k==="ArrowUp")move(-4);
     else if(k==="Enter")launch();
     else return; e.preventDefault();});
-  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if(tap(15))move(1);if(tap(14))move(-1);if(tap(13))move(4);if(tap(12))move(-4);
-      if(tap(0))launch();if(tap(1))location.href="gose-home.html";
-      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  // NO navigator.getGamepads() polling here — ONE input path only. The controller
+  // drives this page via the SAME synthesized arrow/Enter/Esc keys as every other
+  // GOSE page (gose-pad-nav.py reads the pad via evdev and emits X keys: the
+  // universal path, since WebKit2GTK here has no gamepad lib). A raw-gamepad poll
+  // would be a SECOND path also calling move()/launch() — on any build where
+  // getGamepads is live (Chromium / a libmanette WebKit) that double-fires, moving
+  // the grid TWO cells per press. Keydown above is the single source of truth.
   render(); loadInstalled(); setInterval(loadInstalled, 8000);
   (function(){const hq=(location.hash.match(/q=([^&]+)/)||[])[1]; if(hq){$("q").value=decodeURIComponent(hq);filter();}})();
 </script>
