@@ -429,7 +429,7 @@
   /* ---- iframe key forwarding: a focused web window must not trap the WM layer.
      All gose pages are same-origin, so hook each frame's window and forward
      WM-relevant keys to the shell document (capture handler below). ---- */
-  function hookFrame(wb){
+  function hookFrame(id,wb){
     function arm(){
       try{
         var fr=wb.body&&wb.body.querySelector("iframe");
@@ -444,12 +444,26 @@
         if(cw.__wmFwd)return; cw.__wmFwd=true;
         cw.addEventListener("keydown",function(e){
           var wm=MODAL||(e.ctrlKey&&e.key==="Tab");
-          if(!wm)return;
-          e.preventDefault(); e.stopImmediatePropagation();
-          try{
-            document.body.dispatchEvent(new KeyboardEvent("keydown",
-              {key:e.key,ctrlKey:e.ctrlKey,bubbles:true,cancelable:true}));
-          }catch(err){}
+          if(wm){
+            e.preventDefault(); e.stopImmediatePropagation();
+            try{
+              document.body.dispatchEvent(new KeyboardEvent("keydown",
+                {key:e.key,ctrlKey:e.ctrlKey,bubbles:true,cancelable:true}));
+            }catch(err){}
+            return;
+          }
+          /* Escape inside a windowed page = close THIS window (shell-owned window op —
+             same rule as the shell-side handler below). Needed when real DOM focus sits
+             INSIDE the iframe (mouse click / page-side .focus()): keys then land here
+             directly and the shell capture handler never sees them, so without this the
+             page's own Escape→"go to desktop" navigation fires inside the frame. */
+          if(e.key==="Escape"&&!e.__wmFwd){
+            var w=WINS[id];
+            if(w&&(w.state==="normal"||w.state==="max")){
+              e.preventDefault(); e.stopImmediatePropagation();
+              run({verb:"close",id:id});
+            }
+          }
         },true);
       }catch(e){}
     }
@@ -490,7 +504,7 @@
     ORDER.push(id);
     wire(id,wb,null);
     if(opts.scroll){ var fr=frameOf(WINS[id]); if(fr)fr.dataset.restoreScroll=String(opts.scroll); }
-    hookFrame(wb);
+    hookFrame(id,wb);
     wb.focus(); syncSoon(); dockRender();
     return id;
   }
@@ -821,8 +835,22 @@
     if(e.__wmFwd)return;                     // never re-forward a synthetic
     if(e.ctrlKey&&e.key==="Tab")return;      // WM carousel shortcut stays with the shell
     var id=focusedId(); if(!id)return;       // no focused web window -> desktop nav, unchanged
-    var w=WINS[id];
-    if(!w||w.kind!=="page"||w.state==="suspended"||w.state==="min")return;
+    var w=WINS[id]; if(!w)return;
+    /* Escape (pad B) on a FOCUSED window is a WINDOW op owned by the SHELL — it must
+       NEVER be forwarded into the embedded page, whose own Escape handler is the
+       fullscreen "back to desktop" navigation (e.g. gose-library.html:
+       location.href="gose-home.html") and would render a desktop INSIDE the window.
+       docs/23 §7: in a window, "back" backs out of THE WINDOW; docs/27 §3.2 "never
+       traps" is satisfied at the window boundary. Per window type (docs/23 chunk B):
+       app (page) windows CLOSE; widget windows are minimize-only (their body IS the
+       live widget) so Escape MINIMIZES. Fullscreen (non-windowed) pages keep their
+       own Escape semantics — this handler only runs when a window holds focus. */
+    if(e.key==="Escape"&&(w.state==="normal"||w.state==="max")){
+      e.preventDefault(); e.stopImmediatePropagation();
+      run({verb:(w.kind==="widget"?"minimize":"close"),id:id});
+      return;
+    }
+    if(w.kind!=="page"||w.state==="suspended"||w.state==="min")return;
     var fr=frameOf(w), cw=fr&&fr.contentWindow;
     if(!cw||!cw.document)return;             // frame not ready -> let the shell have it
     e.preventDefault(); e.stopImmediatePropagation();
