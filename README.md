@@ -30,14 +30,14 @@ Created by **Ezekiel Angeles-Gonzalez**, Tzeke000 Studios.
 Then prove the project runs locally (no hardware, no network):
 ```bash
 pip install -r requirements-dev.txt          # only needed for the render scripts
-python3 -m unittest discover -s agent/tests -v   # expect 122 passing
+python3 -m unittest discover -s agent/tests -v   # expect 134 passing
 python3 scripts/gose-preview.py               # click through the UI in a browser
 python3 scripts/gose_vm.py --dry-run          # see the GOSE-PC VM launch command
 ./pc-image/build-gose-pc.sh --dry-run         # see the image-build plan
 ```
 
-**Working branch:** `claude/odin2-gaming-os-4SWOh` (default branch `main` mirrors it).
-Develop there, commit with clear messages, push; don't open a PR unless asked.
+**Working branch:** `main` (the historical `claude/odin2-gaming-os-4SWOh` branch is
+retired). Develop there, commit with clear messages, push; don't open a PR unless asked.
 
 ---
 
@@ -95,7 +95,7 @@ Built across one long session; full rationale in `docs/04-decision-log.md`.
   + GOSE layer → `.img` + importable `.ova`, with a sleek-black EmulationStation theme.
 
 ## Current state
-- ✅ **Runs/tests green off-device** — 122 tests, zero required deps for the core.
+- ✅ **Runs/tests green off-device** — 134 tests, zero required deps for the core.
 - ✅ **GUI prototypes + concept renders** for every screen, on the onyx theme + logo.
 - ✅ **GOSE-PC scaffolding** — VM launcher (`scripts/gose_vm.py`), image build
   (`pc-image/`), ES theme — all dry-run/tested.
@@ -103,21 +103,24 @@ Built across one long session; full rationale in `docs/04-decision-log.md`.
   peripheral enumeration, on-device theme tuning. Marked as such in the docs.
 - 🧱 **`[needs build]`** — run `pc-image/build-gose-pc.sh` on a Linux host (network +
   root + qemu) to produce the actual `GOSE-PC.img` / `GOSE-PC.ova`.
-- ❓ **Blocked on the owner** — the AI-agent API/transport spec (to finish `ai-bridge/`).
+- ✅ **Agent transport resolved** — MCP over stdio (`mcp/`), per `docs/12-agent-connection-spec.md`;
+  `ai-bridge/` remains a reference skeleton for non-MCP transports.
 
 ## Repo map
 | Path | What |
 |------|------|
 | `CLAUDE.md` | **Project memory** — read first; auto-loads each session. |
 | `ROADMAP.md` | Live status checklist across all phases. |
-| `docs/` | Brief, research+sources, install runbook, architecture, control protocol, GUI/controller plans, **decision log (ADRs)**, boot menu, PC-app+input. |
-| `agent/` | **GOSE Agent**: device-side AI-control daemon + client SDK + CLI + tests + game-state profiles. Mock backends run anywhere. |
+| `STRUCTURE.md` | **What-lives-where map** — every tree, load-bearing files, and which paths are deploy-frozen. |
+| `docs/` | All numbered design docs — indexed with statuses in **`docs/README.md`**: brief, research, runbook, architecture, protocol, **decision log (ADRs)**, license audit, widget + **controller standards** (docs/21, docs/27), windowing, OOBE. |
+| `docs/asset-prompts/` | Ready-to-paste AI prompts for brand motion/audio assets (boot animation, trailer, VO). |
+| `agent/` | **GOSE Agent**: device-side AI-control daemon + client SDK + CLI + tests (134) + game-state profiles. Mock backends run anywhere. |
 | `mcp/` | Zero-dep **MCP server** — how AI agents/Claude drive the device. |
-| `ai-bridge/` | Adapter mapping your AI agents ↔ the agent daemon (reference skeleton; needs their API). |
-| `gui/mockup/` | Navigable **HTML prototypes** + concept PNGs + renderers: `boot`, `bootmenu`, `input-select`, `login`, `desktop`; `assets/themes.css`, brand logo. |
-| `gui/theme-windows/` | Windows-like front-end notes. |
+| `ai-bridge/` | Adapter skeleton AI agents ↔ the agent daemon (transport resolved as MCP, docs/12; kept as reference for non-MCP paths). |
+| `gui/mockup/` | **The live GOSE shell UI** (despite the name): the `gose-*.html` pages + `assets/` deploy into the VM at `/userdata/gose-ui`. Also the early concept PNGs + renderers. |
+| `gui/theme-windows/` | Historical ES-theme stub (the shipped shell became the web kiosk; the built ES theme lives in `pc-image/gose-layer/themes/`). |
 | `scripts/` | Device setup + mock-testable logic: `gose_bootmenu.py`, `gose_input.py`, `gose_vm.py` (VM launcher), `gose-preview.py` (UI preview). |
-| `pc-image/` | **GOSE-PC image build**: `build-gose-pc.sh` (Batocera x86_64 + `gose-layer/` → `.img`/`.ova`), `make_ova.py`, the GOSE **ES theme**. |
+| `pc-image/` | **GOSE-PC image build** (`build-gose-pc.sh`, `make_ova.py`, `gose-layer/` incl. the ES theme) **+ `gose-vm-host/`** (the VM host/guest runtime scripts, incl. the input-level **controller passthrough** `pad_passthrough.py` + `gose-pad-nav.py` — deploy-frozen paths) **+ `dist/`** (the double-click launcher bundle). |
 
 ## Try the AI-control loop (no hardware)
 ```bash
@@ -135,8 +138,8 @@ See `agent/README.md` + `docs/05-ai-control-protocol.md` for the protocol, and
 ## Next actions (see ROADMAP.md for the full list)
 1. **Build the GOSE-PC image** on a Linux host: `sudo ./pc-image/build-gose-pc.sh`
    → produces the downloadable `.ova`. (Pinned to Batocera 42.)
-2. **Open items for the owner:** confirm the Odin 2 variant; share the AI-agent
-   API/transport (stdio vs HTTP/SSE MCP, auth) to finish `ai-bridge/`.
+2. **Open items for the owner:** confirm the Odin 2 variant once acquired.
+   (The AI-agent transport question is resolved — MCP over stdio, `docs/12`.)
 3. **GUI polish:** per-system box art for the ES theme; push the carousel toward the
    Windows-tile look; build the "GOSE Setup (BIOS)" sub-screen.
 4. **On hardware (when the Odin 2 arrives):** flash ROCKNIX, wire real

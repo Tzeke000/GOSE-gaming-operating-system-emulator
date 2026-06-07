@@ -22,6 +22,9 @@ agent.token
 .idea/
 .vscode/
 
+# AI-generated brand media (heavy; gets wired into the OS deliberately, not committed raw)
+docs/asset-prompts/generated/
+
 # Large/binary device artifacts (don't commit OS images or ROMs)
 *.img
 *.iso
