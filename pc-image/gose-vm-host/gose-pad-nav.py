@@ -6,14 +6,25 @@ gamepad->key mapper (evmapy/gptokeyb absent), so the controller cannot drive the
 controller-first UI on its own. BUT the UI's navigation is keyboard-based and
 verified working (arrows move focus, [ / ] switch store tabs, Enter activates,
 Esc -> desktop). This daemon reads the controller via python-evdev and synthesizes
-the matching X key events with xdotool -- making the whole UI controller-driven.
+the matching X input events -- making the whole UI controller-driven.
 
 PAUSE rule: when a game/emulator (retroarch / emulatorlauncher) is foreground, the
 pad belongs to the game (RetroArch reads evdev directly); we must NOT emit phantom
 keys. We detect that and go silent until the game exits.
 
-Injection path (PROVEN): `DISPLAY=:0 xdotool key <keysym>` drives the kiosk; X was
-started without -auth so no XAUTHORITY is needed.
+Injection engine: a PERSISTENT X connection doing XTEST fake events (python-xlib,
+vendored in ./vendor) -- sub-ms per key vs ~50-100ms per xdotool spawn. If the
+Xlib import/X connect fails we fall back to spawning `DISPLAY=:0 xdotool` per
+event (the original PROVEN path; X runs without -auth so no XAUTHORITY needed).
+NOTE: XSendEvent is IGNORED by WebKit -- XTEST (like `xdotool key` without
+--window) is the path that works.
+
+INPUT MODEL (docs/27 §1): the d-pad moves FOCUS (arrow keysyms); the LEFT STICK
+moves a real X POINTER (XTEST relative motion, >=60Hz while deflected, linear
+accel up to CURSOR_MAX_SPEED). A clicks at the pointer when the cursor is active
+(moved within CURSOR_CLICK_WINDOW); otherwise A stays Enter for focus-nav. The
+cursor auto-hides after CURSOR_HIDE_S idle (XFixes hide/show) and reappears on
+stick motion. Cursor motion obeys the same game-suppression as keys.
 
 Config (device match + keymaps) is in editable dicts at the top of this file.
 The mapping is pure/unit-testable via PadNav.map_event (no X required) -- see
@@ -31,6 +42,12 @@ import urllib.request
 
 import evdev
 from evdev import ecodes
+
+# Vendored pure-python deps (python-xlib + six) live beside this file; first on
+# sys.path so the XTEST engine works on the stock guest image (no pip there).
+_VENDOR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
+if os.path.isdir(_VENDOR_DIR) and _VENDOR_DIR not in sys.path:
+    sys.path.insert(0, _VENDOR_DIR)
 
 # ---------------------------------------------------------------------------
 # CONFIG  (edit here)
@@ -77,20 +94,35 @@ BUTTON_KEYMAP = {
     ecodes.BTN_DPAD_RIGHT: "Right",
 }
 
-# Axis (EV_ABS) -> directional keysyms.  'stick' axes use a deadzone around
-# center 0; hats are ternary (-1 / 0 / +1).  Held directions auto-repeat.
+# Axis (EV_ABS) -> directional keysyms.  Hats are ternary (-1 / 0 / +1).
+# Held directions auto-repeat.  The LEFT STICK (ABS_X/Y) is deliberately NOT
+# here (docs/27 model change 2026-06-07): d-pad = focus-nav keys, left stick =
+# the pointer CURSOR (see the CURSOR_* constants + PadNav cursor handling).
 AXIS_MAP = {
     ecodes.ABS_HAT0X: {"neg": "Left", "pos": "Right"},
     ecodes.ABS_HAT0Y: {"neg": "Up",   "pos": "Down"},
-    ecodes.ABS_X:     {"neg": "Left", "pos": "Right", "stick": True},
-    ecodes.ABS_Y:     {"neg": "Up",   "pos": "Down",  "stick": True},
 }
 
-STICK_DEADZONE = 12000   # |value| past this (from center 0) counts as a press
+# Left-stick axes -> pointer motion (NOT keysyms).
+CURSOR_AXES = (ecodes.ABS_X, ecodes.ABS_Y)
+
+STICK_DEADZONE = 12000   # |value| past this (from center 0) = deflected
+STICK_FULL = 32767       # nominal full deflection of an Xbox-style stick
 REPEAT_INITIAL = 0.40    # s before a held direction starts repeating
 REPEAT_INTERVAL = 0.18   # s between repeats while held (~180ms)
 GAME_CACHE_S = 0.30      # cache the "is a game running" check this long
 DEVICE_RESCAN_S = 2.0    # poll /dev/input for hotplug this often
+
+# --- stick cursor (docs/27 §1.1) --------------------------------------------
+CURSOR_MAX_SPEED = 900.0     # px/s at full deflection (linear with deflection)
+CURSOR_TICK_S = 0.012        # motion update period while deflected.  Nominal
+                             # target is >=60Hz; the guest's select() carries
+                             # ~1.5ms timer slack (16ms waits measured 17.5ms,
+                             # 57/s bare), so 12ms is what actually DELIVERS
+                             # >=60 updates/s in the VM.  Speed is dt-scaled,
+                             # so the tick rate never changes cursor speed.
+CURSOR_CLICK_WINDOW = 1.5    # s since last motion during which A = click
+CURSOR_HIDE_S = 5.0          # s of pointer idle before the X cursor auto-hides
 
 LOGFILE = "/userdata/system/logs/gose-pad-nav.log"
 
@@ -191,6 +223,13 @@ def log(msg):
 
 
 def _game_pids():
+    """PIDs of running game/emulator processes.  NOTE this is EXPENSIVE on the
+    guest (pgrep spawn ~tens of ms; a pure-python /proc scan measured ~0.7s for
+    418 pids and would hold the GIL) — it must only ever run inside GameWatch's
+    background thread, NEVER on the 60Hz cursor/select path (that's what capped
+    the cursor at ~25Hz on 2026-06-07).  pgrep is preferred over a python scan
+    here precisely because the work happens in a separate PROCESS: the bridge's
+    GIL stays free while the thread blocks on it."""
     pids = []
     for name in GAME_PGREP_EXACT:
         out = subprocess.run(["pgrep", "-x", name], capture_output=True, text=True)
@@ -231,6 +270,41 @@ def default_game_running():
 def default_gamebar_open():
     """True if the Game Bar overlay is open (its flag file exists)."""
     return os.path.exists(GAMEBAR_FLAG)
+
+
+class GameWatch:
+    """Keeps the 'is a game running' answer fresh OFF the hot path.
+
+    The select()/tick() loop runs at >=60Hz while the stick cursor is moving;
+    it must never spawn pgrep or scan /proc (both measured slow enough on the
+    guest to cap the cursor at ~25Hz).  This watcher refreshes the answer in a
+    daemon thread every `interval`, and is_running() is a plain attribute read.
+    The thread uses pgrep (see _game_pids): the scan work happens in a child
+    process, so the bridge's GIL stays free."""
+
+    def __init__(self, check=None, interval=GAME_CACHE_S):
+        self._check = check or default_game_running
+        self.interval = interval
+        self.value = False
+
+    def refresh(self):
+        try:
+            self.value = bool(self._check())
+        except Exception:
+            self.value = False
+        return self.value
+
+    def start(self):
+        self.refresh()                 # honest initial state before the thread
+        def _loop():
+            while True:
+                time.sleep(self.interval)
+                self.refresh()
+        _threading.Thread(target=_loop, daemon=True).start()
+        return self
+
+    def is_running(self):
+        return self.value
 
 
 def default_wm_open():
@@ -382,6 +456,161 @@ def xdotool_emit(keysym):
     env = dict(os.environ, DISPLAY=":0")
     subprocess.call(["xdotool", "key", keysym], env=env,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+# ---------------------------------------------------------------------------
+# INPUT ENGINES  (key synthesis + pointer)
+# ---------------------------------------------------------------------------
+class XTestEngine:
+    """Persistent-X-connection input engine: XTEST fake events via the vendored
+    pure-python python-xlib.  Sub-ms per key vs ~50-100ms per xdotool spawn
+    (the spawn cost was the amplifier of the 2026-06-07 "7.2s d-pad lag").
+
+    XTEST is the ONLY synthetic path WebKit honours: XSendEvent-style events
+    carry the synthetic flag and are ignored by it, while XTEST events come out
+    of the server like real device input (same reason `xdotool key` without
+    --window works).  Pointer motion is XTEST relative MotionNotify (detail=1);
+    clicks are XTEST button 1.  Cursor visibility uses the XFixes extension
+    (hide/show is refcounted per-client and auto-undone if we disconnect).
+    """
+    name = "xtest"
+
+    def __init__(self, display=":0"):
+        from Xlib import display as _xdisplay, X as _X, XK as _XK
+        from Xlib.ext import xtest as _xtest  # noqa: ensures the ext module loads
+        self._X = _X
+        self._XK = _XK
+        self._display_name = display
+        self._kc = {}                  # keysym name -> keycode cache
+        self.can_hide = False
+        self._connect()
+
+    def _connect(self):
+        from Xlib import display as _xdisplay
+        self.d = _xdisplay.Display(self._display_name)
+        if not getattr(self.d, "xtest_fake_input", None):
+            raise RuntimeError("X server has no XTEST extension")
+        self.root = self.d.screen().root
+        self._kc.clear()
+        # XFixes (cursor hide/show) is optional: probe honestly, never assume.
+        self.can_hide = False
+        try:
+            if getattr(self.root, "xfixes_hide_cursor", None):
+                self.d.xfixes_query_version()   # protocol requires negotiation
+                self.can_hide = True
+        except Exception:
+            self.can_hide = False
+
+    def _retry(self, op):
+        """Run op(); on a dead X connection reconnect ONCE and retry."""
+        try:
+            return op()
+        except Exception:
+            self._connect()            # may raise -> caller's except handles it
+            return op()
+
+    def _keycode(self, keysym_name):
+        kc = self._kc.get(keysym_name)
+        if kc is None:
+            ks = self._XK.string_to_keysym(keysym_name)
+            kc = self.d.keysym_to_keycode(ks)
+            self._kc[keysym_name] = kc
+        return kc
+
+    def key(self, keysym):
+        def op():
+            kc = self._keycode(keysym)
+            if not kc:
+                raise RuntimeError("no keycode for %s" % keysym)
+            self.d.xtest_fake_input(self._X.KeyPress, kc)
+            self.d.xtest_fake_input(self._X.KeyRelease, kc)
+            self.d.flush()
+        try:
+            self._retry(op)
+        except Exception as e:
+            log("xtest key %s failed (%s) -> xdotool one-shot" % (keysym, e))
+            xdotool_emit(keysym)       # never let a nav press vanish
+
+    def move(self, dx, dy):
+        def op():
+            # detail=1 == RELATIVE motion (XTEST spec); server clamps at edges
+            self.d.xtest_fake_input(self._X.MotionNotify, 1, x=dx, y=dy)
+            self.d.flush()
+        self._retry(op)
+
+    def click(self, button=1):
+        def op():
+            self.d.xtest_fake_input(self._X.ButtonPress, button)
+            self.d.xtest_fake_input(self._X.ButtonRelease, button)
+            self.d.flush()
+        self._retry(op)
+
+    def pointer_pos(self):
+        def op():
+            q = self.root.query_pointer()
+            return (q.root_x, q.root_y)
+        return self._retry(op)
+
+    def hide_cursor(self):
+        if self.can_hide:
+            self._retry(lambda: (self.root.xfixes_hide_cursor(), self.d.flush()))
+
+    def show_cursor(self):
+        if self.can_hide:
+            self._retry(lambda: (self.root.xfixes_show_cursor(), self.d.flush()))
+
+
+class XdotoolEngine:
+    """Fallback engine: one xdotool spawn per event (the original proven path).
+    Slow (~50-100ms/event) -- the cursor will not reach 60Hz on this engine and
+    XFixes hide/show is unavailable (parking the pointer as a fake 'hide' is
+    FORBIDDEN: it moves the pointer and fires hover side-effects)."""
+    name = "xdotool"
+    can_hide = False
+
+    @staticmethod
+    def _run(*args):
+        env = dict(os.environ, DISPLAY=":0")
+        subprocess.call(["xdotool"] + list(args), env=env,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    def key(self, keysym):
+        self._run("key", keysym)
+
+    def move(self, dx, dy):
+        self._run("mousemove_relative", "--", str(dx), str(dy))
+
+    def click(self, button=1):
+        self._run("click", str(button))
+
+    def pointer_pos(self):
+        env = dict(os.environ, DISPLAY=":0")
+        try:
+            out = subprocess.run(["xdotool", "getmouselocation"], env=env,
+                                 capture_output=True, text=True).stdout
+            parts = dict(p.split(":", 1) for p in out.split() if ":" in p)
+            return (int(parts["x"]), int(parts["y"]))
+        except Exception:
+            return (0, 0)
+
+    def hide_cursor(self):
+        pass                            # honest no-op (limitation logged once)
+
+    def show_cursor(self):
+        pass
+
+
+def make_engine():
+    """XTEST engine when the vendored Xlib can import + connect; else xdotool.
+    Logs which engine is active (the startup line to grep for)."""
+    try:
+        eng = XTestEngine(":0")
+        log("input engine: XTEST (persistent X conn, python-xlib vendored; "
+            "xfixes cursor hide=%s)" % ("yes" if eng.can_hide else "NO"))
+        return eng
+    except Exception as e:
+        log("input engine: xdotool FALLBACK (XTEST unavailable: %s)" % e)
+        return XdotoolEngine()
 
 
 # ---------------------------------------------------------------------------
@@ -744,7 +973,8 @@ class PadNav:
     """
 
     def __init__(self, emit=None, game_check=None, deadzone=STICK_DEADZONE,
-                 gate=None, gamebar_check=None, wm=None, wm_check=None):
+                 gate=None, gamebar_check=None, wm=None, wm_check=None,
+                 pointer=None):
         self.emit = emit or xdotool_emit
         self.game_check = game_check or default_game_running
         self.gamebar_check = gamebar_check or default_gamebar_open
@@ -758,6 +988,18 @@ class PadNav:
         self.axis_dirs = {}    # ecode -> "neg"/"pos"/None  (current crossed dir)
         self.repeat = {}       # ecode -> {"key": keysym, "next": float}
         self._game_cache = (0.0, False)
+        # --- stick cursor (docs/27 §1.1): pointer engine + deflection state ---
+        # pointer=None disables the cursor entirely (pure key-nav tests).
+        self.pointer = pointer
+        self.stick = {"x": 0.0, "y": 0.0}   # normalized deflection -1..1 (post-deadzone)
+        self.cursor_last_move = 0.0         # ts of last pointer motion we sent
+        self.cursor_visible = True          # our view of the X cursor's XFixes state
+        self._cursor_t = None               # last cursor tick ts (dt anchor)
+        self._fx = self._fy = 0.0           # sub-pixel motion accumulators
+        self._move_count = 0                # motions since last FPS log line
+        self._fps_t = 0.0                   # last FPS log line ts
+        self._cursor_blocked_log = None     # last logged block reason (de-spam)
+        self._gate_denied_logged = set()    # dev paths whose stick we logged once
 
     # --- pause rule ---------------------------------------------------------
     def is_paused(self):
@@ -848,6 +1090,12 @@ class PadNav:
             if event.type == ecodes.EV_ABS:
                 self.repeat.pop(event.code, None)   # no key auto-repeat from a consumed axis
             return
+        # 0.5) LEFT STICK -> pointer cursor (docs/27 §1.1): deflection state only;
+        #      the actual motion happens in tick() at >=60Hz (suppression/WM-modal
+        #      are re-checked there, so a game start mid-deflection stops motion).
+        if event.type == ecodes.EV_ABS and event.code in CURSOR_AXES:
+            self._cursor_feed(event, dev_path, dev_name)
+            return
         if not keysyms:
             return
         # 1) suppression: a game owns the pad UNLESS the Game Bar overlay is open.
@@ -864,12 +1112,130 @@ class PadNav:
             if event.type == ecodes.EV_ABS:
                 self.repeat.pop(event.code, None)   # blocked pad must not queue repeats
             return
+        # 3) A at an ACTIVE cursor clicks at the pointer instead of Enter
+        #    (cursor active = pointer moved within CURSOR_CLICK_WINDOW; BTN_START
+        #    stays Return always, so focus-nav Accept is never lost).
+        if (self.pointer is not None and event.type == ecodes.EV_KEY
+                and event.code == ecodes.BTN_SOUTH and event.value == 1
+                and self.cursor_active()):
+            try:
+                self.pointer.click(1)
+                log("cursor click (A @ active pointer)")
+            except Exception as e:
+                log("cursor click FAILED (%s) -> Return fallback" % e)
+                self.emit("Return")
+            return
         for k in keysyms:
             self.emit(k)
             log("emit key %s" % k)
 
+    # --- stick cursor (docs/27 §1.1) -----------------------------------------
+    def _norm_deflect(self, value):
+        """Normalized post-deadzone deflection: 0.0 inside STICK_DEADZONE, then
+        LINEAR to ±1.0 at full deflection (the owner-confirmed gentle accel)."""
+        if abs(value) <= self.deadzone:
+            return 0.0
+        n = (abs(value) - self.deadzone) / float(STICK_FULL - self.deadzone)
+        return min(1.0, n) * (1.0 if value > 0 else -1.0)
+
+    def _cursor_feed(self, event, dev_path, dev_name):
+        """Record left-stick deflection (motion itself happens in tick())."""
+        if self.pointer is None:
+            return
+        norm = self._norm_deflect(event.value)
+        if norm != 0.0:
+            allowed, reason = self.gate(dev_path, dev_name)
+            if not allowed:
+                if dev_path not in self._gate_denied_logged:
+                    self._gate_denied_logged.add(dev_path)
+                    log("cursor ignored: %s %s" % (dev_name or dev_path or "?", reason))
+                norm = 0.0
+        axis = "x" if event.code == ecodes.ABS_X else "y"
+        self.stick[axis] = norm
+
+    def cursor_deflected(self):
+        return bool(self.stick["x"] or self.stick["y"])
+
+    def cursor_release(self):
+        """Zero the deflection state — called when a device detaches so a pad
+        unplugged mid-deflection can't leave the pointer drifting forever."""
+        self.stick["x"] = self.stick["y"] = 0.0
+
+    def cursor_active(self, now=None):
+        """True while the pointer moved within CURSOR_CLICK_WINDOW -> A clicks."""
+        return ((now or time.time()) - self.cursor_last_move) <= CURSOR_CLICK_WINDOW
+
+    def _cursor_blocked(self):
+        """Why cursor motion must not happen right now (None = go).  The WM
+        modal layer owns the WHOLE pad while open (docs/27 §4 layer 3); a
+        running game suppresses motion exactly like keys (layer 1)."""
+        if self.wm is not None and self.wm.mode:
+            return "wm modal"
+        try:
+            if self.wm_check():
+                return "wm flag"
+        except Exception:
+            pass
+        if self.is_suppressed():
+            return "game running"
+        return None
+
+    def _cursor_tick(self, now):
+        if self.pointer is None:
+            return
+        dt = 0.0 if self._cursor_t is None else min(now - self._cursor_t, 0.1)
+        self._cursor_t = now
+        if self.cursor_deflected() and dt > 0.0:
+            blocked = self._cursor_blocked()
+            if blocked:
+                if self._cursor_blocked_log != blocked:
+                    self._cursor_blocked_log = blocked
+                    log("cursor suppressed (%s)" % blocked)
+            else:
+                if self._cursor_blocked_log:
+                    self._cursor_blocked_log = None
+                self._fx += self.stick["x"] * CURSOR_MAX_SPEED * dt
+                self._fy += self.stick["y"] * CURSOR_MAX_SPEED * dt
+                dx, dy = int(self._fx), int(self._fy)
+                if dx or dy:
+                    self._fx -= dx
+                    self._fy -= dy
+                    if not self.cursor_visible:
+                        try:
+                            self.pointer.show_cursor()
+                        except Exception:
+                            pass
+                        self.cursor_visible = True
+                        log("cursor SHOW (stick motion)" if self.pointer.can_hide
+                            else "cursor active (engine cannot hide/show; X cursor stays as-is)")
+                    try:
+                        self.pointer.move(dx, dy)
+                        self.cursor_last_move = now
+                        self._move_count += 1
+                    except Exception as e:
+                        log("cursor move failed: %s" % e)
+        # once-per-second motion-rate evidence while the cursor is in use
+        if self._move_count and now - self._fps_t >= 1.0:
+            if self._fps_t:
+                log("cursor rate: %d updates in %.2fs" % (self._move_count,
+                                                          now - self._fps_t))
+            self._fps_t = now
+            self._move_count = 0
+        # auto-hide after idle (honest visibility: XFixes only — parking the
+        # pointer is FORBIDDEN, it fires hover side-effects)
+        if (self.cursor_visible and self.pointer.can_hide
+                and now - self.cursor_last_move > CURSOR_HIDE_S):
+            try:
+                self.pointer.hide_cursor()
+                self.cursor_visible = False
+                log("cursor HIDE (idle %.1fs)" % (now - self.cursor_last_move)
+                    if self.cursor_last_move else "cursor HIDE (startup, unused)")
+            except Exception as e:
+                log("cursor hide failed: %s" % e)
+
     def tick(self):
-        """Auto-repeat held directions. Call frequently (e.g. on select timeout)."""
+        """Auto-repeat held directions + cursor motion. Call frequently (the
+        select() timeout shrinks to CURSOR_TICK_S while the stick is deflected)."""
         now = time.time()
         due = []
         for ec, st in self.repeat.items():
@@ -877,6 +1243,7 @@ class PadNav:
                 due.append(st["key"])
                 st["next"] = now + REPEAT_INTERVAL
         self._dispatch(due)
+        self._cursor_tick(now)
 
     def next_repeat_timeout(self, default):
         if not self.repeat:
@@ -884,6 +1251,21 @@ class PadNav:
         now = time.time()
         soonest = min(st["next"] for st in self.repeat.values())
         return max(0.0, min(default, soonest - now))
+
+    def next_timeout(self, default):
+        """select() timeout: repeat-aware, and 16ms while the stick is deflected
+        (>=60Hz cursor) WITHOUT busy-spinning at idle; while visible-and-idle it
+        wakes just in time for the auto-hide."""
+        t = self.next_repeat_timeout(default)
+        if self.pointer is not None:
+            if self.cursor_deflected() and self._cursor_blocked() is None:
+                # 60Hz only while motion can actually happen; a deflected stick
+                # during a game (blocked) must not busy-wake the loop
+                t = min(t, CURSOR_TICK_S)
+            elif self.cursor_visible and self.pointer.can_hide and self.cursor_last_move:
+                t = min(t, max(0.05, (self.cursor_last_move + CURSOR_HIDE_S)
+                               - time.time()))
+        return t
 
 
 # ---------------------------------------------------------------------------
@@ -895,8 +1277,11 @@ def run():
     except Exception:
         pass
     _threading.Thread(target=_wm_post_worker, daemon=True).start()
+    engine = make_engine()              # XTEST (persistent X conn) or xdotool
     gate = AdminGate().allows
-    nav = PadNav(gate=gate, wm=WMLayer(gate=gate))
+    nav = PadNav(emit=engine.key, pointer=engine,
+                 game_check=GameWatch().start().is_running,   # off-hot-path pgrep
+                 gate=gate, wm=WMLayer(gate=gate))
     db = ControllerDB()
     norm = Normalizer(db)
     log("controller DB loaded: %s (%d Linux entries)" % (db.path, db.count))
@@ -933,7 +1318,7 @@ def run():
             last_scan = now
 
         fds = {dev.fd: path for path, dev in devices.items()}
-        timeout = nav.next_repeat_timeout(DEVICE_RESCAN_S)
+        timeout = nav.next_timeout(DEVICE_RESCAN_S)
         try:
             r, _, _ = select.select(list(fds.keys()), [], [], timeout)
         except (OSError, ValueError):
@@ -946,6 +1331,7 @@ def run():
                     except Exception:
                         pass
                     del devices[path]
+            nav.cursor_release()   # an unplug mid-deflection must not leave drift
             continue
 
         for fd in r:
@@ -967,6 +1353,7 @@ def run():
                 except Exception:
                     pass
                 devices.pop(path, None)
+                nav.cursor_release()   # no drift from a half-deflected unplug
 
         nav.tick()
 
@@ -986,7 +1373,16 @@ def selftest():
             failures.append(name)
 
     rec = []
-    nav = PadNav(emit=rec.append, game_check=lambda: False)
+
+    # HERMETIC nav factory: every environmental check (game / game-bar flag /
+    # WM flag) is explicit, so a live VM's real /tmp flag files can't leak into
+    # the test results (a stale /tmp/gose-gamebar-open broke 5 tests in-guest).
+    def hnav(game=False, **kw):
+        kw.setdefault("gamebar_check", lambda: False)
+        kw.setdefault("wm_check", lambda: False)
+        return PadNav(emit=rec.append, game_check=lambda: game, **kw)
+
+    nav = hnav()
 
     # button maps
     check("BTN_TR -> bracketright",
@@ -1014,15 +1410,15 @@ def selftest():
           nav.map_event(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, -1)) == ["Left"])
     nav.map_event(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, 0))
 
-    # stick deadzone: small value = nothing, big = arrow, once per cross
-    check("stick ABS_X small (in deadzone) -> nothing",
-          nav.map_event(E(ecodes.EV_ABS, ecodes.ABS_X, 5000)) == [])
-    check("stick ABS_X full right -> Right",
-          nav.map_event(E(ecodes.EV_ABS, ecodes.ABS_X, 30000)) == ["Right"])
-    check("stick ABS_X still right -> no re-fire",
-          nav.map_event(E(ecodes.EV_ABS, ecodes.ABS_X, 31000)) == [])
-    check("stick ABS_X back to center -> nothing",
-          nav.map_event(E(ecodes.EV_ABS, ecodes.ABS_X, 0)) == [])
+    # the docs/27 §1.1 model change: stick axes are CURSOR axes, never keys
+    check("stick ABS_X -> NO keysyms (cursor axis, not focus-nav)",
+          nav.map_event(E(ecodes.EV_ABS, ecodes.ABS_X, 30000)) == [])
+    check("stick ABS_Y -> NO keysyms (cursor axis, not focus-nav)",
+          nav.map_event(E(ecodes.EV_ABS, ecodes.ABS_Y, -30000)) == [])
+    nav.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 30000))      # pointer=None nav:
+    check("stick deflection with no pointer engine -> safe no-op, no keys",
+          rec == [] and nav.repeat == {})
+    nav.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 0))
 
     # feed() emits via emit-fn when NOT paused
     rec.clear()
@@ -1031,13 +1427,14 @@ def selftest():
 
     # PAUSE rule: game running -> NO emission
     rec.clear()
-    paused_nav = PadNav(emit=rec.append, game_check=lambda: True)
+    paused_nav = hnav(game=True)
     paused_nav.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1))
     check("PAUSE: game running suppresses emit", rec == [])
     # and resumes when game exits
     rec.clear()
     flag = {"g": True}
-    resume_nav = PadNav(emit=rec.append, game_check=lambda: flag["g"])
+    resume_nav = PadNav(emit=rec.append, game_check=lambda: flag["g"],
+                        gamebar_check=lambda: False, wm_check=lambda: False)
     resume_nav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1))   # suppressed
     flag["g"] = False
     time.sleep(GAME_CACHE_S + 0.05)                          # let cache expire
@@ -1047,12 +1444,12 @@ def selftest():
     # ----- GAME-BAR exception to the pause rule -----------------------------
     # game running BUT /tmp/gose-gamebar-open present -> NOT suppressed (drive bar)
     rec.clear()
-    bar_nav = PadNav(emit=rec.append, game_check=lambda: True, gamebar_check=lambda: True)
+    bar_nav = hnav(game=True, gamebar_check=lambda: True)
     bar_nav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1))
     check("GAMEBAR: open during game -> emits (not suppressed)", rec == ["Return"])
     # game running and gamebar NOT open -> suppressed as before
     rec.clear()
-    nobar_nav = PadNav(emit=rec.append, game_check=lambda: True, gamebar_check=lambda: False)
+    nobar_nav = hnav(game=True)
     nobar_nav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1))
     check("GAMEBAR: closed during game -> suppressed", rec == [])
 
@@ -1069,8 +1466,7 @@ def selftest():
         posts.clear(); rec.clear()
         wm = WMLayer(post=posts.append, flag_path=flagp,
                      gate=gate_fn or (lambda p, n=None: (True, "ok")))
-        n = PadNav(emit=rec.append, game_check=lambda: game, wm=wm,
-                   wm_check=lambda: os.path.exists(flagp))
+        n = hnav(game=game, wm=wm, wm_check=lambda: os.path.exists(flagp))
         return n, wm
 
     DEV = "/dev/input/event20"
@@ -1137,14 +1533,12 @@ def selftest():
     # the /tmp/gose-wm-open exception: game running + flag -> keys NOT suppressed
     rec.clear()
     open(flagp, "w").close()
-    nwm = PadNav(emit=rec.append, game_check=lambda: True,
-                 wm_check=lambda: os.path.exists(flagp))
+    nwm = hnav(game=True, wm_check=lambda: os.path.exists(flagp))
     nwm.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
     check("WM-FLAG: open during game -> emits (mirror of Game-Bar exception)", rec == ["Return"])
     os.remove(flagp)
     rec.clear()
-    nwm2 = PadNav(emit=rec.append, game_check=lambda: True,
-                  wm_check=lambda: False)
+    nwm2 = hnav(game=True)
     nwm2.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
     check("WM-FLAG: closed during game -> still suppressed", rec == [])
 
@@ -1229,12 +1623,156 @@ def selftest():
 
     # gate wired into feed(): non-admin pad's button does not emit
     rec.clear()
-    fnav = PadNav(emit=rec.append, game_check=lambda: False, gate=gate().allows)
+    fnav = hnav(gate=gate().allows)
     fnav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), "/dev/input/event22", "8BitDo Pro 2")
     check("GATE: feed() suppresses non-admin button", rec == [])
     rec.clear()
     fnav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), "/dev/input/event20", "Xbox Wireless Controller")
     check("GATE: feed() emits for admin button", rec == ["Return"])
+
+    # ----- STICK CURSOR (docs/27 §1.1: d-pad = focus, left stick = pointer) --
+    class FakePtr:
+        can_hide = True
+
+        def __init__(self):
+            self.moves, self.clicks, self.vis = [], [], []
+
+        def move(self, dx, dy):
+            self.moves.append((dx, dy))
+
+        def click(self, b=1):
+            self.clicks.append(b)
+
+        def hide_cursor(self):
+            self.vis.append("hide")
+
+        def show_cursor(self):
+            self.vis.append("show")
+
+        def pointer_pos(self):
+            return (0, 0)
+
+    def cnav(game=False, gate_fn=None, wm=None):
+        p = FakePtr()
+        n = hnav(game=game, gate=gate_fn, wm=wm, pointer=p)
+        return n, p
+
+    def mtick(n, dt):
+        """Deterministic cursor tick: pretend the last tick was dt seconds ago."""
+        n._cursor_t = time.time() - dt
+        n.tick()
+
+    rec.clear()
+    cn, cp = cnav()
+    cn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 32767), DEV)
+    check("CURSOR: deflection queues NO key auto-repeat", cn.repeat == {})
+    check("CURSOR: deflection emits NO keys", rec == [])
+    mtick(cn, 0.1)
+    check("CURSOR: deflection -> pointer motion", len(cp.moves) == 1)
+    check("CURSOR: full-right deflection -> +x at max speed (90px in 0.1s)",
+          cp.moves[0] == (90, 0))
+    for _ in range(9):
+        mtick(cn, 0.1)                      # 1.0s total at full deflection
+    total = sum(dx for dx, _ in cp.moves)
+    check("CURSOR: linear accel tops out at ~%dpx/s" % int(CURSOR_MAX_SPEED),
+          abs(total - CURSOR_MAX_SPEED) <= 1)
+    cn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 0), DEV)       # re-center
+    cp.moves.clear()
+    mtick(cn, 0.1)
+    check("CURSOR: re-center stops motion", cp.moves == [])
+    cn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 5000), DEV)    # inside deadzone
+    mtick(cn, 0.1)
+    check("CURSOR: deflection inside deadzone -> no motion", cp.moves == [])
+    cn.feed(E(ecodes.EV_ABS, ecodes.ABS_Y, 32767), DEV)   # stick down
+    mtick(cn, 0.1)
+    check("CURSOR: stick down -> +y motion", cp.moves and cp.moves[-1][1] > 0)
+    cn.feed(E(ecodes.EV_ABS, ecodes.ABS_Y, 0), DEV)
+
+    # A clicks ONLY while the cursor is active (moved within CURSOR_CLICK_WINDOW)
+    rec.clear()
+    check("CURSOR: pointer just moved -> cursor_active", cn.cursor_active())
+    cn.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
+    check("CURSOR: A at active cursor -> CLICK, not Return",
+          cp.clicks == [1] and rec == [])
+    cn.feed(E(ecodes.EV_KEY, ecodes.BTN_START, 1), DEV)
+    check("CURSOR: Start stays Return even at active cursor", rec == ["Return"])
+    rec.clear()
+    cp.clicks.clear()
+    cn.cursor_last_move = time.time() - (CURSOR_CLICK_WINDOW + 0.2)
+    cn.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
+    check("CURSOR: A at stale cursor -> Return (focus-nav untouched)",
+          rec == ["Return"] and cp.clicks == [])
+
+    # suppression covers the cursor exactly like keys (game owns the pad)
+    rec.clear()
+    sn, sp = cnav(game=True)
+    sn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 32767), DEV)
+    mtick(sn, 0.1)
+    check("CURSOR: game running suppresses pointer motion", sp.moves == [])
+    sn.cursor_last_move = time.time()      # even an 'active' cursor can't click
+    sn.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
+    check("CURSOR: game running suppresses A-click too",
+          sp.clicks == [] and rec == [])
+
+    # the WM modal layer owns the whole pad -> stick motion is frozen
+    rec.clear()
+    wmw = WMLayer(post=posts.append, flag_path=flagp,
+                  gate=lambda p, n=None: (True, "ok"))
+    wn, wp = cnav(wm=wmw)
+    wn.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)     # carousel opens
+    wn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 32767), DEV)
+    mtick(wn, 0.1)
+    check("CURSOR: WM modal open -> stick does NOT move pointer", wp.moves == [])
+    wn.feed(E(ecodes.EV_KEY, ecodes.BTN_EAST, 1), DEV)     # B cancels the modal
+    mtick(wn, 0.1)
+    check("CURSOR: modal closed -> held deflection resumes motion",
+          len(wp.moves) > 0)
+
+    # auto-hide after idle + reappear on stick motion (XFixes via the engine)
+    hn, hp = cnav()
+    hn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 32767), DEV)
+    mtick(hn, 0.1)
+    check("CURSOR: visible while in use", hn.cursor_visible)
+    hn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 0), DEV)
+    hn.cursor_last_move = time.time() - (CURSOR_HIDE_S + 1.0)
+    mtick(hn, 0.016)
+    check("CURSOR: auto-hides after %.0fs idle" % CURSOR_HIDE_S,
+          hp.vis[-1:] == ["hide"] and not hn.cursor_visible)
+    hn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 32767), DEV)
+    mtick(hn, 0.1)
+    check("CURSOR: stick motion re-shows the cursor",
+          "show" in hp.vis and hn.cursor_visible and len(hp.moves) > 0)
+
+    # GameWatch: the off-hot-path game check (refresh() is the testable core)
+    gw = GameWatch(check=lambda: True)
+    check("GAMEWATCH: refresh propagates True", gw.refresh() is True and gw.is_running())
+    gw2 = GameWatch(check=lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    gw2.value = True
+    check("GAMEWATCH: a crashing check fails SAFE to False (no stuck suppression)",
+          gw2.refresh() is False and not gw2.is_running())
+
+    # admin gate covers the stick (a denied pad cannot drive the pointer)
+    gn, gp = cnav(gate_fn=lambda p, n=None: (False, "not OS-admin"))
+    gn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 32767), DEV)
+    mtick(gn, 0.1)
+    check("CURSOR: gate-denied pad's stick does not move pointer",
+          gp.moves == [])
+
+    # d-pad repeat machinery is intact; the stick contributes no repeat state
+    rec.clear()
+    rn, rp = cnav()
+    rn.feed(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, 1), DEV)
+    check("CURSOR: d-pad still queues auto-repeat", ecodes.ABS_HAT0X in rn.repeat)
+    rn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 32767), DEV)
+    check("CURSOR: stick never queues auto-repeat", ecodes.ABS_X not in rn.repeat)
+    rn.feed(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, 0), DEV)
+    # select() pacing: 16ms while deflected; default cadence when fully idle
+    check("CURSOR: next_timeout is %.0fms while deflected" % (CURSOR_TICK_S * 1000),
+          rn.next_timeout(2.0) <= CURSOR_TICK_S)
+    rn.feed(E(ecodes.EV_ABS, ecodes.ABS_X, 0), DEV)
+    rn.cursor_visible = False                       # idle + already hidden
+    check("CURSOR: next_timeout returns to default at idle (no busy-spin)",
+          rn.next_timeout(2.0) == 2.0)
 
     # ----- UNIVERSAL NORMALIZATION (SDL_GameControllerDB) --------------------
     # SDL GUID computation matches the DB row format.

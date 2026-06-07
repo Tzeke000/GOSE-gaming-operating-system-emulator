@@ -21,8 +21,9 @@ turns pad input into these keys; pages handle them in a `keydown` listener.
 
 | Control            | Pad input                       | Synthesized key      | Meaning on a page                          |
 |--------------------|---------------------------------|----------------------|--------------------------------------------|
-| **Up/Down/Left/Right** | d-pad (`ABS_HAT0*` / `BTN_DPAD_*`) **and** left stick (`ABS_X/Y`) | `Up` `Down` `Left` `Right` | move focus (spatial order, §3.1) |
-| **Accept**         | A (`BTN_SOUTH`) — also Start    | `Return`             | activate the focused element               |
+| **Up/Down/Left/Right** | d-pad (`ABS_HAT0*` / `BTN_DPAD_*`) | `Up` `Down` `Left` `Right` | move focus (spatial order, §3.1) |
+| **Pointer cursor** | left stick (`ABS_X/Y`)          | *(none — XTEST pointer motion, §1.1)* | moves the real X pointer; never moves focus |
+| **Accept**         | A (`BTN_SOUTH`) — also Start    | `Return` — or an XTEST **button-1 click** at the pointer while the cursor is active (§1.1) | activate the focused element / click at the pointer |
 | **Back**           | B (`BTN_EAST`) — also Select    | `Escape`             | back out **one level**; never traps (§3.2) |
 | **Tab prev/next**  | L1 (`BTN_TL`) / R1 (`BTN_TR`)   | `bracketleft` / `bracketright` (`[` `]`) | previous / next tab — tab-like structures only (§3.3) |
 | **Window carousel**| Guide (`BTN_MODE`) hold or tap  | *(none — semantic `wm.*` events, §4)* | the controller Alt-Tab (docs/23 §7) |
@@ -30,12 +31,14 @@ turns pad input into these keys; pages handle them in a `keydown` listener.
 
 Mechanics (single source: the constants at the top of `gose-pad-nav.py`):
 
-- **Held-direction auto-repeat:** a held d-pad direction or deflected stick fires
-  once immediately, again after **0.40 s** (`REPEAT_INITIAL`), then every
-  **0.18 s** (`REPEAT_INTERVAL`) until release. Pages get plain repeated keydowns —
-  they implement **no repeat logic of their own**.
-- **Stick deadzone:** ±**12000** from center (`STICK_DEADZONE`); one key per
-  crossing, re-armed at re-center (no re-fire while held past the threshold).
+- **Held-direction auto-repeat:** a held d-pad direction fires once immediately,
+  again after **0.40 s** (`REPEAT_INITIAL`), then every **0.18 s**
+  (`REPEAT_INTERVAL`) until release. Pages get plain repeated keydowns —
+  they implement **no repeat logic of their own**. (The stick no longer
+  participates in key repeat — it is the cursor, §1.1.)
+- **Stick deadzone:** ±**12000** from center (`STICK_DEADZONE`); inside it the
+  stick is at rest (no cursor motion), outside it deflection is normalized
+  linearly to ±1.0 at full throw.
 - **Debounce:** only EV_KEY value 1 (press) maps; release (0) and kernel
   autorepeat (2) are ignored.
 - **Guide hold:** release after ≥ **0.35 s** (`GUIDE_HOLD_S`) selects in the
@@ -45,12 +48,46 @@ Mechanics (single source: the constants at the top of `gose-pad-nav.py`):
   are reserved by the WM layer (`wm.act` / `wm.overview` while a modal is open).
   Pages must not design pad-required actions onto X/Y (see §3.5).
 
+### 1.1 The stick cursor (adopted 2026-06-07)
+
+**The model: d-pad = focus, left stick = pointer.** The left stick moves the
+**real X pointer** (XTEST relative motion at ≥60 Hz while deflected); it never
+emits arrow keysyms. Mechanics (single source: the `CURSOR_*` constants in
+`gose-pad-nav.py`):
+
+- **Speed is linear with deflection** — gentle: deflection past the deadzone
+  normalizes to 0..1 and scales up to **900 px/s** (`CURSOR_MAX_SPEED`) at full
+  throw. Motion updates every `CURSOR_TICK_S` (**12 ms** — nominally ≥60 Hz;
+  12 rather than 16 because the guest's `select()` carries ~1.5 ms timer slack,
+  and speed is dt-scaled so the tick rate never changes cursor speed) while
+  deflected; at rest the bridge returns to its idle cadence (no busy-spin).
+  The "is a game running" check lives in a **background watcher thread**
+  (`GameWatch`) — the 60 Hz path never spawns pgrep or scans `/proc` (both
+  measured slow enough on the guest to cap the cursor at ~25 Hz).
+- **A clicks at the pointer** (XTEST button 1) **only while the cursor is
+  active** — i.e. the pointer moved within the last **1.5 s**
+  (`CURSOR_CLICK_WINDOW`). Otherwise A stays `Return` for focus-nav, and Start
+  is *always* `Return`, so Accept is never lost.
+- **Auto-hide:** after **5 s** (`CURSOR_HIDE_S`) of pointer idle the X cursor is
+  hidden via the **XFixes** extension (`XFixesHideCursor`); any stick motion
+  shows it again. Hiding by parking the pointer in a corner is **forbidden** —
+  parking is real motion and fires hover side-effects. If XFixes is missing the
+  cursor simply stays visible (honest limitation, logged at startup).
+- **Layer rules apply unchanged (§4):** while a game owns the pad, stick motion
+  and A-clicks are suppressed exactly like keys; while a WM modal is open the
+  modal owns the whole pad and the cursor is frozen.
+- **Topmost-ness:** the X hardware cursor is composited by the X server above
+  all windows by nature — it cannot go "under" a window. (A page-drawn fake
+  cursor can; see the `cursor.js` reconciliation note in §2.3.)
+
 ## 2. The delivery chain — one input authority
 
 ```
-physical pad ──(usb-redir / Bluetooth)──┐
-virtual AI pad ──(uinput) ──────────────┤
-                                        ▼
+physical pad ──(input-level passthrough: host evdev → guest uinput,
+                pad_passthrough.py — replaced usb-redir/Bluetooth,
+                commits cec3bdf / 6994770)──┐
+virtual AI pad ──(uinput) ──────────────────┤
+                                            ▼
                                   /dev/input/event*  (evdev)
                                         ▼
                         ① device admission   (§5 — pad buttons or rejected)
@@ -68,7 +105,13 @@ virtual AI pad ──(uinput) ──────────────┤
                         ⑤ AdminGate          (only the OS-admin / dev /
                                               admin-AI-seat pad drives menus)
                                         ▼
-                        ⑥ key synthesis      (xdotool key <keysym>, DISPLAY=:0)
+                        ⑥ input synthesis    (XTEST via a persistent X conn —
+                                              python-xlib vendored in
+                                              `pc-image/gose-vm-host/vendor/`;
+                                              keys, pointer motion §1.1, clicks.
+                                              Fallback: per-event xdotool spawn.
+                                              XSendEvent is IGNORED by WebKit —
+                                              XTEST is the path that works)
                                         ▼
                         page keydown handlers (the §1 vocabulary)
 ```
@@ -111,6 +154,18 @@ code anywhere above the Normalizer**.
 - **Numpad-as-controller** (`assets/cursor.js`): translates numpad keys into the
   same `Arrow*/Enter/Escape` keydown events. It *produces* the vocabulary; it
   does not read the pad.
+  **Reconciliation pending (2026-06-07):** `cursor.js` also hides the real X
+  cursor (`cursor:none !important` on everything) and draws a page-level fake
+  cursor (`#gose-cursor`) that follows `mousemove`. That fake cursor lives in
+  one document — over a web-window **iframe** the top document gets no
+  mousemove, so the fake cursor freezes at the frame edge and appears to go
+  "under" windows (the X hardware cursor *cannot*: the server composites it
+  above everything). Now that the stick drives the **real** pointer (§1.1) with
+  XFixes auto-hide, the fake-cursor block should be **retired**: drop the
+  `cursor:none` rule + the `#gose-cursor` element and, if the default X cursor
+  is too faint for the dark UI, install a crisp X cursor theme instead. (The
+  OSK half of `cursor.js` is unaffected.) Owned by the shell batch — not
+  changed by the bridge work.
 - **The shell→window key bridge** (`assets/gose-wm.js`): forwards the synthesized
   keys into a focused web-window's iframe. Same events, re-routed once, marked
   so they are never re-forwarded.
