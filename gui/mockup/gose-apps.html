@@ -103,12 +103,12 @@
     "net.lutris.Lutris":"gamepad-2","com.usebottles.bottles":"wrench","com.google.Chrome":"globe",
     "org.chromium.Chromium":"globe","org.mozilla.firefox":"globe","com.heroicgameslauncher.hgl":"gamepad-2",
     "com.discordapp.Discord":"users","com.spotify.Client":"volume-2","org.kde.kdenlive":"scissors",
-    "com.obsproject.Studio":"monitor","org.blender.Blender":"sparkles"};
+    "com.obsproject.Studio":"monitor","org.blender.Blender":"sparkles","md.obsidian.Obsidian":"file-text"};
   const NAMEMAP={"com.valvesoftware.Steam":"Steam","org.gimp.GIMP":"GIMP","org.videolan.VLC":"VLC",
     "net.lutris.Lutris":"Lutris","com.usebottles.bottles":"Bottles","com.google.Chrome":"Google Chrome",
     "org.chromium.Chromium":"Chromium","org.mozilla.firefox":"Firefox","com.heroicgameslauncher.hgl":"Heroic",
     "com.discordapp.Discord":"Discord","com.spotify.Client":"Spotify","org.kde.kdenlive":"Kdenlive",
-    "com.obsproject.Studio":"OBS Studio","org.blender.Blender":"Blender"};
+    "com.obsproject.Studio":"OBS Studio","org.blender.Blender":"Blender","md.obsidian.Obsidian":"Obsidian"};
   function loadInstalled(){fetch("/apps.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
     (d.apps||[]).forEach(a=>{ if(APPS.some(x=>x.cmd==="flatpak run "+a.id))return;
       APPS.push({nm:NAMEMAP[a.id]||a.name||a.id, ds:"Installed app", ic:ICONMAP[a.id]||"layout-grid",

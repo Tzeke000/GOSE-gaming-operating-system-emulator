@@ -20,6 +20,13 @@ case "$1" in
         GOSE_AGENT_TOKEN="${GOSE_AGENT_TOKEN:-}" \
         setsid python3 -m gose_agent >>"$LOG" 2>&1 </dev/null & )
     fi
+    # Provision the docs/25 §4 baked default app set (Steam/Firefox/Chromium/VLC/
+    # Obsidian) + Firefox-as-default-browser. Idempotent: a normal boot is a no-op;
+    # a fresh image / factory reset re-installs whatever is missing. Detached so it
+    # never blocks the shell coming up.
+    if [ -x "$GOSE/provision-baked-apps.sh" ]; then
+      setsid "$GOSE/provision-baked-apps.sh" </dev/null >/dev/null 2>&1 &
+    fi
     ;;
   stop)
     pkill -f "gose_agent" 2>/dev/null || true

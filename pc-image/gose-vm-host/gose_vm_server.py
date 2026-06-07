@@ -596,6 +596,26 @@ _APPS = {
     "steam": ["flatpak", "run", "com.valvesoftware.Steam"],
 }
 
+# Electron/Chromium flatpaks need a private D-Bus session bus AND --no-sandbox when
+# run as root (GOSE runs as root): without them Electron insta-crashes
+# ("Running as root without --no-sandbox is not supported" / "A connection to the
+# bus can't be made"). Firefox (Gecko) and Steam DON'T need this and would
+# misparse --no-sandbox, so only the known Chromium/Electron apps get wrapped.
+ELECTRON_FLATPAKS = {
+    "md.obsidian.Obsidian", "com.discordapp.Discord", "com.spotify.Client",
+    "com.google.Chrome", "org.chromium.Chromium",
+}
+
+def _wrap_flatpak_run(cmd):
+    # cmd like "flatpak run <appid> [extra...]". For Electron/Chromium apps, give a
+    # session bus (dbus-run-session) + --no-sandbox so the Apps-page tile actually
+    # opens a window instead of crashing. Everything else is returned untouched.
+    parts = cmd.split()
+    if len(parts) >= 3 and parts[0] == "flatpak" and parts[1] == "run" \
+            and parts[2] in ELECTRON_FLATPAKS:
+        return "dbus-run-session -- " + cmd + " --no-sandbox"
+    return cmd
+
 _STORE = [
     {"id": "com.google.Chrome", "name": "Google Chrome", "desc": "Google's web browser — download & run anything", "cat": "Internet", "icon": "globe"},
     {"id": "org.chromium.Chromium", "name": "Chromium", "desc": "Open-source Chrome", "cat": "Internet", "icon": "globe"},
@@ -607,6 +627,7 @@ _STORE = [
     {"id": "com.discordapp.Discord", "name": "Discord", "desc": "Voice & text chat", "cat": "Social", "icon": "users"},
     {"id": "net.lutris.Lutris", "name": "Lutris", "desc": "Game launcher & manager", "cat": "Games", "icon": "gamepad-2"},
     {"id": "com.valvesoftware.Steam", "name": "Steam", "desc": "Valve's game store", "cat": "Games", "icon": "gamepad-2"},
+    {"id": "md.obsidian.Obsidian", "name": "Obsidian", "desc": "Markdown notes & knowledge vault", "cat": "Productivity", "icon": "file-text"},
     {"id": "org.gimp.GIMP", "name": "GIMP", "desc": "Image editor", "cat": "Creative", "icon": "palette"},
     {"id": "org.kde.kdenlive", "name": "Kdenlive", "desc": "Video editor", "cat": "Creative", "icon": "scissors"},
     {"id": "com.obsproject.Studio", "name": "OBS Studio", "desc": "Record & stream", "cat": "Creative", "icon": "monitor"},
@@ -951,7 +972,7 @@ def launch_app(payload):
         danger = _cmd_is_dangerous(cmd)
         if danger:
             return {"ok": False, "error": "blocked by OS-protection: %s" % danger}
-        argv = ["/bin/sh", "-c", cmd]   # e.g. emulatorlauncher / retroarch invocations
+        argv = ["/bin/sh", "-c", _wrap_flatpak_run(cmd)]   # emulatorlauncher / flatpak run / etc.
     else:
         return {"ok": False, "error": "no app or cmd"}
     try:

@@ -1,0 +1,12 @@
+# GOSE baked default app set — the locked §4 set (docs/25, Zeke 2026-06-06).
+# One Flathub flatpak application id per line. Lines starting with # are comments.
+# provision-baked-apps.sh installs every id here that is missing (idempotent), so a
+# fresh image / factory reset always lands with the full default set installed.
+# Keep this in sync with docs/25 §4 and gose_vm_server._STORE.
+#
+# id                         # role
+com.valvesoftware.Steam       # Steam — baked in (Zeke's call), not a store download
+org.mozilla.firefox           # Firefox — THE default web browser (human's)
+org.chromium.Chromium         # Chromium — kept alongside Firefox (agent-side browser)
+org.videolan.VLC              # VLC — media playback, plays ~everything
+md.obsidian.Obsidian          # Obsidian — notes / knowledge vault (Zeke's standard)

@@ -92,6 +92,10 @@ run "mkdir -p '$WORK/mnt/system/gose'"
 run "rsync -a --exclude tests --exclude '__pycache__' '$REPO/agent' '$WORK/mnt/system/gose/'"
 run "cat '$LAYER/system/batocera.conf.gose' >> '$WORK/mnt/system/batocera.conf'"
 run "chmod +x '$WORK/mnt/system/custom.sh'"
+# Baked default app set (docs/25 §4): the manifest + first-boot provisioner ride in
+# via the system/ rsync above; mark the provisioner executable (Windows checkouts
+# carry no exec bit) so custom.sh's [ -x ] guard fires.
+run "chmod +x '$WORK/mnt/system/gose/provision-baked-apps.sh'"
 run "umount '$WORK/mnt'"
 run "losetup -d \$LOOP"
 
