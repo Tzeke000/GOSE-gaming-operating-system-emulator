@@ -802,6 +802,41 @@
     run({verb:v[0]});
   },true);
 
+  /* ---- shell→window key delivery (the missing half of the iframe key bridge).
+     The pad bridge synthesizes X keys onto the SINGLE kiosk window; they land on
+     whichever frame holds DOM focus. WinBox.focus() is z-order + glow only — it
+     never moves DOM focus INTO the iframe — so a focused web window's keys hit the
+     desktop shell (widget.js nav) instead of the window's own content, and you
+     can't drive/launch inside a windowed app (e.g. the Library card). hookFrame
+     (chunk B) only forwards keys the OTHER way (iframe→shell, WM-modal only).
+     Fix: when a web window is focused AND no WM modal is open, forward the key
+     INTO that same-origin frame's document so its own nav handles it exactly like
+     on the desktop, and stop the shell nav from also acting. This is the docs/23
+     §7 "Normal (in a window/app)" column — every pad op reaches the focused app.
+     Focus-ownership is self-resolving: this handler only runs when the SHELL holds
+     DOM focus; if focus is already inside the frame the key drives it natively and
+     this stays dormant (no double-input). ---- */
+  addEventListener("keydown",function(e){
+    if(MODAL)return;                         // WM layer owns keys (handled above)
+    if(e.__wmFwd)return;                     // never re-forward a synthetic
+    if(e.ctrlKey&&e.key==="Tab")return;      // WM carousel shortcut stays with the shell
+    var id=focusedId(); if(!id)return;       // no focused web window -> desktop nav, unchanged
+    var w=WINS[id];
+    if(!w||w.kind!=="page"||w.state==="suspended"||w.state==="min")return;
+    var fr=frameOf(w), cw=fr&&fr.contentWindow;
+    if(!cw||!cw.document)return;             // frame not ready -> let the shell have it
+    e.preventDefault(); e.stopImmediatePropagation();
+    try{
+      var KE=cw.KeyboardEvent||window.KeyboardEvent;
+      var ke=new KE("keydown",{key:e.key,code:e.code,keyCode:e.keyCode,
+        which:e.which,bubbles:true,cancelable:true,
+        ctrlKey:e.ctrlKey,shiftKey:e.shiftKey,altKey:e.altKey,metaKey:e.metaKey});
+      ke.__wmFwd=true;
+      var tgt=cw.document.activeElement||cw.document.body||cw.document.documentElement;
+      tgt.dispatchEvent(ke);
+    }catch(err){}
+  },true);
+
   /* ============ dock: running-window tiles in the existing #dock zone ============ */
   function dockRender(){
     var dock=document.getElementById("dock"); if(!dock)return;
