@@ -1515,27 +1515,34 @@ def ai_grants():
                                        "seat": g[n].get("seat")} for n in g}}
 
 def ai_grant(payload):
-    name, tier = payload.get("name"), payload.get("tier")
-    if not name or tier not in AI_TIERS:
-        return {"ok": False, "error": "name + valid tier required"}
+    # Same name rules as ai_request — the hub/OOBE pair flow takes free text, so a junk
+    # name must be refused here, not rendered forever in the roster.
+    name = (payload.get("name") or "").strip()[:32]
+    tier = payload.get("tier")
+    if not name or not re.match(r"^[\w][\w .\-]*$", name):
+        return {"ok": False, "error": "name required (letters/digits/space/.-_, max 32)"}
+    if tier not in AI_TIERS:
+        return {"ok": False, "error": "tier must be one of %s" % AI_TIERS}
     with _AI_LOCK:
         g = _ai_grants_load()
+        prev = g.get(name, {})
         if tier == "observe":
-            if payload.get("pair"):
-                # OOBE / first pairing: keep an observe-tier roster entry WITH a token so the AI is
-                # identifiable and appears in the AI Hub. (An anonymous observe AI needs no grant; a
-                # *paired* observe AI does, so it shows up and can later be elevated by the owner.)
-                # This is still the safe default tier — it never self-elevates (docs/16).
-                prev = g.get(name, {})
+            if payload.get("pair") or prev:
+                # Paired roster entry at the safe floor tier. Two ways here: OOBE/Hub first
+                # pairing (pair flag), or the owner DOWNGRADING an existing agent to Observe —
+                # both keep the entry + its stable token so the AI stays identifiable in the
+                # Hub and can be re-elevated later. It never self-elevates (docs/16).
                 g[name] = {"tier": "observe", "granted_at": int(time.time()), "expires": None,
-                           "seat": None, "paired_via": payload.get("via", "oobe"),
+                           "seat": None,
+                           "paired_via": prev.get("paired_via") or payload.get("via", "oobe"),
                            "token": prev.get("token") or secrets.token_hex(16)}
             else:
-                g.pop(name, None)     # observe is the floor — drop the grant (== revoke)
+                g.pop(name, None)     # never-paired observe — nothing to keep (== no grant)
         else:
-            prev = g.get(name, {})
             days = payload.get("expires_days")    # None/0 = permanent until revoked (the default)
-            seat = payload.get("seat")            # optional controller seat (1-4) — pins the AI to it
+            # optional controller seat (1-4) — pins the AI to it; ABSENT key = keep the
+            # current seat (so a tier-only change can't silently unpin a seated AI)
+            seat = payload.get("seat") if "seat" in payload else prev.get("seat")
             try:
                 seat = int(seat) if seat else None
                 if seat is not None and not 1 <= seat <= 4:
@@ -1546,6 +1553,8 @@ def ai_grant(payload):
                        "expires": (int(time.time()) + int(days) * 86400) if days else None,
                        "seat": seat,
                        "token": prev.get("token") or secrets.token_hex(16)}  # stable per-AI token
+            if prev.get("paired_via"):
+                g[name]["paired_via"] = prev["paired_via"]
         write_json_atomic(AI_GRANTS_F, g)
         _sync_ai_tokens(g)        # <-- push the token->tier map to the agent so it enforces NOW
     LOG.info("AI grant: %s -> %s (token issued + enforced)", name, tier)
@@ -1689,11 +1698,23 @@ def oobe_complete(payload):
                                    "locale": p.get("locale"), "keyboard": p.get("keyboard"),
                                    "timezone": p.get("timezone"), "theme": p.get("theme")})
     _apply_oobe_privacy(p.get("privacy") or {})
-    paired = None
-    ai = p.get("ai") or {}
-    if (ai.get("name") or "").strip():
-        paired = ai_grant({"name": ai["name"].strip()[:32], "tier": "observe",
-                           "pair": True, "via": "oobe"})
+    # AI pairing — the step pairs each named agent live (so the token is shown once, at
+    # pairing); completion re-issues every grant idempotently (pair keeps the stable token)
+    # so a completed wizard always ends with its agents granted even if a live call dropped.
+    # Back-compat: "ai" = the legacy single {name}; "ais" = the multi-pair list [{name},…].
+    first = None
+    paired_names = []
+    seen = set()
+    for a in [p.get("ai") or {}] + [x for x in (p.get("ais") or []) if isinstance(x, dict)]:
+        nm = (a.get("name") or "").strip()[:32]
+        if not nm or nm in seen:
+            continue
+        seen.add(nm)
+        r = ai_grant({"name": nm, "tier": "observe", "pair": True, "via": "oobe"})
+        if r.get("ok"):
+            paired_names.append(r.get("name") or nm)
+            if first is None:
+                first = r
     info = {"completed_at": int(time.time()), "owner": username}
     try:
         os.makedirs(os.path.dirname(OOBE_DONE_FLAG), exist_ok=True)
@@ -1701,10 +1722,11 @@ def oobe_complete(payload):
     except Exception as e:
         return {"ok": False, "error": "could not write first-boot flag: %s" % e}
     LOG.info("OOBE complete: owner=%s device=%s ai=%s", username, p.get("device_name"),
-             ai.get("name") or "(none)")
-    return {"ok": True, "owner": username, "ai_paired": bool(paired and paired.get("ok")),
-            "ai_name": (ai.get("name") or "").strip() or None,
-            "ai_token": (paired or {}).get("token")}
+             ", ".join(paired_names) or "(none)")
+    return {"ok": True, "owner": username, "ai_paired": bool(paired_names),
+            "ai_name": paired_names[0] if paired_names else None,
+            "ai_token": (first or {}).get("token"),
+            "ai_paired_names": paired_names}
 
 def oobe_reset(payload=None):
     removed = []

@@ -19,45 +19,40 @@
   .top img{width:32px;height:32px}.top h1{font-size:20px;margin:0}.top .s{color:var(--muted);font-size:12px}
   .top .home{margin-left:auto;color:var(--muted);font-size:13px}
   .wrap{flex:1;overflow:auto;padding:14px 36px;display:grid;grid-template-columns:repeat(2,1fr);gap:16px;align-content:start}
-  .card{background:var(--surface);border:2px solid transparent;border-radius:16px;padding:18px 20px}
+  .card{background:var(--surface);border:2px solid transparent;border-radius:16px;padding:18px 20px;cursor:pointer}
   .card.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
   .card .row1{display:flex;align-items:center;gap:14px}
   .av{width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#06121a;flex:none}
   .card .nm{font-size:18px;font-weight:700}
   .card .st{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;margin-top:3px}
   .card .st .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
-  .card .role{margin-left:auto;font-size:11px;font-weight:700;color:var(--accent);background:#5cd0ff1c;border:1px solid var(--line);border-radius:9px;padding:3px 9px}
-  .card .sub{color:var(--muted);font-size:13px;line-height:1.5;margin:12px 0 14px}
-  .acts{display:flex;gap:10px;flex-wrap:wrap}
-  .acts button{background:var(--surface2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:8px 14px;font-weight:600;font-size:13px;cursor:pointer}
-  .acts button:hover{border-color:var(--accent)} .acts .primary{background:var(--accent);color:#06121a;border:none}
-  .acts button[disabled]{opacity:.4}
-  .tier{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .tier .lbl{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.4px;margin-right:2px}
-  .pill{font-size:12px;font-weight:700;border-radius:8px;padding:5px 11px;border:1px solid var(--line);background:var(--surface2);color:var(--muted);cursor:pointer}
-  .pill.on{color:#06121a;border-color:transparent}
-  .pill.on.observe{background:#9aa3b8}.pill.on.play{background:#5cd0ff}.pill.on.admin{background:#ffb74d}
-  .revoke{font-size:12px;font-weight:700;border-radius:8px;padding:5px 11px;border:1px solid #ff6b6b55;background:#ff6b6b14;color:#ff8a8a;cursor:pointer;margin-left:auto}
-  .badge{font-size:11px;font-weight:700;border-radius:9px;padding:3px 9px;border:1px solid var(--line);margin-right:8px}
+  .card .sub{color:var(--muted);font-size:13px;line-height:1.5;margin:12px 0 0}
+  .card .open{margin-top:10px;font-size:12px;font-weight:700;color:var(--accent)}
+  .card.add{border:2px dashed var(--line);background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:140px;color:var(--muted)}
+  .card.add .plus{font-size:30px;color:var(--accent);line-height:1}
+  .card.add.focus{border-color:var(--accent);border-style:solid;box-shadow:var(--focusglow)}
+  .card.none{border:1px solid var(--line);cursor:default;color:var(--muted);font-size:13px;line-height:1.6}
+  .badge{font-size:11px;font-weight:700;border-radius:9px;padding:3px 9px;border:1px solid var(--line);margin-left:auto}
   .badge.observe{color:#9aa3b8}.badge.play{color:#5cd0ff;background:#5cd0ff14}.badge.admin{color:#ffb74d;background:#ffb74d14}
   .foot{margin:8px 36px 16px;display:flex;gap:10px;color:var(--muted);font-size:13px;
     background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
   .foot .h{margin-left:auto}.foot b{color:var(--text)}
   .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
-    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99}
   .toast.show{opacity:1}
-  /* pairing token reveal — the owner's screen shows a secret ON PURPOSE; A hides it */
+  /* pairing token reveal — the owner's screen shows the secret ON PURPOSE, ONCE, at pairing */
   .tokbox{margin-top:12px;background:#0b0b16;border:1px solid var(--accent);border-radius:11px;padding:10px 14px;font-size:12px;color:var(--muted)}
   .tokbox code{display:block;font-family:ui-monospace,Consolas,monospace;font-size:14px;color:var(--text);
     background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:7px 0;user-select:all;word-break:break-all}
   /* pending pairing requests — full-width banner cards above the roster */
   .reqs{margin:8px 36px 0;display:flex;flex-direction:column;gap:8px}
   .req{display:flex;align-items:center;gap:12px;background:var(--surface);border:2px solid #ffb74d55;border-radius:13px;padding:11px 16px;font-size:14px}
-  .req.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .req .badge{margin-left:0}
   .req .qn{font-weight:700}.req .qs{color:var(--muted);font-size:12px}
   .req .btns{margin-left:auto;display:flex;gap:8px}
-  .req button{border-radius:9px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer;border:1px solid var(--line)}
-  .req .ok{background:var(--accent);color:#06121a;border:none}
+  .req button{border-radius:9px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer;border:2px solid var(--line)}
+  .req button.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .req .ok{background:var(--accent);color:#06121a;border-color:transparent}
   .req .no{background:#ff6b6b14;color:#ff8a8a;border-color:#ff6b6b55}
   /* activity strip — last few audited guest-AI ops */
   .audit{margin:0 36px;background:var(--surface);border:1px solid var(--line);border-radius:11px;
@@ -66,188 +61,369 @@
   .audit .list{display:flex;gap:14px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
   .ae{flex:none}.ae b{color:var(--text);font-weight:600}
   .ae .ok{color:#3fe0a0;font-weight:700}.ae .no{color:#ff8a8a;font-weight:700}
+  /* the per-agent access panel — a modal layer; B/Esc backs out to the list (docs/27 §3.2/§3.7) */
+  .pmask{position:fixed;inset:0;background:#06060cc8;display:flex;align-items:center;justify-content:center;z-index:60}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px 24px;width:560px;max-width:92vw;max-height:86vh;overflow:auto}
+  .panel .head{display:flex;align-items:center;gap:13px;margin-bottom:8px}
+  .panel h3{margin:0;font-size:18px}
+  .panel .hs{color:var(--muted);font-size:12px;margin-top:2px}
+  .panel .sect{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin:13px 0 6px}
+  .prow{display:flex;align-items:center;gap:11px;background:var(--surface2);border:2px solid var(--line);
+    border-radius:11px;padding:10px 13px;margin:7px 0;cursor:pointer;font-size:14px}
+  .prow.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .prow.sel{background:#5cd0ff12}
+  .prow .rnm{font-weight:700}.prow .rsub{color:var(--muted);font-size:12px;line-height:1.4;margin-top:2px}
+  .prow .rval{margin-left:auto;color:var(--accent);font-size:12px;font-weight:700;white-space:nowrap}
+  .prow .rdot{width:14px;height:14px;border-radius:50%;border:2px solid var(--line);flex:none}
+  .prow.sel .rdot{border-color:var(--accent);background:var(--accent)}
+  .prow.danger{border-color:#ff6b6b40;background:#ff6b6b0d;color:#ff8a8a}
+  .prow.danger .rsub{color:#ff8a8a99}
+  .prow.danger.focus{border-color:#ff8e8e;box-shadow:0 0 0 3px #ff8e8e33}
+  .prow.primary{background:var(--accent);color:#06121a;border-color:transparent}
+  .prow.primary .rsub{color:#06121a99}
+  .prow.primary.focus{box-shadow:var(--focusglow);border-color:#fff}
+  .seatrow{display:flex;gap:7px;flex-wrap:wrap;margin:7px 0}
+  .seat{font-size:12px;font-weight:700;border-radius:8px;padding:7px 13px;border:2px solid var(--line);background:var(--surface2);color:var(--muted);cursor:pointer}
+  .seat.sel{color:#06121a;background:#5cd0ff;border-color:transparent}
+  .seat.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .panel .note{color:var(--muted);font-size:12px;line-height:1.5;margin-top:10px}
+  .panel .inp{width:100%;background:var(--surface2);border:2px solid var(--line);border-radius:11px;
+    padding:12px 14px;font-size:16px;color:var(--text);font-family:inherit;outline:none;margin:6px 0}
+  .panel .inp.focus,.panel .inp:focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .panel .hint{color:#ffce5c;font-size:12.5px;min-height:16px;margin-top:6px}
 </style></head>
 <body>
   <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
-    <div><h1>AI Players</h1><div class="s">Your family of players — join a game solo, together, or hand them control</div></div>
+    <div><h1>AI Players</h1><div class="s" id="count">Your paired AI agents — every card below is a real grant</div></div>
     <div class="home"><span class="ic" data-i="sparkles"></span> Esc — desktop</div>
   </div>
   <div id="banner" style="margin:8px 36px 0;background:var(--surface2);border:1px solid var(--accent);border-radius:11px;padding:10px 16px;font-size:13px;color:#cdd2ea">
-    <span id="banner-txt"><b style="color:var(--accent)">AI Players</b> — an AI can watch this screen live and drive the device. Connect over MCP and you'll see them appear here.</span>
+    <span id="banner-txt"><b style="color:var(--accent)">AI Players</b> — loading paired agents…</span>
   </div>
   <div class="reqs" id="reqs"></div>
   <div class="wrap" id="wrap"></div>
   <div class="audit" id="audit" style="display:none"><span class="lbl">ACTIVITY</span><div class="list" id="audit-list"></div></div>
-  <div class="foot"><span class="ic" data-i="sparkles"></span> AI Players · you grant access; an AI can ask but never self-elevate
-    <span class="h"><b>↑↓←→</b> move · <b>A/Enter</b> change access / approve · <b>X</b> revoke / deny · <b>Y/P</b> pairing · <b>Esc</b> desktop</span></div>
+  <div class="foot"><span class="ic" data-i="sparkles"></span> You grant access; an AI can ask but never self-elevate
+    <span class="h"><b>↑↓←→</b> move · <b>A/Enter</b> open / apply · <b>B/Esc</b> back · <b>X</b> revoke (shortcut)</span></div>
   <div class="toast" id="toast"></div>
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
-  const $=id=>document.getElementById(id);
-  const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  const PLAYERS=[
-    {nm:"Owner", k:null,  acc:"#ffce5c", on:true,  role:"Owner", sub:"You — host of this device. You grant and revoke every AI's access.", mode:null, tier:null},
-    {nm:"Agent A", k:"Agent A",acc:"#5cd0ff", on:false, role:"AI",    sub:"Reachable over MCP — can watch the live feed and drive the device.", mode:null, tier:"observe", seat:null},
-    {nm:"Agent B", k:"Agent B", acc:"#7d8cff", on:false, role:"AI",    sub:"Voice + MCP capable. Joins as a player when connected.", mode:null, tier:"observe", seat:null},
-    {nm:"Agent C", k:"Agent C",acc:"#37d39b", on:false, role:"AI",    sub:"Remote AI agent — joins when reachable.", mode:null, tier:"observe", seat:null},
-  ];
-  let EXTRA=[];   // AIs that paired by request and aren't in the built-in roster
-  let REQS=[];    // pending pairing requests (owner approves/denies)
-  const TIERS=["observe","play","admin"];
-  const TLABEL={observe:"Observe",play:"Play",admin:"Admin"};
-  const TDESC={observe:"Read-only — can watch the screen & game state.",
-               play:"Can launch & control games.",
-               admin:"Full OS control — settings, install, shell, power."};
-  let foc=0;      // focus order: pending requests first, then player cards
-  const roster=()=>PLAYERS.concat(EXTRA);
-  const focCount=()=>REQS.length+roster().length;
-  function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
-  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1900);}
-  function stText(p){ if(!p.on) return "Not connected";
-    return "Online · "+(p.mode==="playing"?"playing":p.mode==="controlling"?"in control":"watching"); }
-  function render(){
-    if(foc>=focCount())foc=Math.max(0,focCount()-1);
-    // pending pairing requests — a request never grants; Approve = the owner granting
-    $("reqs").innerHTML=REQS.map((r,i)=>`<div class="req ${i===foc?'focus':''}">
-      <span class="badge ${r.tier}">${TLABEL[r.tier]||esc(r.tier)}</span>
-      <span><span class="qn">${esc(r.name)}</span> asks for <b>${TLABEL[r.tier]||esc(r.tier)}</b> access
-        <span class="qs">· pairing request — approving issues this AI its token</span></span>
-      <span class="btns"><button class="ok" data-app="${i}">Approve</button><button class="no" data-den="${i}">Deny</button></span></div>`).join("");
-    $("wrap").innerHTML=roster().map((p,i)=>{
-      const fi=REQS.length+i, ai=p.role==="AI";
-      const live = p.on
-        ? '<span style="font-size:12px;font-weight:700;color:#3fe0a0">● Live · '+(p.mode==="playing"?"playing":"watching the screen")+'</span>'
-        : (ai?'<span style="font-size:12px;color:var(--muted)">Offline — connects over MCP / Wi-Fi / Bluetooth</span>':'');
-      const tierBadge = ai?`<span class="badge ${p.tier}">${TLABEL[p.tier]}</span>`:'';
-      const tierCtl = ai ? '<div class="tier"><span class="lbl">ACCESS</span>'+
-        TIERS.map(t=>`<span class="pill ${t} ${p.tier===t?'on':''}" data-tier="${t}" data-p="${i}">${TLABEL[t]}</span>`).join("")+
-        (p.tier&&p.tier!=="observe"?`<span class="pill" data-pair="${i}" style="margin-left:6px">Pairing</span>`:'')+
-        (p.tier&&p.tier!=="observe"?`<span class="revoke" data-rev="${i}">Revoke</span>`:'')+'</div>' : '';
-      // controller seat — pins a playing AI to one player slot (1-4); Any = unpinned
-      const seatCtl = (ai && p.tier && p.tier!=="observe") ?
-        '<div class="tier" style="margin-top:8px"><span class="lbl">SEAT</span>'+
-        '<span class="pill play '+(!p.seat?'on':'')+'" data-seat="0" data-p="'+i+'">Any</span>'+
-        [1,2,3,4].map(s=>`<span class="pill play ${p.seat===s?'on':''}" data-seat="${s}" data-p="${i}">P${s}</span>`).join("")+'</div>' : '';
-      // pairing reveal — deliberate: the OWNER reads this token to their AI; A hides it
-      const tokBox = (ai && p.showTok && p.token) ?
-        `<div class="tokbox"><div><b style="color:var(--text)">Pairing — ${esc(p.nm)}'s token</b> · connect to the GOSE Agent on this device, TCP port <b style="color:var(--text)">8731</b></div>
-         <code>${esc(p.token)}</code>
-         <div>Give this token to your AI (e.g. GoseClient(host, 8731, token=…)). Keep it secret — it IS the key. Press <b style="color:var(--text)">A</b> to hide.</div></div>` : '';
-      return `<div class="card ${fi===foc?'focus':''}" data-i2="${i}">
-        <div class="row1"><div class="av" style="background:${p.acc}">${esc(p.nm[0])}</div>
-          <div><div class="nm">${esc(p.nm)}</div><div class="st"><span class="dot" style="background:${p.on?'#3fe0a0':'#3a3e4c'}"></span>${stText(p)}</div></div>
-          ${tierBadge}<div class="role">${p.role}</div></div>
-        <div class="sub">${ai?TDESC[p.tier]:esc(p.sub)}</div>
-        ${tierCtl}${seatCtl}${tokBox}
-        <div style="margin-top:10px">${live}</div></div>`;
-    }).join("");
-    [...$("reqs").querySelectorAll("[data-app]")].forEach(el=>el.onclick=(e)=>{
-      e.stopPropagation(); approveReq(+el.dataset.app);});
-    [...$("reqs").querySelectorAll("[data-den]")].forEach(el=>el.onclick=(e)=>{
-      e.stopPropagation(); denyReq(+el.dataset.den);});
-    [...$("wrap").querySelectorAll(".card")].forEach(el=>el.onclick=(e)=>{
-      if(e.target.dataset.tier||e.target.dataset.rev||e.target.dataset.pair)return; foc=REQS.length+ +el.dataset.i2;render();});
-    [...$("wrap").querySelectorAll(".pill[data-tier]")].forEach(el=>el.onclick=(e)=>{
-      e.stopPropagation(); setTier(roster()[+el.dataset.p], el.dataset.tier);});
-    [...$("wrap").querySelectorAll(".pill[data-pair]")].forEach(el=>el.onclick=(e)=>{
-      e.stopPropagation(); togglePair(roster()[+el.dataset.pair]);});
-    [...$("wrap").querySelectorAll(".revoke[data-rev]")].forEach(el=>el.onclick=(e)=>{
-      e.stopPropagation(); revoke(roster()[+el.dataset.rev]);});
-    [...$("wrap").querySelectorAll(".pill[data-seat]")].forEach(el=>el.onclick=(e)=>{
-      e.stopPropagation(); setSeat(roster()[+el.dataset.p], +el.dataset.seat||null);});
+  var $=function(id){return document.getElementById(id);};
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});};
+
+  // pad-drive transcript hook (docs/25 §5c): #dbg logs focus moves + actions to kiosk stdout
+  var DBG=(location.hash||"").indexOf("dbg")>=0;
+  function dlog(){ if(DBG){ try{ console.log.apply(console,["[ai-hub]"].concat([].slice.call(arguments))); }catch(e){} } }
+
+  var TIERS=["observe","play","admin"];
+  var TLABEL={observe:"Observe",play:"Play",admin:"Admin"};
+  var TDESC={observe:"Read-only — can watch the screen & game state.",
+             play:"Can launch & control games.",
+             admin:"Full OS control — settings, install, shell, power."};
+  var ACCENTS=["#5cd0ff","#7d8cff","#37d39b","#ff7a9c","#ffce5c","#b388ff"];
+  function accFor(n){ var h=0; for(var i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))>>>0; return ACCENTS[h%ACCENTS.length]; }
+
+  // ---- the real state: every card maps to an actual grant (no demo roster) ----
+  var GR={};       // grants: name -> {tier,seat,token,granted_at,expires}
+  var ORDER=[];    // sorted grant names = the roster
+  var REQS=[];     // pending pairing requests [{name,tier,ts}]
+  var LIVE={};     // name -> {online,mode} from /ai/players
+  // PANEL: null | {agent:name} | {add:true,val:""} | {tok:{name,token,tier,why}}
+  var PANEL=null;
+  var lastSig="";
+
+  function say(m){var t=$("toast");t.textContent=m;t.classList.add("show");
+    clearTimeout(say._t);say._t=setTimeout(function(){t.classList.remove("show");},1900);}
+  function paint(){document.querySelectorAll("[data-i]").forEach(function(e){
+    e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)");});}
+  function oskVisible(){var o=document.getElementById("osk");return !!(o&&o.classList.contains("on"));}
+
+  // ---- roving spatial focus over .focusable, scoped to the panel while it is open ----
+  function focusables(){
+    var root=PANEL?document.getElementById("panel"):document.body;
+    if(!root)root=document.body;
+    return [].slice.call(root.querySelectorAll(".focusable")).filter(function(el){
+      return el.offsetParent!==null;});
+  }
+  function cur(){return document.querySelector(".focus");}
+  function setF(el){if(!el)return;var c=cur();if(c)c.classList.remove("focus");
+    el.classList.add("focus");try{el.scrollIntoView({block:"nearest"});}catch(e){}
+    dlog("focus",el.dataset&&el.dataset.fk||el.tagName);}
+  function move(d){
+    var list=focusables(); if(!list.length)return;
+    var a=cur(); if(!a||list.indexOf(a)<0){setF(list[0]);return;}
+    var r=a.getBoundingClientRect(),best=null,bd=1e9;
+    for(var i=0;i<list.length;i++){var el=list[i];if(el===a)continue;
+      var b=el.getBoundingClientRect();
+      var dx=(b.left+b.width/2)-(r.left+r.width/2),dy=(b.top+b.height/2)-(r.top+r.height/2);
+      var ok={right:dx>6,left:dx<-6,down:dy>6,up:dy<-6}[d];if(!ok)continue;
+      var al=(d==="left"||d==="right")?Math.abs(dx):Math.abs(dy);
+      var of=(d==="left"||d==="right")?Math.abs(dy):Math.abs(dx);
+      var dd=al+of*2;if(dd<bd){bd=dd;best=el;}}
+    if(!best){ // edge: wrap modulo so arrows never dead-end (docs/27 §3.1)
+      var i2=list.indexOf(a);
+      best=(d==="right"||d==="down")?list[(i2+1)%list.length]:list[(i2-1+list.length)%list.length];
+      if(best===a)best=null;}
+    if(best){if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();setF(best);}
+  }
+
+  // ---- rendering (focus is keyed by data-fk and restored after every re-render — §3.9) ----
+  function render(focusFk){
+    var keep=focusFk||(cur()&&cur().dataset?cur().dataset.fk:null);
+    $("reqs").innerHTML=REQS.map(function(r){
+      return '<div class="req"><span class="badge '+esc(r.tier)+'">'+(TLABEL[r.tier]||esc(r.tier))+'</span>'+
+        '<span><span class="qn">'+esc(r.name)+'</span> asks for <b>'+(TLABEL[r.tier]||esc(r.tier))+'</b> access'+
+        '<span class="qs"> · pairing request — approving issues this AI its token</span></span>'+
+        '<span class="btns"><button class="ok focusable" data-fk="req:'+esc(r.name)+':ok" data-app="'+esc(r.name)+'">Approve</button>'+
+        '<button class="no focusable" data-fk="req:'+esc(r.name)+':no" data-den="'+esc(r.name)+'">Deny</button></span></div>';}).join("");
+    var cards=ORDER.map(function(n){
+      var p=GR[n],lv=LIVE[n]||{},on=!!lv.online;
+      var st=on?("Online · "+(lv.mode==="playing"?"playing":lv.mode==="controlling"?"in control":"watching")):"Not connected";
+      return '<div class="card focusable" data-fk="ag:'+esc(n)+'" data-agent="'+esc(n)+'">'+
+        '<div class="row1"><div class="av" style="background:'+accFor(n)+'">'+esc(n[0])+'</div>'+
+        '<div><div class="nm">'+esc(n)+'</div><div class="st"><span class="dot" style="background:'+(on?'#3fe0a0':'#3a3e4c')+'"></span>'+esc(st)+
+        (p.seat?' · seat P'+p.seat:'')+'</div></div>'+
+        '<span class="badge '+esc(p.tier)+'">'+TLABEL[p.tier]+'</span></div>'+
+        '<div class="sub">'+TDESC[p.tier]+'</div>'+
+        '<div class="open">A — access &amp; revoke ›</div></div>';});
+    if(!ORDER.length)
+      cards.push('<div class="card none">No AI paired yet. Pair one here, or an AI can knock on the AI port and appear above as a request.</div>');
+    cards.push('<div class="card add focusable" data-fk="add" id="add-card"><span class="plus">+</span>'+
+      '<b style="color:var(--text)">Pair a new AI</b><span style="font-size:12px">Name it, get its Observe token — same flow as first-time setup</span></div>');
+    $("wrap").innerHTML=cards.join("");
+    $("count").textContent=ORDER.length
+      ? (ORDER.length+" paired agent"+(ORDER.length>1?"s":"")+" — every card is a real grant")
+      : "Your paired AI agents — every card below is a real grant";
+    renderPanel();
+    wire();
     paint();
+    if(DBG){var ai=$("add-name");if(ai&&!ai.__dbg){ai.__dbg=true;
+      ai.addEventListener("input",function(){dlog("typed",JSON.stringify(ai.value));});}}
+    var el=keep?document.querySelector('[data-fk="'+CSS.escape(keep)+'"]'):null;
+    var list=focusables();
+    if(el&&list.indexOf(el)>=0)setF(el);
+    else if(!cur()||list.indexOf(cur())<0)setF(list[0]);
+  }
+  function renderPanel(){
+    var old=document.getElementById("pmask");if(old)old.remove();
+    if(!PANEL)return;
+    var h="";
+    if(PANEL.agent){
+      var n=PANEL.agent,p=GR[n];
+      if(!p){PANEL=null;return;}
+      var lv=LIVE[n]||{};
+      h='<div class="head"><div class="av" style="background:'+accFor(n)+'">'+esc(n[0])+'</div>'+
+        '<div><h3>'+esc(n)+'</h3><div class="hs">'+(lv.online?'<span style="color:#3fe0a0">● Online</span>':'Offline')+
+        ' · paired'+(p.paired_via?' via '+esc(p.paired_via):'')+'</div></div>'+
+        '<span class="badge '+esc(p.tier)+'" style="margin-left:auto">'+TLABEL[p.tier]+'</span></div>'+
+        '<div class="sect">ACCESS — A applies the tier</div>'+
+        TIERS.map(function(t){
+          return '<div class="prow '+(p.tier===t?'sel':'')+' focusable" data-fk="p:tier:'+t+'" data-tier="'+t+'">'+
+            '<span class="rdot"></span><div><div class="rnm">'+TLABEL[t]+'</div><div class="rsub">'+TDESC[t]+'</div></div>'+
+            (p.tier===t?'<span class="rval">Current ✓</span>':'')+'</div>';}).join("");
+      if(p.tier!=="observe"){
+        h+='<div class="sect">CONTROLLER SEAT — pins its input to one player slot</div><div class="seatrow">'+
+          '<span class="seat '+(!p.seat?'sel':'')+' focusable" data-fk="p:seat:0" data-seat="0">Any</span>'+
+          [1,2,3,4].map(function(s){return '<span class="seat '+(p.seat===s?'sel':'')+' focusable" data-fk="p:seat:'+s+'" data-seat="'+s+'">P'+s+'</span>';}).join("")+'</div>';
+      }
+      h+='<div class="prow danger focusable" data-fk="p:revoke" data-revoke="1">'+
+        '<div><div class="rnm">Revoke &amp; remove (deny)</div>'+
+        '<div class="rsub">Kills '+esc(n)+'’s token immediately and removes it from this list.</div></div></div>'+
+        '<div class="prow focusable" data-fk="p:back" data-close="1"><div class="rnm">Back to AI Players</div><span class="rval">B</span></div>'+
+        '<div class="note">Pairing token: shown once, when this AI was paired. Lost it? Revoke, then pair again — a fresh token is minted (docs/16: rotation = revoke + regrant).</div>';
+    } else if(PANEL.add){
+      h='<div class="head"><div class="av" style="background:#5cd0ff">+</div>'+
+        '<div><h3>Pair a new AI</h3><div class="hs">It starts at the safe Observe tier — read-only. You can raise it after.</div></div></div>'+
+        '<input class="inp focusable" id="add-name" data-fk="p:name" placeholder="AI name — e.g. Nova, Aria, Atlas" value="'+esc(PANEL.val||"")+'" spellcheck="false" autocomplete="off">'+
+        '<div class="prow primary focusable" data-fk="p:pair" data-pair="1" data-osk-primary>'+
+        '<div><div class="rnm">Pair this AI (Observe)</div><div class="rsub">Issues its entry + read-only token now</div></div><span class="rval">A</span></div>'+
+        '<div class="prow focusable" data-fk="p:cancel" data-close="1"><div class="rnm">Cancel</div><span class="rval">B</span></div>'+
+        '<div class="hint" id="add-hint"></div>';
+    } else if(PANEL.tok){
+      var t=PANEL.tok;
+      h='<div class="head"><div class="av" style="background:'+accFor(t.name)+'">'+esc(t.name[0])+'</div>'+
+        '<div><h3>'+esc(t.name)+' — paired</h3><div class="hs">'+(TLABEL[t.tier]||esc(t.tier))+' tier · '+esc(t.why||"token issued")+'</div></div></div>'+
+        '<div class="tokbox"><div><b style="color:var(--text)">'+esc(t.name)+'’s pairing token</b> · connect to the GOSE Agent on this device, TCP port <b style="color:var(--text)">8731</b></div>'+
+        '<code>'+esc(t.token)+'</code>'+
+        '<div>Give this token to your AI (e.g. GoseClient(host, 8731, token=…)). Keep it secret — it IS the key, and it is shown <b style="color:var(--text)">only this once</b>.</div></div>'+
+        '<div class="prow focusable" data-fk="p:done" data-close="1" style="margin-top:12px"><div class="rnm">Done</div><span class="rval">B</span></div>';
+    }
+    var m=document.createElement("div");m.className="pmask";m.id="pmask";
+    m.innerHTML='<div class="panel" id="panel">'+h+'</div>';
+    document.body.appendChild(m);
   }
   function renderAudit(entries){
-    const box=$("audit"), list=$("audit-list");
+    var box=$("audit"),list=$("audit-list");
     if(!entries.length){box.style.display="none";return;}
     box.style.display="flex";
-    list.innerHTML=entries.slice().reverse().map(e=>{
-      const t=e.ts?new Date(e.ts*1000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}):"—";
-      return `<span class="ae">${t} · <b>${esc(e.name)}</b> · ${esc(e.op)} · <span class="${e.ok?'ok':'no'}">${e.ok?"allowed":"denied"}</span></span>`;
-    }).join("");
+    list.innerHTML=entries.slice().reverse().map(function(e){
+      var t=e.ts?new Date(e.ts*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"—";
+      return '<span class="ae">'+t+' · <b>'+esc(e.name)+'</b> · '+esc(e.op)+' · <span class="'+(e.ok?'ok':'no')+'">'+(e.ok?"allowed":"denied")+'</span></span>';}).join("");
   }
-  function setTier(p,tier){if(!p.k)return; p.tier=tier; if(tier==="observe")p.showTok=false; render();
-    fetch("/ai/grant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:p.k,tier:tier,seat:p.seat})})
-      .then(r=>r.json()).then(d=>{if(d&&d.token)p.token=d.token; say(p.nm+" → "+TLABEL[tier]+(tier==="admin"?" · full OS access":""));render();}).catch(()=>say("Grant failed"));}
-  function setSeat(p,seat){if(!p.k||!p.tier||p.tier==="observe")return; p.seat=seat; render();
-    fetch("/ai/grant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:p.k,tier:p.tier,seat:seat})})
-      .then(r=>r.json()).then(()=>say(p.nm+(seat?" → seat P"+seat+" only":" → any seat"))).catch(()=>say("Seat change failed"));}
-  function revoke(p){if(!p.k)return; p.tier="observe"; p.showTok=false; p.token=null; render();
-    fetch("/ai/revoke",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:p.k})})
-      .then(r=>r.json()).then(()=>say(p.nm+" revoked → Observe only")).catch(()=>say("Revoke failed"));}
-  function togglePair(p){
-    if(!p||!p.k)return;
-    if(!p.tier||p.tier==="observe"){say("Grant Play or Admin first — Observe has no token");return;}
-    if(!p.token){say("No token yet — set the access level again to issue one");return;}
-    p.showTok=!p.showTok; render();}
-  function approveReq(i){const r=REQS[i]; if(!r)return;
-    fetch("/ai/grant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:r.name,tier:r.tier})})
-      .then(x=>x.json()).then(d=>{
-        if(!d||!d.ok){say("Approve failed");return;}
-        say(r.name+" approved → "+(TLABEL[r.tier]||r.tier)+(r.tier!=="observe"?" · token issued (see Pairing)":""));
-        clearReq(r.name);
-      }).catch(()=>say("Approve failed"));}
-  function denyReq(i){const r=REQS[i]; if(!r)return; say(r.name+" denied"); clearReq(r.name);}
+  function wire(){
+    [].slice.call(document.querySelectorAll(".focusable")).forEach(function(el){
+      el.onclick=function(e){e.stopPropagation();
+        if(document.activeElement&&document.activeElement.blur&&el.tagName!=="INPUT")document.activeElement.blur();
+        setF(el);activate(el);};});
+  }
+
+  // ---- actions — every one goes through the REAL server paths (ai_grant/ai_revoke →
+  //      _sync_ai_tokens), so the agent-side enforcement stays the single authority ----
+  function post(path,body){return fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)}).then(function(r){return r.json();});}
+  function setTier(name,tier){
+    // Observe keeps the roster entry + stable token (pair) — removal is the explicit Revoke.
+    var body=tier==="observe"?{name:name,tier:"observe",pair:true,via:"hub"}:{name:name,tier:tier};
+    post("/ai/grant",body).then(function(d){
+      if(!d||!d.ok){say("Grant failed"+(d&&d.error?": "+d.error:""));dlog("tier",name,tier,"FAILED");return;}
+      var p=GR[name];if(p){p.tier=tier;if(tier==="observe")p.seat=null;else if(d.seat!==undefined)p.seat=d.seat;}
+      dlog("tier",name,"->",tier,"ok");
+      say(name+" → "+TLABEL[tier]+(tier==="admin"?" · full OS access":""));render();
+    }).catch(function(){say("Grant failed");});
+  }
+  function setSeat(name,seat){
+    var p=GR[name];if(!p||p.tier==="observe")return;
+    post("/ai/grant",{name:name,tier:p.tier,seat:seat||null}).then(function(d){
+      if(!d||!d.ok){say("Seat change failed");return;}
+      p.seat=d.seat||null;dlog("seat",name,"->",seat||"any","ok");
+      say(name+(seat?" → seat P"+seat+" only":" → any seat"));render();
+    }).catch(function(){say("Seat change failed");});
+  }
+  function revoke(name){
+    if(!GR[name])return;
+    post("/ai/revoke",{name:name}).then(function(d){
+      if(!d||!d.ok){say("Revoke failed");dlog("revoke",name,"FAILED");return;}
+      delete GR[name];ORDER=ORDER.filter(function(x){return x!==name;});
+      dlog("revoke",name,"ok");say(name+" revoked — token removed");
+      if(PANEL&&PANEL.agent===name)PANEL=null;
+      render("add");poll();
+    }).catch(function(){say("Revoke failed");});
+  }
+  function approveReq(name){
+    var r=null;REQS.forEach(function(x){if(x.name===name)r=x;});if(!r)return;
+    var body={name:r.name,tier:r.tier};if(r.tier==="observe"){body.pair=true;body.via="request";}
+    post("/ai/grant",body).then(function(d){
+      if(!d||!d.ok){say("Approve failed"+(d&&d.error?": "+d.error:""));return;}
+      dlog("approve",r.name,"->",r.tier,"ok");
+      clearReq(r.name);
+      // approval IS this AI's pairing moment — show its token once, right now
+      PANEL={tok:{name:d.name||r.name,token:d.token,tier:r.tier,why:"request approved"}};
+      say(r.name+" approved → "+(TLABEL[r.tier]||r.tier));
+      poll();
+    }).catch(function(){say("Approve failed");});
+  }
+  function denyReq(name){dlog("deny-request",name);say(name+" denied");clearReq(name);}
   function clearReq(name){
-    fetch("/ai/request/clear",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:name})})
-      .then(()=>poll()).catch(()=>poll());}
+    REQS=REQS.filter(function(x){return x.name!==name;});render();
+    post("/ai/request/clear",{name:name}).then(function(){poll();}).catch(function(){poll();});
+  }
+  function doPair(){
+    var inp=$("add-name");var name=(inp?inp.value:"").trim();
+    var hint=$("add-hint");
+    if(PANEL&&PANEL.add)PANEL.val=inp?inp.value:"";
+    if(!name){if(hint)hint.textContent="Enter a name for the AI first.";return;}
+    if(GR[name]){if(hint)hint.textContent=name+" is already paired — pick another name.";return;}
+    if(hint)hint.textContent="Pairing "+name+"…";
+    post("/ai/grant",{name:name,tier:"observe",pair:true,via:"hub"}).then(function(d){
+      if(!d||!d.ok||!d.token){if(hint)hint.textContent="Pairing failed"+(d&&d.error?" — "+d.error:"")+".";dlog("pair",name,"FAILED");return;}
+      dlog("pair",d.name||name,"ok");
+      // the name field is about to leave the DOM — close the OSK with it, or its
+      // capture-phase handler would keep consuming the pad (a focus trap, docs/27 §3.2)
+      try{if(window.GOSE&&GOSE.osk)GOSE.osk.hide();}catch(e2){}
+      if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
+      PANEL={tok:{name:d.name||name,token:d.token,tier:"observe",why:"paired from the hub"}};
+      say((d.name||name)+" paired — Observe");
+      render("p:done");poll();
+    }).catch(function(){if(hint)hint.textContent="Pairing failed — no response.";});
+  }
+  function openPanel(name){if(!GR[name])return;PANEL={agent:name};dlog("panel-open",name);
+    render("p:tier:"+(GR[name].tier||"observe"));}
+  function openAdd(){PANEL={add:true,val:""};dlog("panel-open","add");render("p:name");}
+  function closePanel(){
+    if(!PANEL)return;
+    var back=PANEL.agent?("ag:"+PANEL.agent):"add";
+    if(PANEL.tok&&GR[PANEL.tok.name])back="ag:"+PANEL.tok.name;
+    try{if(window.GOSE&&GOSE.osk)GOSE.osk.hide();}catch(e){}
+    if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
+    dlog("panel-close");PANEL=null;render(back);
+  }
+
+  function activate(el){
+    if(!el)return;var d=el.dataset||{};
+    if(d.app){approveReq(d.app);return;}
+    if(d.den){denyReq(d.den);return;}
+    if(d.agent){openPanel(d.agent);return;}
+    if(d.fk==="add"){openAdd();return;}
+    if(d.close){closePanel();return;}
+    if(d.revoke){if(PANEL&&PANEL.agent)revoke(PANEL.agent);return;}
+    if(d.tier){if(PANEL&&PANEL.agent)setTier(PANEL.agent,d.tier);return;}
+    if(d.seat!==undefined){if(PANEL&&PANEL.agent)setSeat(PANEL.agent,+d.seat||null);return;}
+    if(d.pair){doPair();return;}
+    if(el.tagName==="INPUT"){el.focus();return;}   // shared OSK auto-opens (cursor.js)
+  }
+
+  // ---- polling: the roster IS /ai/grants; refresh never steals focus (docs/27 §3.9) ----
   function poll(){
-    fetch("/ai/grants",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-      const g=(d&&d.grants)||{};
-      PLAYERS.forEach(p=>{if(p.k){p.tier=(g[p.k]&&g[p.k].tier)||"observe"; p.seat=(g[p.k]&&g[p.k].seat)||null;
-        p.token=(g[p.k]&&g[p.k].token)||null; if(p.tier==="observe"){p.showTok=false;p.token=null;}}});
-      // grants for names outside the built-in roster (approved via request) get their own card
-      const known=new Set(PLAYERS.filter(p=>p.k).map(p=>p.k));
-      const old={}; EXTRA.forEach(p=>old[p.k]=p);
-      EXTRA=Object.keys(g).filter(n=>!known.has(n)).sort().map(n=>{
-        const prev=old[n]||{};
-        return {nm:n,k:n,acc:"#9aa3b8",on:!!prev.on,role:"AI",sub:"Paired via request — appears while its grant lasts.",
-                mode:prev.mode||null,tier:g[n].tier||"observe",seat:g[n].seat||null,token:g[n].token||null,showTok:!!prev.showTok};});
-    }).catch(()=>{}).finally(()=>{
-      fetch("/ai/requests",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-        REQS=((d&&d.requests)||[]).map(r=>({name:r.name,tier:r.tier,ts:r.ts}));
-      }).catch(()=>{}).finally(()=>{
-        fetch("/ai/players",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-          const live=(d&&d.players)||[];
-          roster().forEach(p=>{ if(!p.k)return; const m=live.find(x=>x.name===p.k);
-            p.on=!!(m&&m.online); p.mode=m?m.mode:null; if(m&&m.tier&&PLAYERS.includes(p))p.tier=m.tier; });
-          const onAis=roster().filter(p=>p.k&&p.on);
-          $("banner-txt").innerHTML = REQS.length
+    fetch("/ai/grants",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+      var g=(d&&d.grants)||{};GR=g;ORDER=Object.keys(g).sort(function(a,b){return a.localeCompare(b);});
+    }).catch(function(){}).finally(function(){
+      fetch("/ai/requests",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+        REQS=((d&&d.requests)||[]).map(function(r){return {name:r.name,tier:r.tier,ts:r.ts};});
+      }).catch(function(){}).finally(function(){
+        fetch("/ai/players",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+          LIVE={};(((d&&d.players)||[])).forEach(function(p){LIVE[p.name]={online:!!p.online,mode:p.mode};});
+        }).catch(function(){}).finally(function(){
+          var onAis=ORDER.filter(function(n){return LIVE[n]&&LIVE[n].online;});
+          $("banner-txt").innerHTML=REQS.length
             ? '<b style="color:#ffb74d">Pairing</b> — '+REQS.length+' request'+(REQS.length>1?'s':'')+' waiting for your approval below.'
             : (onAis.length
-              ? '<b style="color:#3fe0a0">● Live</b> — '+onAis.map(p=>esc(p.nm)+" "+(p.mode==="playing"?"playing":"watching")+" · "+TLABEL[p.tier]).join(", ")+" on this device."
-              : '<b style="color:var(--accent)">AI Players</b> — grant each AI an access level below. They connect over MCP / Wi-Fi / Bluetooth and appear live here.');
-          render();
-        }).catch(()=>{render();});
-        fetch("/ai/audit?limit=15",{cache:"no-store"}).then(r=>r.json())
-          .then(d=>renderAudit((d&&d.entries)||[])).catch(()=>{});
+              ? '<b style="color:#3fe0a0">● Live</b> — '+onAis.map(function(n){
+                  return esc(n)+" "+(LIVE[n].mode==="playing"?"playing":"watching")+" · "+TLABEL[GR[n].tier];}).join(", ")+" on this device."
+              : '<b style="color:var(--accent)">AI Players</b> — each card below is a paired agent with a real grant. Select one to change its access or revoke it.');
+          // never re-render under an open panel (it would clobber typing / focus) — §3.9
+          var sig=JSON.stringify([GR,REQS,LIVE]);
+          if(!PANEL&&sig!==lastSig){lastSig=sig;render();}
+        });
+        fetch("/ai/audit?limit=15",{cache:"no-store"}).then(function(r){return r.json();})
+          .then(function(d){renderAudit((d&&d.entries)||[]);}).catch(function(){});
       });
     });
   }
-  function move(d){const n=focCount(); if(!n)return; foc=(foc+d+n)%n; render();}
-  function activate(){
-    if(foc<REQS.length){approveReq(foc);return;}        // A on a request = approve
-    const p=roster()[foc-REQS.length];
-    if(!p.k){say("That's you — the owner. You set every AI's access here.");return;}
-    if(p.showTok){p.showTok=false;render();return;}     // A hides an open pairing box
-    const idx=(TIERS.indexOf(p.tier)+1)%TIERS.length; setTier(p,TIERS[idx]);}
-  function revokeKey(){
-    if(foc<REQS.length){denyReq(foc);return;}           // X on a request = deny
-    revoke(roster()[foc-REQS.length]);}
-  function pairKey(){
-    if(foc<REQS.length)return;
-    togglePair(roster()[foc-REQS.length]);}
-  addEventListener("keydown",e=>{const k=e.key;
-    if(k==="ArrowRight")move(1);else if(k==="ArrowLeft")move(-1);
-    else if(k==="ArrowDown")move(2);else if(k==="ArrowUp")move(-2);
-    else if(k==="Enter"||k===" ")activate();
-    else if(k==="x"||k==="X"||k==="Delete")revokeKey();
-    else if(k==="p"||k==="P")pairKey();
-    else if(k==="Escape")location.href="gose-home.html";
-    else return;e.preventDefault();});
-  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
-  // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
+
+  // ---- input: ONE keydown consumer of the docs/27 vocabulary; OSK (capture phase) wins ----
+  addEventListener("keydown",function(e){
+    if(e.__goseOSK){ // OSK Enter on the add-panel name field = submit (Enter-chaining commit)
+      if(e.key==="Enter"&&PANEL&&PANEL.add){e.preventDefault();e.stopPropagation();doPair();}
+      return;}
+    if(e.defaultPrevented)return;   // the OSK's capture listener already consumed it
+    if(oskVisible())return;         // OSK owns arrows/Enter/Escape while open
+    var k=e.key;
+    if(k==="ArrowRight"||k==="Right")move("right");
+    else if(k==="ArrowLeft"||k==="Left")move("left");
+    else if(k==="ArrowDown"||k==="Down")move("down");
+    else if(k==="ArrowUp"||k==="Up")move("up");
+    else if(k==="Enter"||k===" ")activate(cur());
+    else if(k==="Escape"||k==="Backspace"){if(PANEL)closePanel();else location.href="gose-home.html";}
+    else if(k==="x"||k==="X"||k==="Delete"){
+      // keyboard shortcut only — the pad path is the focusable Revoke/Deny rows (docs/27 §3.5)
+      if(PANEL&&PANEL.agent)revoke(PANEL.agent);
+      else{var c=cur();if(c&&c.dataset.agent)revoke(c.dataset.agent);
+           else if(c&&c.dataset.den)denyReq(c.dataset.den);}}
+    else return;
+    e.preventDefault();
+  });
+  // keep the roving focus in sync when a field gets DOM focus (mouse / OSK chaining)
+  document.addEventListener("focusin",function(e){
+    var t=e.target;
+    if(t&&t.classList&&t.classList.contains("focusable")&&cur()!==t)setF(t);
+  });
+  document.addEventListener("gose-osk-chain-end",function(e){
+    var p=(e.detail&&e.detail.primary);if(p&&p.classList.contains("focusable"))setF(p);
+  });
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above; a
+  // page-level getGamepads() loop is a second input path that double-fires (docs/27 §2.1).
   paint();render();poll();setInterval(poll,5000);
 </script>
 <script src="assets/a11y.js"></script>

@@ -184,7 +184,8 @@
     privacy:{boxart_scrape:false, telemetry:false, online:false},
     theme: localStorage.getItem("gose-theme")||"onyx",
     device_name:"GOSE",
-    ai:{name:"", token:null, paired:false}
+    ai_name:"",      // the name field's current text (not yet paired)
+    ais:[]           // paired agents this run: [{name, token}] — each is a REAL Observe grant
   };
 
   // kind: "required" (no skip, Continue gated until satisfied) |
@@ -379,17 +380,20 @@
         '<div class="field"><label>Device name</label>'+
           '<input class="inp focusable" data-field="device_name" placeholder="GOSE" value="'+esc(S.device_name)+'"></div>';
     } else if(s.id==="ai"){
-      h='<div class="step-eyebrow">Step 9 — AI companion (optional)</div><h1>Pair an AI companion</h1>'+
-        '<p class="sub">GOSE can pair with an AI agent that observes and (with your later permission) helps '+
-        'out. Pairing issues a token at the safe <b>Observe</b> tier — read-only. You grant more anytime in '+
-        'the <b>AI Hub</b>. This is optional — you can <b>skip</b> and pair later.</p>'+
+      h='<div class="step-eyebrow">Step 9 — AI companions (optional)</div><h1>Pair your AI companions</h1>'+
+        '<p class="sub">GOSE can pair with AI agents that observe and (with your later permission) help '+
+        'out. Name an AI and add it — pairing issues its own token at the safe <b>Observe</b> tier '+
+        '(read-only), then you can add another. You grant more anytime in the <b>AI Hub</b>. '+
+        'This is optional — you can <b>skip</b> and pair later.</p>'+
+        '<div class="scroll">'+
         '<div class="field"><label>AI name</label>'+
-          '<input class="inp focusable" data-field="ai_name" placeholder="e.g. Nova, Aria, Atlas…" value="'+esc(S.ai.name)+'"></div>'+
+          '<input class="inp focusable" data-field="ai_name" placeholder="e.g. Nova, Aria, Atlas…" value="'+esc(S.ai_name)+'"></div>'+
         '<div class="opt focusable" data-act="pair"><span class="ic" data-i="sparkles"></span>'+
-          '<div><div class="nm">'+(S.ai.paired?"Re-issue pairing token":"Pair this AI (Observe)")+'</div>'+
-          '<div class="sub2">Creates an entry in the AI Hub with a read-only token</div></div>'+
+          '<div><div class="nm">Add this AI (Observe)</div>'+
+          '<div class="sub2">Pairs it now — its entry + read-only token appear in the AI Hub'+
+          (S.ais.length?'; add another after':'')+'</div></div>'+
           '<span class="val">A</span></div>'+
-        '<div id="pairout">'+(S.ai.paired?pairBlock():"")+'</div>';
+        '<div id="pairout">'+pairBlock()+'</div></div>';
     } else if(s.id==="ready"){
       h='<div class="finale" id="finale">'+
         '<img class="logo" src="assets/brand/gose-crystal.png" alt="">'+
@@ -421,8 +425,11 @@
     return '<div class="badges">'+b.join("")+'</div>';
   }
   function esc(v){ return String(v||"").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
-  function pairBlock(){ return '<div class="pairok">'+ico("check")+'Paired — added to the AI Hub (Observe tier)</div>'+
-    (S.ai.token?'<div class="token">Pairing token: '+S.ai.token+'</div>':''); }
+  // The queued/paired list — each added AI is already a REAL Observe grant; its token is
+  // shown here, once, at pairing (the owner reads it to that AI). docs/16: lost = revoke+re-pair.
+  function pairBlock(){ return S.ais.map(function(a){
+    return '<div class="pairok">'+ico("check")+esc(a.name)+' — paired (Observe) · in the AI Hub</div>'+
+      (a.token?'<div class="token">'+esc(a.name)+' — pairing token: '+esc(a.token)+'</div>':''); }).join(""); }
 
   function buildDots(){
     document.getElementById("dots").innerHTML = STEPS.map(function(st,i){
@@ -635,13 +642,27 @@
     e.preventDefault(); e.stopPropagation();
   }, true);
 
+  // add-another loop: each Add pairs ONE named agent for real (Observe grant + token),
+  // appends it to the queued list, clears the field, and hands focus back to the name
+  // field so the next companion can be typed. Targeted DOM updates only — no re-render,
+  // so the paired list never loses the roving focus (docs/27 §3.9).
   function doPair(){
-    var name=(S.ai.name||"").trim(); var out=document.getElementById("pairout");
-    if(!name){ if(out) out.innerHTML='<div class="hint" style="color:#ffce5c">Enter an AI name first.</div>'; return; }
-    if(out) out.innerHTML='<div class="sub2" style="margin-top:8px">Pairing '+esc(name)+'…</div>';
+    captureInputs();
+    var inp=card.querySelector('[data-field="ai_name"]');
+    var name=(S.ai_name||"").trim(); var out=document.getElementById("pairout");
+    function hint(msg,color){ if(out) out.innerHTML='<div class="hint" style="color:'+(color||"#ffce5c")+'">'+msg+'</div>'+pairBlock(); paintIcons(); }
+    if(!name){ hint("Enter an AI name first."); return; }
+    if(S.ais.some(function(a){ return a.name===name; })){ hint(esc(name)+" is already paired — name the next AI."); return; }
+    if(out) out.innerHTML='<div class="sub2" style="margin-top:8px">Pairing '+esc(name)+'…</div>'+pairBlock();
     api("/ai/grant",{name:name, tier:"observe", pair:true, via:"oobe"}).then(function(d){
-      if(d&&d.ok&&d.token){ S.ai.paired=true; S.ai.token=d.token; if(out) out.innerHTML=pairBlock(); paintIcons(); }
-      else { if(out) out.innerHTML='<div class="hint" style="color:#ff8e8e">Pairing failed — you can skip and pair later.</div>'; }
+      if(d&&d.ok&&d.token){
+        S.ais.push({name:d.name||name, token:d.token});
+        S.ai_name=""; if(inp) inp.value="";
+        if(out) out.innerHTML=pairBlock(); paintIcons();
+        dlog("paired", d.name||name, "total", S.ais.length);
+        if(inp) setF(inp);   // add-another loop: focus the field for the next name
+      }
+      else hint("Pairing failed"+(d&&d.error?" — "+esc(d.error):"")+". You can skip and pair later.","#ff8e8e");
     });
   }
 
@@ -664,7 +685,10 @@
                has_password:!!S.account.password, has_pin:!!S.account.pin, accent:S.account.accent},
       privacy:S.privacy, locale:S.locale, keyboard:S.keyboard, timezone:null,
       theme:S.theme, device_name:(String(S.device_name||"").trim()||"GOSE"),
-      ai: S.ai.paired?{name:S.ai.name}:{}
+      // every agent added in the AI step (already paired live; completion re-issues
+      // idempotently). "ai" = legacy single shape, "ais" = the full multi-pair list.
+      ai: S.ais.length?{name:S.ais[0].name}:{},
+      ais: S.ais.map(function(a){ return {name:a.name}; })
     };
     var done=false;
     function tick(i){ var li=document.querySelector('[data-li="'+i+'"]'); if(li) li.classList.add("on"); }
@@ -721,7 +745,7 @@
       else if(f==="password") S.account.password=v;
       else if(f==="pin") S.account.pin=v;
       else if(f==="device_name") S.device_name=v;
-      else if(f==="ai_name") S.ai.name=v;
+      else if(f==="ai_name") S.ai_name=v;
     });
   }
 
