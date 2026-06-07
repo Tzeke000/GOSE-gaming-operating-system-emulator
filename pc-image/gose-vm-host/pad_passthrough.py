@@ -17,6 +17,14 @@ The pad stays attached to WINDOWS (never usb-redir-claimed); only its events
 travel. By design there is no 1 kHz sensor stream — an untouched pad sends
 nothing at all.
 
+EVERY pad gets hooked, not just DB-known ones: (1) SDL is pointed at the repo's
+vendored gamecontrollerdb.txt (SDL_GAMECONTROLLERCONFIG_FILE, set before pygame
+import) so many would-be raw joysticks attach as properly-mapped controllers;
+(2) anything STILL not a GameController falls back to the raw joystick API with
+the heuristic standard layout most DB rows encode (axes 0/1 left stick, 2/3
+right stick, hat 0 dpad, buttons 0..N in SOUTH/EAST/WEST/NORTH/TL/TR/SELECT/
+START/MODE/THUMBL/THUMBR order), name-tagged " (unmapped)" for the UI.
+
 Run:    py -3.11 pad_passthrough.py               (daemon; boot-gose-vm.ps1 starts it)
         py -3.11 pad_passthrough.py --once-status  (print detected pads, exit)
 Log:    D:\\gose-vm\\pad_passthrough.log
@@ -40,6 +48,13 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_JOYSTICK_THREAD", "1")
 os.environ.setdefault("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
+# Extra controller mappings: the vendored gamecontrollerdb.txt next to this script
+# (SDL reads the env var at controller-subsystem init). Upgrades many would-be raw
+# joysticks into properly-mapped GameControllers. setdefault — a caller's own
+# SDL_GAMECONTROLLERCONFIG_FILE wins.
+_GCDB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gamecontrollerdb.txt")
+if os.path.isfile(_GCDB):
+    os.environ.setdefault("SDL_GAMECONTROLLERCONFIG_FILE", _GCDB)
 
 import pygame  # noqa: E402
 from pygame._sdl2 import controller as sdl_controller  # noqa: E402
@@ -90,6 +105,11 @@ AXIS_MAP = {
     pygame.CONTROLLER_AXIS_TRIGGERLEFT: (ABS_Z, True),
     pygame.CONTROLLER_AXIS_TRIGGERRIGHT: (ABS_RZ, True),
 }
+# Raw-joystick FALLBACK layout (pads SDL has no GameController mapping for):
+# the heuristic standard shape most gamecontrollerdb rows encode.
+JOYFB_BUTTONS = [BTN_SOUTH, BTN_EAST, BTN_WEST, BTN_NORTH, BTN_TL, BTN_TR,
+                 BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL, BTN_THUMBR]
+JOYFB_AXES = [ABS_X, ABS_Y, ABS_RX, ABS_RY]      # 0/1 left stick, 2/3 right stick
 
 log = logging.getLogger("pad_passthrough")
 
@@ -242,11 +262,67 @@ class Pad:
             return [{"type": EV_ABS, "code": code, "value": self.dpad[axis]}]
         return []
 
+    def quit(self):
+        try:
+            (self.ctrl or self.joy).quit()
+        except Exception:
+            pass
+
+
+class JoyPad(Pad):
+    """Raw-joystick FALLBACK: a host pad SDL has no GameController mapping for
+    (exotic/no-name, not in the DB) still gets hooked and wired up like the
+    DualSense — attached via the joystick API with the heuristic standard layout
+    (JOYFB_*), name-tagged " (unmapped)" so the UI can surface
+    "generic controller — default mapping"."""
+
+    def __init__(self, joystick):
+        super().__init__(None, joystick)
+        self.name += " (unmapped)"
+
+    def snapshot_events(self):
+        evs = []
+        for i, code in enumerate(JOYFB_BUTTONS[:self.joy.get_numbuttons()]):
+            evs.append({"type": EV_KEY, "code": code,
+                        "value": 1 if self.joy.get_button(i) else 0})
+        if self.joy.get_numhats() > 0:
+            hx, hy = self.joy.get_hat(0)
+            self.dpad["x"], self.dpad["y"] = hx, -hy   # pygame hat y is + up; HAT0Y is - up
+        evs.append({"type": EV_ABS, "code": ABS_HAT0X, "value": self.dpad["x"]})
+        evs.append({"type": EV_ABS, "code": ABS_HAT0Y, "value": self.dpad["y"]})
+        for i, code in enumerate(JOYFB_AXES[:self.joy.get_numaxes()]):
+            evs.append({"type": EV_ABS, "code": code,
+                        "value": scale_jaxis(self.joy.get_axis(i))})
+        return evs
+
+    def map_jbutton(self, button: int, down: bool):
+        if button < len(JOYFB_BUTTONS):
+            return [{"type": EV_KEY, "code": JOYFB_BUTTONS[button], "value": 1 if down else 0}]
+        return []
+
+    def map_jaxis(self, axis: int, value: float):
+        if axis < len(JOYFB_AXES):
+            return [{"type": EV_ABS, "code": JOYFB_AXES[axis], "value": scale_jaxis(value)}]
+        return []
+
+    def map_jhat(self, hat: int, value):
+        if hat != 0:
+            return []
+        hx, hy = value
+        self.dpad["x"], self.dpad["y"] = hx, -hy
+        return [{"type": EV_ABS, "code": ABS_HAT0X, "value": self.dpad["x"]},
+                {"type": EV_ABS, "code": ABS_HAT0Y, "value": self.dpad["y"]}]
+
 
 def scale_axis(value: int, is_trigger: bool) -> int:
     if is_trigger:                       # SDL 0..32767 -> evdev 0..255
         return max(0, min(255, value * 255 // 32767))
     return max(-32768, min(32767, value))
+
+
+def scale_jaxis(value: float) -> int:
+    """Raw joystick axis (pygame float -1..1) -> evdev stick range."""
+    return max(-32768, min(32767, int(value * 32767)))
 
 
 class Forwarder:
@@ -272,27 +348,43 @@ class Forwarder:
 
     # ---- pad lifecycle ----
     def attach(self, device_index: int):
+        """Mapped GameController path (CONTROLLERDEVICEADDED)."""
         try:
             if not sdl_controller.is_controller(device_index):
-                log.info("device %d is not a game controller — ignored", device_index)
-                return
+                return                   # raw joystick — attach_joystick handles it
             ctrl = sdl_controller.Controller(device_index)
-            joy = ctrl.as_joystick()
+            pad = Pad(ctrl, ctrl.as_joystick())
         except Exception as e:
             log.warning("could not open device %d: %s", device_index, e)
             return
-        pad = Pad(ctrl, joy)
-        if any(p.instance_id == pad.instance_id for p in self.pads.values()):
-            return                       # duplicate hotplug notification
+        self._register(pad)
+
+    def attach_joystick(self, device_index: int):
+        """Fallback path (JOYDEVICEADDED, not a GameController): hook it anyway
+        with the heuristic default layout instead of ignoring it."""
+        try:
+            if sdl_controller.is_controller(device_index):
+                return                   # mapped — attach() handles it
+            pad = JoyPad(pygame.joystick.Joystick(device_index))
+        except Exception as e:
+            log.warning("could not open joystick %d: %s", device_index, e)
+            return
+        log.info("FALLBACK device %d '%s': no GameController mapping — raw joystick "
+                 "with default layout (%d buttons, %d axes, %d hats)",
+                 device_index, pad.name, pad.joy.get_numbuttons(),
+                 pad.joy.get_numaxes(), pad.joy.get_numhats())
+        self._register(pad)
+
+    def _register(self, pad: Pad):
+        if pad.instance_id in self.pads:
+            pad.quit()                   # duplicate hotplug notification (SDL refcounts opens)
+            return
         try:
             r = pad.open_guest(self.client)
             self.client.call("input.pt_event", pt_id=pad.pt_id, events=pad.snapshot_events())
         except Exception as e:
             log.error("guest pt_open failed for '%s': %s", pad.name, e)
-            try:
-                ctrl.quit()
-            except Exception:
-                pass
+            pad.quit()
             return
         self.pads[pad.instance_id] = pad
         log.info("ATTACH '%s' guid=%s vid=%04x pid=%04x ver=%04x bus=%d -> pt_id=%s (%s)",
@@ -307,10 +399,7 @@ class Forwarder:
             self.client.call("input.pt_close", pt_id=pad.pt_id)
         except Exception as e:
             log.warning("pt_close failed for '%s': %s", pad.name, e)
-        try:
-            pad.ctrl.quit()
-        except Exception:
-            pass
+        pad.quit()
         self.report_latency(final=True)
         log.info("DETACH '%s' (pt_id=%s)", pad.name, pad.pt_id)
 
@@ -365,8 +454,10 @@ class Forwarder:
         for ev in pygame.event.get():
             if ev.type == pygame.CONTROLLERDEVICEADDED:
                 self.attach(ev.device_index)
-            elif ev.type == pygame.CONTROLLERDEVICEREMOVED:
-                self.detach(ev.instance_id)
+            elif ev.type == pygame.JOYDEVICEADDED:
+                self.attach_joystick(ev.device_index)     # no-op for mapped controllers
+            elif ev.type in (pygame.CONTROLLERDEVICEREMOVED, pygame.JOYDEVICEREMOVED):
+                self.detach(ev.instance_id)               # pop-idempotent (both fire for controllers)
             elif ev.type in (pygame.CONTROLLERBUTTONDOWN, pygame.CONTROLLERBUTTONUP):
                 pad = self.pads.get(ev.instance_id)
                 if pad:
@@ -378,6 +469,23 @@ class Forwarder:
                     code, trig = AXIS_MAP[ev.axis]
                     batches.setdefault(ev.instance_id, []).append(
                         {"type": EV_ABS, "code": code, "value": scale_axis(ev.value, trig)})
+            # raw-joystick fallback events: JoyPad ONLY — a mapped controller also
+            # emits JOY* for the same motion, and forwarding both would double-fire
+            elif ev.type in (pygame.JOYBUTTONDOWN, pygame.JOYBUTTONUP):
+                pad = self.pads.get(ev.instance_id)
+                if isinstance(pad, JoyPad):
+                    batches.setdefault(ev.instance_id, []).extend(
+                        pad.map_jbutton(ev.button, ev.type == pygame.JOYBUTTONDOWN))
+            elif ev.type == pygame.JOYAXISMOTION:
+                pad = self.pads.get(ev.instance_id)
+                if isinstance(pad, JoyPad):
+                    batches.setdefault(ev.instance_id, []).extend(
+                        pad.map_jaxis(ev.axis, ev.value))
+            elif ev.type == pygame.JOYHATMOTION:
+                pad = self.pads.get(ev.instance_id)
+                if isinstance(pad, JoyPad):
+                    batches.setdefault(ev.instance_id, []).extend(
+                        pad.map_jhat(ev.hat, ev.value))
         for iid, events in batches.items():
             self.send(self.pads[iid], events)
 
@@ -393,8 +501,9 @@ class Forwarder:
             log.warning("orphan cleanup skipped: %s", e)
 
     def run(self):
-        log.info("pad passthrough up: SDL %s, video=%s, polling %.0f Hz",
-                 pygame.version.SDL, os.environ.get("SDL_VIDEODRIVER"), 1 / POLL_S)
+        log.info("pad passthrough up: SDL %s, video=%s, polling %.0f Hz, extra mappings=%s",
+                 pygame.version.SDL, os.environ.get("SDL_VIDEODRIVER"), 1 / POLL_S,
+                 os.environ.get("SDL_GAMECONTROLLERCONFIG_FILE") or "none (built-ins only)")
         self.wait_for_agent()
         self.cleanup_orphans()
         while True:
