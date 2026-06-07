@@ -108,6 +108,17 @@
   .btn.ghost.focus{border-color:var(--accent)}
   .btn[disabled]{opacity:.45}
   .hint{color:#ffce5c;font-size:12.5px;margin-top:8px;min-height:16px}
+  /* network rows: lock glyph for secured networks */
+  .lockic{font-size:13px;color:var(--muted);margin-left:7px;vertical-align:-1px}
+  /* Wi-Fi password modal (ported from gose-wifi.html; docs/27 §3.7: capture-phase, Escape
+     always cancels, focus returns to the network list) */
+  .pwm{position:fixed;inset:0;background:#06060cc8;display:none;align-items:center;justify-content:center;z-index:60}
+  .pwm.on{display:flex}
+  .pwm .box{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 22px;width:460px;max-width:90vw}
+  .pwm h3{margin:0 0 4px;font-size:16px}
+  .pwm .s{color:var(--muted);font-size:12.5px;margin-bottom:12px}
+  .pwm .err{color:#ff8e8e;font-size:12.5px;margin-top:8px;min-height:16px}
+  .pwm .btns{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
   /* controller step: source chips + supported-families strip + keyboard fallback */
   .chip{display:inline-flex;align-items:center;font-size:10.5px;font-weight:700;letter-spacing:.5px;
     text-transform:uppercase;padding:2px 8px;border-radius:999px;border:1px solid;margin-left:8px;
@@ -121,9 +132,15 @@
   .kbline{color:var(--muted);font-size:12px;margin-top:9px}
   .kbline b{color:var(--text)}
 </style></head>
-<body>
+<body data-osk-auto>
   <div class="brand"><img src="assets/brand/gose-crystal.png" alt="GOSE"><span class="t">GOSE · set up your device</span></div>
   <div class="card" id="card"></div>
+  <div class="pwm" id="pwm"><div class="box">
+    <h3 id="pwm-t">Connect</h3><div class="s" id="pwm-s"></div>
+    <input class="inp" id="pwm-in" type="password" spellcheck="false" autocomplete="off" placeholder="Wi-Fi password">
+    <div class="err" id="pwm-e"></div>
+    <div class="btns"><span class="btn ghost" id="pwm-cancel">Cancel</span><span class="btn" id="pwm-ok">Connect</span></div>
+  </div></div>
   <div class="foot">
     <span class="dots" id="dots"></span>
     <span id="stepname"></span>
@@ -145,11 +162,25 @@
     ["de","German (QWERTZ)"],["pt","Portuguese"],["it","Italian"],["jp","Japanese"],["fi","Finnish"],
     ["intl","US International"]];
 
+  // pad-drive transcript hook (docs/25 §5c): #dbg in the URL logs focus moves / OSK / modal
+  // events to the kiosk's stdout (console-to-stdout is on) so a drive leaves text evidence.
+  var DBG = (location.hash||"").indexOf("dbg")>=0;
+  function dlog(){ if(DBG){ try{ console.log.apply(console,["[oobe]"].concat([].slice.call(arguments))); }catch(e){} } }
+  function fdesc(el){ if(!el) return "none";
+    if(el.dataset){ if(el.dataset.field) return "field:"+el.dataset.field;
+      if(el.dataset.act) return "act:"+el.dataset.act;
+      if(el.dataset.net!==undefined) return "net:"+el.dataset.net+(el.dataset.sec==="1"?"(secured)":"(open)");
+      if(el.dataset.acc) return "color:"+el.dataset.acc;
+      if(el.dataset.pad!==undefined) return "pad:"+el.dataset.pad;
+      if(el.dataset.opt) return "opt:"+el.dataset.opt+"="+el.dataset.v;
+      if(el.dataset.toggle) return "toggle:"+el.dataset.toggle; }
+    return el.id||el.tagName; }
+
   // collected answers
   var S = {
     locale:"en-US", keyboard:"us", net:null,
     license:false,
-    account:{username:"", display:"", password:"", pin:"", accent:"#5cd0ff", has_password:false, has_pin:false},
+    account:{username:"", name:"", password:"", pin:"", accent:"#5cd0ff", has_password:false, has_pin:false},
     privacy:{boxart_scrape:false, telemetry:false, online:false},
     theme: localStorage.getItem("gose-theme")||"onyx",
     device_name:"GOSE",
@@ -193,6 +224,7 @@
   function cur(){ return document.querySelector(".focus"); }
   function setF(el){ if(!el) return; var c=cur(); if(c)c.classList.remove("focus");
     el.classList.add("focus"); el.scrollIntoView({block:"nearest"});
+    dlog("focus", fdesc(el));
     try{ GOSE&&GOSE.sound&&GOSE.sound("nav"); }catch(e){} }
   function move(d){
     var a=cur()||focusables()[0]; if(!a) return; var r=a.getBoundingClientRect();
@@ -205,6 +237,34 @@
       var of=(d==="left"||d==="right")?Math.abs(dy):Math.abs(dx);
       var dd=al+of*2; if(dd<bd){ bd=dd; best=el; } }
     if(best){ if(document.activeElement&&document.activeElement.blur)document.activeElement.blur(); setF(best); }
+  }
+
+  // ---- account step: d-pad Down/Up walk the FORM order (docs/25 §5b reading order:
+  // left→right, top→down): name → username → password → PIN → color → Continue.
+  // The generic geometric scorer preferred the near-centerline color swatches over the
+  // half-width password field (Down from the name field landed on the color picker — the
+  // 2026-06-07 focus bug), so vertical movement here follows the explicit reading order.
+  // The swatch row is ONE stop (Left/Right move within it); Left/Right elsewhere stay spatial.
+  function accountMove(dir){
+    if(STEPS[idx].id!=="account") return false;
+    var c=cur(); if(!c) return false;
+    var fields=["name","username","password","pin"].map(function(f){
+      return card.querySelector('[data-field="'+f+'"]'); }).filter(Boolean);
+    var sws=[].slice.call(card.querySelectorAll(".sw"));
+    var colorStop=sws.length?(card.querySelector(".sw.sel")||sws[0]):null;
+    var contb=document.getElementById("contbtn");
+    var stops=fields.concat(colorStop?[colorStop]:[], contb?[contb]:[]);
+    var i;
+    if(c.classList.contains("sw")) i=fields.length;          // any swatch = the color stop
+    else i=stops.indexOf(c);
+    if(i<0){ // a non-Continue footer button (Back): Up re-enters the form at the color stop
+      if(dir<0 && c.closest && c.closest("#footbtns")){ setF(stops[stops.length-2]||stops[0]); return true; }
+      return false; }
+    var n=i+dir;
+    if(n<0||n>=stops.length) return true;                    // top/bottom of the form: stay put
+    if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();
+    setF(stops[n]);
+    return true;
   }
 
   // ---- per-step renderers ----
@@ -277,14 +337,17 @@
         ico("check")+'<div class="nm">I have read and accept the terms</div>'+
         '<span class="pill"><i></i></span></div>';
     } else if(s.id==="account"){
+      // Field semantics (owner decision 2026-06-07): "Your name" = the person's actual name;
+      // "Username" = the identity GOSE displays everywhere (login + lock screens show the USERNAME).
       h='<div class="step-eyebrow">Step 6 — your account</div><h1>Create your account</h1>'+
-        '<p class="sub">This first account is the device <b>owner</b>. Select a field and the on-screen '+
-        'keyboard appears — type with the controller, then press <b>B</b> to close it.</p>'+
+        '<p class="sub">This first account is the device <b>owner</b>. The <b>username</b> is what GOSE '+
+        'shows on the login and lock screens. The keyboard opens on a field automatically — <b>Enter</b> '+
+        'moves to the next field, <b>B</b> closes it.</p>'+
         '<div class="scroll">'+
+        '<div class="field"><label>Your name</label>'+
+          '<input class="inp focusable" data-field="name" placeholder="Your actual name (optional)" value="'+esc(S.account.name)+'"></div>'+
         '<div class="field"><label>Username</label>'+
-          '<input class="inp focusable" data-field="username" placeholder="e.g. alex" value="'+esc(S.account.username)+'"></div>'+
-        '<div class="field"><label>Display name (optional)</label>'+
-          '<input class="inp focusable" data-field="display" placeholder="Shown on the lock screen" value="'+esc(S.account.display)+'"></div>'+
+          '<input class="inp focusable" data-field="username" placeholder="e.g. alex — shown on the lock screen" value="'+esc(S.account.username)+'"></div>'+
         '<div class="grid2">'+
           '<div class="field"><label>Password (optional)</label>'+
             '<input class="inp focusable" data-field="password" type="password" placeholder="••••••" value="'+esc(S.account.password)+'"></div>'+
@@ -372,7 +435,7 @@
     var contLbl = last ? "Finish ›" : "Continue ›";
     var html='<span class="btn ghost focusable" data-act="back">‹ Back</span>';
     if(s.skip) html+='<span class="btn ghost focusable" data-act="skip">'+(s.skipLabel||"Skip")+' ›</span>';
-    html+='<span class="btn focusable" data-act="continue" id="contbtn">'+contLbl+'</span>';
+    html+='<span class="btn focusable" data-act="continue" id="contbtn" data-osk-primary>'+contLbl+'</span>';
     fb.innerHTML=html;
     refreshGate();  // required steps start with Continue disabled until satisfied
   }
@@ -390,7 +453,7 @@
     if(s.id==="controller"){ loadDbCount(); padFresh=true; loadControllers();
       // live list: the host hot-plugs new pads in ~1s; poll the registry while this step shows
       padPoll=setInterval(loadControllers, 2000); }
-    if(s.id==="network") loadNetworks();
+    if(s.id==="network"){ netFresh=true; loadNetworks(); }
     if(s.id==="ready") runFinale();
     // live-capture text fields so the required-account gate updates as you type (incl. via the OSK)
     [].slice.call(card.querySelectorAll("input[data-field]")).forEach(function(inp){
@@ -467,6 +530,10 @@
       }).catch(function(){ /* keep the honest static fallback text */ });
   }
 
+  // ---- network step: scan list (lock glyph on secured networks) + password modal ----
+  // The host bridge joins secured networks via netsh (POST /net/connect {ssid,password} —
+  // the same endpoint gose-wifi.html uses); /net/scan rows carry secure/auth/signal.
+  var netFresh=true;
   function loadNetworks(){
     api("/net/scan").then(function(d){
       var box=document.getElementById("nets"); var hint=document.getElementById("nethint"); if(!box) return;
@@ -474,26 +541,99 @@
       // normalize a few possible shapes
       if(d&&d.ok&&Array.isArray(d.list)) nets=d.list;
       if(!Array.isArray(nets)) nets=[];
+      // drive-only stub (#dbg+stubnet): exercises the secured-network modal when the live scan
+      // has no secured AP (e.g. an open hotel network). Join attempts on it REALLY hit
+      // /net/connect and fail honestly — that's the error/retry path, on purpose.
+      if(DBG && (location.hash||"").indexOf("stubnet")>=0)
+        nets=nets.concat([{ssid:"TestSecure-AP", auth:"WPA2-Personal", signal:71, secure:true}]);
       if(!nets.length){ box.innerHTML='<div class="opt"><span class="ic" data-i="wifi"></span>'+
         '<div><div class="nm">No networks found</div><div class="sub2">You can skip — GOSE works fully offline.</div></div></div>';
-        if(hint) hint.textContent="Tip: press Skip to continue without Wi-Fi."; paintIcons();
-        var s=card.querySelector(".focusable"); return; }
+        if(hint) hint.textContent="Tip: press Skip to continue without Wi-Fi."; paintIcons(); return; }
+      // never let a refresh steal focus (docs/27 §3.9): keep the focused row across re-renders
+      var keep=null, c=cur();
+      if(c&&c.dataset&&c.dataset.net!==undefined&&box.contains(c)) keep=c.dataset.net;
       box.innerHTML=nets.map(function(n){ var ssid=n.ssid||n.name||n.SSID||String(n);
-        return '<div class="opt focusable" data-net="'+esc(ssid)+'"><span class="ic" data-i="wifi"></span>'+
-          '<div class="nm">'+esc(ssid)+'</div>'+
+        var sec=!!n.secure;
+        return '<div class="opt focusable" data-net="'+esc(ssid)+'" data-sec="'+(sec?1:0)+'" data-auth="'+esc(n.auth||"")+'">'+
+          '<span class="ic" data-i="wifi"></span>'+
+          '<div><div class="nm">'+esc(ssid)+(sec?'<span class="ic lockic" data-i="lock"></span>':'')+'</div>'+
+          '<div class="sub2">'+(n.signal!=null?(n.signal+"% · "):"")+(sec?esc(n.auth||"secured"):"open")+'</div></div>'+
           '<span class="val">'+((S.net===ssid)?"Connected ✓":"Connect ›")+'</span></div>'; }).join("");
       paintIcons();
-      wireStep({id:"network-list"});  // attach click handlers to new rows
+      wireClicks();  // attach click handlers to new rows
+      if(keep!==null){ var k2=box.querySelector('[data-net="'+CSS.escape(keep)+'"]');
+        if(k2) setF(k2); else setF(box.querySelector(".focusable")); return; }
+      // FIRST population only: the step renders before this async fetch, so initial focus fell to
+      // the footer — move it onto the first network row (same fix as the controller step).
+      if(netFresh){ netFresh=false;
+        var f=cur(); if(!f||f.closest("#footbtns")) setF(box.querySelector(".focusable")); }
     });
   }
-  function joinNetwork(ssid){
+  function joinNetwork(ssid, password){
     var hint=document.getElementById("nethint"); if(hint) hint.textContent="Connecting to "+ssid+"…";
-    api("/net/connect",{ssid:ssid}).then(function(d){
-      if(d&&d.ok){ S.net=ssid; if(hint) hint.textContent="Connected to "+ssid+" ✓"; }
-      else { if(hint) hint.textContent="Couldn't connect — you can skip and set it up later."; }
+    dlog("join", ssid, password?"(with password)":"(open)");
+    api("/net/connect",{ssid:ssid, password:password||""}).then(function(d){
+      if(d&&d.ok){ S.net=ssid; if(hint){ hint.style.color="#37d39b"; hint.textContent="Connected to "+ssid+" ✓"; } }
+      else { var why=(d&&(d.detail||d.error))||"no response from the Wi-Fi bridge";
+        if(hint){ hint.style.color="#ff8e8e";
+          hint.textContent="Couldn't connect to "+ssid+" — "+why+". Select it to try again, or Skip to stay offline."; } }
+      dlog("join-result", ssid, (d&&d.ok)?"ok":"failed", (d&&(d.detail||d.error))||"");
       loadNetworks();
     });
   }
+
+  // ---- Wi-Fi password modal (docs/27 §3.7: capture-phase + stopPropagation, Escape always
+  // cancels — never traps, focus returns to the network list row it came from) ----
+  var pwm={open:false, ret:null, ssid:"", foc:0};
+  function pwEl(id){ return document.getElementById(id); }
+  function pwItems(){ return [pwEl("pwm-in"), pwEl("pwm-cancel"), pwEl("pwm-ok")]; }
+  function pwSet(i){ pwm.foc=i; var it=pwItems();
+    it.forEach(function(el,j){ el.classList.toggle("focus",j===i); });
+    if(i===0){ it[0].focus(); }                    // DOM focus -> shared OSK auto-opens
+    else if(document.activeElement===it[0]) it[0].blur(); }
+  function openPw(ssid, auth){
+    pwm.open=true; pwm.ret=cur(); pwm.ssid=ssid;
+    pwEl("pwm-t").textContent="Connect to "+ssid;
+    pwEl("pwm-s").textContent=(auth||"Secured network")+" — enter the Wi-Fi password";
+    pwEl("pwm-e").textContent=""; var inp=pwEl("pwm-in"); inp.value="";
+    pwEl("pwm").classList.add("on");
+    dlog("pw-modal","open",ssid);
+    if(DBG&&!inp.__dbg){ inp.__dbg=true; inp.addEventListener("input",function(){ dlog("pw-typed",inp.value); }); }
+    pwEl("pwm-cancel").onclick=function(){ closePw(false); };
+    pwEl("pwm-ok").onclick=function(){ closePw(true); };
+    pwSet(0);
+  }
+  function closePw(commit){
+    if(!pwm.open) return;
+    var inp=pwEl("pwm-in"), pw=inp.value;
+    if(commit&&!pw){ pwEl("pwm-e").textContent="Enter the network password first (or Cancel)."; pwSet(0); return; }
+    pwm.open=false; pwEl("pwm").classList.remove("on");
+    try{ if(window.GOSE&&GOSE.osk)GOSE.osk.hide(); }catch(e){}
+    inp.blur(); pwItems().forEach(function(el){ el.classList.remove("focus"); });
+    dlog("pw-modal", commit?"commit":"cancel");
+    // focus returns to the network list (docs/27)
+    var back=pwm.ret; if(back&&document.contains(back)) setF(back);
+    else setF(card.querySelector(".focusable")||document.querySelector("#footbtns .focusable"));
+    if(commit) joinNetwork(pwm.ssid, pw);
+  }
+  // modal input priority: capture phase, so page nav never fires underneath (docs/27 §3.7)
+  document.addEventListener("keydown", function(e){
+    if(!pwm.open) return;
+    if(e.__goseOSK){ // OSK Enter on the single password field = submit (Enter-chaining commit)
+      if(e.key==="Enter"){ e.preventDefault(); e.stopPropagation(); closePw(true); }
+      return; }
+    if(e.defaultPrevented) return;     // the OSK (earlier capture listener) already consumed it
+    if(oskVisible()) return;           // OSK owns arrows/Enter/Escape while open
+    var k=e.key;
+    if(k==="Escape"||k==="Backspace"){ closePw(false); }
+    else if(k==="ArrowDown") pwSet((pwm.foc+1)%3);
+    else if(k==="ArrowUp") pwSet((pwm.foc+2)%3);
+    else if(k==="ArrowLeft") pwSet(pwm.foc===2?1:(pwm.foc===1?0:2));
+    else if(k==="ArrowRight") pwSet(pwm.foc===1?2:(pwm.foc===0?1:0));
+    else if(k==="Enter"||k===" "){ if(pwm.foc===1) closePw(false); else closePw(true); }
+    else return;
+    e.preventDefault(); e.stopPropagation();
+  }, true);
 
   function doPair(){
     var name=(S.ai.name||"").trim(); var out=document.getElementById("pairout");
@@ -516,8 +656,11 @@
     var chk=document.getElementById("chk");
     if(chk) chk.innerHTML=steps.map(function(t,i){ return '<div class="li" data-li="'+i+'">'+ico("check")+t+'</div>'; }).join("");
     paintIcons();
+    // account semantics (owner 2026-06-07): username = the displayed identity (lock/login show
+    // it); the person's actual name travels in the legacy "display" key so the server-side
+    // accounts.json shape is unchanged (older readers keep working).
     var payload={
-      account:{username:(S.account.username||"owner"), display:S.account.display,
+      account:{username:(S.account.username||"owner"), display:S.account.name,
                has_password:!!S.account.password, has_pin:!!S.account.pin, accent:S.account.accent},
       privacy:S.privacy, locale:S.locale, keyboard:S.keyboard, timezone:null,
       theme:S.theme, device_name:(String(S.device_name||"").trim()||"GOSE"),
@@ -574,7 +717,7 @@
     [].slice.call(card.querySelectorAll("input[data-field]")).forEach(function(inp){
       var f=inp.dataset.field, v=inp.value;
       if(f==="username") S.account.username=v;
-      else if(f==="display") S.account.display=v;
+      else if(f==="name") S.account.name=v;
       else if(f==="password") S.account.password=v;
       else if(f==="pin") S.account.pin=v;
       else if(f==="device_name") S.device_name=v;
@@ -614,7 +757,11 @@
       if(ph) ph.textContent="Any connected pad can drive setup. The highlighted controller becomes "+
         "the owner when you continue — change it anytime in Settings.";
       return; }
-    if(el.dataset.net!==undefined){ joinNetwork(el.dataset.net); return; }
+    if(el.dataset.net!==undefined){
+      if(S.net===el.dataset.net) return;                       // already connected
+      if(el.dataset.sec==="1") openPw(el.dataset.net, el.dataset.auth);  // secured -> password modal
+      else joinNetwork(el.dataset.net, "");                    // open network -> join directly
+      return; }
     if(el.tagName==="INPUT"){ el.focus(); /* opens the shared OSK (cursor.js) */ return; }
   }
 
@@ -624,8 +771,8 @@
     var k=e.key;
     if(k==="ArrowRight") move("right");
     else if(k==="ArrowLeft") move("left");
-    else if(k==="ArrowDown") move("down");
-    else if(k==="ArrowUp") move("up");
+    else if(k==="ArrowDown"){ if(!accountMove(1)) move("down"); }
+    else if(k==="ArrowUp"){ if(!accountMove(-1)) move("up"); }
     else if(k==="Enter"||k===" ") activate(cur());
     else if(k==="Escape"||k==="Backspace"){ try{ GOSE&&GOSE.sound&&GOSE.sound("back"); }catch(e2){} back(); }
     // L1/R1 ([ / ]) = previous / next step. docs/27 §3.3 reserves [ ] for TAB-LIKE structures;
@@ -641,8 +788,30 @@
   // (gose-pad-nav.py) is the single input authority; this page only consumes synthesized keys.
   // (The old "browser preview only" raw poll was removed in the step-3 rebuild, 2026-06-07.)
 
-  // deep-link to a step for screenshots:  gose-oobe.html#account
-  (function initHash(){ var want=(location.hash||"").replace("#","");
+  // ---- OSK Enter-chaining wiring (cursor.js does the generic work) ----
+  // When the OSK chain-advances to the next input it DOM-focuses it: mirror that into the
+  // roving focus so the visible focus follows the chain.
+  document.addEventListener("focusin", function(e){
+    var t=e.target;
+    if(t&&t.classList&&t.classList.contains("focusable")&&cur()!==t) setF(t);
+  });
+  // Last field committed -> the OSK closed; put the roving focus on the primary Continue.
+  document.addEventListener("gose-osk-chain-end", function(e){
+    var p=(e.detail&&e.detail.primary)||document.getElementById("contbtn");
+    dlog("chain-end","->",fdesc(p));
+    if(p) setF(p);
+  });
+  // pad-drive transcript (docs/25 §5c): mirror the OSK's open/closed state into the kiosk log
+  if(DBG){ (function(){ var t=setInterval(function(){ var o=document.getElementById("osk"); if(!o) return;
+      clearInterval(t);
+      new MutationObserver(function(){ dlog("osk", o.classList.contains("on")?"open":"closed"); })
+        .observe(o,{attributes:true,attributeFilter:["class"]});
+      var ek=o.querySelector('.k[data-fn="enter"]'), tk=o.querySelector('.k[data-fn="tab"]');
+      dlog("osk-keys","enter-label="+(ek?ek.textContent:"MISSING")+" tab-key="+(tk?tk.textContent:"MISSING"));
+    },200); })(); }
+
+  // deep-link to a step for screenshots/drives:  gose-oobe.html#account  (+dbg = transcript log)
+  (function initHash(){ var want=(location.hash||"").replace("#","").split(/[+.,]/)[0];
     var i=STEPS.map(function(s){return s.id;}).indexOf(want); if(i>=0) idx=i; })();
 
   render();

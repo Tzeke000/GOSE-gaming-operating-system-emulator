@@ -89,6 +89,27 @@ Continue); L2 was considered as a Skip accelerator but is reserved by the
 windowing snap/modal layer (docs/23), so it isn't reused here. Pad-driven
 end-to-end skip-heavy verification done 2026-06-06.
 
+### 3b. Account semantics + secured Wi-Fi + OSK chaining (owner, 2026-06-07)
+
+- **Account fields:** **"Your name"** = the person's actual name; **"Username"** =
+  the identity GOSE displays everywhere — the login and lock screens show the
+  USERNAME. On the wire/disk the person's name travels in the legacy `display`
+  key of `accounts.json` (shape unchanged, older readers keep working);
+  `gose-lock.html`/`login.html` read the owner via `GET /oobe/status` and render
+  `username` (graceful fallback for old shapes — never crash).
+- **Step 4 secured Wi-Fi:** secured networks carry a lock glyph; selecting one
+  opens a password modal (ported from `gose-wifi.html`, same
+  `POST /net/connect {ssid,password}` host-bridge/netsh path). OSK auto-opens on
+  the modal field; Enter commits (single field ⇒ submits); join failure shows the
+  honest netsh error + retry guidance; Escape cancels and focus returns to the
+  network list (docs/27 §3.7). Skip taxonomy untouched.
+- **Step 6 focus order** (§5b reading order; the geometric scorer preferred the
+  near-centerline color swatches): d-pad Down/Up walk name → username → password
+  → PIN → color → Continue; the swatch row is one stop. **OSK Enter-chaining**
+  (docs/27 §3.6): Enter walks the same field chain; the last field closes the
+  OSK and returns focus to Continue. The OOBE opts into OSK auto-open via
+  `data-osk-auto` on `<body>`.
+
 ## 4. The default app set (locked by the owner, 2026-06-06)
 
 **Baked into the image — zero downloads on first boot:**

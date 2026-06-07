@@ -144,6 +144,17 @@ detection) goes through a **bridge/server API**, not the page (§7, item for
 6. **Text entry uses the shared OSK** (`assets/cursor.js`): focusing any text
    field auto-shows it; while open it owns arrows/Enter/Escape (capture-phase),
    so page nav doesn't also fire. Never build a per-page keyboard.
+   The OSK's contract (2026-06-07): the commit key is labeled **Enter** and a
+   **Tab** key exists. **Enter-chaining:** Enter commits the field (the
+   synthesized keydown lets single-field modals submit — a page that
+   `preventDefault`s it owns what happens next); on a multi-field form it
+   auto-advances to the next visible text input (DOM order) with the OSK open;
+   on the LAST field it closes the OSK and hands focus to the page's primary
+   control — `[data-osk-primary]`, else a real submit button — and fires a
+   bubbling `gose-osk-chain-end` event for roving-focus pages. Pages whose pad
+   nav moves a roving `.focus` class (the OOBE) may set `data-osk-auto` on
+   `<body>`: the OSK then DOM-focuses a text field the roving focus lands on,
+   so it auto-opens with no manual summon (opt-in only).
 7. **Modals take input priority via capture-phase listeners** with
    `stopPropagation`, and re-arm page nav on close (the `storage-offer.js` /
    OSK pattern).

@@ -60,18 +60,29 @@
     ps.forEach(p=>{p.x+=p.vx;p.y+=p.vy;if(p.x<-p.r)p.x=W+p.r;if(p.x>W+p.r)p.x=-p.r;if(p.y<-p.r)p.y=H+p.r;if(p.y>H+p.r)p.y=-p.r;
       const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);g.addColorStop(0,`hsla(${p.hue},70%,55%,.09)`);g.addColorStop(1,"transparent");
       ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();});requestAnimationFrame(frame);})();
-  // unlock: PIN if set, else any key/click
-  const signin=localStorage.getItem("gose-signin"); // "PIN" | "Password" | null
-  let entered="";
+  // unlock: PIN if set, else any key/click — one keydown path so the mode can flip after
+  // the owner record loads (the old code bound any-key-unlock before the account was known)
+  let pinMode=(localStorage.getItem("gose-signin")==="PIN"), entered="";
   function unlock(){location.href="gose-home.html";}
-  if(signin==="PIN"){$("pin").style.display="flex";$("hint").textContent="Enter your PIN";
-    addEventListener("keydown",e=>{if(/^[0-9]$/.test(e.key)){entered+=e.key;
-      [...$("pin").children].forEach((d,i)=>d.classList.toggle("on",i<entered.length));
-      if(entered.length>=4)setTimeout(unlock,180);}else if(e.key==="Backspace"){entered=entered.slice(0,-1);
-      [...$("pin").children].forEach((d,i)=>d.classList.toggle("on",i<entered.length));}});
-  } else {
-    addEventListener("keydown",unlock); addEventListener("click",unlock);
-  }
+  function paintPin(){[...$("pin").children].forEach((d,i)=>d.classList.toggle("on",i<entered.length));}
+  function enablePin(){pinMode=true;$("pin").style.display="flex";$("hint").textContent="Enter your PIN";}
+  if(pinMode)enablePin();
+  addEventListener("keydown",e=>{
+    if(!pinMode){unlock();return;}
+    if(/^[0-9]$/.test(e.key)){entered+=e.key;paintPin();if(entered.length>=4)setTimeout(unlock,180);}
+    else if(e.key==="Backspace"){entered=entered.slice(0,-1);paintPin();}});
+  addEventListener("click",()=>{if(!pinMode)unlock();});
+  // the OWNER record (accounts.json via /oobe/status): the lock screen shows the USERNAME —
+  // the identity GOSE displays everywhere (owner decision 2026-06-07). Older accounts.json
+  // shapes render sensibly: missing fields just keep the defaults already on screen.
+  fetch("/oobe/status",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    const o=d&&d.owner; if(!o)return;
+    const nm=o.username||o.display||"Owner";
+    $("name").textContent=nm; $("av").textContent=(nm[0]||"?").toUpperCase();
+    if(o.accent){$("av").style.background=o.accent;document.documentElement.style.setProperty("--accent",o.accent);}
+    if(o.has_pin&&!pinMode)enablePin();
+    if(location.hash.indexOf("dbg")>=0)console.log("[lock] name="+nm+" pin="+!!o.has_pin+" accent="+(o.accent||""));
+  }).catch(()=>{});
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>

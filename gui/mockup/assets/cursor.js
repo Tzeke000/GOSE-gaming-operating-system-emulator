@@ -63,7 +63,7 @@
         r.forEach(function(ch){ var k=document.createElement('div'); k.className='k'; k.textContent=shift?ch.toUpperCase():ch; k.dataset.ch=ch; rd.appendChild(k); gr.push(k); });
         osk.appendChild(rd); grid.push(gr); });
       var fnr=document.createElement('div'); fnr.className='row'; var gr=[];
-      [['shift','⇧'],['space','Space'],['back','⌫'],['enter','⏎'],['hide','Hide ▾']].forEach(function(d){
+      [['tab','Tab'],['shift','⇧'],['space','Space'],['back','⌫'],['enter','Enter'],['hide','Hide ▾']].forEach(function(d){
         var k=document.createElement('div'); k.className='k'+((d[0]==='space')?' wide':''); k.textContent=d[1]; k.dataset.fn=d[0]; fnr.appendChild(k); gr.push(k); });
       osk.appendChild(fnr); grid.push(gr);
       grid.forEach(function(row,ri){ row.forEach(function(k,ci){ k.onclick=function(){fr=ri;fc=ci;press(k);}; k.onmouseenter=function(){fr=ri;fc=ci;mark();}; }); });
@@ -76,12 +76,48 @@
       if(a===b&&a>0){last.value=v.slice(0,a-1)+v.slice(b); last.selectionStart=last.selectionEnd=a-1;} else {last.value=v.slice(0,a)+v.slice(b); last.selectionStart=last.selectionEnd=a;} last.dispatchEvent(new Event('input',{bubbles:true})); }
     function press(k){ if(k.dataset.fn){ var fn=k.dataset.fn;
         if(fn==='shift'){shift=!shift;build();} else if(fn==='space')insert(' '); else if(fn==='back')backspace();
-        else if(fn==='enter'){ if(last)last.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true})); } else if(fn==='hide')hide(); return; }
+        else if(fn==='tab')tabKey(); else if(fn==='enter')commitField(); else if(fn==='hide')hide(); return; }
       insert(shift?k.dataset.ch.toUpperCase():k.dataset.ch); }
+    // ---- Enter-chaining (docs/27 §3.6) ----
+    // Enter COMMITS the field (the synthesized keydown lets single-field modals submit). On a
+    // multi-field form it then auto-advances to the NEXT text input (DOM order = visual order on
+    // GOSE pages) with the OSK kept open; on the LAST field it closes the OSK and hands focus to
+    // the page's primary continue/submit control ([data-osk-primary], else a real submit button).
+    // Events the OSK emits are marked __goseOSK so its own capture handler never re-handles them
+    // (an unmarked synthetic Enter would re-trigger press() on the focused Enter key — recursion).
+    function sendKey(field,key){ var ev=new KeyboardEvent('keydown',{key:key,bubbles:true,cancelable:true});
+      ev.__goseOSK=true; field.dispatchEvent(ev); return ev; }
+    var _NOTTEXT={hidden:1,checkbox:1,radio:1,button:1,submit:1,reset:1,range:1,file:1,color:1,image:1};
+    function textTargets(){ return [].filter.call(document.querySelectorAll('input,textarea'),function(el){
+        if(el.disabled||el.readOnly) return false;
+        if(el.tagName==='INPUT'&&_NOTTEXT[(el.getAttribute('type')||'text').toLowerCase()]) return false;
+        return el.offsetParent!==null; }); }
+    function primaryControl(){ return document.querySelector('[data-osk-primary]')
+      || document.querySelector('button[type="submit"],input[type="submit"]'); }
+    function gone(el){ return !el||!document.contains(el)||el.offsetParent===null; }
+    function commitField(){
+      if(gone(last)){ hide(); return; }
+      var fld=last, ev=sendKey(fld,'Enter');
+      if(ev.defaultPrevented){ if(gone(fld)) hide(); return; }  // page consumed the commit -> it owns what happens next
+      if(gone(fld)){ hide(); return; }          // the commit closed its surface -> the page owns focus
+      var t=textTargets(), i=t.indexOf(fld);
+      if(i>-1&&i<t.length-1){ var nx=t[i+1]; nx.focus(); last=nx;   // chain: next field, OSK stays
+        try{ nx.selectionStart=nx.selectionEnd=nx.value.length; }catch(e){} return; }
+      hide(); fld.blur();                       // last field -> primary continue/submit control
+      var prim=primaryControl();
+      fld.dispatchEvent(new CustomEvent('gose-osk-chain-end',{bubbles:true,detail:{primary:prim||null}}));
+      if(prim&&(prim.tagName==='BUTTON'||prim.tagName==='INPUT'||prim.tagName==='A'||prim.hasAttribute('tabindex'))){
+        try{ prim.focus(); }catch(e){} } }
+    function tabKey(){ if(gone(last)) return;
+      var ev=sendKey(last,'Tab'); if(ev.defaultPrevented) return;  // page consumed it (e.g. completion)
+      var t=textTargets(), i=t.indexOf(last); if(t.length<2) return;
+      var nx=t[(i+1+t.length)%t.length]; nx.focus(); last=nx;       // wraps; OSK stays open
+      try{ nx.selectionStart=nx.selectionEnd=nx.value.length; }catch(e){} }
     function show(){osk.classList.add('on');mark();} function hide(){osk.classList.remove('on');}
     function toggle(){ if(osk.classList.contains('on'))hide(); else show(); }
     window.GOSE=window.GOSE||{}; window.GOSE.osk={show:show,hide:hide,toggle:toggle};
     document.addEventListener('keydown',function(e){
+      if(e.__goseOSK) return;   // OSK-emitted commit/Tab events are for the page, not the OSK itself
       if((e.key==='k'||e.key==='K') && !isField(document.activeElement)){toggle();e.preventDefault();return;}  // K brings it up (when not typing)
       if(!osk.classList.contains('on'))return;
       var k=e.key;
@@ -97,6 +133,17 @@
     // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the arrow/Enter/Escape
     // keys the handler above consumes; a page-level getGamepads() loop is a second input
     // path that double-fires (docs/27). Pad paths in: focusin auto-show + K toggle.
+    // ---- opt-in auto-open for roving-focus pages (docs/25 §3 OOBE) ----
+    // Pages whose pad nav moves a roving .focus CLASS (not DOM focus) can set data-osk-auto on
+    // <html>/<body>: when the roving focus lands on a text field, the OSK DOM-focuses it, which
+    // fires the normal focusin auto-show — no manual summon. Opt-in only: pages without the
+    // attribute keep their existing behaviour (field opens the OSK on activate/DOM focus).
+    if(document.documentElement.hasAttribute('data-osk-auto')||
+       (document.body&&document.body.hasAttribute('data-osk-auto'))){
+      new MutationObserver(function(ms){ ms.forEach(function(m){ var el=m.target;
+          if(el&&el.classList&&el.classList.contains('focus')&&isField(el)&&document.activeElement!==el) el.focus(); });
+      }).observe(document.documentElement,{attributes:true,attributeFilter:['class'],subtree:true});
+    }
     build();
     if(location.hash.indexOf('osk')>=0) setTimeout(show, 500);   // deep-link to preview the keyboard
   }

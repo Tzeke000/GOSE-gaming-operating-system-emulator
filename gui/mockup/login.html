@@ -73,10 +73,18 @@
     else if(k==="ArrowDown")move("down");else if(k==="ArrowUp")move("up");
     else if(k==="Enter")act();else return;e.preventDefault();});
   addEventListener("click",e=>{const f=e.target.closest&&e.target.closest(".focusable");if(f){setF(f);act();}});
-  let prev={};(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-    if(gp){const tap=i=>gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if(tap(14))move("left");if(tap(15))move("right");if(tap(12))move("up");if(tap(13))move("down");
-      if(tap(0))act();gp.buttons.forEach((b,i)=>prev[i]=b.pressed);}requestAnimationFrame(pad);})();
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the arrow/Enter keys the
+  // handler above consumes; a page-level getGamepads() loop is a second input path that
+  // double-fires (docs/27 §2.1). The old rAF poll here was removed 2026-06-07.
+  // The first card shows the real owner's USERNAME (the identity GOSE displays everywhere —
+  // owner decision 2026-06-07); old accounts.json shapes fall back to the defaults sensibly.
+  fetch("/oobe/status",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    const o=d&&d.owner; if(!o)return;
+    const nm=o.username||o.display; if(!nm)return;
+    const card=u.querySelector(".user"); if(!card)return;
+    card.dataset.user=nm; card.querySelector(".nm").textContent=nm;
+    if(location.hash.indexOf("dbg")>=0)console.log("[login] owner-card="+nm);
+  }).catch(()=>{});
   function tick(){const d=new Date();document.getElementById("clock").textContent=
     String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
     document.getElementById("date").textContent=d.toLocaleDateString(undefined,{weekday:"long",month:"long",day:"numeric"});}
