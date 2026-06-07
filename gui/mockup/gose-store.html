@@ -395,15 +395,8 @@
     else if(k==="]"||k==="e"||k==="E")switchTab(1);
     else return;e.preventDefault();});
 
-  // gamepad: dpad move, A act, X uninstall, B home, L1(4)/R1(5) switch tabs
-  var prev={},primed=false;(function pad(){var gps=navigator.getGamepads&&navigator.getGamepads();var gp=null;
-    if(gps)for(var i=0;i<gps.length;i++)if(gps[i]){gp=gps[i];break;}
-    if(gp){var tap=function(i){return primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];};
-      if(tap(15))move(1);if(tap(14))move(-1);if(tap(13))move(step());if(tap(12))move(-step());
-      if(tap(0))act();if(tap(2))uninstall();if(tap(1))location.href="gose-home.html";
-      if(tap(4))switchTab(-1);if(tap(5))switchTab(1);
-      for(var j=0;j<gp.buttons.length;j++)prev[j]=gp.buttons[j].pressed;primed=true;}
-    requestAnimationFrame(pad);})();
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
+  // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
 
   // initial tab from ?tab= or #hash
   function initialTab(){

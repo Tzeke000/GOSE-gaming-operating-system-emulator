@@ -86,10 +86,8 @@
     if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
     else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
     else return;e.preventDefault();});
-  let prev={};(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-    if(gp){const tap=i=>gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if(tap(13))move(1);if(tap(12))move(-1);if(tap(1)){location.href="gose-home.html";}
-      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);}requestAnimationFrame(pad);})();
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
+  // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
   paint();
   fetch("/storage.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
     if(!d.ok){$("sub").textContent="couldn't read disk";return;}

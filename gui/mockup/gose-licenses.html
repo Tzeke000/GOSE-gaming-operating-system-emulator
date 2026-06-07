@@ -164,11 +164,8 @@
     else if(k==="ArrowUp")move(-1);
     else if(k==="Enter")toggle();
     else return; e.preventDefault();});
-  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if(tap(13))move(1);if(tap(12))move(-1);
-      if(tap(0))toggle();if(tap(1))location.href="gose-settings.html";
-      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
+  // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
   build(""); render();
 </script>
 <script src="assets/a11y.js"></script>

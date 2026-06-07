@@ -161,17 +161,8 @@
     else if(k==="o"||k==="O")openOptions();
     else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
     else return;e.preventDefault();});
-  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if(GOPT.open){
-        if(tap(13))goptMove(1);if(tap(12))goptMove(-1);if(tap(15))goptCycle(1);if(tap(14))goptCycle(-1);
-        if(tap(0))goptEnter();if(tap(1))goptClose();
-        gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;requestAnimationFrame(pad);return;}
-      if(tap(15))moveFoc(1);if(tap(14))moveFoc(-1);if(tap(13))moveFoc(4);if(tap(12))moveFoc(-4);
-      if(tap(5))moveCat(1);if(tap(4))moveCat(-1);if(tap(0))launch();if(tap(3))openOptions();
-      if(tap(2))toggleFav();
-      if(tap(1)){location.href="gose-home.html";}
-      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
+  // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
   paint();
   function loadAll(keep){
     // remember the focused system+game so a reload (e.g. after a favorite toggle) keeps your place

@@ -319,15 +319,8 @@
     else if(k==="GoseR1"||(e.ctrlKey&&k==="v"))paste();       // R1 = paste
     else if(k==="GoseR2")del();                               // R2 = delete
     else return; e.preventDefault();});
-  let prev={}, primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if(viewing){if(tap(0)||tap(1))closeViewer();}
-      else{ if(tap(13))move(1); if(tap(12))move(-1); if(tap(0))openFocus();
-        if(tap(1))up();                                  // B = back one folder (never exit)
-        if(tap(4))copy(false); if(tap(6))copy(true);     // L1 = copy, L2 = cut
-        if(tap(5))paste();     if(tap(7))del(); }        // R1 = paste, R2 = delete
-      gp.buttons.forEach((b,i)=>prev[i]=b.pressed); primed=true;}  // first frame only records state, never acts
-    requestAnimationFrame(pad);})();
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
+  // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
   paint(); if(pendingOpen) load(pendingOpen.replace(/\/[^/]+$/,"")); else if(pendingGo) load(pendingGo); else loadPlaces();
 </script>
 <script src="assets/a11y.js"></script>

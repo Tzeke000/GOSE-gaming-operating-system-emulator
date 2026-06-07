@@ -246,11 +246,8 @@
     else if(k==="p"||k==="P")pairKey();
     else if(k==="Escape")location.href="gose-home.html";
     else return;e.preventDefault();});
-  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-    if(gp){const t=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if(t(15))move(1);if(t(14))move(-1);if(t(13))move(2);if(t(12))move(-2);
-      if(t(0))activate();if(t(2))revokeKey();if(t(3))pairKey();if(t(1))location.href="gose-home.html";
-      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
+  // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
   paint();render();poll();setInterval(poll,5000);
 </script>
 <script src="assets/a11y.js"></script>

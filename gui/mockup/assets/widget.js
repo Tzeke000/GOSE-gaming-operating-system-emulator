@@ -238,14 +238,8 @@
         if(k==='ArrowLeft'||k==='[')move(-1,0); else if(k==='ArrowRight'||k==='Tab'||k===']')move(1,0);
         else if(k==='ArrowUp')move(0,-1); else if(k==='ArrowDown')move(0,1);
         else if(k==='Enter'||k===' ')activate(); else return; e.preventDefault();});
-      var prev={},primed=false;(function pad(){var gps=navigator.getGamepads&&[].slice.call(navigator.getGamepads()).filter(function(x){return x;});
-        var gp=gps&&gps[0];
-        if(gp){var tap=function(i){return primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];};
-          if(tap(14)||tap(4))move(-1,0); if(tap(15)||tap(5))move(1,0);   // ←→ / L1 R1 between widgets
-          if(tap(12))move(0,-1); if(tap(13))move(0,1);                    // ↑↓ within widget
-          if(tap(0))activate(); if(tap(16)||tap(8))location.href='gose-apps.html';
-          gp.buttons.forEach(function(b,i){prev[i]=b.pressed;}); primed=true;}
-        requestAnimationFrame(pad);})();
+      // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
+      // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
       highlight();
     };
     nav.rebuild=function(){build();};

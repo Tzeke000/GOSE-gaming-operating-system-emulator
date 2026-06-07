@@ -94,18 +94,9 @@
       else return;
       e.preventDefault(); e.stopPropagation();   // capture phase: page nav won't also fire
     }, true);
-    // controller: PS touchpad click toggles the keyboard; D-pad/A navigate keys when it's open
-    var pprev={}, pp=false;
-    (function pad(){ var gps=navigator.getGamepads?[].slice.call(navigator.getGamepads()).filter(Boolean):[]; var gp=gps[0];
-      if(gp){ var t=function(i){return pp&&gp.buttons[i]&&gp.buttons[i].pressed&&!pprev[i];};
-        if(osk.classList.contains('on')){
-          if(t(15)){fc=Math.min(grid[fr].length-1,fc+1);mark();} if(t(14)){fc=Math.max(0,fc-1);mark();}
-          if(t(13)){fr=Math.min(grid.length-1,fr+1);fc=Math.min(grid[fr].length-1,fc);mark();}
-          if(t(12)){fr=Math.max(0,fr-1);fc=Math.min(grid[fr].length-1,fc);mark();}
-          if(t(0))press(grid[fr][fc]); if(t(1)||t(17)||t(16))hide();
-        } else if(t(17)||t(16)){ show(); }   // 17/16 = PS touchpad / guide button
-        gp.buttons.forEach(function(b,i){pprev[i]=b.pressed;}); pp=true; }
-      requestAnimationFrame(pad); })();
+    // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the arrow/Enter/Escape
+    // keys the handler above consumes; a page-level getGamepads() loop is a second input
+    // path that double-fires (docs/27). Pad paths in: focusin auto-show + K toggle.
     build();
     if(location.hash.indexOf('osk')>=0) setTimeout(show, 500);   // deep-link to preview the keyboard
   }
@@ -292,15 +283,10 @@
       fiveDown=false;
     },true);
 
-    // gamepad guide button (16) opens; while open, dpad/A/B drive it
-    var gprev={}, gp_=false;
-    (function pad(){ var gps=navigator.getGamepads?[].slice.call(navigator.getGamepads()).filter(Boolean):[]; var gp=gps[0];
-      if(gp){ var t=function(i){return gp_&&gp.buttons[i]&&gp.buttons[i].pressed&&!gprev[i];};
-        if(t(16)) fetch('/guide/toggle',{method:'POST'}).catch(function(){});   // guide → external overlay
-        if(open){ if(t(13))move(1); if(t(12))move(-1); if(t(15))adjust(1); if(t(14))adjust(-1);
-          if(t(0))enter(); if(t(1))close(); }
-        gp.buttons.forEach(function(b,i){gprev[i]=b.pressed;}); gp_=true; }
-      requestAnimationFrame(pad); })();
+    // No raw-gamepad poll — the bridge (gose-pad-nav.py) owns the Guide button (WM layer)
+    // and synthesizes the arrow/Enter/Escape keys the handler above consumes; a page-level
+    // getGamepads() loop is a second input path that double-fires (docs/27). The pad path
+    // to this overlay is Numpad5/Home (above) + the bridge/Openbox guide_toggle route.
   }
   if(document.body) init(); else addEventListener('DOMContentLoaded',init);
 })();

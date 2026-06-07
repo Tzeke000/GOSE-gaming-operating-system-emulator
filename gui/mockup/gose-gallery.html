@@ -116,13 +116,8 @@
     else if(k==="r"||k==="R")recToggle();
     else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
     else return;e.preventDefault();});
-  let prev={},primed=false;(function pad(){const gp=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
-    if(gp){const tap=i=>primed&&gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i];
-      if($("lb").classList.contains("on")){if(tap(0)||tap(1))closeLb();gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;requestAnimationFrame(pad);return;}
-      if(tap(15))moveFoc(1);if(tap(14))moveFoc(-1);if(tap(13))moveFoc(COLS);if(tap(12))moveFoc(-COLS);
-      if(tap(0))open();if(tap(2))shoot();if(tap(3))recToggle();
-      if(tap(1)){location.href="gose-home.html";}
-      gp.buttons.forEach((b,i)=>prev[i]=b.pressed);primed=true;}requestAnimationFrame(pad);})();
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
+  // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
   paint();load();setInterval(load,8000);
 </script>
 <script src="assets/a11y.js"></script>
