@@ -6,9 +6,9 @@ set +e
 cd "$(dirname "$0")/../.." 2>/dev/null || exit 0
 
 echo "=== GOSE project primer (auto-loaded) ==="
-echo "Read CLAUDE.md first; ROADMAP.md for live status; docs/ for details."
+echo "Read CLAUDE.md first; ROADMAP.md for live status; STRUCTURE.md for what-lives-where."
 echo "Base distro decision: ROCKNIX first (stable on Odin 2), Batocera v42 spare."
-echo "Dev branch: claude/odin2-gaming-os-4SWOh"
+echo "Dev branch: main"
 echo
 
 # Fast agent health check (pure stdlib, ~0.1s). Summarize only.
@@ -26,6 +26,6 @@ fi
 echo
 echo "Immediate next actions (see ROADMAP.md):"
 echo " 1. Confirm Odin 2 variant + start with ROCKNIX."
-echo " 2. Get the AI-agent API spec to unblock ai-bridge/."
-echo " 3. Build the Windows-like ES theme + real agent backends."
+echo " 2. Polish the GOSE-PC VM edition (controller-first; docs/27 is the input law)."
+echo " 3. Steam packaging prep once the OS is polished (license audit: docs/19)."
 exit 0

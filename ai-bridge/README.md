@@ -1,4 +1,4 @@
-# AI Bridge — your AI agents ↔ GOSE Agent  `[CUSTOM]` 🧱 blocked
+# AI Bridge — your AI agents ↔ GOSE Agent  `[CUSTOM]` 📦 reference skeleton
 
 This is the thin adapter that connects **your AI agents** to the device. It maps
 their intents into `GoseClient` calls (`launch`, `tap`, `run`, `status`,
@@ -9,10 +9,12 @@ Your AI agents     ──their API──▶  ai-bridge  ──GoseClient──�
    (your server)                  (this dir)   (JSON-lines)      (daemon)
 ```
 
-## Status: blocked on the agent spec
-The GOSE Agent + `gose_client` fully define and exercise **our** side — the device
-is controllable today via the CLI/SDK. What's missing is **how the AI agents
-expose themselves**:
+## Status: superseded for MCP agents; kept as the non-MCP reference
+**The transport question is RESOLVED** for Claude-class agents: they connect via
+the **MCP server** (`mcp/`, stdio — see `docs/12-agent-connection-spec.md`); no
+bridge is needed on that path. This directory remains the reference skeleton for
+wiring a NON-MCP agent (a custom server/LLM loop). For that case the open
+questions below still apply to whatever agent you bring:
 
 - Transport: HTTP REST? WebSocket? gRPC? message queue?
 - Auth: API key? OAuth? mTLS?

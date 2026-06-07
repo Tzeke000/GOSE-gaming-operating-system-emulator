@@ -87,8 +87,9 @@ AI control agent, and the reproducible setup scripts.
 - `ROADMAP.md` — build order + live status checklist.
 
 ## How to work in this repo
-- Dev branch: **`claude/odin2-gaming-os-4SWOh`**. Develop, commit, push there. Do
-  NOT open a PR unless the owner asks.
+- Dev branch: **`main`** (the historical `claude/odin2-gaming-os-4SWOh` branch is
+  retired, 61+ commits behind). Develop, commit, push to main. Do NOT open a PR
+  unless the owner asks.
 - Run the agent test suite (no deps, works in-container):
   `python3 -m unittest discover -s agent/tests -v`
 - Run the agent in mock mode: `python3 -m gose_agent` (from `agent/`), then drive
