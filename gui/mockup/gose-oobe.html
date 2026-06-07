@@ -108,6 +108,18 @@
   .btn.ghost.focus{border-color:var(--accent)}
   .btn[disabled]{opacity:.45}
   .hint{color:#ffce5c;font-size:12.5px;margin-top:8px;min-height:16px}
+  /* controller step: source chips + supported-families strip + keyboard fallback */
+  .chip{display:inline-flex;align-items:center;font-size:10.5px;font-weight:700;letter-spacing:.5px;
+    text-transform:uppercase;padding:2px 8px;border-radius:999px;border:1px solid;margin-left:8px;
+    vertical-align:1px;white-space:nowrap}
+  .chip.ai{color:#b388ff;border-color:#b388ff55;background:#b388ff14}
+  .chip.hum{color:#37d39b;border-color:#37d39b55;background:#37d39b14}
+  .fam{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:11px 14px;
+    margin-top:12px;font-size:12.5px;color:var(--muted);line-height:1.55}
+  .fam b{color:var(--text);font-weight:600}
+  .fam .ic{font-size:14px;color:var(--accent);margin-right:7px}
+  .kbline{color:var(--muted);font-size:12px;margin-top:9px}
+  .kbline b{color:var(--text)}
 </style></head>
 <body>
   <div class="brand"><img src="assets/brand/gose-crystal.png" alt="GOSE"><span class="t">GOSE · set up your device</span></div>
@@ -198,6 +210,7 @@
   // ---- per-step renderers ----
   function render(){
     var s=STEPS[idx];
+    if(padPoll){ clearInterval(padPoll); padPoll=null; padSig=""; }   // controller-step poll ends with the step
     var h="";
     if(s.id==="welcome"){
       h='<div class="step-eyebrow">First-time setup</div>'+
@@ -223,11 +236,20 @@
             ico("keyboard")+'<div class="nm">'+k[1]+'</div>'+
             '<span class="val">'+(S.keyboard===k[0]?"Selected ✓":"")+'</span></div>'; }).join("")+'</div>';
     } else if(s.id==="controller"){
-      h='<div class="step-eyebrow">Step 3 — controller</div><h1>Your controller</h1>'+
-        '<p class="sub">The controller you\'re navigating with is already working — that\'s the one that '+
-        'will set up this device and become its owner. Connect more anytime from Settings.</p>'+
-        '<div id="pads"><div class="opt"><span class="ic" data-i="gamepad-2"></span>'+
-        '<div class="nm">Looking for controllers…</div></div></div>';
+      h='<div class="step-eyebrow">Step 3 — controller</div>'+
+        '<h1>Press any button on the controller you want to use</h1>'+
+        '<p class="sub">Every connected pad can drive first-time setup — if a controller moves this '+
+        'screen, it already works. The <b>highlighted</b> one below becomes this device\'s owner when '+
+        'you continue. Recognized pads are translated to one standard layout automatically — '+
+        'no mapping needed.</p>'+
+        '<div class="scroll"><div id="pads"><div class="opt"><span class="ic" data-i="gamepad-2"></span>'+
+        '<div class="nm">Looking for controllers…</div></div></div>'+
+        '<div class="fam">'+ico("gamepad-2")+'<b>Works out of the box:</b> Xbox · PlayStation 4 / 5 · '+
+        'Switch Pro &amp; Joy-Con · 8BitDo · Steam — <span id="dbcount">and hundreds more</span> '+
+        '(USB, Bluetooth, or 2.4&nbsp;GHz dongle). New pads appear here within a couple of seconds.</div>'+
+        '<div class="kbline">No controller? A <b>keyboard</b> always works — arrow keys move, '+
+        '<b>Enter</b> selects, <b>Esc</b> goes back.</div>'+
+        '<div class="hint" id="padhint"></div></div>';
     } else if(s.id==="network"){
       h='<div class="step-eyebrow">Step 4 — network (optional)</div><h1>Connect to Wi-Fi</h1>'+
         '<p class="sub">Wi-Fi enables updates and optional online features. GOSE works fully offline — '+
@@ -365,32 +387,84 @@
   }
 
   function wireStep(s){
-    if(s.id==="controller") loadControllers();
+    if(s.id==="controller"){ loadDbCount(); padFresh=true; loadControllers();
+      // live list: the host hot-plugs new pads in ~1s; poll the registry while this step shows
+      padPoll=setInterval(loadControllers, 2000); }
     if(s.id==="network") loadNetworks();
     if(s.id==="ready") runFinale();
     // live-capture text fields so the required-account gate updates as you type (incl. via the OSK)
     [].slice.call(card.querySelectorAll("input[data-field]")).forEach(function(inp){
       inp.addEventListener("input", function(){ captureInputs(); refreshGate(); }); });
-    // mouse support (preview): click activates
+    wireClicks();
+  }
+  // mouse support (preview): click activates — re-run after any partial re-render adds focusables
+  function wireClicks(){
     [].slice.call(document.querySelectorAll(".focusable")).forEach(function(el){
       el.onclick=function(){ if(document.activeElement&&document.activeElement.blur&&el.tagName!=="INPUT")document.activeElement.blur();
         setF(el); activate(el); }; });
   }
 
+  // ---- controller step: live registry list + supported-families count ----
+  // All controller knowledge comes from the SERVER (GET /controllers) per docs/27 §2 — the
+  // bridge/registry is the single input authority; this page never reads the pad itself.
+  var padPoll=null, padSig="", padFresh=true;
+  var SRC_LABEL={virtual:"AI virtual controller", passthrough:"wireless / USB",
+                 bluetooth:"Bluetooth", native:"USB / built-in"};
   function loadControllers(){
     api("/controllers").then(function(d){
       var box=document.getElementById("pads"); if(!box) return;
       var pads=(d&&d.controllers)||[];
-      if(!pads.length){ box.innerHTML='<div class="opt"><span class="ic" data-i="gamepad-2"></span>'+
-        '<div><div class="nm">No controller detected yet</div><div class="sub2">Connect one — it will appear here. '+
-        'A keyboard works too.</div></div></div>'; paintIcons(); return; }
-      box.innerHTML=pads.map(function(p){
-        return '<div class="opt sel"><span class="ic" data-i="gamepad-2"></span>'+
-          '<div><div class="nm">'+esc(p.name||"Controller")+'</div>'+
-          '<div class="sub2">'+esc(p.source||"connected")+(p.is_dev?" · this controller":"")+'</div></div>'+
-          '<span class="val">Ready ✓</span></div>'; }).join("");
-      paintIcons();
+      var admin=(d&&d.admin)||null;
+      // skip identical re-renders so the 2 s poll never disturbs focus (docs/27 §3.9)
+      var sig=pads.map(function(p){ return p.id+"|"+p.name+"|"+p.source+"|"+(p.id===admin?1:0); }).join(";");
+      if(sig===padSig) return;
+      var focusedPad=null, c=cur();
+      if(c&&c.dataset&&c.dataset.pad!==undefined&&box.contains(c)) focusedPad=c.dataset.pad;
+      padSig=sig;
+      if(!pads.length){
+        box.innerHTML='<div class="opt"><span class="ic" data-i="gamepad-2"></span>'+
+          '<div><div class="nm">No controller detected yet</div><div class="sub2">Plug one in (USB) or pair '+
+          'over Bluetooth — it shows up here automatically. You can also finish setup on the keyboard.</div></div></div>';
+      } else {
+        box.innerHTML=pads.map(function(p){
+          var isAdmin=(p.id===admin), isAI=(p.source==="virtual");
+          return '<div class="opt focusable'+(isAdmin?' sel':'')+'" data-pad="'+esc(p.id)+'" data-admin="'+(isAdmin?1:0)+'">'+
+            '<span class="ic" data-i="gamepad-2"></span>'+
+            '<div><div class="nm">'+esc(p.name||"Controller")+
+              '<span class="chip '+(isAI?"ai":"hum")+'">'+(isAI?"AI":"Player")+'</span></div>'+
+            '<div class="sub2">'+esc(SRC_LABEL[p.source]||p.source||"connected")+' · recognized — standard layout applied</div></div>'+
+            '<span class="val">'+(isAdmin?"Sets up this device ✓":"Connected ✓")+'</span></div>'; }).join("");
+      }
+      paintIcons(); wireClicks();
+      // FIRST population only: the step renders before this async fetch, so initial focus fell
+      // to the footer — move it onto the would-be-owner card (A there = confirm + continue).
+      // Found by pad-drive 2026-06-07: Return right after entering the step hit footer "Back".
+      // Later refreshes never steal focus (docs/27 §3.9).
+      if(padFresh && pads.length){ padFresh=false;
+        if(focusedPad===null) setF(box.querySelector('[data-admin="1"]')||box.querySelector(".focusable"));
+        return; }
+      // keep (or recover) focus across the refresh — never reset to 0 mid-navigation
+      if(focusedPad!==null && !document.querySelector('[data-pad="'+focusedPad+'"]')){
+        setF(box.querySelector(".focusable")||document.querySelector("#footbtns .focusable"));
+      } else if(focusedPad!==null){
+        var keep=document.querySelector('[data-pad="'+focusedPad+'"]');
+        if(keep&&!keep.classList.contains("focus")) setF(keep);
+      }
     });
+  }
+  // honest supported-models count: count platform:Linux rows in the DEPLOYED controller DB
+  // (the same file the bridge's Normalizer loads) instead of hardcoding a marketing number.
+  var dbTried=false;
+  function loadDbCount(){
+    if(dbTried){ return; } dbTried=true;
+    fetch("gamecontrollerdb.txt",{cache:"no-store"}).then(function(r){ return r.ok?r.text():""; })
+      .then(function(t){
+        var n=0, lines=t.split("\n");
+        for(var i=0;i<lines.length;i++){ var l=lines[i];
+          if(l && l.charAt(0)!=="#" && l.indexOf("platform:Linux")>=0) n++; }
+        if(n>0){ var el=document.getElementById("dbcount");
+          if(el) el.textContent="and a built-in database recognizes "+n+" controller models"; }
+      }).catch(function(){ /* keep the honest static fallback text */ });
   }
 
   function loadNetworks(){
@@ -533,6 +607,13 @@
     if(el.dataset.acc!==undefined){ S.account.accent=el.dataset.acc;
       [].slice.call(document.querySelectorAll("[data-acc]")).forEach(function(o){ o.classList.toggle("sel",o===el); });
       return; }
+    if(el.dataset.pad!==undefined){
+      // A on the highlighted (would-be owner) pad = confirm it and move on — same as Continue.
+      if(el.dataset.admin==="1"){ next(); return; }
+      var ph=document.getElementById("padhint");
+      if(ph) ph.textContent="Any connected pad can drive setup. The highlighted controller becomes "+
+        "the owner when you continue — change it anytime in Settings.";
+      return; }
     if(el.dataset.net!==undefined){ joinNetwork(el.dataset.net); return; }
     if(el.tagName==="INPUT"){ el.focus(); /* opens the shared OSK (cursor.js) */ return; }
   }
@@ -547,21 +628,18 @@
     else if(k==="ArrowUp") move("up");
     else if(k==="Enter"||k===" ") activate(cur());
     else if(k==="Escape"||k==="Backspace"){ try{ GOSE&&GOSE.sound&&GOSE.sound("back"); }catch(e2){} back(); }
+    // L1/R1 ([ / ]) = previous / next step. docs/27 §3.3 reserves [ ] for TAB-LIKE structures;
+    // reasoned call (2026-06-07): a linear wizard IS tab-like — the steps are sibling panes in a
+    // fixed sequence (the footer dots are the tab strip), so [/]=prev/next-step matches the
+    // vocabulary rather than repurposing it. next() still respects required-step gating.
     else if(k==="]"||k==="PageDown"){ next(); }   // R1 = continue (accelerator from anywhere)
     else if(k==="["||k==="PageUp"){ back(); }      // L1 = back
     else return;
     e.preventDefault();
   });
-
-  // ---- gamepad fallback (browser preview only; the kiosk uses key synthesis) ----
-  var prev={};
-  (function pad(){ var gp=navigator.getGamepads&&[].slice.call(navigator.getGamepads()).filter(Boolean)[0];
-    if(gp && !oskVisible()){ var t=function(i){ return gp.buttons[i]&&gp.buttons[i].pressed&&!prev[i]; };
-      if(t(12)) move("up"); if(t(13)) move("down"); if(t(14)) move("left"); if(t(15)) move("right");
-      if(t(0)) activate(cur()); if(t(1)) back();
-      if(t(5)) next(); if(t(4)) back();   // RB = continue, LB = back
-      gp.buttons.forEach(function(b,i){ prev[i]=b.pressed; }); }
-    requestAnimationFrame(pad); })();
+  // NOTE (docs/27 §2.1): no raw gamepad-API reads or polls may exist on this page. The bridge
+  // (gose-pad-nav.py) is the single input authority; this page only consumes synthesized keys.
+  // (The old "browser preview only" raw poll was removed in the step-3 rebuild, 2026-06-07.)
 
   // deep-link to a step for screenshots:  gose-oobe.html#account
   (function initHash(){ var want=(location.hash||"").replace("#","");
