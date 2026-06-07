@@ -188,8 +188,14 @@
     empty:"Store unavailable.",
     render:(d)=>{ d=d||{}; const t=(name,sub,tab,icon,img)=>({icon,img:img||null,label:name,sub:sub||tab,go:"gose-store.html?tab="+tab});
       const secs=[];
-      // APPS: the app's real flatpak logo (/appicon) when present, else its named icon.
-      if((d.apps||[]).length)secs.push({label:"APPS",items:d.apps.slice(0,2).map(a=>t(a.name,a.cat,'apps',a.icon||'download',a.id?("/appicon?id="+encodeURIComponent(a.id)):null))});
+      // APPS: an INSTALLED app LAUNCHES directly — the exact /launch {cmd:"flatpak run <id>"}
+      // the Apps page's Open button uses (owner 2026-06-07: no store-page detour for something
+      // already on the box). Only a NOT-installed app still goes to its store tab.
+      if((d.apps||[]).length)secs.push({label:"APPS",items:d.apps.slice(0,2).map(a=>
+        (a.installed&&a.id)
+          ? {icon:a.icon||'download',img:"/appicon?id="+encodeURIComponent(a.id),
+             label:a.name,sub:"Installed — open",cmd:"flatpak run "+a.id}
+          : t(a.name,a.cat,'apps',a.icon||'download',a.id?("/appicon?id="+encodeURIComponent(a.id)):null))});
       // EMULATORS: per-system white logo (/syslogo), gamepad-2 fallback if a system has none.
       if((d.emulators||[]).length)secs.push({label:"EMULATORS",items:d.emulators.slice(0,2).map(e=>t(e.name,e.system,'emulators','gamepad-2',e.system?("/syslogo?system="+encodeURIComponent(e.system)):null))});
       // GAMES: a clear gamepad icon (no per-title art in the store sample).
@@ -410,10 +416,13 @@
         :'<div class="empty">No notifications</div>';
       nlist.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
     function toggle(){const open=!center.classList.contains("on");center.classList.toggle("on",open);
+      // modal-layer signal (docs/27 §3.10): while the center is open, Escape closes IT —
+      // the shell WM must not treat that B as a window op.
+      if(GOSE.modalPush&&GOSE.modalPop){ if(open)GOSE.modalPush(); else GOSE.modalPop(); }
       if(open){renderList();GOSE.markAllRead();refresh();}}
     if(bell)bell.onclick=toggle;
     const cl=document.getElementById("n-clear"); if(cl)cl.onclick=()=>{GOSE.clearNotifs();renderList();refresh();};
-    addEventListener("keydown",e=>{if(e.key==="Escape"&&center.classList.contains("on")){center.classList.remove("on");e.preventDefault();}});
+    addEventListener("keydown",e=>{if(e.key==="Escape"&&center.classList.contains("on")){toggle();e.preventDefault();}});
     window.addEventListener("gose-notify",refresh);
     refresh();
     if(location.hash.indexOf("notif")>=0)setTimeout(toggle,300);

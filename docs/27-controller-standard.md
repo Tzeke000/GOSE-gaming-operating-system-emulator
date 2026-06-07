@@ -154,18 +154,14 @@ code anywhere above the Normalizer**.
 - **Numpad-as-controller** (`assets/cursor.js`): translates numpad keys into the
   same `Arrow*/Enter/Escape` keydown events. It *produces* the vocabulary; it
   does not read the pad.
-  **Reconciliation pending (2026-06-07):** `cursor.js` also hides the real X
-  cursor (`cursor:none !important` on everything) and draws a page-level fake
-  cursor (`#gose-cursor`) that follows `mousemove`. That fake cursor lives in
-  one document — over a web-window **iframe** the top document gets no
-  mousemove, so the fake cursor freezes at the frame edge and appears to go
-  "under" windows (the X hardware cursor *cannot*: the server composites it
-  above everything). Now that the stick drives the **real** pointer (§1.1) with
-  XFixes auto-hide, the fake-cursor block should be **retired**: drop the
-  `cursor:none` rule + the `#gose-cursor` element and, if the default X cursor
-  is too faint for the dark UI, install a crisp X cursor theme instead. (The
-  OSK half of `cursor.js` is unaffected.) Owned by the shell batch — not
-  changed by the bridge work.
+  **Reconciliation DONE (2026-06-07, windowing wave):** the page-drawn fake
+  cursor (`#gose-cursor` + `cursor:none !important`) is **retired** — the left
+  stick drives the **real X pointer** (§1.1), which the server composites above
+  every window, so it can never freeze at a web-window frame edge or go
+  "under" anything the way the page-drawn one did. If the default X arrow is
+  too faint for the dark UI, the fix is an X cursor **theme** in the guest,
+  never a fake cursor. (The OSK / numpad / Guide-overlay halves of `cursor.js`
+  are unchanged.)
 - **The shell→window key bridge** (`assets/gose-wm.js`): forwards the synthesized
   keys into a focused web-window's iframe. Same events, re-routed once, marked
   so they are never re-forwarded.
@@ -219,6 +215,29 @@ detection) goes through a **bridge/server API**, not the page (§7, item for
 9. **Background refreshes never steal focus.** A poll that re-renders must keep
    (and clamp) the current focus index; resetting focus to 0 mid-navigation was
    the second half of the `13a2f52` bug.
+10. **The layered-Escape contract (adopted 2026-06-07).** Inside a *windowed*
+   page, Escape (pad B) is normally a **shell window op** (close the window —
+   docs/23 §7, commit `016c6cb`). But "back out one level" (§3.2) means a
+   page's open **modal / sub-layer** must absorb that Escape first. The signal:
+
+   > **While any modal/sub-layer is open, the page sets
+   > `document.body.dataset.goseModal = "1"` (i.e. `<body data-gose-modal="1">`),
+   > and removes it when the last layer closes.**
+
+   The shell WM (`gose-wm.js`, both key paths — the shell capture handler and
+   `hookFrame`'s in-iframe handler) checks the focused frame's body before
+   consuming Escape: signal present → the Escape is **forwarded into the page**
+   (one layer closes); signal absent → the window op runs. The shell document's
+   own body carries the same signal for desktop-level layers (Quick-Access,
+   OSK, notification center). Implementation sugar: `cursor.js` exposes
+   refcounted `GOSE.modalPush()` / `GOSE.modalPop()` (overlapping layers — e.g.
+   the OSK open on top of a password modal — stay correct); the shared OSK and
+   the Quick-Access overlay are wired through it already, so any page using the
+   shared OSK gets the contract for free. A page with its own modal (Wi-Fi
+   password picker, wizard sub-dialogs, settings pickers) must push/pop around
+   the modal's lifetime (or set the attribute directly if it doesn't load
+   `cursor.js`). Result: B walks the layers — OSK → modal → window → (fullscreen
+   page) desktop — one level per press, nothing ever trapped, nothing skipped.
 
 ## 4. Layer precedence (highest first)
 
@@ -237,6 +256,34 @@ window ops work over a running game; the gate **fails open** when the registry
 is unreachable (nav must never break because the server hiccuped); pre-OOBE
 (no admin chosen, `.oobe-done` absent) **any** pad drives the first-boot wizard
 (docs/25 §5.2b).
+
+### 4.1 Native-app discipline (adopted 2026-06-07 — the browser-trap killer)
+
+A launched **native X app** (Firefox/VLC/Chromium/any flatpak) is a sibling
+window *over* the kiosk; XTEST keys land in it, and its idea of Escape is its
+own — a pad user could enter a browser and never get out. The bridge therefore
+watches the **foreground X window** (`NativeWatch`: `_NET_ACTIVE_WINDOW` +
+`WM_CLASS`/`_NET_WM_NAME` polled every `NATIVE_POLL_S` = 0.5 s in a background
+thread on its **own X connection** — never the 60 Hz hot path, mirroring
+GameWatch). Kiosk-family windows (`kiosk.py`, `gose-overlay`, name `GOSE` —
+verified live) are exempt. While a **native app is foreground and no game is
+running**:
+
+| Pad input | Effect |
+|---|---|
+| **B** | politely close that window — EWMH **`_NET_CLOSE_WINDOW`** ClientMessage (the `wmctrl`-equivalent; an XTEST Escape would go *into* the app and mean whatever it wants) |
+| **Guide** | **escape hatch**: re-activate the kiosk (`_NET_ACTIVE_WINDOW` ClientMessage) *and* the WM layer posts `wm.carousel` as usual — the user lands in the switcher, on top |
+| everything else | flows to the native app unchanged (keys, stick cursor, A-clicks) |
+
+Layer rules still hold: a **running game** suppresses all of this (the game's
+window is native too — B must never close it; layer 1 wins), WM modals consume
+B as `wm.cancel` first (layer 3), and the **AdminGate** applies (a friend's pad
+can't close your browser). On a window's **first foreground sighting** the
+bridge also applies the app-class policy's *native windows open
+fullscreen-maximized* default (`_NET_WM_STATE` add maximized, once per window,
+skipped while a game runs — docs/23 §4.5). If the vendored Xlib can't connect,
+the watcher is OFF and logged; the bridge behaves exactly as before (honest
+fallback). All decision logic is pure and covered by `--selftest` fakes.
 
 ## 5. Device admission — buttons are identity, names are not
 

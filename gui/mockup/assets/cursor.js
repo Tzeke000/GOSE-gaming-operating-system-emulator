@@ -1,36 +1,23 @@
-// GOSE shared cursor — a crisp, clearly-visible pointer for the dark UI.
-// The VM's native X cursor is near-invisible; this renders our own and hides the native one.
+// GOSE cursor — the REAL X hardware cursor (docs/27 §1.1, fake cursor retired 2026-06-07).
+// The page-drawn #gose-cursor + `cursor:none` scheme is GONE: the left stick now drives the
+// real X pointer (XTEST @>=60Hz, XFixes auto-hide — gose-pad-nav.py), and the hardware cursor
+// is composited by the X server ABOVE every window, so it can never freeze at a web-window
+// frame edge or go "under" anything the way the page-drawn one did. If the default X arrow is
+// too faint for the dark UI, the fix is an X cursor THEME in the guest — not a fake cursor.
+
+// GOSE layered-modal signal (docs/27 §3.10) — the page-side half of the Escape contract.
+// While ANY modal / sub-layer is open the page sets  document.body.dataset.goseModal="1"
+// so the shell WM forwards Escape INTO the page (close one layer) instead of closing the
+// window. GOSE.modalPush()/GOSE.modalPop() refcount overlapping layers (e.g. the OSK open
+// on top of a password modal); pages without cursor.js may set the attribute directly.
 (function(){
-  if(window.__goseCursor) return; window.__goseCursor=true;
-  function init(){
-    const s=document.createElement('style');
-    s.textContent='html,body,*{cursor:none!important}'+
-      '#gose-cursor{position:fixed;left:0;top:0;width:24px;height:24px;z-index:2147483647;pointer-events:none;'+
-      'will-change:transform;filter:drop-shadow(0 2px 3px rgba(0,0,0,.55))}'+
-      '#gose-cursor svg{display:block;transition:transform .06s ease}'+
-      '#gose-cursor.down svg{transform:scale(.8)}'+
-      '#gose-cursor.text svg{display:none}#gose-cursor.text:after{content:"";display:block;width:2px;height:20px;'+
-      'background:#5cd0ff;box-shadow:0 0 6px #5cd0ff;margin-left:6px}';
-    document.head.appendChild(s);
-    const c=document.createElement('div'); c.id='gose-cursor';
-    c.innerHTML='<svg width="24" height="24" viewBox="0 0 24 24">'+
-      '<path d="M3 2 L3 19 L7.6 14.6 L10.8 21 L13.7 19.6 L10.6 13.4 L17 13.4 Z" '+
-      'fill="#f3f6ff" stroke="#5cd0ff" stroke-width="1.3" stroke-linejoin="round"/></svg>';
-    document.body.appendChild(c);
-    let x=innerWidth/2, y=innerHeight/2;
-    function place(){ c.style.transform='translate('+x+'px,'+y+'px)'; }
-    addEventListener('mousemove',function(e){
-      x=e.clientX; y=e.clientY; place();
-      // text-caret look over editable/text fields
-      const t=e.target;
-      const editable = t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable);
-      c.classList.toggle('text', !!editable);
-    },{passive:true});
-    addEventListener('mousedown',function(){c.classList.add('down');});
-    addEventListener('mouseup',function(){c.classList.remove('down');});
-    place();
-  }
-  if(document.body) init(); else addEventListener('DOMContentLoaded',init);
+  if(window.__goseModalSig) return; window.__goseModalSig=true;
+  var n=0;
+  function apply(){ if(!document.body)return;
+    if(n>0)document.body.dataset.goseModal="1"; else delete document.body.dataset.goseModal; }
+  window.GOSE=window.GOSE||{};
+  GOSE.modalPush=function(){ n++; apply(); };
+  GOSE.modalPop=function(){ n=Math.max(0,n-1); apply(); };
 })();
 
 // GOSE on-screen keyboard — auto-shows in any text field; K key or PS touchpad toggles it.
@@ -40,7 +27,7 @@
     var st=document.createElement('style');
     st.textContent=
       '#osk-btn{position:fixed;right:16px;bottom:60px;z-index:2147483640;width:42px;height:42px;border-radius:12px;'+
-      'background:#161826ee;border:1px solid #ffffff26;color:#cdd2ea;display:flex;align-items:center;justify-content:center;cursor:none;font-size:19px}'+
+      'background:#161826ee;border:1px solid #ffffff26;color:#cdd2ea;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:19px}'+
       '#osk-btn:hover{border-color:#5cd0ff}'+
       '#osk{position:fixed;left:50%;bottom:0;transform:translateX(-50%) translateY(110%);z-index:2147483641;'+
       'width:780px;max-width:98vw;background:#0c0c1ef7;border:1px solid #ffffff26;border-bottom:none;border-radius:16px 16px 0 0;'+
@@ -48,7 +35,7 @@
       '#osk.on{transform:translateX(-50%) translateY(0)}'+
       '#osk .row{display:flex;gap:7px;justify-content:center;margin:6px 0}'+
       '#osk .k{flex:1;max-width:62px;height:48px;border-radius:10px;background:#1a1d2b;border:1px solid #ffffff16;'+
-      'color:#eaf0ff;display:flex;align-items:center;justify-content:center;font-size:17px;cursor:none;user-select:none}'+
+      'color:#eaf0ff;display:flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;user-select:none}'+
       '#osk .k.wide{max-width:150px;flex:2}#osk .k.focus{border-color:#5cd0ff;box-shadow:0 0 0 2px #5cd0ff66;background:#22273c}';
     document.head.appendChild(st);
     var osk=document.createElement('div'); osk.id='osk'; document.body.appendChild(osk);
@@ -113,7 +100,12 @@
       var t=textTargets(), i=t.indexOf(last); if(t.length<2) return;
       var nx=t[(i+1+t.length)%t.length]; nx.focus(); last=nx;       // wraps; OSK stays open
       try{ nx.selectionStart=nx.selectionEnd=nx.value.length; }catch(e){} }
-    function show(){osk.classList.add('on');mark();} function hide(){osk.classList.remove('on');}
+    // the OSK is a modal layer: signal it (docs/27 §3.10) so Escape closes the
+    // OSK first — never the window the page lives in. Refcounted via GOSE.modal*.
+    function show(){ if(!osk.classList.contains('on')&&window.GOSE&&GOSE.modalPush)GOSE.modalPush();
+      osk.classList.add('on');mark();}
+    function hide(){ if(osk.classList.contains('on')&&window.GOSE&&GOSE.modalPop)GOSE.modalPop();
+      osk.classList.remove('on');}
     function toggle(){ if(osk.classList.contains('on'))hide(); else show(); }
     window.GOSE=window.GOSE||{}; window.GOSE.osk={show:show,hide:hide,toggle:toggle};
     document.addEventListener('keydown',function(e){
@@ -296,8 +288,11 @@
       if(it.go){ location.href=it.go; return; }
       if(it.key==='vol'){ st_.mute=!st_.mute; api('/sys/audio',{mute:st_.mute}); render(); return; } }
     function show(){ if(open)return; open=true; foc=0; st_.powerMode=false; build(); refresh();
+      if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();   // modal layer signal (docs/27 §3.10)
       scrim.classList.add('on'); gg.classList.add('on'); }
-    function close(){ if(!open)return; open=false; scrim.classList.remove('on'); gg.classList.remove('on'); }
+    function close(){ if(!open)return; open=false;
+      if(window.GOSE&&GOSE.modalPop)GOSE.modalPop();
+      scrim.classList.remove('on'); gg.classList.remove('on'); }
     function toggle(){ open?close():show(); }
     window.GOSEGUIDE={show:show,close:close,toggle:toggle,isOpen:function(){return open;}};
 

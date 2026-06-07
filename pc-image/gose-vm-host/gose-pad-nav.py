@@ -163,6 +163,23 @@ WM_FROM_KEYSYM = {
     "bracketleft": "wm.prev", "bracketright": "wm.next",
 }
 
+# --- native-app discipline (docs/27 §4.1, docs/23 app-class policy) ----------
+# A launched native X app (Firefox/VLC/Chromium/...) is a sibling window OVER the
+# kiosk; the pad must never trap there ("the browser-trap").  While a native app
+# is FOREGROUND and NO game is running:
+#   B     -> politely close that window (EWMH _NET_CLOSE_WINDOW ClientMessage —
+#            the wmctrl-equivalent; an XTEST Escape would go INTO the app)
+#   Guide -> re-activate the kiosk window (escape hatch) + the WM layer posts
+#            wm.carousel as usual, so the user lands in the switcher
+#   everything else (keys, stick cursor, A-clicks) flows to the app unchanged.
+# Foreground state comes from a BACKGROUND poll (_NET_ACTIVE_WINDOW + WM_CLASS)
+# on the GameWatch cadence — never the per-event hot path.  New native windows
+# are maximized once on first foreground sighting (the app-class policy: native
+# apps open fullscreen-maximized), skipped while a game runs.
+NATIVE_POLL_S = 0.5          # foreground re-check cadence (background thread)
+KIOSK_WM_CLASSES = ("kiosk.py", "gose-overlay")   # verified live 2026-06-07
+KIOSK_WM_NAMES = ("GOSE", "GOSE Overlay")
+
 # --- UNIVERSAL controller normalization (SDL_GameControllerDB) ---------------
 # "One button language" for ANY pad — the software 8BitDo-dongle. We DON'T write
 # per-controller mappings; we adopt the community SDL_GameControllerDB
@@ -614,6 +631,207 @@ def make_engine():
 
 
 # ---------------------------------------------------------------------------
+class NativeWatch:
+    """Foreground native-X-window watcher + EWMH actions (docs/27 §4.1).
+
+    A daemon thread polls _NET_ACTIVE_WINDOW / WM_CLASS every NATIVE_POLL_S on
+    its OWN X connection (the XTEST engine's connection stays single-threaded);
+    is_native_fg() is a plain attribute read for the hot path.  Actions:
+      close_fg()        — _NET_CLOSE_WINDOW ClientMessage to the foreground app
+                          (the polite, EWMH-correct close; XTEST is wrong here)
+      activate_kiosk()  — _NET_ACTIVE_WINDOW ClientMessage raising the kiosk
+    All X calls share one lock (python-xlib Displays are not thread-safe).
+    New native windows are maximized ONCE on first foreground sighting (app-class
+    policy: native apps open fullscreen-maximized) unless a game is running.
+    classify() is pure -> unit-testable without X.
+    """
+
+    def __init__(self, display=":0", game_check=None):
+        from Xlib import display as _xdisplay, X as _X, protocol as _proto
+        self._X = _X
+        self._proto = _proto
+        self.d = _xdisplay.Display(display)
+        self.root = self.d.screen().root
+        self._lock = _threading.Lock()
+        self.game_check = game_check or (lambda: False)
+        self._atom = {}
+        for n in ("_NET_ACTIVE_WINDOW", "_NET_CLIENT_LIST", "_NET_CLOSE_WINDOW",
+                  "_NET_WM_STATE", "_NET_WM_STATE_MAXIMIZED_VERT",
+                  "_NET_WM_STATE_MAXIMIZED_HORZ", "_NET_WM_NAME", "UTF8_STRING"):
+            self._atom[n] = self.d.intern_atom(n)
+        self.fg_xid = 0
+        self.fg_native = False
+        self._fg_known = True        # ident actually read? unknown re-probes
+        self.fg_label = ""           # "class/name" for logs
+        self._seen = set()           # xids already offered the maximize-once
+
+    # -- pure classification (no X) -------------------------------------------
+    @staticmethod
+    def classify(wm_class, name):
+        """True when the window is the GOSE shell family (kiosk / overlay) —
+        i.e. NOT a native app.  wm_class is the (instance, class) pair."""
+        inst = (wm_class[0] if wm_class and len(wm_class) > 0 else "") or ""
+        clss = (wm_class[1] if wm_class and len(wm_class) > 1 else "") or ""
+        low = {c.lower() for c in KIOSK_WM_CLASSES}
+        if inst.lower() in low or clss.lower() in low:
+            return True
+        return (name or "") in KIOSK_WM_NAMES
+
+    @staticmethod
+    def decide(wm_class, name):
+        """(known, native) for a foreground window's identity.  FAIL-SAFE: a
+        window whose class AND name are unreadable (already-destroyed xid at
+        startup, a not-yet-mapped window, an X error) is (False, False) —
+        UNKNOWN IS NEVER NATIVE, because 'native' is what B is allowed to
+        close.  The live bug this guards (2026-06-07): at session relaunch the
+        root's _NET_ACTIVE_WINDOW still pointed at the DEAD kiosk's xid, ident
+        failed, 'native' stuck (the new kiosk REUSED the xid so the
+        same-xid fast path never re-probed), and every desktop B politely
+        closed the kiosk — a relaunch loop.  Unknown idents are also re-probed
+        every poll until they read (see refresh)."""
+        known = (wm_class is not None) or bool(name)
+        return known, (known and not NativeWatch.classify(wm_class, name))
+
+    def mark_foreground(self, xid, is_native, game_running):
+        """Maximize-once decision for a newly-foreground window (pure logic —
+        the X side effect lives in _maximize).  Returns 'maximize' | None."""
+        if not xid or xid in self._seen:
+            return None
+        self._seen.add(xid)
+        if len(self._seen) > 256:        # bound growth across long sessions
+            self._seen = set(list(self._seen)[-128:])
+        if is_native and not game_running:
+            return "maximize"
+        return None
+
+    # -- X helpers (lock held by callers' public methods) ----------------------
+    def _win(self, xid):
+        return self.d.create_resource_object("window", xid)
+
+    def _client_message(self, xid, type_name, data):
+        ev = self._proto.event.ClientMessage(
+            window=self._win(xid), client_type=self._atom[type_name],
+            data=(32, (list(data) + [0] * 5)[:5]))
+        self.root.send_event(ev, event_mask=(self._X.SubstructureRedirectMask |
+                                             self._X.SubstructureNotifyMask))
+        self.d.flush()
+
+    def _active_xid(self):
+        p = self.root.get_full_property(self._atom["_NET_ACTIVE_WINDOW"],
+                                        self._X.AnyPropertyType)
+        return int(p.value[0]) if (p and p.value and p.value[0]) else 0
+
+    def _ident(self, xid):
+        w = self._win(xid)
+        try:
+            cls = w.get_wm_class()
+        except Exception:
+            cls = None
+        name = None
+        try:
+            p = w.get_full_property(self._atom["_NET_WM_NAME"],
+                                    self._atom["UTF8_STRING"])
+            name = p.value.decode("utf-8", "replace") if (p and p.value) else None
+            if not name:
+                name = w.get_wm_name()
+        except Exception:
+            pass
+        return cls, name
+
+    def _maximize(self, xid):
+        # _NET_WM_STATE: [action=1(add), prop1, prop2, source=2(pager)]
+        self._client_message(xid, "_NET_WM_STATE",
+                             [1, self._atom["_NET_WM_STATE_MAXIMIZED_VERT"],
+                              self._atom["_NET_WM_STATE_MAXIMIZED_HORZ"], 2])
+
+    # -- the poll (daemon thread) ----------------------------------------------
+    def refresh(self):
+        try:
+            with self._lock:
+                xid = self._active_xid()
+                if not xid:
+                    self.fg_xid, self.fg_native, self._fg_known = 0, False, True
+                    return
+                if xid == self.fg_xid and self._fg_known:
+                    return          # unchanged foreground, identity already read.
+                                    # An UNKNOWN ident re-probes every poll: X ids
+                                    # get REUSED, so "same xid" is not "same window"
+                                    # until we have actually read who it is.
+                cls, name = self._ident(xid)
+                known, native = self.decide(cls, name)
+                prev = (self.fg_xid, self.fg_native, self._fg_known)
+                self.fg_xid, self.fg_native, self._fg_known = xid, native, known
+                self.fg_label = "%s/%s" % ((cls[0] if cls else "?"), name or "?")
+                if not known:
+                    if prev != (xid, native, known):
+                        log("foreground 0x%x identity unreadable -> treated as "
+                            "SHELL (B passes through; re-probing)" % xid)
+                    return          # never close/maximize what we can't identify
+                act = self.mark_foreground(xid, native,
+                                           bool(self.game_check()))
+                if act == "maximize":
+                    self._maximize(xid)
+                    log("native window 0x%x (%s) -> maximized (app-class policy)"
+                        % (xid, self.fg_label))
+                elif native and prev != (xid, native, known):
+                    log("native window foreground: 0x%x (%s)" % (xid, self.fg_label))
+        except Exception as e:
+            # fail SAFE: unknown foreground = treat as kiosk (normal key flow)
+            self.fg_xid, self.fg_native, self._fg_known = 0, False, True
+            log("native watch refresh failed: %s" % e)
+
+    def start(self):
+        self.refresh()
+        def _loop():
+            while True:
+                time.sleep(NATIVE_POLL_S)
+                self.refresh()
+        _threading.Thread(target=_loop, daemon=True).start()
+        return self
+
+    # -- hot-path read + actions ------------------------------------------------
+    def is_native_fg(self):
+        return self.fg_native
+
+    def close_fg(self):
+        xid = self.fg_xid
+        if not xid:
+            return
+        with self._lock:
+            # _NET_CLOSE_WINDOW: [timestamp=0, source=2(pager)]
+            self._client_message(xid, "_NET_CLOSE_WINDOW", [0, 2])
+
+    def activate_kiosk(self):
+        with self._lock:
+            p = self.root.get_full_property(self._atom["_NET_CLIENT_LIST"],
+                                            self._X.AnyPropertyType)
+            kiosk = None
+            for xid in (p.value if (p and p.value) else []):
+                cls, name = self._ident(int(xid))
+                inst = (cls[0] if cls else "") or ""
+                if inst.lower() == "kiosk.py" or (name or "") == "GOSE":
+                    kiosk = int(xid)
+                    break
+            if kiosk is None:
+                raise RuntimeError("kiosk window not found in _NET_CLIENT_LIST")
+            # _NET_ACTIVE_WINDOW: [source=2(pager), timestamp=0, current-active=0]
+            self._client_message(kiosk, "_NET_ACTIVE_WINDOW", [2, 0, 0])
+
+
+def make_native_watch(game_check):
+    """NativeWatch when the vendored Xlib can connect; else None (honest no-op:
+    the bridge then behaves exactly as before this feature)."""
+    try:
+        nw = NativeWatch(":0", game_check=game_check).start()
+        log("native watch: ON (foreground poll %.1fs; B closes / Guide rescues)"
+            % NATIVE_POLL_S)
+        return nw
+    except Exception as e:
+        log("native watch: OFF (%s) — native-app discipline unavailable" % e)
+        return None
+
+
+# ---------------------------------------------------------------------------
 class AdminGate:
     """Decides whether a given evdev device may drive the OS menus.
 
@@ -974,11 +1192,13 @@ class PadNav:
 
     def __init__(self, emit=None, game_check=None, deadzone=STICK_DEADZONE,
                  gate=None, gamebar_check=None, wm=None, wm_check=None,
-                 pointer=None):
+                 pointer=None, native=None):
         self.emit = emit or xdotool_emit
         self.game_check = game_check or default_game_running
         self.gamebar_check = gamebar_check or default_gamebar_open
         self.wm_check = wm_check or default_wm_open
+        # the native-app discipline watcher (docs/27 §4.1); None disables it
+        self.native = native
         # gate(dev_path, dev_name) -> (allowed, reason).  Default: allow all
         # (so unit tests / un-wired use don't gate); run() wires AdminGate.allows.
         self.gate = gate or (lambda path, name=None: (True, "no-gate"))
@@ -1083,6 +1303,20 @@ class PadNav:
 
     def feed(self, event, dev_path=None, dev_name=None):
         keysyms = self.map_event(event)
+        # -0.5) native-app escape hatch (docs/27 §4.1): Guide over a foreground
+        #       native app re-activates the kiosk FIRST, then falls through so
+        #       the WM layer opens the carousel as usual (user lands in the
+        #       switcher, on top).  Same gate as the WM layer; silent in games.
+        if (self.native is not None and event.type == ecodes.EV_KEY
+                and event.code == ecodes.BTN_MODE and event.value == 1
+                and self.native.is_native_fg() and not self.is_paused()):
+            allowed, _reason = self.gate(dev_path, dev_name)
+            if allowed:
+                try:
+                    self.native.activate_kiosk()
+                    log("native fg + Guide -> kiosk re-activated (escape hatch)")
+                except Exception as e:
+                    log("kiosk re-activate failed: %s" % e)
         # 0) WM modal layer (chunk B): owns Guide + the L2 modifier, and while a
         #    modal is open it owns the whole pad — semantic events are POSTed to
         #    /wm/event instead of keys being synthesized.
@@ -1111,6 +1345,19 @@ class PadNav:
             log("ignored: %s %s" % (dev_name or dev_path or "?", reason))
             if event.type == ecodes.EV_ABS:
                 self.repeat.pop(event.code, None)   # blocked pad must not queue repeats
+            return
+        # 2.5) native-app discipline (docs/27 §4.1): B while a native app is
+        #      foreground (and no game runs) closes THAT window politely via
+        #      _NET_CLOSE_WINDOW — an XTEST Escape would go INTO the app and
+        #      mean whatever the app wants (the browser-trap).  During a game
+        #      this never fires (suppression already returned above).
+        if (self.native is not None and "Escape" in keysyms
+                and self.native.is_native_fg() and not self.is_paused()):
+            try:
+                self.native.close_fg()
+                log("native fg + B -> polite close (_NET_CLOSE_WINDOW)")
+            except Exception as e:
+                log("native close failed: %s" % e)
             return
         # 3) A at an ACTIVE cursor clicks at the pointer instead of Enter
         #    (cursor active = pointer moved within CURSOR_CLICK_WINDOW; BTN_START
@@ -1279,9 +1526,11 @@ def run():
     _threading.Thread(target=_wm_post_worker, daemon=True).start()
     engine = make_engine()              # XTEST (persistent X conn) or xdotool
     gate = AdminGate().allows
+    gamewatch = GameWatch().start()     # off-hot-path pgrep (shared instance)
     nav = PadNav(emit=engine.key, pointer=engine,
-                 game_check=GameWatch().start().is_running,   # off-hot-path pgrep
-                 gate=gate, wm=WMLayer(gate=gate))
+                 game_check=gamewatch.is_running,
+                 gate=gate, wm=WMLayer(gate=gate),
+                 native=make_native_watch(gamewatch.is_running))
     db = ControllerDB()
     norm = Normalizer(db)
     log("controller DB loaded: %s (%d Linux entries)" % (db.path, db.count))
@@ -1541,6 +1790,126 @@ def selftest():
     nwm2 = hnav(game=True)
     nwm2.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
     check("WM-FLAG: closed during game -> still suppressed", rec == [])
+
+    # ----- NATIVE-APP DISCIPLINE (docs/27 §4.1: the browser-trap killer) -----
+    # classification is pure: the kiosk family is NOT native; everything else is.
+    check("NATIVE: kiosk window classified as kiosk-family",
+          NativeWatch.classify(("kiosk.py", "Kiosk.py"), "GOSE") is True)
+    check("NATIVE: overlay window classified as kiosk-family",
+          NativeWatch.classify(("gose-overlay", "gose-overlay"), "GOSE Overlay") is True)
+    check("NATIVE: Firefox classified as native",
+          NativeWatch.classify(("Navigator", "firefox"), "Mozilla Firefox") is False)
+    check("NATIVE: VLC classified as native",
+          NativeWatch.classify(("vlc", "Vlc"), "VLC media player") is False)
+    check("NATIVE: classless window with GOSE name still kiosk-family",
+          NativeWatch.classify(None, "GOSE") is True)
+    check("NATIVE: classless unknown window is native",
+          NativeWatch.classify(None, "Something Else") is False)
+    # decide(): UNKNOWN IS NEVER NATIVE (the 2026-06-07 kiosk-relaunch-loop bug:
+    # a stale _NET_ACTIVE_WINDOW xid whose ident is unreadable must NOT become
+    # B-closable — it was the kiosk itself)
+    check("NATIVE: unreadable ident -> (unknown, NOT native) fail-safe",
+          NativeWatch.decide(None, None) == (False, False))
+    check("NATIVE: unreadable ident -> (unknown, NOT native) even with empty name",
+          NativeWatch.decide(None, "") == (False, False))
+    check("NATIVE: readable kiosk -> (known, not native)",
+          NativeWatch.decide(("kiosk.py", "Kiosk.py"), "GOSE") == (True, False))
+    check("NATIVE: readable app -> (known, native)",
+          NativeWatch.decide(("Navigator", "firefox"), "Mozilla Firefox") == (True, True))
+    check("NATIVE: name-only app -> (known, native)",
+          NativeWatch.decide(None, "VLC media player") == (True, True))
+
+    # maximize-once decision (no X needed: bare instance + the pure method)
+    nwx = object.__new__(NativeWatch)
+    nwx._seen = set()
+    check("NATIVE: first native foreground + no game -> maximize",
+          nwx.mark_foreground(0x500, True, False) == "maximize")
+    check("NATIVE: same window again -> no re-maximize",
+          nwx.mark_foreground(0x500, True, False) is None)
+    check("NATIVE: kiosk-family window -> never maximized",
+          nwx.mark_foreground(0x501, False, False) is None)
+    check("NATIVE: native foreground DURING a game -> not maximized (game window)",
+          nwx.mark_foreground(0x502, True, True) is None)
+    check("NATIVE: xid 0 -> no-op", nwx.mark_foreground(0, True, False) is None)
+
+    # feed() integration via a fake watcher (records actions, no X)
+    class FakeNative:
+        def __init__(self, native=True):
+            self.native = native
+            self.closed, self.raised = 0, 0
+
+        def is_native_fg(self):
+            return self.native
+
+        def close_fg(self):
+            self.closed += 1
+
+        def activate_kiosk(self):
+            self.raised += 1
+
+    # B over a foreground native app -> POLITE CLOSE, no Escape synthesized
+    rec.clear()
+    fnat = FakeNative(True)
+    nnav = hnav(native=fnat)
+    nnav.feed(E(ecodes.EV_KEY, ecodes.BTN_EAST, 1), DEV)
+    check("NATIVE: B over native fg -> close_fg, no key", fnat.closed == 1 and rec == [])
+    # B with the kiosk foreground -> plain Escape exactly as before
+    rec.clear()
+    fkio = FakeNative(False)
+    knav = hnav(native=fkio)
+    knav.feed(E(ecodes.EV_KEY, ecodes.BTN_EAST, 1), DEV)
+    check("NATIVE: B over kiosk fg -> Escape unchanged", rec == ["Escape"] and fkio.closed == 0)
+    # B during a game -> suppressed entirely (game owns the pad; nothing closes)
+    rec.clear()
+    fgame = FakeNative(True)
+    gnav2 = hnav(game=True, native=fgame)
+    gnav2.feed(E(ecodes.EV_KEY, ecodes.BTN_EAST, 1), DEV)
+    check("NATIVE: B during game -> suppressed, window NOT closed",
+          rec == [] and fgame.closed == 0)
+    # other keys flow to the native app unchanged (A -> Return)
+    rec.clear()
+    fnat2 = FakeNative(True)
+    onav = hnav(native=fnat2)
+    onav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
+    check("NATIVE: A over native fg -> Return flows unchanged",
+          rec == ["Return"] and fnat2.closed == 0)
+    # Guide over native fg -> kiosk re-activated AND the carousel still opens
+    posts.clear(); rec.clear()
+    fng = FakeNative(True)
+    wmg = WMLayer(post=posts.append, flag_path=flagp,
+                  gate=lambda p, n=None: (True, "ok"))
+    gnav3 = hnav(native=fng, wm=wmg, wm_check=lambda: os.path.exists(flagp))
+    gnav3.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    check("NATIVE: Guide over native fg -> kiosk raised + wm.carousel",
+          fng.raised == 1 and posts == ["wm.carousel"])
+    gnav3.feed(E(ecodes.EV_KEY, ecodes.BTN_EAST, 1), DEV)   # close the test modal
+    # Guide with kiosk fg -> no raise (normal WM layer only)
+    posts.clear()
+    fng2 = FakeNative(False)
+    wmg2 = WMLayer(post=posts.append, flag_path=flagp,
+                   gate=lambda p, n=None: (True, "ok"))
+    gnav4 = hnav(native=fng2, wm=wmg2, wm_check=lambda: os.path.exists(flagp))
+    gnav4.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    check("NATIVE: Guide over kiosk fg -> no redundant raise",
+          fng2.raised == 0 and posts == ["wm.carousel"])
+    gnav4.feed(E(ecodes.EV_KEY, ecodes.BTN_EAST, 1), DEV)
+    # gate-denied pad cannot close a native window with B
+    rec.clear()
+    fden = FakeNative(True)
+    dnav = hnav(native=fden, gate=lambda p, n=None: (False, "not OS-admin"))
+    dnav.feed(E(ecodes.EV_KEY, ecodes.BTN_EAST, 1), DEV)
+    check("NATIVE: gate-denied pad's B does NOT close the native window",
+          fden.closed == 0 and rec == [])
+    # B inside a WM modal still cancels the modal (layer 3 beats native close)
+    posts.clear()
+    fmod = FakeNative(True)
+    wmm = WMLayer(post=posts.append, flag_path=flagp,
+                  gate=lambda p, n=None: (True, "ok"))
+    mnav = hnav(native=fmod, wm=wmm, wm_check=lambda: os.path.exists(flagp))
+    mnav.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)    # open modal (raises kiosk too)
+    mnav.feed(E(ecodes.EV_KEY, ecodes.BTN_EAST, 1), DEV)    # B = wm.cancel, NOT close_fg
+    check("NATIVE: B in a WM modal -> wm.cancel, native window untouched",
+          posts[-1] == "wm.cancel" and fmod.closed == 0)
 
     # ----- ADMIN GATE -------------------------------------------------------
     # Registry fixture: P1 native (admin candidate), a friend's BT pad, the dev

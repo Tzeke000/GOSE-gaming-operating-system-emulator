@@ -41,17 +41,29 @@
   "use strict";
   if(!window.WinBox){ return; }                 // no frame engine -> desktop behaves as before
 
-  /* ---- the windowable app set: url -> {title, icon}. Anything NOT here keeps its
-     normal full-page navigation (lock/home/boot/oobe are deliberately absent). ---- */
+  /* ---- APP-CLASS POLICY (docs/23 §4.5, owner-set 2026-06-07) ----
+     Two classes:
+     * FULLSCREEN-NATIVE — Library / Emulators (the Library page) / AI Players /
+       Settings: direct full-page navigation, NEVER a window. Not in APPS, and a
+       frame that navigates to one of them escapes its window (hookFrame watch).
+     * WINDOW class — everything in APPS opens as a WinBox window, MAXIMIZED by
+       default (fullscreen-maximized; snap/restore still re-place it). Native
+       X apps (Firefox/VLC/Chromium/...) get the same maximized default from the
+       bridge (gose-pad-nav.py NativeWatch).
+     Anything in neither set keeps normal full-page navigation
+     (lock/home/boot/oobe are deliberately absent). ---- */
+  var FS_NATIVE={
+    "gose-library.html":1,   // Library + Emulators surface
+    "gose-settings.html":1,
+    "gose-ai.html":1,        // AI Players
+    "gose-lock.html":1       // lock must never render inside a frame
+  };
   var APPS={
     "gose-files.html":      {title:"Files",        icon:"folder"},
     "gose-store.html":      {title:"Store",        icon:"download"},
     "gose-term.html":       {title:"Terminal",     icon:"terminal"},
     "gose-taskman.html":    {title:"Task Manager", icon:"cpu"},
     "gose-gallery.html":    {title:"Gallery",      icon:"image"},
-    "gose-library.html":    {title:"Library",      icon:"layout-grid"},
-    "gose-settings.html":   {title:"Settings",     icon:"settings"},
-    "gose-ai.html":         {title:"AI Players",   icon:"sparkles"},
     "gose-apps.html":       {title:"Apps",         icon:"layout-grid"},
     "gose-widgets.html":    {title:"Widgets",      icon:"palette"},
     "gose-licenses.html":   {title:"Licenses",     icon:"file-text"},
@@ -256,6 +268,8 @@
       case "up":      if(MODAL)modalMove(-1,"y"); break;
       case "down":    if(MODAL)modalMove(1,"y"); break;
       case "act":     actOut(modalSelId()||focusedId()); break;
+      /* full shell refresh (asset deploys / recovery) without killing the kiosk */
+      case "reload":  location.reload(); break;
     }
     syncSoon();
   }
@@ -435,6 +449,21 @@
         var fr=wb.body&&wb.body.querySelector("iframe");
         if(!fr||!fr.contentWindow)return;
         var cw=fr.contentWindow;
+        /* FRAME-ESCAPE WATCH (docs/23 §4.5): a windowed page that navigates to a
+           FULLSCREEN-NATIVE page (Library/Settings/AI/lock — e.g. the Apps grid's
+           Library card, or Quick-Access links) must not render it inside the
+           frame: close the window and navigate the REAL page there. A frame that
+           navigates to the desktop itself (gose-home.html — e.g. Quick-Access
+           "Exit to Desktop") just closes: the desktop is already underneath
+           (016c6cb's nested-desktop bug, killed for the navigation path too). */
+        var fpath=((cw.location&&cw.location.pathname)||"").split("/").pop();
+        if(fpath==="gose-home.html"){ run({verb:"close",id:id}); return; }
+        if(FS_NATIVE[fpath]){
+          var dest=fpath+((cw.location&&cw.location.search)||"")+((cw.location&&cw.location.hash)||"");
+          run({verb:"close",id:id});
+          location.href=dest;
+          return;
+        }
         // scroll restore (suspend/free re-summon path)
         if(fr.dataset.restoreScroll){
           var sy=parseInt(fr.dataset.restoreScroll,10)||0;
@@ -456,8 +485,14 @@
              same rule as the shell-side handler below). Needed when real DOM focus sits
              INSIDE the iframe (mouse click / page-side .focus()): keys then land here
              directly and the shell capture handler never sees them, so without this the
-             page's own Escape→"go to desktop" navigation fires inside the frame. */
+             page's own Escape→"go to desktop" navigation fires inside the frame.
+             LAYERED-ESCAPE CONTRACT (docs/27 §3.10): while the page has a modal /
+             sub-layer open it sets body[data-gose-modal="1"] — then Escape belongs
+             to the PAGE (close the modal, one layer at a time), not the window. */
           if(e.key==="Escape"&&!e.__wmFwd){
+            var pm=false;
+            try{ pm=!!(cw.document&&cw.document.body&&cw.document.body.dataset.goseModal==="1"); }catch(err){}
+            if(pm)return;                       // page modal owns this Escape
             var w=WINS[id];
             if(w&&(w.state==="normal"||w.state==="max")){
               e.preventDefault(); e.stopImmediatePropagation();
@@ -476,6 +511,9 @@
   function openApp(url,title,icon,opts){
     opts=opts||{};
     var base=baseUrl(url);
+    /* fullscreen-native class (docs/23 §4.5): never a window — direct page
+       navigation, even when asked via /wm open or a stale freed descriptor. */
+    if(FS_NATIVE[base]){ location.href=url; return null; }
     if(!opts.force){
       // RE-SUMMON path: an existing window for this app gets focused/resumed instead
       // of duplicated; a freed descriptor for it gets remounted (docs/23 §5).
@@ -505,6 +543,9 @@
     wire(id,wb,null);
     if(opts.scroll){ var fr=frameOf(WINS[id]); if(fr)fr.dataset.restoreScroll=String(opts.scroll); }
     hookFrame(id,wb);
+    /* window class opens FULLSCREEN-MAXIMIZED by default (docs/23 §4.5);
+       a descriptor re-summon (opts.geom) restores its saved placement instead. */
+    if(!opts.geom)wb.maximize(true);
     wb.focus(); syncSoon(); dockRender();
     return id;
   }
@@ -844,11 +885,27 @@
        traps" is satisfied at the window boundary. Per window type (docs/23 chunk B):
        app (page) windows CLOSE; widget windows are minimize-only (their body IS the
        live widget) so Escape MINIMIZES. Fullscreen (non-windowed) pages keep their
-       own Escape semantics — this handler only runs when a window holds focus. */
+       own Escape semantics — this handler only runs when a window holds focus.
+       LAYERED-ESCAPE CONTRACT (docs/27 §3.10): body[data-gose-modal="1"] means a
+       modal/sub-layer is open and owns this Escape —
+       * on the SHELL's own body (Quick-Access / OSK / notification center over the
+         desktop): leave the key alone; the shell page's modal handler closes it.
+       * on the focused FRAME's body (e.g. the Wi-Fi password picker): forward the
+         Escape INTO the page (fall through to the forwarder below) so the modal
+         closes; only the NEXT Escape closes the window. One layer at a time. */
     if(e.key==="Escape"&&(w.state==="normal"||w.state==="max")){
-      e.preventDefault(); e.stopImmediatePropagation();
-      run({verb:(w.kind==="widget"?"minimize":"close"),id:id});
-      return;
+      if(document.body.dataset.goseModal==="1")return;   // shell modal owns it
+      var pmod=false;
+      try{
+        var pfr=frameOf(w), pcw=pfr&&pfr.contentWindow;
+        pmod=!!(pcw&&pcw.document&&pcw.document.body&&pcw.document.body.dataset.goseModal==="1");
+      }catch(err){}
+      if(!pmod){
+        e.preventDefault(); e.stopImmediatePropagation();
+        run({verb:(w.kind==="widget"?"minimize":"close"),id:id});
+        return;
+      }
+      /* page modal open -> fall through to the forwarder: Escape goes INTO the frame */
     }
     if(w.kind!=="page"||w.state==="suspended"||w.state==="min")return;
     var fr=frameOf(w), cw=fr&&fr.contentWindow;
@@ -912,6 +969,19 @@
       }
     }
     run(d);
+  });
+
+  /* ---- widget toggle (gose-wenabled, docs/23 §4.5): when the Widgets page —
+     typically open as a WINDOW over this very desktop — turns a widget OFF, a
+     window holding that widget's live body must close (the body returns to its
+     slot; widget.js then hides the slot via its own storage listener). ---- */
+  addEventListener("storage",function(ev){
+    if(ev.key!=="gose-wenabled")return;
+    var en={}; try{ en=JSON.parse(ev.newValue||"{}")||{}; }catch(e){}
+    Object.keys(WINS).forEach(function(id){
+      var w=WINS[id];
+      if(w.kind==="widget"&&en[w.widget]===false)w.wb.close();
+    });
   });
 
   /* ---- public API + boot ---- */

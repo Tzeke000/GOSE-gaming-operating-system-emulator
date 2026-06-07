@@ -338,11 +338,29 @@
         if(spec.onActivate)el.__act=spec.onActivate;
         MOUNTED[spec.id]=rec;
         place(rec); makeDraggable(rec); paintIcons(el);
-        if(on)runLoad(rec);
+        if(on){runLoad(rec);rec._started=true;}
       });
       reflow();                                   // initial column stack (computed from heights)
       addEventListener('resize',scheduleReflow);  // keep it tidy on window changes
       nav.init();
+      /* LIVE widget toggles (docs/23 §4.5): gose-wenabled is the single source of
+         truth (this same mount() read it at boot). The Widgets page is a separate
+         document (usually a WINDOW over this desktop), so its localStorage writes
+         arrive here as storage events — apply them immediately: OFF hides the
+         widget (genuinely gone — nav + reflow updated), ON shows it and starts its
+         load loop. Persistence across kiosk reloads is the same key, read above. */
+      addEventListener('storage',function(ev){
+        if(ev.key!=='gose-wenabled')return;
+        var isOn=enabled(), chg=false;
+        Object.keys(MOUNTED).forEach(function(id){
+          var rec=MOUNTED[id], on=isOn(id);
+          if(on===!rec.el.hidden)return;       // no change
+          rec.el.hidden=!on; chg=true;
+          if(on){ if(!rec._started){runLoad(rec);rec._started=true;}
+                  else if(GW.refresh)GW.refresh(id); }
+        });
+        if(chg){ reflow(); if(nav.rebuild)nav.rebuild(); }
+      });
     },
     reflow:reflow,
     nav:nav,

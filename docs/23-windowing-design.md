@@ -285,6 +285,41 @@ defaults to suspend, a deeper act-out = free (§5).
 - **Overview** (Mission-Control-style): **hold Guide longer / press Y in the carousel** expands the
   carousel into a **grid of all windows** for find-the-buried-one. d-pad to any cell, A to focus.
 
+### 4.5 App-class policy (owner-set, ADOPTED 2026-06-07)
+
+Not everything is a window. Each launchable surface belongs to exactly one class, and **every
+launch path** (desktop side menu, dock, widgets, the Apps page, `/wm open`, freed descriptors)
+must agree:
+
+| Class | Members | Behaviour |
+|---|---|---|
+| **FULLSCREEN-NATIVE** | Library, Emulators (the Library surface), AI Players, Settings (+ lock/home/boot/oobe, as before) | Direct full-page navigation — **no window chrome, never windowed**. These are the OS's own full-screen surfaces; the kiosk navigates to them naturally. |
+| **WINDOW class (web)** | Everything else windowable: Files, Store, Terminal, Task Manager, Gallery, Apps, Widgets, Licenses, Peripherals, Storage, Bluetooth, Wi-Fi, Remap, Splice | Opens as a WinBox web window, **FULLSCREEN-MAXIMIZED by default** (WinBox max state). Snap/restore/move still re-place it; a descriptor re-summon restores its saved geometry instead. |
+| **WINDOW class (native)** | Firefox, VLC, Chromium, and any launched flatpak/X app | A real Openbox-managed X window, **maximized by the bridge** on first foreground sighting (`gose-pad-nav.py` NativeWatch → `_NET_WM_STATE` add maximized; skipped while a game runs, so emulator/game windows are never touched). |
+
+Enforcement points (shell side, `gose-wm.js`):
+- the fullscreen-native set is **excluded from the windowable `APPS` map** (launcher intercepts,
+  click capture and `/wm open` all fall back to plain navigation), and
+- a **frame-escape watch** in `hookFrame`: a windowed page that *navigates* to a
+  fullscreen-native page (the Apps grid's Library card, Quick-Access links, Settings rows)
+  closes its window and navigates the real page top-level; a frame that navigates to
+  `gose-home.html` (e.g. Quick-Access "Exit to Desktop") just closes — the desktop is already
+  underneath (the navigation-path twin of the 016c6cb nested-desktop fix).
+
+**Installed apps launch, period.** A widget entry for an app that is already installed calls the
+same `/launch {cmd:"flatpak run <id>"}` the Apps page's Open button uses — never a store-page
+detour. Only a not-installed app routes to its store tab.
+
+**Widget toggles are state, not suggestions.** `gose-wenabled` (localStorage) is the single
+source: the desktop reads it at boot (`GW.mount`) *and* applies it live via `storage` events
+(the Widgets page is its own document, typically a window over the desktop) — OFF hides the
+widget (nav + reflow updated, any window holding its body closes), ON shows it and starts its
+load loop.
+
+Native-app **input discipline** (the browser-trap killer) lives in the bridge — see docs/27 §4.1:
+B politely closes a foreground native app (`_NET_CLOSE_WINDOW`), Guide re-activates the kiosk and
+opens the carousel. No X reparenting anywhere — pragmatic phase-2, exactly as §6/§10 scoped it.
+
 ---
 
 ## 5. The widget↔window-memory model (the owner's design), integrated

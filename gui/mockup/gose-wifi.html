@@ -112,15 +112,28 @@
   function disconnect(){if(!current){say("Not connected");return;}
     fetch("/net/disconnect",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"})
       .then(r=>r.json()).then(()=>{say("Disconnected");current=null;render();}).catch(()=>{});}
+  let pwClose=null;   // closes the open picker from the page-level key handler
   function askPw(n){const pw=$("pw"),inp=$("pw-in");$("pw-t").textContent="Connect to "+n.ssid;
     $("pw-s").textContent=n.auth||"Secured network";inp.value="";pw.classList.add("on");
+    // layered-Escape contract (docs/27 §3.10): while this picker is open the page
+    // owns Escape — the shell WM must close the PICKER, not the window around it.
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush(); else document.body.dataset.goseModal="1";
     setTimeout(()=>inp.focus(),60);
-    function done(ok){pw.classList.remove("on");inp.onkeydown=null;if(ok&&inp.value)connect(n.ssid,inp.value);}
+    let closed=false;
+    function done(ok){if(closed)return;closed=true;pwClose=null;
+      pw.classList.remove("on");inp.onkeydown=null;
+      if(window.GOSE&&GOSE.modalPop)GOSE.modalPop(); else delete document.body.dataset.goseModal;
+      if(ok&&inp.value)connect(n.ssid,inp.value);}
+    pwClose=()=>done(false);
     $("pw-ok").onclick=()=>done(true);$("pw-cancel").onclick=()=>done(false);
     inp.onkeydown=(ev)=>{ev.stopPropagation();if(ev.key==="Enter")done(true);else if(ev.key==="Escape")done(false);};}
   function move(n){foc=(foc+n+nItems())%nItems();render();}
   function activate(){if(foc===0)scan();else act();}
-  addEventListener("keydown",e=>{if($("pw").classList.contains("on"))return;const k=e.key;
+  addEventListener("keydown",e=>{
+    if($("pw").classList.contains("on")){   // picker owns the keys; Esc closes IT (one layer)
+      if((e.key==="Escape"||e.key==="Backspace")&&pwClose){pwClose();e.preventDefault();}
+      return;}
+    const k=e.key;
     if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
     else if(k==="Enter"||k===" ")activate();
     else if(k==="x"||k==="X"||k==="GoseR2"||k==="Delete")disconnect();
