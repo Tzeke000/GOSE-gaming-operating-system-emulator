@@ -884,6 +884,28 @@ _XBOX_GUID = "030000005e0400008e02000010010000"   # "Microsoft Xbox 360 pad" (in
 
 _NON_PADS = ("batocera hotkeys", "evmapy")   # uinput helpers that expose js but aren't players
 
+# EV_KEY ranges that mean "this node has real PAD buttons" — mirrors the bridge's
+# GAMEPAD_BTN_RANGES (gose-pad-nav.py): BTN_MISC..BTN_MOUSE, BTN_JOYSTICK..BTN_DIGI,
+# BTN_DPAD_*. Mouse/digitizer/keyboard/switch codes fall outside on purpose.
+_PAD_BTN_RANGES = ((0x100, 0x110), (0x120, 0x140), (0x220, 0x224))
+
+def _blk_has_pad_buttons(blk):
+    """True if this /proc/bus/input/devices block advertises at least one real
+    pad button. A composite pad's sibling nodes (Motion Sensors / Touchpad /
+    Headset Jack) also expose js* handlers and 'Controller' names but have no
+    pad buttons — before this check the DualSense Motion Sensors node showed
+    up as a Hub controller (settable as OS-admin!) and claimed a game player
+    slot, shifting every AI seat (+ the same disease the bridge's is_gamepad
+    fix cured, 2026-06-07). KEY= words are 64-bit (x86_64 guest), most
+    significant first."""
+    m = re.search(r"^B: KEY=([0-9a-fA-F ]+)\s*$", blk, re.M)
+    if not m:
+        return False
+    bits = 0
+    for w in m.group(1).split():
+        bits = (bits << 64) | int(w, 16)
+    return any((bits >> c) & 1 for lo, hi in _PAD_BTN_RANGES for c in range(lo, hi))
+
 def _sdl_guid(bus, vendor, product, version):
     """SDL2 joystick GUID from the kernel I: line ids (LE u16 fields, zero crc/driver),
     matching the format in es_input.cfg / gamecontrollerdb (e.g. the Xbox 360 constant)."""
@@ -907,6 +929,9 @@ def _virtual_pad_args(max_players=5):
         jss = re.findall(r"js(\d+)", blk); evs = re.findall(r"event(\d+)", blk)
         if not jss:
             continue
+        if not _blk_has_pad_buttons(blk):
+            continue          # sensor/touchpad sibling node: not a player, and SDL
+                              # won't count it as a joystick either (keep idx aligned)
         all_js.append(int(jss[0]))
         if not evs:
             continue
@@ -1372,7 +1397,7 @@ def ai_leave(payload):
     LOG.info("AI leave: %s", name)
     return {"ok": True}
 
-# ---- AI permission grants (Zeke's UAC-style model — a human grants a tier; an AI can REQUEST
+# ---- AI permission grants (the owner-approval, UAC-style model — a human grants a tier; an AI can REQUEST
 #      but never self-elevate; revoke is instant. Human-facing surface = AI Hub + widget. See docs/16.
 #      This is the persisted grant store; per-tool token enforcement (Capframe/macaroons) is the next phase. ----
 AI_GRANTS_F = "/userdata/gose-ui/ai_grants.json"
@@ -2833,6 +2858,9 @@ def _parse_controllers():
         js = re.search(r"\bjs(\d+)\b", blk)
         if not js:
             continue                              # not a joystick/gamepad
+        if not _blk_has_pad_buttons(blk):
+            continue                              # buttonless sibling node (motion/touchpad):
+                                                  # not a controller a user/admin can hold
         ev = re.search(r"\bevent(\d+)\b", blk)
         name_m = re.search(r'Name="([^"]*)"', blk)
         phys_m = re.search(r"Phys=(\S*)", blk)
