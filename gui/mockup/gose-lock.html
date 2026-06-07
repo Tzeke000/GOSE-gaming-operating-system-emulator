@@ -50,9 +50,9 @@
     const d={weekday:'long',month:'long',day:'numeric'}; if(tz)d.timeZone=tz;
     try{$("date").textContent=new Date().toLocaleDateString('en-US',d);}catch(e){$("date").textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});}}
   tick(); setInterval(tick,10000);
-  // accent for the avatar
-  const acc=localStorage.getItem("gose-accent")||"#5cd0ff";
-  $("av").style.background=acc; document.documentElement.style.setProperty("--accent",acc);
+  // accent: canonical = /ui/prefs (applied page-wide by a11y.js below); the avatar just
+  // tracks the live token so a Settings accent change shows here too
+  $("av").style.background="var(--accent)";
   // ambient nebula background
   const cv=$("bg"),ctx=cv.getContext("2d");let W,H;function size(){W=cv.width=innerWidth;H=cv.height=innerHeight;}size();addEventListener("resize",size);
   const ps=[];for(let i=0;i<6;i++)ps.push({x:Math.random()*W,y:Math.random()*H,r:Math.random()*240+140,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,hue:[200,250,275,190][i%4]});
@@ -79,7 +79,8 @@
     const o=d&&d.owner; if(!o)return;
     const nm=o.username||o.display||"Owner";
     $("name").textContent=nm; $("av").textContent=(nm[0]||"?").toUpperCase();
-    if(o.accent){$("av").style.background=o.accent;document.documentElement.style.setProperty("--accent",o.accent);}
+    // owner accent = FALLBACK only (pre-ui_prefs installs); the canonical store wins
+    if(o.accent&&!localStorage.getItem("gose-accent"))document.documentElement.style.setProperty("--accent",o.accent);
     if(o.has_pin&&!pinMode)enablePin();
     if(location.hash.indexOf("dbg")>=0)console.log("[lock] name="+nm+" pin="+!!o.has_pin+" accent="+(o.accent||""));
   }).catch(()=>{});

@@ -1140,9 +1140,10 @@ def net_info():
                 break
         tech = subprocess.run(["connmanctl", "technologies"], capture_output=True, text=True, timeout=10).stdout
         has_wifi = "wifi" in tech.lower()
-        return {"ok": True, "connection": conn, "type": typ, "online": online, "has_wifi": has_wifi}
+        return {"ok": True, "connection": conn, "type": typ, "online": online, "has_wifi": has_wifi,
+                "hostname": socket.gethostname()}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": str(e), "hostname": socket.gethostname()}
 
 def host_info():
     # real laptop battery + internet from the host bridge (QEMU gateway = host)
@@ -1363,6 +1364,75 @@ def sys_perf(mode):
             pass
     return {"ok": True, "mode": mode, "applied": n}   # applied=0 on a VM w/o cpufreq; UI keeps the pref
 
+# ---- Settings backends (task 14): SSH / display mode / vsync / timezone -----------------
+def sys_ssh(enabled=None):
+    # Real state = a running sshd/dropbear. Toggle = init script now + batocera.conf for
+    # the next boot. The Settings row arms a press-twice confirm before calling this with
+    # enabled=False (disabling cuts remote console access on purpose).
+    if enabled is not None:
+        on = bool(enabled)
+        try:
+            _bconf_set("system.ssh.enabled", "1" if on else "0")
+        except Exception as e:
+            LOG.warning("ssh conf write failed: %s", e)
+        try:
+            subprocess.run(["/bin/sh", "-c",
+                "for s in /etc/init.d/S50sshd /etc/init.d/S50dropbear; do [ -x \"$s\" ] && \"$s\" %s; done; true"
+                % ("start" if on else "stop")], capture_output=True, text=True, timeout=15)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        LOG.info("ssh %s (settings)", "enabled" if on else "DISABLED")
+    try:
+        r = subprocess.run(["/bin/sh", "-c",
+                            "pgrep -x sshd >/dev/null 2>&1 || pgrep -x dropbear >/dev/null 2>&1"],
+                           timeout=8)
+        running = (r.returncode == 0)
+    except Exception:
+        running = False
+    return {"ok": True, "enabled": running}
+
+def sys_display(mode=None):
+    # Real guest video mode via xrandr on :0 (virtio-vga). GET lists what the panel
+    # supports + which is live; POST switches. Bad/unsupported modes are refused.
+    if mode is not None:
+        if not re.match(r"^\d{3,4}x\d{3,4}$", str(mode)):
+            return {"ok": False, "error": "mode must look like 1920x1080"}
+        r = subprocess.run(["/bin/sh", "-c", "DISPLAY=:0 xrandr -s " + str(mode)],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode != 0:
+            return {"ok": False, "error": (r.stderr or "xrandr failed").strip()[:200]}
+        LOG.info("display mode set: %s", mode)
+    out = subprocess.run(["/bin/sh", "-c", "DISPLAY=:0 xrandr"],
+                         capture_output=True, text=True, timeout=10).stdout
+    cur, modes = None, []
+    for line in out.splitlines():
+        m = re.match(r"^\s+(\d{3,4}x\d{3,4})\s", line)
+        if m:
+            if m.group(1) not in modes:
+                modes.append(m.group(1))
+            if "*" in line:
+                cur = m.group(1)
+    return {"ok": True, "mode": cur, "modes": modes[:16]}
+
+def sys_vsync(on=None):
+    # RetroArch vsync via batocera.conf's raw-retroarch override key. RA's default is ON,
+    # so an absent key reads as on (explicit=False says we haven't pinned it).
+    if on is not None:
+        _bconf_set("global.retroarch.video_vsync", "true" if on else "false")
+        LOG.info("vsync set: %s", bool(on))
+    v = _bconf_get("global.retroarch.video_vsync")
+    return {"ok": True, "on": (v is None) or (v == "true"), "explicit": v is not None}
+
+def sys_timezone(tz=None):
+    # System timezone via batocera.conf (applied by Batocera at boot). The page clocks
+    # apply the same IANA id live via localStorage gose-tz; this makes the OS side match.
+    if tz is not None:
+        if not re.match(r"^[A-Za-z][\w+\-/]{1,48}$", str(tz)):
+            return {"ok": False, "error": "bad timezone id"}
+        _bconf_set("system.timezone", str(tz))
+        LOG.info("timezone set: %s", tz)
+    return {"ok": True, "timezone": _bconf_get("system.timezone")}
+
 # ---- Bluetooth (pairing UI lives in Settings → Network, next to Wi-Fi) ----
 def _bt(args, t=8):
     return subprocess.run(["bluetoothctl"] + args, capture_output=True, text=True, timeout=t).stdout
@@ -1451,6 +1521,10 @@ def ai_join(payload):
     name = payload.get("name")
     if not name:
         return {"ok": False, "error": "name required"}
+    # Settings > AI & Remote > "Remote agent control" — the global gate (default: enabled)
+    if _ui_prefs_load().get("gose-ai-remote") == "off":
+        LOG.info("AI join refused (remote agent control disabled in Settings): %s", name)
+        return {"ok": False, "error": "remote agent control is disabled in Settings > AI & Remote"}
     with _AI_LOCK:
         reg = _ai_load(); now = time.time()
         prev = reg.get(name, {})
@@ -1697,6 +1771,20 @@ def oobe_complete(payload):
                                    "device_name": (p.get("device_name") or "GOSE").strip()[:48],
                                    "locale": p.get("locale"), "keyboard": p.get("keyboard"),
                                    "timezone": p.get("timezone"), "theme": p.get("theme")})
+    # seed the CANONICAL UI-prefs store: the wizard's personalize step (theme + "your
+    # color" accent) must show OS-wide, on every page, surviving kiosk reloads
+    try:
+        seed = {}
+        if p.get("theme"):
+            seed["gose-theme"] = str(p["theme"])[:24]
+        if acct.get("accent"):
+            seed["gose-accent"] = str(acct["accent"])[:16]
+        if p.get("timezone"):
+            seed["gose-tz"] = str(p["timezone"])[:48]
+        if seed:
+            ui_prefs_set({"set": seed})
+    except Exception as e:
+        LOG.warning("oobe ui_prefs seed failed: %s", e)
     _apply_oobe_privacy(p.get("privacy") or {})
     # AI pairing — the step pairs each named agent live (so the token is shown once, at
     # pairing); completion re-issues every grant idempotently (pair keeps the stable token)
@@ -1744,9 +1832,127 @@ def oobe_reset(payload=None):
     LOG.info("OOBE reset: removed=%s", removed)
     return {"ok": True, "removed": removed, "note": "next boot will re-run the first-boot wizard"}
 
+# ---- UI prefs — the CANONICAL personalization store (Settings overhaul, task 14) --------
+# One server-side dict so theme/accent/etc survive kiosk reloads and EVERY page (incl.
+# lock) reads the same values: assets/a11y.js GETs /ui/prefs on each page load, mirrors
+# into localStorage (the per-page cache) and applies theme + accent live. Writers go
+# through GOSE.prefs.set() -> POST /ui/prefs. The OOBE personalize step seeds theme +
+# accent here at /oobe/complete, so the wizard's accent shows OS-wide (the acceptance
+# test for this store). Keys are exactly the localStorage names Settings owns.
+UI_PREFS_F = "/userdata/system/gose/ui_prefs.json"
+_PREFS_LOCK = threading.Lock()
+_PREF_KEY_RE = re.compile(
+    r"^gose-(theme|accent|wp|live|glow|tz|clockfmt|signin|input|platform|sounds|ai-remote|"
+    r"ui-scale|contrast|bold|cb|motion|opaque|focus|snd-quiet|"
+    r"snd-(?:vol|mute)-(?:system|notify|battery|ui))$")
+
+def _ui_prefs_load():
+    try:
+        d = json.load(open(UI_PREFS_F))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+def ui_prefs_get():
+    p = _ui_prefs_load()
+    # pre-store installs: derive theme/accent from the OOBE owner record so a wizard
+    # finished before this store existed still personalizes the whole OS
+    if "gose-accent" not in p or "gose-theme" not in p:
+        acc = _accounts_load()
+        owner = next((u for u in acc.get("users", []) if u.get("role") == "owner"), None)
+        if owner and owner.get("accent") and "gose-accent" not in p:
+            p["gose-accent"] = owner["accent"]
+        if acc.get("theme") and "gose-theme" not in p:
+            p["gose-theme"] = acc["theme"]
+    return {"ok": True, "prefs": p}
+
+def ui_prefs_set(payload):
+    if (payload or {}).get("reset"):
+        with _PREFS_LOCK:
+            try:
+                if os.path.exists(UI_PREFS_F):
+                    os.remove(UI_PREFS_F)
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
+        LOG.info("ui_prefs reset to defaults")
+        return {"ok": True, "prefs": {}}
+    m = (payload or {}).get("set")
+    if not isinstance(m, dict) or not m:
+        return {"ok": False, "error": "set must be a non-empty object"}
+    clean = {}
+    for k, v in m.items():
+        if not (isinstance(k, str) and _PREF_KEY_RE.match(k)):
+            return {"ok": False, "error": "unknown pref key: %r" % (k,)}
+        if v is None:
+            clean[k] = None
+            continue
+        v = str(v)
+        if len(v) > 64:
+            return {"ok": False, "error": "value too long for %s" % k}
+        clean[k] = v
+    with _PREFS_LOCK:
+        p = _ui_prefs_load()
+        for k, v in clean.items():
+            if v is None:
+                p.pop(k, None)
+            else:
+                p[k] = v
+        os.makedirs(os.path.dirname(UI_PREFS_F), exist_ok=True)
+        write_json_atomic(UI_PREFS_F, p)
+    LOG.info("ui_prefs set: %s", ", ".join("%s=%s" % kv for kv in sorted(clean.items())))
+    return {"ok": True, "prefs": p}
+
+# ---- Privacy controls (Settings > Privacy; opt-IN model per docs/24) --------------------
+# privacy.json records the choices; the ones with a real backend APPLY here too:
+#   * boxart_scrape  -> the SCRAPE_AUTO_FLAG that auto_scrape_boot actually reads
+#   * screen_capture -> "never" gates /capture/shot, /capture/clip and the clip buffer
+#     ("ask" behaves as "always" until an approval-prompt UI exists — labeled in the UI)
+#   * diagnostics    -> recorded only; GOSE sends nothing today (labeled in the UI)
+PRIVACY_F = "/userdata/system/gose/privacy.json"
+
+def _privacy_load():
+    try:
+        d = json.load(open(PRIVACY_F))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+def privacy_get():
+    p = _privacy_load()
+    p.setdefault("boxart_scrape", os.path.exists(SCRAPE_AUTO_FLAG))  # the flag is the truth
+    p.setdefault("screen_capture", "always")
+    p.setdefault("diagnostics", False)
+    return {"ok": True, "privacy": p}
+
+def privacy_set(payload):
+    payload = payload or {}
+    p = _privacy_load()
+    chg = {}
+    if "boxart_scrape" in payload:
+        p["boxart_scrape"] = chg["boxart_scrape"] = bool(payload["boxart_scrape"])
+        _apply_oobe_privacy({"boxart_scrape": p["boxart_scrape"]})   # writes/removes the real flag
+    if "screen_capture" in payload:
+        v = payload["screen_capture"]
+        if v not in ("ask", "always", "never"):
+            return {"ok": False, "error": "screen_capture must be ask|always|never"}
+        p["screen_capture"] = chg["screen_capture"] = v
+    if "diagnostics" in payload:
+        p["diagnostics"] = chg["diagnostics"] = bool(payload["diagnostics"])
+    if not chg:
+        return {"ok": False, "error": "nothing to set"}
+    os.makedirs(os.path.dirname(PRIVACY_F), exist_ok=True)
+    write_json_atomic(PRIVACY_F, p)
+    LOG.info("privacy set: %s", chg)
+    return {"ok": True, "privacy": p}
+
+def _capture_allowed():
+    return _privacy_load().get("screen_capture", "always") != "never"
+
 # ---- Screenshot (works anywhere, incl. GL games — frame comes from the host) ----
 def capture_shot(payload):
     import time as _t
+    if not _capture_allowed():
+        return {"ok": False, "error": "screen capture is set to Never in Settings > Privacy"}
     src = (payload or {}).get("source")
     os.makedirs("/userdata/home/Pictures", exist_ok=True)
     fn = "/userdata/home/Pictures/GOSE_%s.jpg" % _t.strftime("%Y%m%d_%H%M%S")
@@ -1768,6 +1974,8 @@ def capture_shot(payload):
 def capture_clip(seconds):
     # pull the last-N-seconds clip from the host's replay buffer → save into Videos
     import time as _t
+    if not _capture_allowed():
+        return {"ok": False, "error": "screen capture is set to Never in Settings > Privacy"}
     try:
         url = "http://10.0.2.2:8790/clip/save?seconds=%d" % int(seconds)
         with urllib.request.urlopen(url, timeout=45) as r:
@@ -3553,6 +3761,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(sys_perf_host())
         if route == "/sys/battery":
             return self._json(battery_info())
+        if route == "/sys/ssh":
+            return self._json(sys_ssh())
+        if route == "/sys/display":
+            return self._json(sys_display())
+        if route == "/sys/vsync":
+            return self._json(sys_vsync())
+        if route == "/sys/timezone":
+            return self._json(sys_timezone())
+        if route == "/ui/prefs":
+            return self._json(ui_prefs_get())
+        if route == "/privacy":
+            return self._json(privacy_get())
         if route == "/widgets/emulators":
             return self._json(widgets_emulators())
         if route == "/widgets/library":
@@ -3790,6 +4010,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/capture/shot":
                 return self._json(capture_shot(payload))
             if route == "/capture/buffer":
+                if payload.get("on") and not _capture_allowed():
+                    return self._json({"ok": False,
+                                       "error": "screen capture is set to Never in Settings > Privacy"})
                 return self._json(host_bridge("/clip/start" if payload.get("on") else "/clip/stop", {}))
             return self._json(capture_clip(payload.get("seconds", 30)))
         if route in ("/net/connect", "/net/disconnect"):
@@ -3801,6 +4024,24 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/net/connect":
                 return self._json(host_bridge("/wifi/connect", payload, timeout=30))
             return self._json(host_bridge("/wifi/disconnect", {}, timeout=20))
+        if route in ("/ui/prefs", "/privacy", "/sys/ssh", "/sys/display", "/sys/vsync",
+                     "/sys/timezone"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/ui/prefs":
+                return self._json(ui_prefs_set(payload))
+            if route == "/privacy":
+                return self._json(privacy_set(payload))
+            if route == "/sys/ssh":
+                return self._json(sys_ssh(payload.get("enabled")))
+            if route == "/sys/display":
+                return self._json(sys_display(payload.get("mode")))
+            if route == "/sys/vsync":
+                return self._json(sys_vsync(payload.get("on")))
+            return self._json(sys_timezone(payload.get("tz")))
         if route in ("/fs/op", "/proc/kill", "/splice/cut", "/launch",
                      "/sys/audio", "/sys/brightness", "/sys/power", "/sys/perf", "/bt"):
             try:
