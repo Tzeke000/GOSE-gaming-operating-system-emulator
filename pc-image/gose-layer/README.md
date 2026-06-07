@@ -8,6 +8,7 @@ and distro-agnostic (the same layer concept maps onto ROCKNIX on the device).
 |--------------|----------------------|---------|
 | `system/custom.sh` | `/userdata/system/custom.sh` | Autostart the GOSE agent (TCP 5555) at boot |
 | `system/batocera.conf.gose` | merged into `/userdata/system/batocera.conf` | Hostname, theme, splash, SSH, input defaults |
+| `system/configs/emulationstation/es_input.cfg` | `/userdata/system/configs/emulationstation/es_input.cfg` | Seed launcher pad config (known-good DualSense entry); further pads auto-register at `input.pt_open` |
 | `splash/gose-splash.png` | `/userdata/splash/` | Boot splash (the GOSE brand screen) |
 | `splash/gose-logo.png` | `/userdata/splash/` | Logo asset for the theme |
 | `themes/gose/` *(next)* | `/userdata/themes/gose/` | Windows-like EmulationStation theme |

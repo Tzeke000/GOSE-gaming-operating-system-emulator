@@ -6,11 +6,17 @@ so emulators see the AI as just another controller. Mock backend records events
 """
 from __future__ import annotations
 
+import logging
 import os
+import tempfile
+import threading
 import time
+import xml.etree.ElementTree as ET
 from typing import Dict, List
 
 from ..protocol import AgentError, ERR_ARGS, ERR_BACKEND
+
+log = logging.getLogger("gose.agent.input")
 
 # Standard pad vocabulary exposed over the protocol.
 BUTTONS = [
@@ -256,6 +262,136 @@ class EvdevPassthroughDevice:
             pass
 
 
+# ---------------------------------------------------------------------------
+# es_input.cfg auto-registration (launcher pairing for passthrough pads)
+#
+# Why: the game launcher's configgen refuses to launch when a player pad's SDL
+# GUID has no <inputConfig> entry — exit 250 "Could not find controller data
+# for GUID", hit on the first real DualSense launch (2026-06-07). Stock
+# Batocera only knows stock GUIDs; a passthrough pad carries the REAL pad's
+# vid/pid, so ANY brand the owner plugs in needs its entry added. pt_open does
+# it automatically: every passthrough uinput device exposes the byte-identical
+# standard capability set (EvdevPassthroughDevice above), so the binds below —
+# mirroring Batocera's "Microsoft Xbox 360 pad" entry — are correct for every
+# pt device regardless of brand.
+#
+# Safety (this file gates ALL pads' launches — corruption is the catastrophic
+# failure): parse + append via ElementTree preserving existing entries AND
+# comments; atomic tmp+rename write; absent file → create with wrapper;
+# malformed file → back it up loudly and recreate (never silently drop it);
+# a module lock serializes concurrent pt_opens (dispatch runs in a thread
+# pool); and a registration failure never blocks the pad itself.
+# ---------------------------------------------------------------------------
+ES_INPUT_CFG = "/userdata/system/configs/emulationstation/es_input.cfg"
+
+# Binds mirroring the stock "Microsoft Xbox 360 pad" entry (and the known-good
+# hand-written DualSense entry deployed 2026-06-07) — valid for every pt device
+# because they all expose the identical standard caps.
+_ES_BINDS = [
+    # (name, type, id, value, code)
+    ("a", "button", "1", "1", "305"),
+    ("b", "button", "0", "1", "304"),
+    ("down", "hat", "0", "4", "16"),
+    ("hotkey", "button", "8", "1", "316"),
+    ("joystick1left", "axis", "0", "-1", "0"),
+    ("joystick1up", "axis", "1", "-1", "1"),
+    ("joystick2left", "axis", "3", "-1", "3"),
+    ("joystick2up", "axis", "4", "-1", "4"),
+    ("l2", "axis", "2", "1", "2"),
+    ("l3", "button", "9", "1", "317"),
+    ("left", "hat", "0", "8", "16"),
+    ("pagedown", "button", "5", "1", "311"),
+    ("pageup", "button", "4", "1", "310"),
+    ("r2", "axis", "5", "1", "5"),
+    ("r3", "button", "10", "1", "318"),
+    ("right", "hat", "0", "2", "16"),
+    ("select", "button", "6", "1", "314"),
+    ("start", "button", "7", "1", "315"),
+    ("up", "hat", "0", "1", "16"),
+    ("x", "button", "3", "1", "308"),
+    ("y", "button", "2", "1", "307"),
+]
+
+_es_lock = threading.Lock()
+
+
+def sdl_guid(bustype: int, vendor: int, product: int, version: int) -> str:
+    """SDL2 joystick GUID from the kernel ids — the exact formula the launcher's
+    configgen uses (and gose_vm_server._sdl_guid): LE u16 fields, zero crc/driver."""
+    def le(v):
+        return "%02x%02x" % (v & 0xFF, (v >> 8) & 0xFF)
+    return (le(bustype) + "0000" + le(vendor) + "0000"
+            + le(product) + "0000" + le(version) + "0000")
+
+
+def _es_entry(name: str, guid: str) -> ET.Element:
+    e = ET.Element("inputConfig",
+                   {"type": "joystick", "deviceName": name, "deviceGUID": guid})
+    for n, t, i, v, c in _ES_BINDS:
+        ET.SubElement(e, "input",
+                      {"name": n, "type": t, "id": i, "value": v, "code": c})
+    return e
+
+
+def _es_write_atomic(path: str, root: ET.Element) -> None:
+    """Serialize + atomically replace: a crash mid-write can never leave the
+    launcher a truncated cfg (which would break EVERY pad's launches)."""
+    tree = ET.ElementTree(root)
+    ET.indent(tree, space="\t")
+    d = os.path.dirname(path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".es_input.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            tree.write(fh, encoding="utf-8", xml_declaration=True)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def ensure_es_input_entry(name: str, vendor: int, product: int, version: int,
+                          bustype: int, path: str = ES_INPUT_CFG) -> Dict:
+    """Idempotently ensure es_input.cfg has an <inputConfig> for this device's
+    GUID. Additive: existing entries (incl. hand-written ones) and comments are
+    preserved; idempotency keys on deviceGUID, so a pre-existing entry for the
+    same pad (whatever its deviceName) is left alone."""
+    guid = sdl_guid(bustype, vendor, product, version)
+    with _es_lock:
+        root = None
+        if os.path.exists(path):
+            try:
+                # insert_comments keeps the file's comments through the rewrite.
+                parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
+                root = ET.parse(path, parser=parser).getroot()
+                if root.tag != "inputList":
+                    raise ValueError("root tag %r, expected 'inputList'" % root.tag)
+            except Exception as exc:
+                bak = path + ".bad-" + time.strftime("%Y%m%d-%H%M%S")
+                try:
+                    os.replace(path, bak)
+                except OSError:
+                    bak = "(could not move aside)"
+                log.error("es_input.cfg unreadable (%s) — backed up to %s, "
+                          "recreating with the passthrough entry only; rerun the "
+                          "launcher's controller config for other pads", exc, bak)
+                root = None
+        if root is None:
+            root = ET.Element("inputList")
+        for ic in root.iter("inputConfig"):
+            if ic.get("deviceGUID") == guid:
+                return {"es_input": "present", "guid": guid}
+        root.append(_es_entry(name, guid))
+        _es_write_atomic(path, root)
+        log.info("es_input.cfg: registered '%s' (GUID %s) for the launcher", name, guid)
+        return {"es_input": "added", "guid": guid}
+
+
 class PassthroughManager:
     """pt_open/pt_event/pt_close: one uinput mirror per physical host pad."""
     MAX = 4
@@ -292,16 +428,31 @@ class PassthroughManager:
         if len(self._devices) >= self.MAX:
             raise AgentError(ERR_ARGS, f"max {self.MAX} passthrough pads already open")
         name = str(args.get("name") or "Passthrough controller")[:80]
-        dev = self._make(name,
-                         self._id16(args, "vendor"),
-                         self._id16(args, "product"),
-                         self._id16(args, "version", 0),
-                         self._id16(args, "bustype", 3))   # default BUS_USB
+        vendor = self._id16(args, "vendor")
+        product = self._id16(args, "product")
+        version = self._id16(args, "version", 0)
+        bustype = self._id16(args, "bustype", 3)           # default BUS_USB
+        dev = self._make(name, vendor, product, version, bustype)
         pt_id = self._next_id
         self._next_id += 1
         self._devices[pt_id] = dev
+        # Auto-register the pad with the launcher (see the es_input block above):
+        # without an <inputConfig> for its GUID, game launches exit 250. Only on
+        # the real backend (mock = CI/dev box, no /userdata) unless a test points
+        # GOSE_ES_INPUT_CFG somewhere. A failure here must never block the pad —
+        # already-registered pads keep working; we log and report instead.
+        es = "skipped"
+        try:
+            if dev.backend == "evdev" or "GOSE_ES_INPUT_CFG" in os.environ:
+                cfg = os.environ.get("GOSE_ES_INPUT_CFG", ES_INPUT_CFG)
+                es = ensure_es_input_entry(name, vendor, product, version,
+                                           bustype, cfg)["es_input"]
+        except Exception as exc:
+            log.error("es_input auto-register failed for '%s': %s", name, exc)
+            es = "error: %s" % exc
         return {"pt_id": pt_id, "name": name, "phys": PT_PHYS,
-                "backend": dev.backend, "open": sorted(self._devices)}
+                "backend": dev.backend, "es_input": es,
+                "open": sorted(self._devices)}
 
     def _dev(self, pt_id):
         try:
