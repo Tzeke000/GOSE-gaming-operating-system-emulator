@@ -31,13 +31,19 @@
     border-radius:12px;padding:12px 18px;font-weight:600;font-size:14px;cursor:pointer;white-space:nowrap}
   .scan.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
   .scan.busy{opacity:.6}
+  .note{display:flex;gap:9px;align-items:center;margin:2px 36px 0;background:var(--surface);
+    border:1px solid var(--line);border-radius:11px;padding:9px 14px;color:var(--muted);font-size:12.5px}
+  .note b{color:var(--text)}.note .ic{color:#ffd479;font-size:16px;flex:none}
   .wrap{flex:1;margin:10px 36px 0;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:auto;min-height:0}
   .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:12px 16px 4px}
   .dev{display:flex;align-items:center;gap:13px;padding:11px 16px;border:2px solid transparent;cursor:pointer}
   .dev.focus{border-color:var(--accent);background:#5cd0ff14}
   .dev .ic{font-size:19px;color:#9fb8e8;flex:none}
+  .dev.ctrl .ic{color:#ffd479}
   .dev .nm{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .dev .st{color:var(--muted);font-size:12px}.dev .st.cn{color:#3fe0a0}
+  .dev .col{flex:1;min-width:0}.dev .col .nm{flex:none}
+  .dev .sub{color:var(--muted);font-size:11.5px;margin-top:1px;line-height:1.35}
+  .dev .st{color:var(--muted);font-size:12px;flex:none}.dev .st.cn{color:#3fe0a0}.dev .st.host{color:#ffd479}
   .empty{color:var(--muted);padding:34px;text-align:center}
   .foot{margin:10px 36px 14px;display:flex;gap:10px;color:var(--muted);font-size:12px;
     background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
@@ -57,8 +63,10 @@
       <div class="tog" id="tog"><i></i></div></div>
     <div class="scan" id="scan"><span class="ic" data-i="search"></span><span id="scan-t">Scan</span></div>
   </div>
+  <div class="note" id="vmnote" hidden><span class="ic" data-i="gamepad-2"></span>
+    <span><b>Game controllers pair with your computer</b> (Settings &rsaquo; Bluetooth on the host) — GOSE picks them up instantly. Audio &amp; other accessories pair here.</span></div>
   <div class="wrap" id="wrap"><div class="empty">Loading…</div></div>
-  <div class="foot"><span class="ic" data-i="bluetooth"></span> Pair controllers, headsets &amp; accessories
+  <div class="foot"><span class="ic" data-i="bluetooth"></span> <span id="foot-t">Pair controllers, headsets &amp; accessories</span>
     <span class="h"><b>↑↓</b> move · <b>Enter/A</b> connect/pair · <b>X</b> forget · <b>Esc</b> back</span></div>
   <div class="toast" id="toast"></div>
 <script src="assets/cursor.js"></script>
@@ -66,27 +74,72 @@
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const $=id=>document.getElementById(id);
   const GICON={audio:"volume-2",input:"gamepad-2",other:"bluetooth"};
-  let state={adapter:false,powered:false,devices:[]}, foc=0, busy=false;
+  let state={adapter:false,powered:false,devices:[]}, foc=0, busy=false, vmHost=false;
+  // VM edition vs native hardware: reuse the server's existing host-bridge signal
+  // (GET /health -> host_bridge: is 10.0.2.2:8790 reachable). On the Odin 2 / real
+  // hardware there is no host bridge -> vmHost stays false and this page behaves
+  // exactly as before (controllers pair locally, as they should on native).
+  // On the VM, controllers must NOT pair into the in-guest usb-redir radio (4-7s
+  // input lag) — they pair with the HOST and arrive via the input passthrough
+  // (pad_passthrough.py) instantly. The guest radio stays for non-input devices.
+  function detectVM(){fetch("/health",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    vmHost=!!(d&&d.host_bridge);
+    $("vmnote").hidden=!vmHost;
+    $("foot-t").textContent=vmHost?"Controllers pair on the host — headsets & accessories pair here"
+                                  :"Pair controllers, headsets & accessories";
+    render();
+  }).catch(()=>{});} // unreachable -> treat as native; nothing blocked
+  // Controller classification (client-side, honest limits): BlueZ's appliance class
+  // (Icon: input-gamepad / input-joystick) is used IF the server forwards it; the
+  // fallback is well-known controller names only. Anything unknown / missing fields
+  // stays a normal pairable device — we never block an unidentified accessory.
+  const CTRL_RE=/dualsense|dualshock|\bds[345]\b|joy-?con\b|pro controller|wireless controller|x-?box|8bitdo|stadia|steam controller|game\s?pad|gamesir|nimbus|kishi|nacon|joystick/i;
+  function isCtrl(d){
+    if(!d)return false;
+    const ic=String(d.icon||"").toLowerCase();
+    if(ic==="input-gamepad"||ic==="input-joystick")return true;
+    return CTRL_RE.test(d.name||"");
+  }
+  const routed=d=>vmHost&&isCtrl(d);   // route-to-host only applies on the VM edition
+  // drive-only stub (?btstub=ctrl): verify the controller-card branch when no real
+  // controller shows in a live scan. Gated behind the query param; never in normal use.
+  const STUB=new URLSearchParams(location.search).get("btstub")==="ctrl";
+  function stubify(){if(STUB&&!state.devices.some(x=>x.mac==="AA:AA:AA:AA:AA:AA"))
+    state.devices.push({mac:"AA:AA:AA:AA:AA:AA",name:"DualSense Wireless Controller (drive stub)",kind:"input",paired:false,connected:false});}
+  const HOST_HINT="Game controller — pair it with your computer instead (Settings › Bluetooth on the host); GOSE sees it instantly through the controller passthrough.";
+  function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
   // focus model: index 0 = power toggle, 1 = scan, 2.. = devices
   function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1900);}
   function nItems(){return 2+state.devices.length;}
   function render(){
+    if(foc>=nItems())foc=nItems()-1; if(foc<0)foc=0;   // device list can shrink (forget)
     $("tog").className="tog"+(state.powered?" on":"");
     $("pwr-sub").textContent = !state.adapter ? "No adapter on this device" : (state.powered?"On — discoverable":"Off");
     $("pwr").className="pwr"+(foc===0?" focus":"");
     $("scan").className="scan"+(foc===1?" focus":"")+(busy?" busy":"");
     $("scan-t").textContent=busy?"Scanning…":"Scan";
     if(!state.adapter){
-      $("wrap").innerHTML='<div class="empty">No Bluetooth adapter detected.<br><span style="font-size:12px">This VM has no Bluetooth radio — pairing will work on the Odin 2 / real hardware. The controls above are live and ready.</span></div>';
+      $("wrap").innerHTML='<div class="empty">'+(vmHost
+        ?'No Bluetooth radio inside GOSE right now.<br><span style="font-size:12px">Controllers don\'t need it — pair them with your computer (Settings › Bluetooth on the host) and GOSE picks them up instantly. For headsets &amp; other accessories, pass the Bluetooth radio through on the Peripherals page.</span>'
+        :'No Bluetooth adapter detected.<br><span style="font-size:12px">Pairing will work on the Odin 2 / real hardware. The controls above are live and ready.</span>')+'</div>';
       paint(); return;
     }
     const ds=state.devices;
     $("wrap").innerHTML='<div class="ph">DEVICES</div>'+(ds.length?ds.map((d,i)=>{
+      if(routed(d)){
+        const st=d.connected?'<span class="st">Connected — guest radio (laggy)</span>'
+                :(d.paired?'<span class="st">Paired — guest radio (laggy)</span>'
+                :'<span class="st host">Pair on host</span>');
+        return `<div class="dev ctrl ${foc===i+2?'focus':''}" data-i2="${i+2}"><span class="ic" data-i="gamepad-2"></span>
+          <div class="col"><div class="nm">${esc(d.name)}</div><div class="sub">${HOST_HINT}</div></div>${st}</div>`;
+      }
       const st=d.connected?'<span class="st cn">Connected</span>':(d.paired?'<span class="st">Paired</span>':'<span class="st">Available</span>');
       return `<div class="dev ${foc===i+2?'focus':''}" data-i2="${i+2}"><span class="ic" data-i="${GICON[d.kind]||'bluetooth'}"></span>
-        <span class="nm">${d.name}</span>${st}</div>`;
-    }).join(""):'<div class="empty">No devices yet — press Scan with a controller/headset in pairing mode.</div>');
+        <span class="nm">${esc(d.name)}</span>${st}</div>`;
+    }).join(""):'<div class="empty">'+(vmHost
+      ?'No devices yet — press Scan with a headset or accessory in pairing mode.<br><span style="font-size:12px">Controllers don\'t pair here — pair them with your computer and GOSE picks them up instantly.</span>'
+      :'No devices yet — press Scan with a controller/headset in pairing mode.')+'</div>');
     [...$("wrap").querySelectorAll(".dev")].forEach(el=>{el.onclick=()=>{foc=+el.dataset.i2;render();act();};});
     $("pwr").onclick=()=>{foc=0;render();togglePwr();};
     $("scan").onclick=()=>{foc=1;render();scan();};
@@ -94,11 +147,11 @@
     paint();
   }
   function load(){fetch("/bt/status",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-    if(d&&d.ok){state=d;} render();
+    if(d&&d.ok){state=d;stubify();} render();
   }).catch(e=>say("Bluetooth offline"));}
   function post(body,after){busy=true;render();
     fetch("/bt",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
-      .then(r=>r.json()).then(d=>{busy=false;if(d&&d.ok&&d.devices!==undefined){state=d;}render();after&&after(d);})
+      .then(r=>r.json()).then(d=>{busy=false;if(d&&d.ok&&d.devices!==undefined){state=d;stubify();}render();after&&after(d);})
       .catch(e=>{busy=false;render();say("Action failed");});}
   function togglePwr(){if(!state.adapter){say("No Bluetooth adapter");return;}
     post({action:"power",on:!state.powered},()=>say("Bluetooth "+(state.powered?"on":"off")));}
@@ -106,6 +159,12 @@
     if(!state.powered){say("Turn Bluetooth on first");return;}
     say("Scanning for 8s…");post({action:"scan"},()=>say("Scan complete"));}
   function act(){const d=state.devices[foc-2];if(!d)return;
+    if(routed(d)){
+      // never pair/connect a controller into the laggy guest radio; disconnect is
+      // allowed so an old guest pairing can be freed for host pairing. X still forgets.
+      if(d.connected)post({action:"disconnect",mac:d.mac},()=>say("Disconnected "+d.name+" — now pair it with your computer for instant input"));
+      else say("Controllers pair with your computer (host Settings › Bluetooth) — GOSE picks them up instantly.");
+      return;}
     if(d.connected)post({action:"disconnect",mac:d.mac},()=>say("Disconnected "+d.name));
     else if(d.paired)post({action:"connect",mac:d.mac},()=>say("Connecting "+d.name+"…"));
     else post({action:"pair",mac:d.mac},()=>say("Pairing "+d.name+"…"));}
@@ -120,7 +179,7 @@
     else return;e.preventDefault();});
   // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
   // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
-  paint();load();
+  paint();detectVM();load();
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>
