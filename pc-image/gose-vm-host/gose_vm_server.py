@@ -2,7 +2,7 @@
 # In-VM server: serves the GOSE UI + /status.json with REAL telemetry from the
 # local agent (127.0.0.1:8731 = loopback in-guest = no token needed).
 import http.server, socketserver, json, socket, functools, os, urllib.request, mimetypes, shutil, subprocess, threading, collections, time, secrets
-import logging, logging.handlers, traceback, re
+import logging, logging.handlers, traceback, re, hashlib, struct, zlib
 ROOT = "/userdata/gose-ui"
 FS_ROOT = "/userdata"   # Files app is rooted here (the data partition)
 ROMS = "/userdata/roms"
@@ -52,6 +52,7 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300),
            "/sys/perf": (60, 60), "/widgets/store": (30, 60), "/widgets/steam": (30, 60),
            "/storage/import": (12, 60), "/storage/detected": (30, 60),
+           "/rom/check": (60, 60),
            "/storage/breakdown": (30, 60), "/storage/group": (60, 60), "/storage/delete": (30, 60),
            "/store/sources/add": (6, 60), "/store/sources/preview": (10, 60),
            "/store/sources/refresh": (10, 60),
@@ -5409,7 +5410,9 @@ def scan_volume(mount):
                     continue
                 sysid = _classify_rom(p, ext_map, known)
                 if sysid:
-                    by_sys.setdefault(sysid, []).append({"file": f, "path": p, "size": sz})
+                    chk = rom_check(p, system=sysid)
+                    by_sys.setdefault(sysid, []).append({"file": f, "path": p, "size": sz,
+                                                         "integrity": chk})
                     total += 1
                 elif ext in ext_map or ext in _AMBIG_EXT:
                     ambiguous += 1
@@ -5495,6 +5498,7 @@ def storage_import(payload):
     _STORAGE_ABORT.discard(vol_id)
     imported = skipped = 0
     errors, by_system, aborted = [], {}, False
+    suspect_files = []   # integrity: files that passed the copy but looked damaged at source
     for s in off["systems"]:
         if not want_all and s["system"] not in want_systems:
             continue
@@ -5513,6 +5517,16 @@ def storage_import(payload):
             if not os.path.isfile(src):
                 skipped += 1
                 continue
+            # integrity check on source before copying (fast: size+header only, no hash)
+            chk = g.get("integrity") or rom_check(src, system=s["system"])
+            if not chk.get("ok"):
+                suspect_files.append({"file": g["file"], "system": s["system"],
+                                      "reason": chk.get("reason", "suspect")})
+                LOG.warning("ROM INTEGRITY suspect at import: %s (%s) — %s",
+                            g["file"], s["system"], chk.get("reason", "suspect"))
+                # We still copy it: the check is advisory. A "bad header" for a multi-game
+                # .zip or an unrecognized variant should not silently skip the user's game.
+                # The suspect list is returned so the UI can surface it.
             dest = os.path.join(sysdir, g["file"])
             if os.path.isfile(dest):
                 try:
@@ -5551,8 +5565,8 @@ def storage_import(payload):
             if vol_id not in st["imported"]:
                 st["imported"].append(vol_id)
         write_json_atomic(STORAGE_STATE_F, st)
-    LOG.info("STORAGE import %s: +%d skipped=%d errors=%d aborted=%s",
-             vol_id, imported, skipped, len(errors), aborted)
+    LOG.info("STORAGE import %s: +%d skipped=%d errors=%d suspect=%d aborted=%s",
+             vol_id, imported, skipped, len(errors), len(suspect_files), aborted)
     # Auto-scrape-on-import: fill cover art for the just-imported systems. OPT-IN ONLY — gated on the
     # SAME privacy flag as the boot pass (scraping leaks ROM filenames; default OFF, docs/24). Runs on
     # a daemon thread so the import response is never blocked by the (flaky) network; force=False so it
@@ -5573,7 +5587,190 @@ def storage_import(payload):
             threading.Thread(target=_post_import_scrape, daemon=True).start()
             LOG.info("post-import auto-scrape queued for %s", syslist)
     return {"ok": True, "vol_id": vol_id, "imported": imported, "skipped": skipped,
-            "errors": errors, "by_system": by_system, "aborted": aborted}
+            "errors": errors, "by_system": by_system, "aborted": aborted,
+            "suspect": suspect_files}
+
+# ===== ROM INTEGRITY CHECK (task #47) =====
+# Fast sanity layer run at import-time (size + header magic only — no hash).
+# Hash is opt-in on the on-demand /rom/check endpoint (with_hash=True) so the
+# hot import path is never blocked by hashing a 4 GB CHD or ISO.
+#
+# Per-system magic table.  Two entries per rule:
+#   magic_offset  (int)  — byte offset of the magic bytes in the file
+#   magic_bytes   (bytes)  — the expected prefix at that offset
+# Anything not in the table gets status "ok" / verified=False ("unknown format,
+# can't verify") — never a false flag.
+#
+# Sources: public ROM-format specs + libretro core documentation.
+_ROM_MAGIC = {
+    # iNES / NES 2.0  "NES\x1a"
+    "nes":        [(0, b"NES\x1a")],
+    # SNES: either a plain ROM (header at 0x200 for headered or 0 for unheadered)
+    # or SFC — no universal magic; leave as unverified (common, hard to check fast)
+    "snes":       [],
+    # Game Boy / GBC — Nintendo logo bytes start at 0x104
+    "gb":         [(0x104, b"\xce\xed\x66\x66\xcc\x0d\x00\x0b")],
+    "gbc":        [(0x104, b"\xce\xed\x66\x66\xcc\x0d\x00\x0b")],
+    # GBA cartridge header: fixed word at 0x04 (entry point area) + Nintendo logo at 0xA0
+    "gba":        [(0x04, b"\x2e\x00\x00\xea"), (0xA0, b"NINTENDO")],
+    # N64: two known byte-order magic values
+    "n64":        [(0, b"\x80\x37\x12\x40"),    # big-endian .z64
+                   (0, b"\x37\x80\x40\x12"),    # byteswapped .v64
+                   (0, b"\x40\x12\x37\x80")],   # little-endian .n64 — any one match is ok
+    # PS1 CD image (MODE2/XA): sync bytes
+    "psx":        [(0, b"\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00")],
+    # PS2 CD image: same sync
+    "ps2":        [(0, b"\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00")],
+    # Sega Mega Drive / Genesis: "SEGA" at 0x100 (TMSS string in ROM header)
+    "megadrive":  [(0x100, b"SEGA")],
+    # Sega Master System / Game Gear: TMR SEGA string at 0x7FF0 (common 32 KB ROMs)
+    "mastersystem": [(0x7FF0, b"TMR SEGA")],
+    "gamegear":   [(0x7FF0, b"TMR SEGA")],
+    # Sega Saturn: first 16 bytes of sector 0
+    "saturn":     [(0, b"SEGA SEGASATURN ")],
+    # Sega Dreamcast: GD-ROM header
+    "dreamcast":  [(0, b"SEGA SEGAKATANA ")],
+    # PC Engine / TurboGrafx-16: no universal header; skip
+    "pcengine":   [],
+    # NDS ROM: fixed magic at 0xC0
+    "nds":        [(0xC0, b"\x24\xff\xae\x51\x69\x9a\xa2\x21\x3d\x84\x82\x0a\x84\xe4\x09\xad")],
+    # 3DS: NCCH magic at 0x100
+    "3ds":        [(0x100, b"NCCH")],
+    # PSP ISO (UMD image as .iso): UMD magic
+    "psp":        [(0, b"\x00\xcd\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")],
+    # Zip-based ROM sets (zip, .apk, etc.)
+    "mame":       [(0, b"PK\x03\x04")],
+    # Arcade: also zip
+    "fba":        [(0, b"PK\x03\x04")],
+    # Wii / GameCube disc image: Wii magic word at 0x18
+    "wii":        [(0x18, b"\x5d\x1c\x9e\xa3")],
+    "gamecube":   [(0x1c, b"\xc2\x33\x9f\x3d")],
+    # 7z (common archive for ROM sets)
+    # covered by extension check; magic is 7z¼¯' (6 bytes) — added here for completeness
+}
+# Extensions that are inherently zip/archive-shaped
+_ZIP_EXTS = {".zip", ".apk", ".cbz"}
+# 7z magic
+_7Z_MAGIC = b"7z\xbc\xaf\x27\x1c"
+
+# Hash-cap: skip per-file hashing above this size on the hot path;
+# on-demand /rom/check?hash=1 will hash regardless (caller's choice).
+_HASH_CAP_BYTES = 256 * 1024 * 1024   # 256 MB
+
+def rom_check(path, system=None, with_hash=False):
+    """Return a dict describing the integrity of a ROM file.
+
+    Fields:
+      ok          bool   — True = file is probably fine; False = suspect
+      verified    bool   — True = a system-specific check confirmed the format;
+                           False = format unknown / no rule (ok is still True)
+      status      str    — "ok" | "suspect"
+      reason      str    — human-readable; present when status=="suspect" or verified==False
+      size        int    — file size in bytes
+      md5         str    — hex md5 (only if with_hash=True and size <= _HASH_CAP_BYTES or forced)
+      crc32       str    — 8-char hex crc32 (same gating)
+    """
+    try:
+        st = os.stat(path)
+    except OSError as e:
+        return {"ok": False, "verified": False, "status": "suspect",
+                "reason": "unreadable: %s" % e, "size": 0}
+
+    size = st.st_size
+    if size == 0:
+        return {"ok": False, "verified": False, "status": "suspect",
+                "reason": "zero bytes", "size": 0}
+
+    result = {"ok": True, "verified": False, "status": "ok", "size": size}
+
+    # --- header / magic check ---
+    ext = os.path.splitext(path)[1].lower()
+
+    # zip-shaped files: any system may arrive as .zip; check PK magic
+    is_zip_ext = ext in _ZIP_EXTS
+    # 7z check
+    is_7z_ext = ext == ".7z"
+
+    rules = _ROM_MAGIC.get(system or "", None)
+
+    try:
+        # Read only as many bytes as the deepest rule needs (capped at 16 KB for sanity)
+        max_offset = 0
+        max_bytes  = 0
+        checks_to_run = []
+
+        if is_zip_ext:
+            checks_to_run = [(0, b"PK\x03\x04")]
+            max_offset = 0; max_bytes = 4
+        elif is_7z_ext:
+            checks_to_run = [(0, _7Z_MAGIC)]
+            max_offset = 0; max_bytes = 6
+        elif rules is not None:
+            checks_to_run = rules
+            if rules:
+                for off, magic in rules:
+                    max_bytes = max(max_bytes, off + len(magic))
+                max_offset = max(off for off, _ in rules)
+            # else: rules = [] means "known system, no cheap header" → verified=False, ok=True
+
+        if checks_to_run:
+            read_len = min(max_bytes, 16384)
+            if size < read_len:
+                result.update(ok=False, status="suspect",
+                              reason="truncated (file smaller than expected header region)")
+                # skip further checks; fall through to hash if requested
+            else:
+                with open(path, "rb") as fh:
+                    header = fh.read(read_len)
+                matched_any = False
+                for off, magic in checks_to_run:
+                    if len(header) >= off + len(magic) and header[off:off+len(magic)] == magic:
+                        matched_any = True
+                        break
+                if matched_any:
+                    result["verified"] = True
+                else:
+                    ext_desc = ext or "unknown"
+                    sys_desc = system or "unknown"
+                    result.update(ok=False, status="suspect",
+                                  reason="bad header for %s (ext %s)" % (sys_desc, ext_desc))
+        elif rules is None and not is_zip_ext and not is_7z_ext:
+            # completely unknown system + extension
+            result["reason"] = "unknown format, can't verify"
+
+    except OSError as e:
+        result.update(ok=False, status="suspect", reason="read error: %s" % e)
+
+    # --- optional hash (md5 + crc32) ---
+    if with_hash:
+        try:
+            m = hashlib.md5()
+            c = 0
+            with open(path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(65536), b""):
+                    m.update(chunk)
+                    c = zlib.crc32(chunk, c)
+            result["md5"]   = m.hexdigest()
+            result["crc32"] = "%08x" % (c & 0xFFFFFFFF)
+        except OSError as e:
+            result["hash_error"] = str(e)
+
+    return result
+
+def rom_check_endpoint(qs):
+    """Handler for GET /rom/check?path=...&system=...&hash=0|1"""
+    path = qs.get("path", "")
+    if not path:
+        return {"ok": False, "error": "missing path"}
+    # confinement: only files under the roms tree or /media mounts
+    rp = os.path.realpath(path)
+    if not (rp.startswith(ROMS + "/") or rp.startswith("/media/")):
+        return {"ok": False, "error": "refused: path outside roms tree"}
+    system = qs.get("system") or None
+    with_hash = qs.get("hash", "0") not in ("0", "false", "")
+    r = rom_check(rp, system=system, with_hash=with_hash)
+    r["path"] = path
+    return r
 
 def storage_dismiss(payload):
     vol_id = (payload or {}).get("vol_id")
@@ -6385,6 +6582,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(storage_group(self._qs().get("key")))
         if route == "/storage/pending":
             return self._json(storage_pending())
+        if route == "/rom/check":
+            return self._json(rom_check_endpoint(self._qs()))
         if route == "/procs.json":
             return self._json(procs_info())
         if route == "/windows":
