@@ -2216,6 +2216,151 @@ def security_ssh(payload):
     LOG.info("ssh DISABLED by owner%s", " (dryrun)" if _SSH_DRYRUN else "")
     return {"ok": True, "enabled": enabled}
 
+# ---- Security: Samba / network share (docs/31 SB-2, Task #39) -------------------------
+# SMB OFF by default (ship blocker SB-2): on real Wi-Fi, smbd exposes /userdata
+# (ROMs, saves, configs) to anyone on the network, guest-accessible, with no password.
+# The shipped batocera.conf.gose sets system.samba.enabled=0. This feature surfaces
+# the current state and gives the owner an explicit opt-in toggle.
+#
+# SECURITY CONTRACT (docs/31):
+#   - The shipped default is OFF; this endpoint never auto-enables.
+#   - Enabling is a plain informed action — no owner-gate needed because SMB on LAN is
+#     less severe than remote root SSH, but we surface an honest exposure warning so the
+#     owner understands what they're turning on.
+#   - The dev VM runs under SLIRP (guest 10.0.2.15, no real LAN route in or out) so
+#     the share is not actually reachable from outside even when enabled here. That fact
+#     is reported in the state so the UI can be honest about it.
+#   - Disabling kills smbd/nmbd now and sets system.samba.enabled=0 in batocera.conf
+#     so it stays off after reboot.
+#   - Enabling sets system.samba.enabled=1 and starts smbd/nmbd.
+#
+# Batocera's smb.conf exposes one share: [share] -> /userdata (writeable, guest ok).
+# The share name and paths come from the live smb.conf so we're not inventing them.
+#
+# Schema (GET /security/smb):
+#   {ok, enabled, host, ip, share_path, share_name, unc,
+#    shares:[{name,path,writeable}], slirp_vm:bool, exposure_warning:str}
+# Schema (POST /security/smb {action:"enable"|"disable"}):
+#   {ok, enabled, [error]}
+
+def _smb_shares():
+    """Read shares from the live smb.conf (whichever the init script uses).
+    Returns a list of {name,path,writeable} skipping [global]/[homes]/[nobody]/[printers]."""
+    _SKIP = {"global", "homes", "nobody", "printers", "print$"}
+    shares = []
+    conf = "/etc/samba/smb-secure.conf" if os.path.isfile("/etc/samba/smb-secure.conf") else "/etc/samba/smb.conf"
+    try:
+        cur = None
+        for raw in open(conf):
+            line = raw.strip()
+            if line.startswith("[") and line.endswith("]"):
+                cur = line[1:-1].lower()
+            elif cur and cur not in _SKIP:
+                if line.lower().startswith("path"):
+                    path = line.split("=", 1)[-1].strip()
+                    # ensure we have an entry for this share name
+                    entry = next((s for s in shares if s["name"] == cur), None)
+                    if entry is None:
+                        entry = {"name": cur, "path": path, "writeable": False}
+                        shares.append(entry)
+                    else:
+                        entry["path"] = path
+                elif line.lower().replace(" ", "").startswith("writeable=") or \
+                     line.lower().replace(" ", "").startswith("writable="):
+                    val = line.split("=", 1)[-1].strip().lower()
+                    entry = next((s for s in shares if s["name"] == cur), None)
+                    if entry is None:
+                        entry = {"name": cur, "path": "", "writeable": False}
+                        shares.append(entry)
+                    entry["writeable"] = val in ("yes", "true", "1")
+    except Exception:
+        pass
+    return [s for s in shares if s.get("path")]
+
+def _smb_enabled():
+    """True if smbd is actually running right now."""
+    try:
+        r = subprocess.run(["/bin/sh", "-c",
+                            "pgrep -x smbd >/dev/null 2>&1"],
+                           timeout=6)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+def _is_slirp_vm():
+    """True when we're running under QEMU SLIRP (guest has 10.0.2.x — not a real LAN)."""
+    try:
+        out = subprocess.run(["/bin/sh", "-c", "ip route show default"],
+                             capture_output=True, text=True, timeout=5).stdout
+        return "10.0.2.2" in out
+    except Exception:
+        return False
+
+_SMB_EXPOSURE_WARNING = (
+    "Enabling file sharing exposes /userdata (ROMs, saves, configs) to every device "
+    "on your local network with no password. Only enable this on a network you trust."
+)
+
+def security_smb_state():
+    enabled = _smb_enabled()
+    shares = _smb_shares()
+    hostname = socket.gethostname()
+    # Best routable IP for the UNC path hint (pick first non-loopback IPv4)
+    ip = ""
+    try:
+        out = subprocess.run(["/bin/sh", "-c", "ip -4 addr show | grep 'inet ' | grep -v '127\\.0\\.0\\.1'"],
+                             capture_output=True, text=True, timeout=5).stdout
+        for l in out.splitlines():
+            m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)/", l)
+            if m:
+                ip = m.group(1); break
+    except Exception:
+        pass
+    # Primary share for the UNC hint (prefer "share" or "roms", else first)
+    primary = next((s for s in shares if s["name"] in ("share", "roms")), shares[0] if shares else None)
+    share_name = primary["name"] if primary else "share"
+    share_path = primary["path"] if primary else "/userdata"
+    unc = "\\\\%s\\%s" % (hostname, share_name)
+    slirp = _is_slirp_vm()
+    out = {"ok": True, "enabled": enabled, "host": hostname, "ip": ip,
+           "share_name": share_name, "share_path": share_path, "unc": unc,
+           "shares": shares, "slirp_vm": slirp,
+           "exposure_warning": _SMB_EXPOSURE_WARNING}
+    return out
+
+def security_smb(payload):
+    """POST /security/smb {action: "enable"|"disable"|"state"}.
+    SMB is OFF by default (docs/31 SB-2). Enable/disable writes batocera.conf atomically
+    and starts/stops smbd+nmbd immediately. The UI surfaces an honest exposure warning.
+    No owner-gate: SMB is less severe than remote-root SSH (no credential required, the
+    share is guest-accessible), but the page warns explicitly before enabling."""
+    p = payload or {}
+    action = (p.get("action") or "state").lower()
+    if action == "state":
+        return security_smb_state()
+    if action not in ("enable", "disable"):
+        return {"ok": False, "error": "action must be enable|disable|state"}
+    on = (action == "enable")
+    try:
+        _bconf_set("system.samba.enabled", "1" if on else "0")
+    except Exception as e:
+        LOG.warning("smb conf write failed: %s", e)
+    try:
+        if on:
+            subprocess.run(["/bin/sh", "-c",
+                "for s in /etc/init.d/S91smb; do [ -x \"$s\" ] && \"$s\" start; done; true"],
+                capture_output=True, text=True, timeout=20)
+        else:
+            # kill smbd/nmbd directly (same as the init stop verb)
+            subprocess.run(["/bin/sh", "-c",
+                "kill -9 $(pidof smbd) 2>/dev/null; kill -9 $(pidof nmbd) 2>/dev/null; true"],
+                capture_output=True, text=True, timeout=10)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    LOG.info("smb %s (security settings)", "ENABLED" if on else "disabled")
+    st = security_smb_state()
+    return st
+
 def sys_display(mode=None):
     # Real guest video mode via xrandr on :0 (virtio-vga). GET lists what the panel
     # supports + which is live; POST switches. Bad/unsupported modes are refused.
@@ -6823,6 +6968,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(sys_ssh())
         if route == "/security/ssh":
             return self._json(security_ssh_state())
+        if route == "/security/smb":
+            return self._json(security_smb_state())
         if route == "/ra/state":
             return self._json(ra_state_get())
         if route == "/ra/achievements":
@@ -7223,6 +7370,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             return self._json(security_ssh(payload))
+        if route == "/security/smb":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            return self._json(security_smb(payload))
         if route in ("/notifications", "/notifications/read", "/notifications/clear"):
             try:
                 n = int(self.headers.get("Content-Length", 0))

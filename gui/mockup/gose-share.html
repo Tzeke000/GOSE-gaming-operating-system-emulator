@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Network Share</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 38px 6px}
+  .top img{width:34px;height:34px}.top h1{font-size:20px;margin:0}
+  .top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  /* warning banner */
+  .warnban{margin:6px 38px 0;display:none;align-items:center;gap:10px;padding:11px 16px;border-radius:11px;
+    background:#ffce5c1f;border:1px solid #ffce5c55;color:#fff3cc;font-size:13px}
+  .warnban.show{display:flex}.warnban .ic{color:#ffce5c;font-size:18px;flex:none}
+  /* VM note banner */
+  .vmban{margin:6px 38px 0;display:none;align-items:center;gap:10px;padding:11px 16px;border-radius:11px;
+    background:#9a5bff1a;border:1px solid #9a5bff44;color:#d8c8ff;font-size:12.5px}
+  .vmban.show{display:flex}.vmban .ic{color:#9a5bff;font-size:16px;flex:none}
+  .body{flex:1;display:flex;flex-direction:column;gap:12px;padding:10px 38px 0;min-height:0;overflow:auto}
+  /* toggle card */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .card .row{display:flex;align-items:center;gap:14px}
+  .card .icon{font-size:24px;color:var(--accent);flex:none}
+  .card .lbl{flex:1;min-width:0}
+  .card .nm{font-weight:700;font-size:16px}
+  .card .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  /* toggle switch */
+  .tog{width:48px;height:28px;border-radius:14px;background:#3a3e4c;position:relative;
+    transition:background .15s;flex:none;cursor:pointer}
+  .tog.on{background:var(--accent)}.tog>i{position:absolute;top:4px;left:4px;width:20px;height:20px;
+    border-radius:50%;background:#fff;transition:left .15s;pointer-events:none}
+  .tog.on>i{left:24px}
+  /* the "toggle" row is a focusable item */
+  .togrow{display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:11px;
+    border:2px solid transparent;cursor:pointer;margin-top:10px}
+  .togrow.focus{border-color:var(--accent);background:#5cd0ff14;box-shadow:var(--focusglow)}
+  .togrow.focus .nm{color:var(--accent)}
+  .togrow .nm{font-weight:600}
+  .togrow .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .togrow .ic{font-size:18px;flex:none;color:#b8becc}
+  .togrow.focus .ic{color:var(--accent)}
+  /* connection info card */
+  .info-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .info-card .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);margin-bottom:10px}
+  .unc{font-family:monospace;font-size:15px;font-weight:700;letter-spacing:.03em;
+    background:#ffffff0a;border:1px solid var(--line);border-radius:9px;padding:10px 14px;
+    color:var(--accent);margin-bottom:12px;word-break:break-all;display:flex;align-items:center;gap:10px}
+  .unc .ic{font-size:16px;color:var(--muted);flex:none}
+  .shares{display:flex;flex-direction:column;gap:6px}
+  .share-row{display:flex;align-items:center;gap:10px;padding:8px 10px;background:#ffffff07;
+    border-radius:8px;font-size:13px}
+  .share-row .ic{font-size:14px;color:#9a5bff;flex:none}
+  .share-row .nm{font-weight:600;flex:1}
+  .share-row .path{color:var(--muted);font-size:11.5px;font-family:monospace}
+  .share-row .rw{font-size:11px;font-weight:700;color:#37d39b;background:#37d39b1a;
+    border-radius:6px;padding:2px 7px}
+  /* instructions */
+  .how-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .how-card .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);margin-bottom:10px}
+  .how-steps{display:flex;flex-direction:column;gap:8px}
+  .step{display:flex;gap:11px;align-items:flex-start;font-size:13px;color:var(--muted);line-height:1.5}
+  .step .n{min-width:22px;height:22px;background:var(--accent);color:#fff;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex:none;margin-top:1px}
+  .step b{color:var(--text)}
+  /* confirm modal — owner-gated enable (docs/31 contract) */
+  .scrim{position:fixed;inset:0;background:#05050acc;display:none;align-items:center;
+    justify-content:center;z-index:60}
+  .scrim.show{display:flex}
+  .modal{width:min(500px,90vw);background:var(--surface);border:1px solid var(--line);
+    border-radius:16px;padding:22px 24px;box-shadow:0 24px 60px #000a;overflow:hidden}
+  .modal h2{margin:0 0 8px;font-size:17px;display:flex;align-items:center;gap:9px}
+  .modal h2 .ic{color:#ffce5c;font-size:20px}
+  .modal p{color:var(--muted);font-size:13px;margin:8px 0 0;line-height:1.6}
+  .modal .btns{display:flex;gap:10px;margin-top:20px}
+  .modal .btn{flex:1;text-align:center;padding:12px;border-radius:11px;font-weight:700;font-size:14px;
+    border:2px solid transparent;background:#ffffff10;cursor:pointer;color:var(--text)}
+  .modal .btn.warn{background:#ffce5c1f;color:#fff3cc}
+  .modal .btn.focus{border-color:var(--accent);background:#5cd0ff22}
+  .modal .btn.warn.focus{border-color:#ffce5c;background:#ffce5c2a}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;
+    transition:opacity .2s;pointer-events:none;white-space:nowrap}
+  .toast.show{opacity:1}
+  .foot{margin:10px 38px 14px;display:flex;gap:10px;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:9px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .hidden{display:none!important}
+</style></head>
+<body>
+  <div class="top">
+    <img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <div><h1>Network File Share</h1><div class="s">Manage your device over the network (SMB / Windows share)</div></div>
+    <div class="home"><span class="ic" data-i="hard-drive"></span> B / Esc — back</div>
+  </div>
+
+  <!-- warning banner: shown while share is enabled -->
+  <div class="warnban" id="warnban">
+    <span class="ic" data-i="triangle-alert"></span>
+    <span><b>File sharing is on.</b> Your ROMs, saves and config are accessible to every device on this network with no password. Only keep this on when you're on a trusted network.</span>
+  </div>
+
+  <!-- VM note: shown when running in SLIRP dev VM -->
+  <div class="vmban" id="vmban">
+    <span class="ic" data-i="info"></span>
+    <span><b>Dev VM note:</b> this VM uses SLIRP networking — the share isn't reachable from outside even when enabled. On real hardware (Odin 2 / Wi-Fi) it would be accessible to your local network.</span>
+  </div>
+
+  <div class="body">
+    <!-- Toggle card -->
+    <div class="card" id="togglecard">
+      <div class="row">
+        <span class="ic icon" data-i="hard-drive"></span>
+        <div class="lbl">
+          <div class="nm">Network File Share (SMB)</div>
+          <div class="sub" id="status-sub">Loading…</div>
+        </div>
+      </div>
+      <!-- togglerow is the focusable pad item -->
+      <div class="togrow" id="togrow" tabindex="0">
+        <span class="ic" data-i="hard-drive"></span>
+        <div class="lbl">
+          <div class="nm" id="tog-label">Enable file sharing</div>
+          <div class="sub">Allow your PC to connect to GOSE and manage ROMs over Wi-Fi</div>
+        </div>
+        <div class="tog" id="tog"><i></i></div>
+      </div>
+    </div>
+
+    <!-- Connection info — shown only when enabled -->
+    <div class="info-card hidden" id="infocard">
+      <div class="ph">CONNECT FROM YOUR PC</div>
+      <div class="unc">
+        <span class="ic" data-i="hard-drive"></span>
+        <span id="unc-path">\\GOSE\share</span>
+      </div>
+      <div class="shares" id="shares-list"></div>
+    </div>
+
+    <!-- How to connect -->
+    <div class="how-card">
+      <div class="ph">HOW TO CONNECT</div>
+      <div class="how-steps">
+        <div class="step"><div class="n">1</div><div>Enable file sharing above.</div></div>
+        <div class="step"><div class="n">2</div>
+          <div><b>Windows:</b> open File Explorer, click the address bar, type the address shown above and press Enter. Or press <b>Win+R</b>, paste the address and press Enter.</div></div>
+        <div class="step"><div class="n">3</div>
+          <div><b>Mac:</b> open Finder, press <b>Cmd+K</b>, type <code>smb://&lt;ip-address&gt;</code> and click Connect.</div></div>
+        <div class="step"><div class="n">4</div>
+          <div>Drop ROM files into the folder for each system. They appear in GOSE after a library scan (Library &rsaquo; Scan).</div></div>
+        <div class="step"><div class="n">5</div>
+          <div>Disable file sharing when done — keeping it on exposes your device to your local network.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span class="ic" data-i="hard-drive"></span> Network File Share
+    <span class="h"><b>Enter/A</b> toggle &middot; <b>Esc/B</b> back</span>
+  </div>
+
+  <!-- enable confirm modal (docs/31 security warning) -->
+  <div class="scrim" id="scrim">
+    <div class="modal" id="modal">
+      <h2><span class="ic" data-i="triangle-alert"></span>Enable file sharing?</h2>
+      <p id="modal-warn"></p>
+      <p>Your ROMs, saves and config will be accessible to any device on this network with <b>no password</b>. Only enable this on a network you trust. Disable when you're done.</p>
+      <div class="btns">
+        <div class="btn warn" id="mbtn-enable" tabindex="-1">Enable sharing</div>
+        <div class="btn" id="mbtn-cancel" tabindex="-1">Cancel</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script src="assets/platform.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
+
+  const $ = id => document.getElementById(id);
+  const togrow  = $("togrow");
+  const tog     = $("tog");
+  const label   = $("tog-label");
+  const statusSub = $("status-sub");
+  const infocard  = $("infocard");
+  const warnban   = $("warnban");
+  const vmban     = $("vmban");
+  const uncPath   = $("unc-path");
+  const sharesList = $("shares-list");
+  const scrim     = $("scrim");
+  const toast     = $("toast");
+  // modal buttons
+  const mbtnEnable = $("mbtn-enable");
+  const mbtnCancel = $("mbtn-cancel");
+
+  let state = {enabled: false, slirp_vm: false, unc: "", shares: [], exposure_warning: ""};
+  let busy  = false;
+  // modal nav
+  const MODAL = {open: false, foc: 0, items: [mbtnEnable, mbtnCancel]};
+
+  function paintIcons() {
+    if (window.GICON) { GICON.paint(document); return; }
+    document.querySelectorAll("[data-i]").forEach(e =>
+      e.style.setProperty("--u", "url(assets/icons/" + e.dataset.i + ".svg)"));
+  }
+
+  function showToast(m) {
+    toast.textContent = m; toast.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toast.classList.remove("show"), 2000);
+  }
+
+  function applyState(s) {
+    state = s;
+    const on = s.enabled;
+
+    // toggle
+    tog.className = "tog" + (on ? " on" : "");
+    label.textContent = on ? "Disable file sharing" : "Enable file sharing";
+    statusSub.textContent = on
+      ? ("On — \\\\" + s.host + "\\" + s.share_name + " is accessible on the local network")
+      : "Off — your device is not visible on the network";
+
+    // banners
+    warnban.className = "warnban" + (on ? " show" : "");
+    vmban.className   = "vmban"   + (s.slirp_vm ? " show" : "");
+
+    // connection info
+    if (on) {
+      infocard.classList.remove("hidden");
+      uncPath.textContent = s.unc || ("\\\\" + s.host + "\\" + s.share_name);
+      // shares list
+      sharesList.innerHTML = (s.shares || []).map(sh =>
+        "<div class='share-row'>" +
+        "<span class='ic' data-i='hard-drive'></span>" +
+        "<span class='nm'>" + esc(sh.name) + "</span>" +
+        "<span class='path'>" + esc(sh.path) + "</span>" +
+        (sh.writeable ? "<span class='rw'>read/write</span>" : "<span class='rw' style='color:#ffce5c;background:#ffce5c1a'>read-only</span>") +
+        "</div>"
+      ).join("");
+    } else {
+      infocard.classList.add("hidden");
+    }
+    paintIcons();
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  async function load() {
+    try {
+      const d = await (await fetch("/security/smb", {cache: "no-store"})).json();
+      if (d && d.ok) applyState(d);
+    } catch(e) {
+      statusSub.textContent = "Could not load state";
+    }
+  }
+
+  async function doToggle() {
+    if (busy) return;
+    if (!state.enabled) {
+      // enable: show confirm modal
+      $("modal-warn").textContent = state.exposure_warning || "";
+      openModal();
+    } else {
+      // disable: immediate (no warn needed)
+      await setSmb("disable");
+    }
+  }
+
+  async function setSmb(action) {
+    busy = true;
+    showToast(action === "enable" ? "Enabling…" : "Disabling…");
+    try {
+      const d = await (await fetch("/security/smb", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({action})
+      })).json();
+      if (d && d.ok) {
+        applyState(d);
+        showToast(action === "enable" ? "File sharing enabled" : "File sharing disabled");
+      } else {
+        showToast("Error: " + (d && d.error ? d.error : "request failed"));
+      }
+    } catch(e) {
+      showToast("Network error");
+    }
+    busy = false;
+  }
+
+  // ===== confirm modal (docs/27 §3, layered-Escape §3.10) =====
+  function openModal() {
+    MODAL.open = true; MODAL.foc = 0;
+    scrim.classList.add("show");
+    document.body.dataset.goseModal = "1";   // §3.10 signal: Esc goes to the modal layer first
+    GOSE.modalPush();
+    renderModal();
+  }
+
+  function closeModal() {
+    if (!MODAL.open) return;
+    MODAL.open = false;
+    scrim.classList.remove("show");
+    delete document.body.dataset.goseModal;
+    GOSE.modalPop();
+    togrow.classList.add("focus");
+  }
+
+  function renderModal() {
+    MODAL.items.forEach((b, i) => {
+      b.className = b.className.replace(" focus","") + (i === MODAL.foc ? " focus" : "");
+    });
+  }
+
+  mbtnEnable.onclick = async () => { closeModal(); await setSmb("enable"); };
+  mbtnCancel.onclick = () => closeModal();
+  scrim.onclick = e => { if (e.target === scrim) closeModal(); };
+
+  // ===== pad nav (docs/27 §1 vocabulary) =====
+  // One focusable item on the main surface: togrow (index 0).
+  // B backs out (handled by cursor.js / gose-wm.js at the shell layer).
+  // Enter activates the focused item.
+
+  document.addEventListener("keydown", e => {
+    if (MODAL.open) {
+      if (e.key === "Escape") { closeModal(); e.preventDefault(); return; }
+      if (e.key === "ArrowLeft" || e.key === "Left" ||
+          e.key === "ArrowRight" || e.key === "Right") {
+        MODAL.foc = (MODAL.foc + 1) % MODAL.items.length;
+        renderModal(); e.preventDefault(); return;
+      }
+      if (e.key === "Enter") {
+        MODAL.items[MODAL.foc].click(); e.preventDefault(); return;
+      }
+      return;
+    }
+    // main surface: only one focusable element (togrow); arrow keys ignored (nothing to nav to)
+    if (e.key === "Enter") {
+      doToggle(); e.preventDefault();
+    }
+    // Esc / Back is handled by the shell — this page Escapes to gose-settings.html#security
+  });
+
+  // keep togrow visually focused (the single interactive element on this surface)
+  togrow.addEventListener("focus", () => togrow.classList.add("focus"));
+  togrow.addEventListener("blur",  () => { if (!MODAL.open) togrow.classList.remove("focus"); });
+  togrow.addEventListener("click", doToggle);
+  togrow.classList.add("focus");
+
+  // boot
+  load();
+  paintIcons();
+</script>
+</body></html>
