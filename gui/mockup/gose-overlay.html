@@ -283,6 +283,12 @@
     else if(k==="Enter"||k===" ")enter();
     else if(k==="]"||k==="PageDown")jumpSection(1);
     else if(k==="["||k==="PageUp")jumpSection(-1);
+    // B (→ Escape) unwinds ONE layer per press: powerMode submenu open → collapse to main bar;
+    // cheats expanded → collapse cheats; main bar level → don't consume (GTK on_key closes bar).
+    else if(k==="Escape"||k==="5"){
+      if(S.powerMode){S.powerMode=false;build();}
+      else if(S.cheatsExpanded){S.cheatsExpanded=false;build();}
+      else return;}
     else return;e.preventDefault();},true);
   build();refresh();setInterval(refresh,2000);
   refreshPerf();setInterval(refreshPerf,1200);   // live host perf while the bar is open (stays under /sys/perf 60/60 limit)
