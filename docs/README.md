@@ -37,6 +37,7 @@ superseded by later commits (flagged below, not rewritten).
 | [25-first-boot-oobe.md](25-first-boot-oobe.md) | First-boot ladder, OOBE wizard, preloaded services, default app set. | design approved; OOBE build in progress (commits 7c1b1c2, c4aed9c) |
 | [26-assets-and-sound.md](26-assets-and-sound.md) | The owner's brand art + sound set and the sound manager that plays it. | current |
 | [27-controller-standard.md](27-controller-standard.md) | **The controller standard**: one button language, one input path; page-level pad reads are bugs. | current (adopted 2026-06-07) — note: the §2 diagram's "physical pad ──(usb-redir)" label predates cec3bdf; physical pads now arrive via input-level passthrough (`pad_passthrough.py`) |
+| [31-security-hardening.md](31-security-hardening.md) | Attack-surface audit + shipped-image hardening (root pw, SSH/Samba/NFS off, agent loopback, firewall). | current (2026-06-08) |
 | [asset-prompts/](asset-prompts/README.md) | Ready-to-paste AI prompts for motion/audio brand assets (boot anim, trailer, VO). | current |
 
 Other doc-shaped files elsewhere: `../CLAUDE.md` (project memory, read first),

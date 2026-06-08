@@ -96,6 +96,8 @@ run "chmod +x '$WORK/mnt/system/custom.sh'"
 # via the system/ rsync above; mark the provisioner executable (Windows checkouts
 # carry no exec bit) so custom.sh's [ -x ] guard fires.
 run "chmod +x '$WORK/mnt/system/gose/provision-baked-apps.sh'"
+# Security hardener (Task #83) ships alongside the provisioner; same exec-bit fixup.
+run "chmod +x '$WORK/mnt/system/gose/harden-firstboot.sh'"
 run "umount '$WORK/mnt'"
 run "losetup -d \$LOOP"
 

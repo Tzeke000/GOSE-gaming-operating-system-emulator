@@ -4,9 +4,37 @@
 # Identity
 system.hostname=gose
 
-# Networking on (so the GOSE agent / AI bridge is reachable, like Wi-Fi on device)
+# Networking off by default; the user enables Wi-Fi in Settings.
 wifi.enabled=0
-system.ssh.enabled=1
+
+# --- Security hardening for the SHIPPED image (Task #83, 2026-06-08) -----------------
+# These defaults assume REAL hardware on a REAL network (no QEMU SLIRP/hostfwd to
+# contain them, unlike the dev VM). Verify each key against the pinned Batocera
+# version on first boot (batocera.conf keys drift between releases).
+#
+# SSH OFF by default. The ship-blocker: Batocera's default root password is the
+# well-known "linux", and dropbear-on-0.0.0.0 + that password = trivial remote root
+# on any network the device joins. Disabling SSH removes the remote-login vector
+# entirely. The user opts back in via the existing in-OS toggle
+# (Settings -> System -> SSH -> press-twice confirm; backend gose_vm_server.sys_ssh
+# / POST /sys/ssh). Before that toggle is usable safely, security mode (below) must
+# have replaced the default password.
+system.ssh.enabled=0
+
+# Samba OFF by default. Batocera defaults Samba ON (shares /userdata read/write,
+# guest-accessible) -> on real Wi-Fi that exposes saves/ROMs/config to the LAN.
+# Opt-in via Settings when the user wants network file shares.
+system.samba.enabled=0
+
+# Security mode ON: Batocera replaces the default "linux" root password with a
+# RANDOM per-install password AND enables its built-in iptables default-deny-inbound
+# firewall (the DO#3 ruleset, via the base's own mechanism = reuse-first). Caveat:
+# the generated password is normally shown in the EmulationStation security menu,
+# which GOSE's kiosk shell hides -> GOSE Settings must surface it (docs/31 follow-up)
+# before the SSH toggle is user-safe. NFS server (nfsd/rpcbind/mountd) is disabled by
+# the first-boot hardener (harden-firstboot.sh) since there is no single stable conf
+# key for it across releases.
+system.security.enabled=1
 
 # Front-end: the Windows-like GOSE theme ships in /userdata/themes/gose
 # (theme build is the next GUI milestone — see docs/06-gui-plan.md).

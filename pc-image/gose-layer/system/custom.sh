@@ -14,9 +14,21 @@ case "$1" in
       # token for non-loopback (remote agent) clients; persisted out-of-repo on
       # /userdata so it survives reboots without committing a secret.
       [ -z "${GOSE_AGENT_TOKEN:-}" ] && [ -f "$GOSE/token" ] && GOSE_AGENT_TOKEN="$(cat "$GOSE/token")"
+      # Bind address (security, Task #83): LOOPBACK by default so on real hardware
+      # the agent is NOT LAN-exposed (remote access is via Tailscale, tailnet-only).
+      # The dev VM uses QEMU SLIRP user-net + a host hostfwd, where the forwarded
+      # connection arrives on eth0 (10.0.2.15) from the SLIRP gateway 10.0.2.2 — so
+      # the agent MUST bind 0.0.0.0 there or the host can't reach it. Auto-detect
+      # that case (default route via 10.0.2.2) so the dev workflow survives a rebuild;
+      # a real-hardware user who genuinely wants LAN exposure sets the opt-in flag.
+      AGENT_HOST=127.0.0.1
+      if ip route 2>/dev/null | grep -q 'default via 10\.0\.2\.2' \
+         || [ -f "$GOSE/.agent-lan" ]; then
+        AGENT_HOST=0.0.0.0
+      fi
       # setsid + </dev/null so the agent survives the launching shell/SSH session.
       ( cd "$GOSE/agent" && \
-        GOSE_AGENT_HOST=0.0.0.0 GOSE_AGENT_PORT=8731 \
+        GOSE_AGENT_HOST="$AGENT_HOST" GOSE_AGENT_PORT=8731 \
         GOSE_AGENT_TOKEN="${GOSE_AGENT_TOKEN:-}" \
         setsid python3 -m gose_agent >>"$LOG" 2>&1 </dev/null & )
     fi
@@ -26,6 +38,11 @@ case "$1" in
     # never blocks the shell coming up.
     if [ -x "$GOSE/provision-baked-apps.sh" ]; then
       setsid "$GOSE/provision-baked-apps.sh" </dev/null >/dev/null 2>&1 &
+    fi
+    # Security hardener (Task #83): disable the LAN-exposed NFS server stack that
+    # has no stable batocera.conf key. Idempotent, detached, best-effort.
+    if [ -x "$GOSE/harden-firstboot.sh" ]; then
+      setsid "$GOSE/harden-firstboot.sh" </dev/null >>"$LOG" 2>&1 &
     fi
     ;;
   stop)
