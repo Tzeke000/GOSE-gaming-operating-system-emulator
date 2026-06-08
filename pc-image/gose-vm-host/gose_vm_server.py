@@ -6,8 +6,63 @@ import logging, logging.handlers, traceback, re, hashlib, struct, zlib
 ROOT = "/userdata/gose-ui"
 FS_ROOT = "/userdata"   # Files app is rooted here (the data partition)
 ROMS = "/userdata/roms"
-# the agent now requires a token even on loopback (set via GOSE_AGENT_TOKEN)
-TOKEN = os.environ.get("GOSE_AGENT_TOKEN") or "***REMOVED-DEV-TOKEN***"
+# the agent now requires a token even on loopback (set via GOSE_AGENT_TOKEN).
+# SECURITY: never hardcode the token. Resolve it in order: (1) GOSE_AGENT_TOKEN env,
+# (2) a gitignored .env (dev convenience), (3) the per-install token file (canonical;
+# the agent reads the SAME file, mode 600), (4) first-boot generate a unique token +
+# persist it. So every device gets its OWN secret and nothing sensitive lives in the repo.
+TOKEN_FILE = os.environ.get("GOSE_TOKEN_FILE", "/userdata/system/gose/token")
+
+def _env_file_token(path):
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                if k.strip() == "GOSE_AGENT_TOKEN":
+                    return v.strip().strip('"').strip("'") or None
+    except OSError:
+        pass
+    return None
+
+def _load_agent_token():
+    t = (os.environ.get("GOSE_AGENT_TOKEN") or "").strip()
+    if t:
+        return t
+    # dev: a gitignored .env next to this file or under the gose dir
+    for p in (os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+              "/userdata/gose-ui/.env", "/userdata/system/gose/.env"):
+        v = _env_file_token(p)
+        if v:
+            return v
+    # canonical per-install secret file (shared with the agent)
+    try:
+        with open(TOKEN_FILE) as f:
+            t = f.read().strip()
+            if t:
+                return t
+    except OSError:
+        pass
+    # last resort (first boot before custom.sh ran / standalone): generate + persist
+    t = secrets.token_hex(16)
+    try:
+        os.makedirs(os.path.dirname(TOKEN_FILE), exist_ok=True)
+        fd = os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(t)
+    except FileExistsError:  # a concurrent writer won the race — use theirs
+        try:
+            with open(TOKEN_FILE) as f:
+                t = f.read().strip() or t
+        except OSError:
+            pass
+    except OSError:
+        pass
+    return t
+
+TOKEN = _load_agent_token()
 
 # ---- production hardening: logging / error-tracking / rate-limit / atomic writes / version ----
 VERSION = {"version": "0.6", "build": "2026-06-05", "base": "Batocera 43.1 (x86_64)"}

@@ -13,6 +13,16 @@ venv/
 agent.token
 *.log
 
+# Secrets — dev token / .env. The per-install agent token is generated ON-DEVICE
+# (first boot) and stored out-of-repo (/userdata/system/gose/token); never commit it.
+.env
+*.env
+!.env.example
+token
+
+# Editor / tooling backup copies (may contain pre-fix secrets)
+*.bak
+
 # Claude Code local (machine-specific permissions)
 .claude/settings.local.json
 

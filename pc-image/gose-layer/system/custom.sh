@@ -13,6 +13,15 @@ case "$1" in
       mkdir -p "$(dirname "$LOG")"
       # token for non-loopback (remote agent) clients; persisted out-of-repo on
       # /userdata so it survives reboots without committing a secret.
+      # FIRST BOOT: if no token exists yet, GENERATE a unique per-install one so every
+      # downloaded device gets its OWN secret (never a repo/baked literal). Written
+      # mode-600 BEFORE the agent starts; the UI server reads the SAME file, so the
+      # agent + UI converge on one token. (-s = exists and non-empty.)
+      if [ ! -s "$GOSE/token" ]; then
+        mkdir -p "$GOSE"
+        ( umask 077; python3 -c 'import secrets; print(secrets.token_hex(16))' > "$GOSE/token" )
+        chmod 600 "$GOSE/token" 2>/dev/null || true
+      fi
       [ -z "${GOSE_AGENT_TOKEN:-}" ] && [ -f "$GOSE/token" ] && GOSE_AGENT_TOKEN="$(cat "$GOSE/token")"
       # Bind address (security, Task #83): LOOPBACK by default so on real hardware
       # the agent is NOT LAN-exposed (remote access is via Tailscale, tailnet-only).
