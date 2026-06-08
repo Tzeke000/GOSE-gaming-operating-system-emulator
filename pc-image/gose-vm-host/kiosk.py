@@ -16,7 +16,17 @@ win.fullscreen()
 # launched native apps (Steam, emulators) behind the kiosk. When an app exits,
 # this fullscreen window is revealed again = back to GOSE.
 win.connect('destroy', Gtk.main_quit)
-wv = WebKit2.WebView()
+# Autoplay: boot/login/system sounds must fire on page load WITHOUT a user gesture (the
+# shell is controller/key driven). The lever is the per-view autoplay POLICY, NOT the
+# WebKitSettings 'media-playback-requires-user-gesture' flag — verified in-guest that the
+# flag (either value) does NOT govern autoplay in this WebKit2GTK build (a page-load
+# <audio>.play() still rejects NotAllowedError), whereas WebsitePolicies(autoplay=ALLOW)
+# lets it play. Build the WebView with that policy; fall back if the API is unavailable.
+try:
+    _pol = WebKit2.WebsitePolicies(autoplay=WebKit2.AutoplayPolicy.ALLOW)
+    wv = WebKit2.WebView(website_policies=_pol)
+except Exception:
+    wv = WebKit2.WebView()
 try: wv.set_background_color(GOSE_DARK)   # the seamless bit: no white frame between pages
 except Exception: pass
 st = wv.get_settings()

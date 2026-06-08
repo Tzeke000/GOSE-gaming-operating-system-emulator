@@ -1,5 +1,5 @@
 /* GOSE — Sound Manager.
-   ONE place that owns the system sound set (the owner's clips in assets/sounds/*.mp3 +
+   ONE place that owns the system sound set (the owner's clips in assets/sounds/*.ogg +
    the UI tick .wav set). Exposes GOSESOUND.play(event) with:
      - per-category volume (0..100) + per-category mute
      - a global quiet-mode
@@ -28,7 +28,10 @@
     'step-done':'ui'                  // OOBE per-step advance -> reuses the login confirm clip
   };
   var FILE = { welcome:'boot', 'step-done':'login' };   // event -> actual file stem
-  var WAV  = { nav:1, select:1, back:1, launch:1 };      // these are .wav; the rest are the owner's .mp3
+  var WAV  = { nav:1, select:1, back:1, launch:1 };      // these are .wav; the rest are the owner's .ogg
+  // The owner's clips ship as .ogg (Vorbis), NOT .mp3: this VM's WebKit2GTK build has NO
+  // MP3 decoder (an <audio> .mp3 src errors MEDIA_ERR_SRC_NOT_SUPPORTED = silent). OGG/Vorbis
+  // decodes here and is far smaller than WAV. Converted from the owner's .mp3 set. (docs/26)
   // important alerts still fire while a game is foreground (don't duck these)
   var BYPASS_DUCK = { 'battery-critical':1, 'battery-low':1, error:1, warning:1 };
   // per-category default volume 0..100: UI ticks quiet (they fire constantly), alerts loud.
@@ -60,7 +63,7 @@
 
   var cache={};
   function audio(ev){ var a=cache[ev];
-    if(!a){ var stem=FILE[ev]||ev, ext=WAV[ev]?'wav':'mp3';
+    if(!a){ var stem=FILE[ev]||ev, ext=WAV[ev]?'wav':'ogg';
       a=cache[ev]=new Audio('assets/sounds/'+stem+'.'+ext); a.preload='auto'; }
     return a; }
 

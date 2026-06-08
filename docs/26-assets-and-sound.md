@@ -62,23 +62,41 @@ localStorage), and **auto-duck** while a game is foreground via `/game/running`
 legacy `GOSE.sound()` UI ticks (cursor.js) route through the manager, so
 Settings → Sound is the one control surface.
 
-Clips (`gui/mockup/assets/sounds/`, copied from the owner's set, renamed):
+Clips (`gui/mockup/assets/sounds/`, from the owner's set, converted — see format note):
 
 | event | file | category | fires on |
 |---|---|---|---|
-| boot | `boot.mp3` | system | boot splash / kiosk start |
-| login | `login.mp3` | system | OOBE account step complete |
-| shutdown | `shutdown.mp3` | system | power → shut down |
-| restart | `restart.mp3` | system | power → restart |
-| sleep | `sleep.mp3` | system | power → suspend |
-| wake | `wake.mp3` | system | resume (clip ready; web-resume hook is best-effort) |
-| notify | `notify.mp3` | notify | generic `GOSE.notify` |
-| download-done | `download-done.mp3` | notify | install/download finished (icon `download`) |
-| error | `error.mp3` | notify | failed action / OOBE validation |
-| warning | `warning.mp3` | notify | warnings (icon `triangle-alert`) |
-| charging | `charging.mp3` | battery | AC plugged in (false→true edge) |
-| battery-low | `battery-low.mp3` | battery | ≤20% discharging |
-| battery-critical | `battery-critical.mp3` | battery | ≤10% discharging |
+| boot | `boot.ogg` | system | boot splash / kiosk start |
+| login | `login.ogg` | system | OOBE account step complete |
+| shutdown | `shutdown.ogg` | system | power → shut down |
+| restart | `restart.ogg` | system | power → restart |
+| sleep | `sleep.ogg` | system | power → suspend |
+| wake | `wake.ogg` | system | resume (clip ready; web-resume hook is best-effort) |
+| notify | `notify.ogg` | notify | generic `GOSE.notify` |
+| download-done | `download-done.ogg` | notify | install/download finished (icon `download`) |
+| error | `error.ogg` | notify | failed action / OOBE validation |
+| warning | `warning.ogg` | notify | warnings (icon `triangle-alert`) |
+| charging | `charging.ogg` | battery | AC plugged in (false→true edge) |
+| battery-low | `battery-low.ogg` | battery | ≤20% discharging |
+| battery-critical | `battery-critical.ogg` | battery | ≤10% discharging |
+
+**Format = OGG/Vorbis (NOT MP3) — required, 2026-06-08.** The VM's WebKit2GTK build ships
+**no MP3 decoder**: an `<audio>` with a `.mp3` src errors `MEDIA_ERR_SRC_NOT_SUPPORTED`
+(code 4) and is **silent** — so the whole sonic identity didn't play. Verified in-guest:
+the same clip as `.mp3` → err 4, as `.ogg` (Vorbis) → `readyState 4` / plays, as `.wav` →
+plays too. OGG/Vorbis was chosen over WAV because it decodes here and is ~8× smaller
+(~6–16 KB vs ~48 KB) — and small matters: the shell's HTTP server has **no Range support**,
+which fails *large* media (B4's 3 MB menu track erred; these UI blips are tiny, so any of
+them load fine). Clips are mono / 32 kHz (UI blips — small on purpose), converted from the
+owner's `.mp3` set with `ffmpeg -ac 1 -ar 32000 -c:a libvorbis -q:a 4`; the `.mp3` originals
+were removed (the true masters live in the owner's OneDrive set). The UI ticks
+(`nav/select/back/launch`) stay the existing `.wav` set (already decode fine). **Autoplay:**
+`kiosk.py` builds the WebView with `WebKitWebsitePolicies(autoplay = ALLOW)`, so the
+boot/login/system sounds fire on load without waiting for a first input (see the menu-music
+note below — this is the follow-up it flagged, now done). NOTE: the `WebKitSettings`
+`media-playback-requires-user-gesture` flag is **NOT** the autoplay lever in this WebKit2GTK
+build — verified in-guest that with it `FALSE` a page-load `<audio>.play()` *still* rejects
+`NotAllowedError`; only the per-view autoplay **policy** unblocks it.
 
 Category defaults: system 75, notify 75, battery 100, ui 50. Important alerts
 (`battery-low/critical`, `error`, `warning`) bypass the game-duck. UI ticks
@@ -120,12 +138,15 @@ stays the one-shot SFX manager:
   wall-clock timestamp are persisted to `localStorage` (`gose-music-pos`) on
   `pagehide` and every 1.5 s; the next page resumes at *position + elapsed* (mod loop
   length). home→store→home never restarts the track from zero.
-- **Autoplay is GATED here** (verified): the kiosk blocks audio autostart —
-  `<audio>.play()` rejects `NotAllowedError` until a user gesture. The shell is
-  controller/key-driven, so the **first** d-pad/key/pointer input starts the music
-  (the rejection arms a one-shot gesture listener). For true play-on-boot, `kiosk.py`
-  would set `WebKitSettings media-playback-requires-user-gesture = FALSE` (one line in
-  the shell launcher — out of scope for this asset track; flagged as the follow-up).
+- **Autoplay** (history): the kiosk *used* to block audio autostart —
+  `<audio>.play()` rejected `NotAllowedError` until a user gesture, so the
+  controller/key-driven shell started music on the **first** d-pad/key/pointer input
+  (the rejection arms a one-shot gesture listener — still the fallback). As of the
+  sound-fix (2026-06-08), `kiosk.py` builds the WebView with
+  `WebKitWebsitePolicies(autoplay = ALLOW)`, so play-on-boot now works without a
+  gesture (the boot/login system sounds rely on this; the `media-playback-requires-
+  user-gesture` *flag* turned out to be a no-op for autoplay here — the per-view policy
+  is the real lever). The first-input fallback remains harmless.
 - **OFF path.** Quiet-mode, category mute, or category volume **0** all silence it
   (each makes `wantOn()` false → the same pause path the game-gate uses; verified by
   loading home under each preset). Track is `localStorage gose-music-src` if set.
