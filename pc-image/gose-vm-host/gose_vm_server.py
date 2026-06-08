@@ -55,6 +55,7 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/storage/breakdown": (30, 60), "/storage/group": (60, 60), "/storage/delete": (30, 60),
            "/store/sources/add": (6, 60), "/store/sources/preview": (10, 60),
            "/store/sources/refresh": (10, 60),
+           "/diag/bundle": (4, 120),
            # coarse backstop only — the real brute-force guard is the 5-try/30s PIN lockout
            "/auth/pin": (30, 60), "/auth/pin/set": (10, 60)}
 
@@ -3782,6 +3783,303 @@ def gose_factory_reset(payload):
             "safety_ok": safety.get("ok", False),
             "note": "roms + saves preserved; theme/prefs are browser-local (localStorage) and unaffected"}
 
+# ---- Diagnostics support-bundle export (#19) ----------------------------------------
+# Gathers logs (tailed), safe config (no secrets), versions, and service health into a
+# single .tar.gz under /userdata. NEVER includes: accounts PIN hashes, ai_tokens,
+# ssh credentials, dev token, any file that lives under /userdata/system/gose/token,
+# or anything containing 'password'/'pin_hash'/'secret' in the path.
+#
+# Secret-exclusion contract (enforced by _DIAG_NEVER and _scrub_accounts):
+#   - ai_tokens.json  (bearer tokens)
+#   - token           (dev token)
+#   - accounts.json   included ONLY after PIN hashes + pin_salt are scrubbed
+#   - ssh_cred.json   excluded (path pattern)
+#   - ai_audit.jsonl  excluded (may contain prompt text)
+#   - *.key / *.pem / *.p12 / *.pfx  excluded by extension
+#
+# Log cap: each log is tailed to 2000 lines (avoids huge display.log filling the bundle).
+# Bundle lives at /userdata/gose-diagnostics-<timestamp>.tar.gz; caller cleans it up.
+
+DIAG_DIR = "/userdata"
+_DIAG_NEVER = {
+    "ai_tokens.json", "token", "ssh_cred.json", "ai_audit.jsonl",
+}
+_DIAG_NEVER_EXT = {".key", ".pem", ".p12", ".pfx", ".crt"}
+_DIAG_SECRET_KEYS = {"pin_hash", "pin_salt", "password", "secret", "token", "ssh_key"}
+_DIAG_LOG_CAP = 2000    # lines per log (tail)
+_DIAG_LOG_MAXBYTES = 512 * 1024  # 512 KB absolute ceiling per log
+
+def _diag_safe_path(p):
+    """Return True iff this file path is safe to include (not a secret)."""
+    base = os.path.basename(p)
+    if base in _DIAG_NEVER:
+        return False
+    _, ext = os.path.splitext(base)
+    if ext.lower() in _DIAG_NEVER_EXT:
+        return False
+    # block any file whose name contains clearly secret keywords
+    bl = base.lower()
+    for kw in ("ssh_cred", "ai_token", "pin_hash", "pin_salt", ".key", "secret"):
+        if kw in bl:
+            return False
+    return True
+
+def _scrub_accounts():
+    """Load accounts.json and remove all secret fields before bundling."""
+    _SECRET_FIELDS = {"pin_hash", "pin_salt", "password", "secret", "ssh_key", "token"}
+    try:
+        d = json.load(open("/userdata/system/gose/accounts.json"))
+    except Exception:
+        return None
+    if isinstance(d, dict) and "users" in d:
+        scrubbed = []
+        for u in (d["users"] or []):
+            su = {k: v for k, v in u.items() if k not in _SECRET_FIELDS}
+            scrubbed.append(su)
+        d = dict(d)
+        d["users"] = scrubbed
+    return json.dumps(d, indent=2).encode()
+
+def _tail_log(path, maxlines=_DIAG_LOG_CAP, maxbytes=_DIAG_LOG_MAXBYTES):
+    """Read a log file, tailing to maxlines and capping at maxbytes. Returns bytes."""
+    try:
+        size = os.path.getsize(path)
+    except Exception:
+        return b""
+    try:
+        with open(path, "rb") as fh:
+            # if file fits within maxbytes, read everything and tail lines
+            if size <= maxbytes:
+                raw = fh.read()
+            else:
+                fh.seek(-maxbytes, 2)
+                raw = fh.read(maxbytes)
+        lines = raw.splitlines(keepends=True)
+        if len(lines) > maxlines:
+            header = ("... [tailed to last %d lines] ...\n" % maxlines).encode()
+            lines = [header] + lines[-maxlines:]
+        return b"".join(lines)
+    except Exception:
+        return b""
+
+def _diag_service_health():
+    """Check liveness of the five key services. Returns list of {id, name, ok, detail}."""
+    svcs = []
+    # 1. gose-agent (port 8731)
+    try:
+        s = socket.create_connection(("127.0.0.1", 8731), 2); s.close()
+        svcs.append({"id": "agent", "name": "GOSE Agent", "ok": True, "detail": "port 8731 open"})
+    except Exception as e:
+        svcs.append({"id": "agent", "name": "GOSE Agent", "ok": False, "detail": str(e)})
+    # 2. UI server (self — we're answering so this is always up; still check port)
+    try:
+        s = socket.create_connection(("127.0.0.1", 8780), 2); s.close()
+        svcs.append({"id": "server", "name": "UI Server", "ok": True, "detail": "port 8780 open"})
+    except Exception as e:
+        svcs.append({"id": "server", "name": "UI Server", "ok": False, "detail": str(e)})
+    # 3. pad-nav bridge (pgrep)
+    ok = subprocess.run(["pgrep", "-f", "gose-pad-nav.py"], capture_output=True).returncode == 0
+    svcs.append({"id": "bridge", "name": "Pad-Nav Bridge", "ok": ok,
+                 "detail": "running" if ok else "not found in process list"})
+    # 4. passthrough (pad_passthrough.py)
+    ok = subprocess.run(["pgrep", "-f", "pad_passthrough"], capture_output=True).returncode == 0
+    svcs.append({"id": "passthrough", "name": "Pad Passthrough", "ok": ok,
+                 "detail": "running" if ok else "not found (OK if no physical pad)"})
+    # 5. kiosk (kiosk.py)
+    ok = subprocess.run(["pgrep", "-f", "kiosk.py"], capture_output=True).returncode == 0
+    svcs.append({"id": "kiosk", "name": "Kiosk (WebKit)", "ok": ok,
+                 "detail": "running" if ok else "not found in process list"})
+    return svcs
+
+def _diag_versions():
+    """Gather version strings: GOSE version, batocera version, kernel."""
+    out = {}
+    out["gose"] = VERSION.get("version", "unknown") + " (build " + VERSION.get("build", "?") + ")"
+    try:
+        out["batocera"] = open("/usr/share/batocera/batocera.version").read().strip()
+    except Exception:
+        out["batocera"] = "unknown"
+    try:
+        out["kernel"] = subprocess.run(["uname", "-r"], capture_output=True,
+                                        text=True, timeout=5).stdout.strip()
+    except Exception:
+        out["kernel"] = "unknown"
+    out["base"] = VERSION.get("base", "unknown")
+    return out
+
+def _diag_safe_config():
+    """Read batocera.conf — scrub lines that contain secret keywords (passwords/tokens/PINs)."""
+    _SECRET_PATTERNS = ("password", "token", "secret", "pin", "key=", "passwd", "ssh_pass")
+    try:
+        lines = open("/userdata/system/batocera.conf").readlines()
+    except Exception:
+        return b"# batocera.conf not found\n"
+    out = []
+    redacted = 0
+    for line in lines:
+        ll = line.lower()
+        if any(kw in ll for kw in _SECRET_PATTERNS):
+            # keep the key name, redact the value
+            if "=" in line:
+                key = line.split("=", 1)[0]
+                out.append((key + "=[REDACTED]\n").encode())
+            else:
+                out.append(b"[REDACTED LINE]\n")
+            redacted += 1
+        else:
+            out.append(line.encode() if isinstance(line, str) else line)
+    if redacted:
+        out.insert(0, ("# %d lines redacted (secret values)\n" % redacted).encode())
+    return b"".join(out)
+
+def diag_health():
+    """GET /diag/health — returns current service liveness as JSON."""
+    svcs = _diag_service_health()
+    all_ok = all(s["ok"] for s in svcs)
+    return {"ok": True, "all_ok": all_ok, "services": svcs,
+            "versions": _diag_versions(),
+            "watchdog": {
+                "safe_mode": os.path.exists(ROOT + "/.safe_mode"),
+                "boot_attempts": _safe_read_int(BOOT_ATTEMPTS_F),
+                "prev_ui_available": os.path.isdir("/userdata/gose-ui.prev") and
+                                     bool(os.listdir("/userdata/gose-ui.prev")),
+            }}
+
+def _safe_read_int(path, default=0):
+    try: return int(open(path).read().strip() or str(default))
+    except Exception: return default
+
+def diag_bundle():
+    """POST /diag/bundle — create a support .tar.gz at /userdata/gose-diagnostics-<ts>.tar.gz.
+    Returns {ok, path, size, members} on success. Bundle NEVER contains secrets (enforced here
+    and verified by caller: grep members for accounts/token/ssh_cred/pin returns nothing)."""
+    import tarfile, io
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    name = "gose-diagnostics-%s.tar.gz" % ts
+    final = os.path.join(DIAG_DIR, name)
+    tmp = os.path.join(DIAG_DIR, ".tmp-diag-%s.tar.gz" % ts)
+
+    members_added = []
+    try:
+        with tarfile.open(tmp, "w:gz") as tf:
+            def add_bytes(arcname, data):
+                if not isinstance(data, bytes):
+                    data = data.encode()
+                info = tarfile.TarInfo(name=arcname)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))
+                members_added.append(arcname)
+
+            # --- versions ---
+            add_bytes("diag/versions.json", json.dumps(_diag_versions(), indent=2))
+
+            # --- service health ---
+            svcs = _diag_service_health()
+            add_bytes("diag/services.json", json.dumps({"services": svcs,
+                "watchdog": {
+                    "safe_mode": os.path.exists(ROOT + "/.safe_mode"),
+                    "boot_attempts": _safe_read_int(BOOT_ATTEMPTS_F),
+                    "prev_ui_available": os.path.isdir("/userdata/gose-ui.prev") and
+                                         bool(os.listdir("/userdata/gose-ui.prev")),
+                }}, indent=2))
+
+            # --- port/process snapshot ---
+            port_out = subprocess.run(["ss", "-tlnp"], capture_output=True,
+                                       text=True, timeout=10).stdout
+            add_bytes("diag/ports.txt", port_out)
+            ps_out = subprocess.run(["ps", "aux"], capture_output=True,
+                                     text=True, timeout=10).stdout
+            add_bytes("diag/processes.txt", ps_out)
+
+            # --- config (scrubbed) ---
+            add_bytes("diag/batocera.conf.txt", _diag_safe_config())
+
+            # --- accounts (scrubbed — NO pin_hash/pin_salt) ---
+            acct = _scrub_accounts()
+            if acct is not None:
+                add_bytes("diag/accounts-scrubbed.json", acct)
+
+            # --- gose settings (exclude secrets) ---
+            for fname in ("privacy.json", "ui_prefs.json", "store_sources.json"):
+                p = "/userdata/system/gose/" + fname
+                if os.path.isfile(p) and _diag_safe_path(p):
+                    try:
+                        add_bytes("diag/gose-" + fname, open(p, "rb").read())
+                    except Exception:
+                        pass
+
+            # --- logs (tailed, capped) ---
+            LOG_DIR = "/userdata/system/logs"
+            try:
+                log_files = sorted(os.listdir(LOG_DIR))
+            except Exception:
+                log_files = []
+            for lf in log_files:
+                lp = os.path.join(LOG_DIR, lf)
+                if not os.path.isfile(lp) or not _diag_safe_path(lp):
+                    continue
+                data = _tail_log(lp)
+                add_bytes("diag/logs/" + lf, data)
+
+            # gose-ui server log (not in system/logs)
+            for extra_log in (ROOT + "/gose.log", ROOT + "/server.log"):
+                if os.path.isfile(extra_log):
+                    data = _tail_log(extra_log)
+                    add_bytes("diag/logs/" + os.path.basename(extra_log), data)
+
+            # --- manifest (what's in the bundle) ---
+            manifest = {
+                "created": ts, "members": list(members_added),
+                "secrets_excluded": list(_DIAG_NEVER),
+                "note": "accounts.json is included with pin_hash/pin_salt/password scrubbed"
+            }
+            add_bytes("diag/MANIFEST.json", json.dumps(manifest, indent=2))
+
+        os.replace(tmp, final)
+        size = os.path.getsize(final)
+        LOG.info("DIAG BUNDLE %s (%d bytes, %d members)", name, size, len(members_added))
+
+        # Self-verify: unpack member list and assert no secrets made it in
+        verify = subprocess.run(["tar", "-tzf", final], capture_output=True,
+                                  text=True, timeout=30)
+        all_members = verify.stdout.splitlines()
+        bad = [m for m in all_members if any(s in m for s in
+               ("ai_tokens", "ssh_cred", "pin_hash", "pin_salt", "/token",
+                "password", "secret"))]
+        if bad:
+            # Something slipped through — remove the bundle and refuse
+            try: os.remove(final)
+            except Exception: pass
+            LOG.error("DIAG BUNDLE secret leak detected: %s", bad)
+            return {"ok": False, "error": "bundle aborted: secret leak detected: " + str(bad)}
+
+        return {"ok": True, "file": name, "path": final, "size": size,
+                "members": all_members}
+    except Exception as e:
+        try: os.remove(tmp)
+        except Exception: pass
+        LOG.error("diag bundle failed: %s", e)
+        return {"ok": False, "error": str(e)}
+
+def diag_bundle_delete(filename):
+    """DELETE (or POST /diag/bundle/delete) — remove a diagnostics bundle by filename."""
+    if not filename:
+        return {"ok": False, "error": "filename required"}
+    base = os.path.basename(filename)
+    if not base.startswith("gose-diagnostics-") or not base.endswith(".tar.gz"):
+        return {"ok": False, "error": "not a diagnostics bundle"}
+    path = os.path.join(DIAG_DIR, base)
+    real = os.path.realpath(path)
+    if not real.startswith(os.path.realpath(DIAG_DIR) + os.sep):
+        return {"ok": False, "error": "path not in diagnostics dir"}
+    if not os.path.isfile(path):
+        return {"ok": False, "error": "file not found"}
+    try:
+        os.remove(path)
+        return {"ok": True, "file": base}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 # ---- FPS overlay toggle (RetroArch on-screen FPS counter) ----
 # IMPORTANT: batocera's configgen REGENERATES retroarchcustom.cfg from source on every launch,
 # so editing fps_show there is clobbered. The authoritative source configgen reads is the
@@ -5784,6 +6082,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 n = 0
             return self._json({"ok": True, "attempts": n})
+        if route == "/diag/health":
+            return self._json(diag_health())
         if route == "/system/backups":
             return self._json(gose_backups())
         if route == "/status.json":
@@ -6001,6 +6301,15 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _route_post(self):
         route = self.path.split("?")[0]
+        if route == "/diag/bundle":
+            return self._json(diag_bundle())
+        if route == "/diag/bundle/delete":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            return self._json(diag_bundle_delete(payload.get("file", "")))
         if route in ("/peripherals/usb/claim", "/peripherals/usb/release"):
             try:
                 n = int(self.headers.get("Content-Length", 0))

@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Diagnostics</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  /* header */
+  .top{display:flex;align-items:center;gap:12px;padding:16px 36px 4px}
+  .top img{width:30px;height:30px}.top h1{font-size:19px;margin:0}
+  .top .sub{color:var(--muted);font-size:12.5px;margin-left:2px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px;cursor:pointer;
+    background:none;border:none;font-family:inherit;padding:4px 8px;border-radius:8px}
+  .top .home:focus{outline:none;box-shadow:var(--focusglow);border:2px solid var(--accent)}
+  /* main layout */
+  .main{flex:1;display:flex;gap:12px;margin:8px 36px 12px;min-height:0}
+  /* left: service health */
+  .health-col{display:flex;flex-direction:column;gap:8px;width:340px;flex:none;min-height:0}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:11px 16px 4px}
+  .svc{display:flex;align-items:center;gap:12px;padding:10px 16px;border:2px solid transparent;
+    cursor:pointer;border-radius:0}
+  .svc:focus{outline:none}
+  .svc.focus{border-color:var(--accent);box-shadow:var(--focusglow);background:#5cd0ff14}
+  .svc .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .dot.green{background:#3fe0a0;box-shadow:0 0 6px #3fe0a044}
+  .dot.red{background:#ff5c6b;box-shadow:0 0 6px #ff5c6b44}
+  .dot.grey{background:#6b7180}
+  .svc .col{flex:1;min-width:0}
+  .svc .nm{font-weight:600;font-size:13.5px}
+  .svc .det{color:var(--muted);font-size:11.5px;margin-top:2px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .svc .badge{font-size:10.5px;font-weight:700;border-radius:8px;padding:3px 8px;
+    border:1px solid currentColor;flex:none}
+  .badge.up{color:#3fe0a0}.badge.down{color:#ff5c6b}
+  /* versions block */
+  .ver-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px 14px 12px}
+  .vk{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.4px}
+  .vv{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* watchdog block */
+  .wd-row{display:flex;align-items:center;justify-content:space-between;
+    padding:8px 16px;font-size:13px}
+  .wd-row .lbl{color:var(--muted);font-size:12px}
+  .wd-row .val{font-weight:600}
+  .wd-row .val.ok{color:#3fe0a0}.wd-row .val.warn{color:#ffd479}.wd-row .val.bad{color:#ff5c6b}
+  /* right: actions */
+  .action-col{flex:1;display:flex;flex-direction:column;gap:10px;min-height:0}
+  /* bundle action */
+  .bundle-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:20px 22px}
+  .bundle-card h2{font-size:15px;margin:0 0 4px}
+  .bundle-card p{color:var(--muted);font-size:12.5px;margin:0 0 16px;line-height:1.5}
+  .btn-row{display:flex;gap:10px;flex-wrap:wrap}
+  .btn{font:inherit;font-weight:700;font-size:13.5px;padding:11px 20px;border-radius:11px;
+    cursor:pointer;border:2px solid transparent;outline:none}
+  .btn:focus,.btn.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .btn.primary{background:var(--accent);color:#06121a}
+  .btn.ghost{background:var(--surface2);color:var(--text);border-color:var(--line)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  /* status / result */
+  .status-box{margin-top:14px;background:var(--surface2);border:1px solid var(--line);
+    border-radius:10px;padding:12px 14px;font-size:12.5px;color:var(--muted);
+    line-height:1.6;display:none}
+  .status-box.show{display:block}
+  .status-box.ok-status{border-color:#3fe0a044;color:#3fe0a0}
+  .status-box.err-status{border-color:#ff5c6b44;color:#ff5c6b}
+  .path-line{font-family:monospace;font-size:11px;word-break:break-all;
+    color:var(--text);background:var(--surface);border-radius:6px;
+    padding:6px 10px;margin-top:8px}
+  /* safe-mode / recovery block */
+  .recovery-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:18px 22px}
+  .recovery-card h2{font-size:15px;margin:0 0 4px}
+  .recovery-card p{color:var(--muted);font-size:12.5px;margin:0 0 14px;line-height:1.5}
+  .rec-row{display:flex;align-items:center;justify-content:space-between;
+    padding:9px 0;border-bottom:1px solid var(--line)}
+  .rec-row:last-child{border-bottom:none}
+  .rec-row .rl{font-size:13px;font-weight:600}
+  .rec-row .rs{color:var(--muted);font-size:12px;margin-top:2px}
+  .rec-row .rv{font-weight:700;font-size:13px}
+  .rv.ok{color:#3fe0a0}.rv.warn{color:#ffd479}.rv.bad{color:#ff5c6b}
+  /* hint bar */
+  .hint{color:var(--muted);font-size:12px;padding:0 36px 10px;text-align:right}
+  /* loading/refresh state */
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spin{display:inline-block;animation:spin .8s linear infinite}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <img src="assets/img/gose-logo.svg" alt="" onerror="this.style.display='none'">
+  <h1>Diagnostics</h1>
+  <span class="sub">Service health &amp; support export</span>
+  <button class="home" id="btn-back" tabindex="-1">Settings</button>
+</div>
+
+<div class="main">
+  <!-- LEFT: Health + Versions + Watchdog -->
+  <div class="health-col">
+
+    <div class="card" id="svc-card">
+      <div class="ph">SERVICE HEALTH</div>
+      <div id="svc-list">
+        <div class="svc"><div class="dot grey"></div>
+          <div class="col"><div class="nm">Loading...</div></div></div>
+      </div>
+    </div>
+
+    <div class="card" id="ver-card">
+      <div class="ph">VERSIONS</div>
+      <div class="ver-grid" id="ver-grid">
+        <div class="vk">GOSE</div><div class="vv" id="v-gose">—</div>
+        <div class="vk">Batocera</div><div class="vv" id="v-bat">—</div>
+        <div class="vk">Kernel</div><div class="vv" id="v-ker">—</div>
+        <div class="vk">Base</div><div class="vv" id="v-base">—</div>
+      </div>
+    </div>
+
+    <div class="card" id="wd-card">
+      <div class="ph">WATCHDOG / RECOVERY</div>
+      <div id="wd-body">
+        <div class="wd-row"><div><div class="lbl">Safe mode</div></div>
+          <div class="val" id="wd-safe">—</div></div>
+        <div class="wd-row"><div><div class="lbl">Boot attempts</div></div>
+          <div class="val" id="wd-att">—</div></div>
+        <div class="wd-row"><div><div class="lbl">Rollback available</div></div>
+          <div class="val" id="wd-prev">—</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: Bundle export + Recovery info -->
+  <div class="action-col">
+
+    <div class="bundle-card" id="bundle-section">
+      <h2>Export support bundle</h2>
+      <p>Creates a .tar.gz containing logs, scrubbed config, service state, and version
+         info. Passwords, PINs, AI tokens, and SSH credentials are never included.</p>
+      <div class="btn-row">
+        <button class="btn primary" id="btn-export">Export bundle</button>
+        <button class="btn ghost" id="btn-refresh">Refresh health</button>
+      </div>
+      <div class="status-box" id="bundle-status"></div>
+    </div>
+
+    <div class="recovery-card" id="recovery-section">
+      <h2>Recovery status</h2>
+      <p>The watchdog monitors this device and can roll back to a known-good UI if the
+         interface fails to start. This is read-only; recovery runs automatically.</p>
+      <div id="rec-rows">
+        <div class="rec-row">
+          <div><div class="rl">Watchdog</div><div class="rs">Keeps the UI server running</div></div>
+          <div class="rv ok" id="rec-watchdog">—</div>
+        </div>
+        <div class="rec-row">
+          <div><div class="rl">Safe mode</div><div class="rs">Trips after 3 failed starts</div></div>
+          <div class="rv" id="rec-safe">—</div>
+        </div>
+        <div class="rec-row">
+          <div><div class="rl">Rollback snapshot</div><div class="rs">Last known-good UI copy</div></div>
+          <div class="rv" id="rec-prev">—</div>
+        </div>
+        <div class="rec-row">
+          <div><div class="rl">Start attempts</div><div class="rs">Resets when home loads</div></div>
+          <div class="rv" id="rec-att">—</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="hint" id="hint-bar">
+  [&#160;]&#160;/&#160;]&#160;navigate &nbsp;|&nbsp; Enter&#160;activate &nbsp;|&nbsp; B&#160;back
+</div>
+
+<script src="assets/cursor.js"></script>
+<script>
+/* ======================================================================
+   gose-diagnostics.html — service health + support-bundle export
+   Pad-nav: all interactive elements reachable with Up/Down; Enter activates;
+   Escape / B backs to gose-settings.html. No getGamepads() — bridge-only.
+   ====================================================================== */
+
+'use strict';
+
+/* ---------- focusable element registry (spatial order: top→bottom) ---------- */
+let focusables = [];   // filled after DOM is built
+let foc = 0;
+
+function buildFocusables() {
+  focusables = [...document.querySelectorAll('[data-focus]')];
+}
+
+function paintFocus() {
+  focusables.forEach((el, i) => {
+    el.classList.toggle('focus', i === foc);
+    if (i === foc) el.setAttribute('tabindex', '0');
+    else el.setAttribute('tabindex', '-1');
+  });
+}
+
+function moveFoc(d) {
+  if (!focusables.length) return;
+  foc = (foc + d + focusables.length) % focusables.length;
+  paintFocus();
+  focusables[foc].scrollIntoView({block:'nearest'});
+}
+
+function activateFoc() {
+  const el = focusables[foc];
+  if (!el) return;
+  if (el.tagName === 'BUTTON') { el.click(); return; }
+  const action = el.dataset.action;
+  if (action === 'back') goBack();
+}
+
+/* ---------- navigation ---------- */
+function goBack() {
+  location.href = 'gose-settings.html#system';
+}
+
+document.addEventListener('keydown', e => {
+  const k = e.key;
+  if (k === 'Escape' || k === 'Backspace') { goBack(); return; }
+  if (k === 'ArrowDown' || k === 'Down')  { moveFoc(1); e.preventDefault(); return; }
+  if (k === 'ArrowUp'   || k === 'Up')    { moveFoc(-1); e.preventDefault(); return; }
+  if (k === 'Enter') { activateFoc(); e.preventDefault(); return; }
+});
+
+/* ---------- async helpers ---------- */
+async function getJSON(url) {
+  const r = await fetch(url, {cache:'no-store'});
+  return r.json();
+}
+async function postJSON(url, body) {
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : undefined});
+  return r.json();
+}
+
+/* ---------- service health render ---------- */
+const SVC_LABELS = {
+  agent: 'GOSE Agent',
+  server: 'UI Server',
+  bridge: 'Pad-Nav Bridge',
+  passthrough: 'Pad Passthrough',
+  kiosk: 'Kiosk (WebKit)'
+};
+
+function renderHealth(data) {
+  const svcs = (data && data.services) || [];
+  const list = document.getElementById('svc-list');
+  list.innerHTML = '';
+  // re-collect focusables after svc buttons added
+  svcs.forEach((s, i) => {
+    const row = document.createElement('div');
+    row.className = 'svc';
+    row.dataset.focus = '1';
+    row.dataset.action = 'svc-' + s.id;
+    const dotCls = s.ok ? 'green' : 'red';
+    const badge = s.ok ? '<span class="badge up">UP</span>' : '<span class="badge down">DOWN</span>';
+    row.innerHTML =
+      `<div class="dot ${dotCls}"></div>` +
+      `<div class="col"><div class="nm">${SVC_LABELS[s.id]||s.id}</div>` +
+      `<div class="det">${esc(s.detail||'')}</div></div>${badge}`;
+    list.appendChild(row);
+  });
+
+  // versions
+  if (data && data.versions) {
+    const v = data.versions;
+    document.getElementById('v-gose').textContent = v.gose || '—';
+    document.getElementById('v-bat').textContent  = v.batocera || '—';
+    document.getElementById('v-ker').textContent  = v.kernel || '—';
+    document.getElementById('v-base').textContent = v.base || '—';
+  }
+
+  // watchdog
+  if (data && data.watchdog) {
+    const w = data.watchdog;
+    const safeEl = document.getElementById('wd-safe');
+    safeEl.textContent = w.safe_mode ? 'ACTIVE' : 'Normal';
+    safeEl.className = 'val ' + (w.safe_mode ? 'bad' : 'ok');
+
+    const attEl = document.getElementById('wd-att');
+    const att = w.boot_attempts || 0;
+    attEl.textContent = att;
+    attEl.className = 'val ' + (att >= 3 ? 'bad' : att >= 1 ? 'warn' : 'ok');
+
+    const prevEl = document.getElementById('wd-prev');
+    prevEl.textContent = w.prev_ui_available ? 'Yes' : 'None';
+    prevEl.className = 'val ' + (w.prev_ui_available ? 'ok' : 'warn');
+
+    // recovery section mirror
+    document.getElementById('rec-watchdog').textContent = 'Running';
+    document.getElementById('rec-watchdog').className = 'rv ok';
+    const recSafe = document.getElementById('rec-safe');
+    recSafe.textContent = w.safe_mode ? 'ACTIVE' : 'Normal';
+    recSafe.className = 'rv ' + (w.safe_mode ? 'bad' : 'ok');
+    const recPrev = document.getElementById('rec-prev');
+    recPrev.textContent = w.prev_ui_available ? 'Available' : 'None saved';
+    recPrev.className = 'rv ' + (w.prev_ui_available ? 'ok' : 'warn');
+    const recAtt = document.getElementById('rec-att');
+    recAtt.textContent = att + (att >= 3 ? ' (threshold)' : '');
+    recAtt.className = 'rv ' + (att >= 3 ? 'bad' : att >= 1 ? 'warn' : 'ok');
+  }
+
+  rebuildFocusAll();
+}
+
+function rebuildFocusAll() {
+  buildFocusables();
+  foc = Math.min(foc, Math.max(0, focusables.length - 1));
+  paintFocus();
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+/* ---------- load health ---------- */
+async function loadHealth() {
+  try {
+    const d = await getJSON('/diag/health');
+    renderHealth(d);
+  } catch(e) {
+    document.getElementById('svc-list').innerHTML =
+      '<div class="svc"><div class="dot grey"></div><div class="col">' +
+      '<div class="nm">Could not reach server</div>' +
+      '<div class="det">' + esc(String(e)) + '</div></div></div>';
+    rebuildFocusAll();
+  }
+}
+
+/* ---------- bundle export ---------- */
+let exporting = false;
+
+async function doExport() {
+  if (exporting) return;
+  exporting = true;
+  const btn = document.getElementById('btn-export');
+  const box = document.getElementById('bundle-status');
+  btn.disabled = true;
+  btn.textContent = 'Building...';
+  box.className = 'status-box show';
+  box.innerHTML = '<span class="spin">&#8635;</span> Gathering logs and config...';
+
+  try {
+    const r = await postJSON('/diag/bundle');
+    if (r.ok) {
+      box.className = 'status-box show ok-status';
+      box.innerHTML =
+        `Bundle created: <span style="font-weight:700">${esc(r.file)}</span>` +
+        ` (${fmtBytes(r.size)}, ${(r.members||[]).length} members)` +
+        `<div class="path-line">${esc(r.path)}</div>`;
+    } else {
+      box.className = 'status-box show err-status';
+      box.innerHTML = 'Export failed: ' + esc(r.error || 'unknown error');
+    }
+  } catch(e) {
+    box.className = 'status-box show err-status';
+    box.innerHTML = 'Export failed: ' + esc(String(e));
+  } finally {
+    exporting = false;
+    btn.disabled = false;
+    btn.textContent = 'Export bundle';
+  }
+}
+
+function fmtBytes(n) {
+  if (!n) return '0 B';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
+
+/* ---------- button wiring ---------- */
+document.getElementById('btn-export').addEventListener('click', doExport);
+document.getElementById('btn-refresh').addEventListener('click', () => {
+  loadHealth();
+});
+document.getElementById('btn-back').addEventListener('click', goBack);
+
+/* Mark static buttons as focusable */
+['btn-export','btn-refresh','btn-back'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.dataset.focus = '1';
+});
+
+/* ---------- initial load ---------- */
+buildFocusables();
+paintFocus();
+loadHealth();
+</script>
+</body>
+</html>
