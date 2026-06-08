@@ -52,6 +52,8 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300),
            "/sys/perf": (60, 60), "/widgets/store": (30, 60), "/widgets/steam": (30, 60),
            "/storage/import": (12, 60), "/storage/detected": (30, 60),
+           "/store/sources/add": (6, 60), "/store/sources/preview": (10, 60),
+           "/store/sources/refresh": (10, 60),
            # coarse backstop only — the real brute-force guard is the 5-try/30s PIN lockout
            "/auth/pin": (30, 60), "/auth/pin/set": (10, 60)}
 
@@ -2619,7 +2621,8 @@ def emulators_list():
                         "no_clean": _NO_CLEAN_SWAP.get(sysname),
                         "has_games": sysname in rom_dirs, "cores": cores})
     return {"ok": True, "systems": systems, "buildbot": BUILDBOT_BASE,
-            "excluded": sorted(_EXCLUDE_CORES), "review": sorted(_REVIEW_CORES), "swap": _CORE_SWAP}
+            "excluded": sorted(_EXCLUDE_CORES), "review": sorted(_REVIEW_CORES), "swap": _CORE_SWAP,
+            "community": _src_core_rows()}   # third-party cores from added sources (docs/29)
 
 def emulator_install(payload):
     core = (payload or {}).get("core", "").strip()
@@ -2784,12 +2787,15 @@ def games_catalog():
         e["sysname"] = _SYS_EMU.get(g["system"], _SYS.get(g["system"], g["system"]))
         e["installed"] = os.path.isfile(p)
         out.append(e)
+    out += _src_game_rows()   # community-source entries (docs/29) — labeled via "source"
     return {"ok": True, "games": out,
             "note": "Curated free & homebrew games with verified download links. "
                     "No commercial ROMs are distributed."}
 
 def games_install(payload):
     gid = (payload or {}).get("id", "").strip()
+    if ":" in gid:                       # "<source_id>:<entry_id>" = community source entry
+        return source_entry_install(gid)
     g = _GAMES_BY_ID.get(gid)
     if not g:
         return {"ok": False, "error": "unknown game id"}
@@ -2867,6 +2873,8 @@ def games_install(payload):
 
 def games_uninstall(payload):
     gid = (payload or {}).get("id", "").strip()
+    if ":" in gid:                       # community source entry (incl. orphans)
+        return source_entry_uninstall(gid)
     g = _GAMES_BY_ID.get(gid)
     if not g:
         return {"ok": False, "error": "unknown game id"}
@@ -2887,6 +2895,553 @@ def games_uninstall(payload):
                 and os.path.isdir(datadir):
             shutil.rmtree(datadir, ignore_errors=True)
     LOG.info("GAME UNINSTALL %s", gid)
+    return {"ok": True, "id": gid, "removed": True}
+
+# ===== Community store sources (docs/29): user-added third-party manifest repos =====
+# THE LEGAL LINE: GOSE ships ONLY its built-in legal sources (the curated GAMES_CATALOG,
+# the libretro buildbot, Flathub) and never pre-loads, suggests, or recommends any
+# third-party content repo. The USER brings a manifest URL; adding it requires passing
+# an explicit terms-acceptance screen (timestamp stored). Content legality is the
+# source's and the user's responsibility — same posture as the SD-card import.
+import hashlib
+
+SOURCES_F = "/userdata/system/gose/store_sources.json"   # under the OS-protected prefix
+_SRC_LOCK = threading.Lock()
+_SRC_SCHEMA = 1
+_SRC_MAX_MANIFEST = 2 * 1024 * 1024     # manifest fetch cap (huge-manifest hardening)
+_SRC_MAX_ENTRIES = 500
+_SRC_MAX_DL = 512 * 1024 * 1024         # per-entry download cap
+_SRC_FETCH_T = 20                       # manifest fetch timeout (down-URL hardening)
+_SRC_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,47}$")
+_SRC_SYS_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
+# safe basename: no path separators, no leading dot — first line of traversal defense
+# (the '..' check is explicit below; install re-checks with realpath confinement)
+_SRC_FNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._()+\[\]-]{0,79}$")
+_SRC_DATADIR_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,40}$")
+_SRC_SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+# Shown read-only in the Sources tab — the ONLY sources GOSE ships with. Never extend
+# this list with third-party content repos (docs/29 §0).
+BUILTIN_SOURCES = [
+    {"id": "official", "name": "GOSE catalog",
+     "desc": "Curated free & homebrew games with author-sanctioned redistribution", "kind": "games"},
+    {"id": "libretro-buildbot", "name": "libretro buildbot",
+     "desc": "Official libretro nightly emulator-core builds", "kind": "emulators"},
+    {"id": "flathub", "name": "Flathub",
+     "desc": "Flatpak app repository", "kind": "apps"},
+]
+
+def _src_sid(url):
+    # deterministic source id from the URL: re-adding the same URL updates the same record
+    return "src" + hashlib.sha256((url or "").strip().lower().encode()).hexdigest()[:10]
+
+def _http_url_ok(u, maxlen=400):
+    from urllib.parse import urlparse
+    if not isinstance(u, str) or not (1 <= len(u) <= maxlen):
+        return False
+    try:
+        p = urlparse(u)
+    except Exception:
+        return False
+    return p.scheme in ("http", "https") and bool(p.netloc)
+
+def _fetch_capped(url, cap, timeout):
+    # bounded fetch: refuses non-http(s) schemes and anything over the byte cap
+    if not _http_url_ok(url):
+        raise ValueError("only http(s) URLs are supported")
+    req = urllib.request.Request(url, headers={"User-Agent": "GOSE-Store/1"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = r.read(cap + 1)
+    if len(data) > cap:
+        raise ValueError("response exceeds the %d MB cap" % max(1, cap // (1024 * 1024)))
+    return data
+
+def _str_field(d, key, maxlen, default=""):
+    v = d.get(key, default)
+    return v.strip()[:maxlen] if isinstance(v, str) else default
+
+def _validate_entry(e, i, seen):
+    """One manifest entry -> (clean_entry|None, error|None). Honest, specific errors."""
+    if not isinstance(e, dict):
+        return None, "entries[%d]: not an object" % i
+    eid = e.get("id")
+    tag = "entries[%d] (%s)" % (i, eid if isinstance(eid, str) else "?")
+    if not isinstance(eid, str) or not _SRC_ID_RE.match(eid):
+        return None, tag + ": bad id (want ^[a-z0-9][a-z0-9_.-]{0,47}$)"
+    if eid in seen:
+        return None, tag + ": duplicate id"
+    name = _str_field(e, "name", 80)
+    if not name:
+        return None, tag + ": name required"
+    typ = e.get("type")
+    if typ not in ("game", "emulator"):
+        return None, tag + ": type must be 'game' or 'emulator' (got %r)" % (typ,)
+    url = e.get("url")
+    if not _http_url_ok(url):
+        return None, tag + ": bad download url (http/https required)"
+    lic = _str_field(e, "license", 120)
+    if not lic:
+        return None, tag + ": license is required (honest provenance — docs/29 §2)"
+    sha = e.get("sha256")
+    if sha is not None and (not isinstance(sha, str) or not _SRC_SHA_RE.match(sha)):
+        return None, tag + ": sha256 must be 64 hex chars"
+    size = e.get("size")
+    if size is not None and (not isinstance(size, int) or isinstance(size, bool)
+                             or not (0 < size <= _SRC_MAX_DL)):
+        return None, tag + ": size must be a positive integer <= %d" % _SRC_MAX_DL
+    out = {"id": eid, "type": typ, "name": name, "url": url.strip(), "license": lic,
+           "desc": _str_field(e, "desc", 300), "cat": _str_field(e, "cat", 24) or "Community"}
+    if sha:
+        out["sha256"] = sha.lower()
+    if size:
+        out["size"] = size
+    if typ == "game":
+        system = e.get("system")
+        if not isinstance(system, str) or not _SRC_SYS_RE.match(system):
+            return None, tag + ": bad system id (want ^[a-z0-9][a-z0-9_-]{0,31}$)"
+        dest = e.get("dest")
+        if not isinstance(dest, str) or not _SRC_FNAME_RE.match(dest) or ".." in dest:
+            return None, tag + ": dest must be a safe filename (no slashes, no '..')"
+        kind = e.get("kind", "direct")
+        if kind not in ("direct", "zip", "zipdir"):
+            return None, tag + ": kind must be direct|zip|zipdir"
+        out.update(system=system, dest=dest, kind=kind)
+        if kind == "zip":
+            member = e.get("member")
+            if not isinstance(member, str) or not (1 <= len(member) <= 200) \
+                    or member.startswith("/") or ".." in member:
+                return None, tag + ": zip kind needs a safe 'member' path"
+            out["member"] = member
+        if kind == "zipdir":
+            strip = e.get("strip"); datadir = e.get("datadir")
+            if not isinstance(strip, str) or not (0 < len(strip) <= 100) or ".." in strip:
+                return None, tag + ": zipdir kind needs a 'strip' prefix"
+            if not isinstance(datadir, str) or not _SRC_DATADIR_RE.match(datadir):
+                return None, tag + ": zipdir kind needs a safe 'datadir'"
+            out.update(strip=strip, datadir=datadir)
+    else:   # emulator = a libretro core
+        core = e.get("core")
+        if not isinstance(core, str) or not _CORE_NAME_RE.match(core):
+            return None, tag + ": bad core name"
+        out["core"] = core
+    seen.add(eid)
+    return out, None
+
+def _validate_manifest(data, url):
+    """Manifest bytes -> (meta dict with the VALID entries, per-entry errors).
+    meta=None means the whole source is refused (the errors say exactly why)."""
+    try:
+        doc = json.loads(data.decode("utf-8"))
+    except Exception as e:
+        return None, ["manifest is not valid JSON: %s" % e]
+    if not isinstance(doc, dict):
+        return None, ["manifest must be a JSON object"]
+    if doc.get("gose_source") != _SRC_SCHEMA:
+        return None, ["unsupported schema: gose_source=%r (this GOSE understands gose_source: %d)"
+                      % (doc.get("gose_source"), _SRC_SCHEMA)]
+    name = _str_field(doc, "name", 80)
+    if not name:
+        return None, ["source 'name' is required"]
+    entries = doc.get("entries")
+    if not isinstance(entries, list) or not entries:
+        return None, ["'entries' is required and must be a non-empty list"]
+    if len(entries) > _SRC_MAX_ENTRIES:
+        return None, ["too many entries (%d; cap is %d)" % (len(entries), _SRC_MAX_ENTRIES)]
+    valid, errors, seen = [], [], set()
+    for i, e in enumerate(entries):
+        ent, err = _validate_entry(e, i, seen)
+        if ent:
+            valid.append(ent)
+        else:
+            errors.append(err)
+    if not valid:
+        return None, errors + ["no valid entries — source refused"]
+    homepage = doc.get("homepage")
+    meta = {"id": _src_sid(url), "url": url, "name": name,
+            "description": _str_field(doc, "description", 300),
+            "maintainer": _str_field(doc, "maintainer", 120),
+            "homepage": homepage if _http_url_ok(homepage, 200) else "",
+            "entries": valid}
+    return meta, errors
+
+def _sources_load():
+    try:
+        d = json.load(open(SOURCES_F))
+    except Exception:
+        d = {}
+    if not isinstance(d, dict):
+        d = {}
+    d.setdefault("schema", _SRC_SCHEMA)
+    d.setdefault("sources", [])
+    d.setdefault("orphans", [])
+    return d
+
+def _src_counts(rec):
+    g = sum(1 for e in rec["entries"] if e["type"] == "game")
+    return {"games": g, "emulators": len(rec["entries"]) - g}
+
+def _src_entry_installed(rec, e):
+    ins = (rec.get("installs") or {}).get(e["id"])
+    return bool(ins) and os.path.isfile(ins.get("path", ""))
+
+def store_sources():
+    with _SRC_LOCK:
+        d = _sources_load()
+    out = []
+    for rec in d["sources"]:
+        entries = []
+        for e in rec["entries"]:
+            ee = dict(e)
+            ee["installed"] = _src_entry_installed(rec, e)
+            entries.append(ee)
+        out.append({"id": rec["id"], "url": rec["url"], "name": rec["name"],
+                    "description": rec.get("description", ""),
+                    "maintainer": rec.get("maintainer", ""),
+                    "homepage": rec.get("homepage", ""),
+                    "added": rec.get("added"), "accepted_terms": rec.get("accepted_terms"),
+                    "refreshed": rec.get("refreshed"), "counts": _src_counts(rec),
+                    "errors": rec.get("errors", []),
+                    "installed": sum(1 for x in entries if x["installed"]),
+                    "entries": entries})
+    orphans = [o for o in d["orphans"] if o.get("path") and os.path.exists(o["path"])]
+    return {"ok": True, "builtin": BUILTIN_SOURCES, "sources": out, "orphans": orphans}
+
+def source_preview(payload):
+    # fetch + validate WITHOUT storing — the preview step before the terms screen
+    url = ((payload or {}).get("url") or "").strip()
+    if not _http_url_ok(url):
+        return {"ok": False, "error": "a full http(s) manifest URL is required"}
+    try:
+        data = _fetch_capped(url, _SRC_MAX_MANIFEST, _SRC_FETCH_T)
+    except Exception as e:
+        return {"ok": False, "error": "couldn't fetch the manifest: %s" % e}
+    meta, errors = _validate_manifest(data, url)
+    if not meta:
+        return {"ok": False, "error": "manifest refused", "errors": errors}
+    with _SRC_LOCK:
+        already = any(s["id"] == meta["id"] for s in _sources_load()["sources"])
+    c = _src_counts(meta)
+    return {"ok": True, "url": url, "id": meta["id"], "name": meta["name"],
+            "description": meta["description"], "maintainer": meta["maintainer"],
+            "homepage": meta["homepage"], "count": len(meta["entries"]),
+            "games": c["games"], "emulators": c["emulators"],
+            "errors": errors, "already": already}
+
+def source_add(payload):
+    url = ((payload or {}).get("url") or "").strip()
+    if not _http_url_ok(url):
+        return {"ok": False, "error": "a full http(s) manifest URL is required"}
+    if (payload or {}).get("accept_terms") is not True:
+        # the legal line: no source lands without the user's explicit acceptance
+        return {"ok": False, "error": "terms not accepted — adding a third-party source requires "
+                "explicitly accepting that its content is the maintainer's and your responsibility"}
+    try:
+        data = _fetch_capped(url, _SRC_MAX_MANIFEST, _SRC_FETCH_T)
+    except Exception as e:
+        return {"ok": False, "error": "couldn't fetch the manifest: %s" % e}
+    meta, errors = _validate_manifest(data, url)
+    if not meta:
+        return {"ok": False, "error": "manifest refused", "errors": errors}
+    now = int(time.time())
+    with _SRC_LOCK:
+        d = _sources_load()
+        old = next((s for s in d["sources"] if s["id"] == meta["id"]), None)
+        rec = dict(meta)
+        rec.update(errors=errors, refreshed=now,
+                   added=(old or {}).get("added", now),
+                   accepted_terms=(old or {}).get("accepted_terms", now),
+                   installs=(old or {}).get("installs", {}))
+        d["sources"] = [s for s in d["sources"] if s["id"] != meta["id"]] + [rec]
+        write_json_atomic(SOURCES_F, d)
+    LOG.info("STORE SOURCE %s %s '%s' (%d entries, %d entry errors; terms accepted @%d)",
+             "re-added" if old else "added", rec["id"], rec["name"],
+             len(rec["entries"]), len(errors), rec["accepted_terms"])
+    c = _src_counts(rec)
+    return {"ok": True, "id": rec["id"], "name": rec["name"], "count": len(rec["entries"]),
+            "games": c["games"], "emulators": c["emulators"], "errors": errors,
+            "accepted_terms": rec["accepted_terms"], "updated": bool(old)}
+
+def source_refresh(payload):
+    sid = ((payload or {}).get("id") or "").strip()
+    with _SRC_LOCK:
+        rec = next((s for s in _sources_load()["sources"] if s["id"] == sid), None)
+    if not rec:
+        return {"ok": False, "error": "unknown source id"}
+    try:
+        data = _fetch_capped(rec["url"], _SRC_MAX_MANIFEST, _SRC_FETCH_T)
+    except Exception as e:
+        # a down manifest URL must not nuke a working source
+        return {"ok": False, "error": "refresh failed (%s) — keeping the previous entry list" % e,
+                "kept": len(rec["entries"])}
+    meta, errors = _validate_manifest(data, rec["url"])
+    if not meta:
+        return {"ok": False, "error": "refreshed manifest refused — keeping the previous entry list",
+                "errors": errors, "kept": len(rec["entries"])}
+    with _SRC_LOCK:
+        d = _sources_load()
+        rec = next((s for s in d["sources"] if s["id"] == sid), None)
+        if not rec:
+            return {"ok": False, "error": "unknown source id"}
+        rec.update(name=meta["name"], description=meta["description"],
+                   maintainer=meta["maintainer"], homepage=meta["homepage"],
+                   entries=meta["entries"], errors=errors, refreshed=int(time.time()))
+        write_json_atomic(SOURCES_F, d)
+    LOG.info("STORE SOURCE refreshed %s (%d entries, %d errors)", sid, len(meta["entries"]), len(errors))
+    return {"ok": True, "id": sid, "count": len(meta["entries"]), "errors": errors}
+
+def source_remove(payload):
+    sid = ((payload or {}).get("id") or "").strip()
+    with _SRC_LOCK:
+        d = _sources_load()
+        rec = next((s for s in d["sources"] if s["id"] == sid), None)
+        if not rec:
+            return {"ok": False, "error": "unknown source id"}
+        # entries vanish from the catalog; INSTALLED FILES STAY (they're the user's),
+        # recorded as orphans so they keep an honest provenance label + stay uninstallable
+        orphaned, now = 0, int(time.time())
+        for eid, ins in (rec.get("installs") or {}).items():
+            if not (ins.get("path") and os.path.exists(ins["path"])):
+                continue
+            e = next((x for x in rec["entries"] if x["id"] == eid), None)
+            d["orphans"].append({"source_name": rec["name"], "source_id": sid,
+                                 "entry": e or {"id": eid, "name": eid, "type": "game"},
+                                 "path": ins["path"], "datadir": ins.get("datadir"),
+                                 "removed": now})
+            orphaned += 1
+        d["sources"] = [s for s in d["sources"] if s["id"] != sid]
+        write_json_atomic(SOURCES_F, d)
+    LOG.info("STORE SOURCE removed %s ('%s') — %d installs kept as orphans", sid, rec["name"], orphaned)
+    return {"ok": True, "removed": sid, "orphaned": orphaned,
+            "note": "installed files were kept on disk; they stay in the catalog labeled as "
+                    "from a removed source and can still be uninstalled individually"}
+
+def _src_game_rows():
+    # third-party game entries for the merged /games/catalog — ADDITIVE fields only
+    # (id/name/system/desc/license/cat/sysname/installed match the official shape, plus
+    # source/source_id/orphan), so existing consumers (store page, widgets_store) are safe.
+    with _SRC_LOCK:
+        d = _sources_load()
+    rows = []
+    for rec in d["sources"]:
+        for e in rec["entries"]:
+            if e["type"] != "game":
+                continue
+            rows.append({"id": rec["id"] + ":" + e["id"], "name": e["name"],
+                         "system": e["system"], "desc": e.get("desc", ""),
+                         "license": e["license"], "cat": e.get("cat", "Community"),
+                         "sysname": _SYS_EMU.get(e["system"], _SYS.get(e["system"], e["system"])),
+                         "installed": _src_entry_installed(rec, e),
+                         "source": rec["name"], "source_id": rec["id"]})
+    for o in d["orphans"]:
+        e = o.get("entry") or {}
+        if e.get("type") == "emulator" or not (o.get("path") and os.path.isfile(o["path"])):
+            continue
+        system = e.get("system", "")
+        rows.append({"id": (o.get("source_id") or "src") + ":" + (e.get("id") or "?"),
+                     "name": e.get("name") or os.path.basename(o["path"]),
+                     "system": system, "desc": e.get("desc", ""),
+                     "license": e.get("license", "unknown"), "cat": e.get("cat", "Community"),
+                     "sysname": _SYS_EMU.get(system, _SYS.get(system, system)),
+                     "installed": True, "orphan": True,
+                     "source": (o.get("source_name") or "removed source") + " (removed)",
+                     "source_id": o.get("source_id")})
+    return rows
+
+def _src_core_rows():
+    # third-party emulator (libretro core) entries, grouped per source, for /emulators
+    with _SRC_LOCK:
+        d = _sources_load()
+    out = []
+    for rec in d["sources"]:
+        cores = []
+        for e in rec["entries"]:
+            if e["type"] != "emulator":
+                continue
+            cores.append({"id": rec["id"] + ":" + e["id"], "core": e["core"], "name": e["name"],
+                          "license": e["license"], "desc": e.get("desc", ""),
+                          "installed": _src_entry_installed(rec, e)})
+        if cores:
+            out.append({"source": rec["name"], "source_id": rec["id"], "cores": cores})
+    orph = []
+    for o in d["orphans"]:
+        e = o.get("entry") or {}
+        if e.get("type") == "emulator" and o.get("path") and os.path.isfile(o["path"]):
+            orph.append({"id": (o.get("source_id") or "src") + ":" + (e.get("id") or "?"),
+                         "core": e.get("core") or "?", "name": e.get("name") or "?",
+                         "license": e.get("license", "unknown"), "installed": True, "orphan": True})
+    if orph:
+        out.append({"source": "removed sources", "source_id": None, "cores": orph, "orphan": True})
+    return out
+
+def _src_install_target(e, sid):
+    """Resolve + CONFINE the install target for a validated entry.
+    Returns (out_path, dataroot_or_None, error_or_None) — same realpath discipline
+    as games_install/emulator_install (a21e885)."""
+    if e["type"] == "game":
+        sysdir = os.path.join(ROMS, e["system"])
+        out_path = os.path.join(sysdir, e["dest"])
+        if os.path.realpath(out_path) != out_path or not out_path.startswith(sysdir + os.sep):
+            return None, None, "refused: install path escapes the roms directory"
+        dataroot = None
+        if e.get("kind") == "zipdir":
+            # per-source subfolder hygiene: a source's data trees live under src-<id>/
+            # so sources can't clobber each other's (or the official catalog's) data
+            dataroot = os.path.join(sysdir, "src-" + sid, e["datadir"])
+            if os.path.realpath(dataroot) != dataroot or not dataroot.startswith(sysdir + os.sep):
+                return None, None, "refused: data dir escapes the roms directory"
+        return out_path, dataroot, None
+    out_path = os.path.join(LIBRETRO_DIR, e["core"] + "_libretro.so")
+    if os.path.realpath(out_path) != out_path or not out_path.startswith(LIBRETRO_DIR + "/"):
+        return None, None, "refused: install path escapes the libretro directory"
+    return out_path, None, None
+
+def _write_atomic_bytes(path, blob, mode=None):
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(blob); f.flush(); os.fsync(f.fileno())
+    if mode is not None:
+        os.chmod(tmp, mode)
+    os.replace(tmp, path)
+
+def source_entry_install(gid):
+    # install one entry from an added source ("<source_id>:<entry_id>") — routed here
+    # by games_install so it shares the /games/install rate limit + UI plumbing
+    sid, _, eid = gid.partition(":")
+    with _SRC_LOCK:
+        rec = next((s for s in _sources_load()["sources"] if s["id"] == sid), None)
+    e = rec and next((x for x in rec["entries"] if x["id"] == eid), None)
+    if not e:
+        return {"ok": False, "error": "unknown source entry (was the source removed?)"}
+    out_path, dataroot, err = _src_install_target(e, sid)
+    if err:
+        LOG.warning("STORE SOURCE install REFUSED %s: %s", gid, err)
+        return {"ok": False, "error": err}
+    ins = (rec.get("installs") or {}).get(eid)
+    if os.path.exists(out_path):
+        if ins and ins.get("path") == out_path:
+            return {"ok": True, "id": gid, "installed": True, "already": True, "path": out_path}
+        # ownership guard: never silently overwrite a file this source didn't install
+        return {"ok": False, "error": "refused: %s already exists and wasn't installed by this "
+                "source — remove that file first if you really want this entry" % out_path}
+    try:
+        data = _fetch_capped(e["url"], _SRC_MAX_DL, 60)
+    except Exception as ex:
+        return {"ok": False, "error": "download failed: %s" % ex, "url": e["url"]}
+    if e.get("sha256"):
+        got = hashlib.sha256(data).hexdigest()
+        if got != e["sha256"]:
+            LOG.warning("STORE SOURCE sha256 MISMATCH %s (manifest %s, got %s)", gid, e["sha256"], got)
+            return {"ok": False, "error": "sha256 mismatch — install refused "
+                    "(manifest says %s, downloaded %s)" % (e["sha256"], got)}
+    note = None
+    if e.get("size") and e["size"] != len(data):
+        note = "size differs from the manifest (%d vs %d bytes)" % (len(data), e["size"])
+    files = None
+    try:
+        if e["type"] == "emulator":
+            blob = data
+            if data[:4] == b"PK\x03\x04":   # buildbot-style zip holding the .so
+                import io, zipfile
+                zf = zipfile.ZipFile(io.BytesIO(data))
+                member = next((n for n in zf.namelist() if n.endswith(".so")), None)
+                if not member:
+                    return {"ok": False, "error": "no .so found in the downloaded archive"}
+                blob = zf.read(member)
+            if len(blob) < 4096:
+                return {"ok": False, "error": "downloaded core looks corrupt (%d bytes)" % len(blob)}
+            _write_atomic_bytes(out_path, blob, mode=0o755)
+        elif e["kind"] == "zipdir":
+            import io, zipfile
+            zf = zipfile.ZipFile(io.BytesIO(data))
+            members = [m for m in zf.infolist()
+                       if m.filename.startswith(e["strip"]) and not m.is_dir()]
+            if not members:
+                return {"ok": False, "error": "archive had no files under '%s'" % e["strip"]}
+            total = 0
+            for m in members:
+                rel = m.filename[len(e["strip"]):]
+                out = os.path.normpath(os.path.join(dataroot, rel))
+                if not out.startswith(dataroot + os.sep):    # zip-slip confinement
+                    return {"ok": False, "error": "refused: archive member escapes the data dir"}
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                with open(out, "wb") as f:
+                    f.write(zf.read(m))
+                total += m.file_size
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            _write_atomic_bytes(out_path, (e["name"] + "\n").encode())   # the marker the Library lists
+            files = len(members)
+        else:
+            blob = data
+            if e["kind"] == "zip":
+                import io, zipfile
+                zf = zipfile.ZipFile(io.BytesIO(data))
+                blob = zf.read(e["member"])
+            if len(blob) < 64:
+                return {"ok": False, "error": "downloaded file looks corrupt (%d bytes)" % len(blob)}
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            _write_atomic_bytes(out_path, blob)
+    except Exception as ex:
+        return {"ok": False, "error": "install failed: %s" % ex}
+    with _SRC_LOCK:
+        d = _sources_load()
+        rec2 = next((s for s in d["sources"] if s["id"] == sid), None)
+        if rec2 is not None:
+            rec2.setdefault("installs", {})[eid] = {
+                "path": out_path, "datadir": dataroot,   # THIS entry's tree only
+                "t": int(time.time()), "sha256_verified": bool(e.get("sha256"))}
+            write_json_atomic(SOURCES_F, d)
+    LOG.info("STORE SOURCE INSTALL %s -> %s (%d bytes%s, sha256 %s)", gid, out_path, len(data),
+             (", %d files" % files) if files else "",
+             "verified" if e.get("sha256") else "not provided")
+    res = {"ok": True, "id": gid, "installed": True, "path": out_path, "bytes": len(data),
+           "sha256_verified": bool(e.get("sha256")), "source": rec["name"]}
+    if note:
+        res["note"] = note
+    if files:
+        res["files"] = files
+    return res
+
+def source_entry_uninstall(gid):
+    sid, _, eid = gid.partition(":")
+    with _SRC_LOCK:
+        d = _sources_load()
+        rec = next((s for s in d["sources"] if s["id"] == sid), None)
+        if rec:
+            ins = (rec.get("installs") or {}).get(eid)
+            orph = None
+        else:
+            orph = next((o for o in d["orphans"] if o.get("source_id") == sid
+                         and (o.get("entry") or {}).get("id") == eid), None)
+            ins = orph
+    if not ins or not ins.get("path"):
+        return {"ok": False, "error": "not installed (no install record for this entry)"}
+    path = ins["path"]
+    # confinement on the RECORDED path too (defense against a tampered store file)
+    if os.path.realpath(path) != path or not (path.startswith(ROMS + os.sep)
+                                              or path.startswith(LIBRETRO_DIR + "/")):
+        return {"ok": False, "error": "refused: recorded path is outside the install roots"}
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
+    dd = ins.get("datadir")
+    if dd and os.path.realpath(dd) == dd and dd.startswith(ROMS + os.sep) and os.path.isdir(dd):
+        shutil.rmtree(dd, ignore_errors=True)
+        try:
+            os.rmdir(os.path.dirname(dd))   # drop the src-<id> parent if now empty
+        except Exception:
+            pass
+    with _SRC_LOCK:
+        d = _sources_load()
+        rec2 = next((s for s in d["sources"] if s["id"] == sid), None)
+        if rec2 is not None:
+            (rec2.get("installs") or {}).pop(eid, None)
+        else:
+            d["orphans"] = [o for o in d["orphans"] if not (o.get("source_id") == sid
+                            and (o.get("entry") or {}).get("id") == eid)]
+        write_json_atomic(SOURCES_F, d)
+    LOG.info("STORE SOURCE UNINSTALL %s (%s)", gid, path)
     return {"ok": True, "id": gid, "removed": True}
 
 # ===== STORAGE AUTO-IMPORT (docs/25 §5.3): detect ROMs on inserted SD/USB -> offer -> import =====
@@ -3886,6 +4441,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(splice_probe(self._qs().get("path")))
         if route == "/store/catalog":
             return self._json(store_catalog())
+        if route == "/store/sources":
+            return self._json(store_sources())
         if route == "/emulators":
             return self._json(emulators_list())
         if route == "/games/catalog":
@@ -4024,6 +4581,20 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/emulators/uninstall":
                 return self._json(emulator_uninstall(payload))
             return self._json(apply_core_swap())
+        if route in ("/store/sources/preview", "/store/sources/add",
+                     "/store/sources/remove", "/store/sources/refresh"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route.endswith("/preview"):
+                return self._json(source_preview(payload))
+            if route.endswith("/add"):
+                return self._json(source_add(payload))
+            if route.endswith("/remove"):
+                return self._json(source_remove(payload))
+            return self._json(source_refresh(payload))
         if route in ("/games/install", "/games/uninstall"):
             try:
                 n = int(self.headers.get("Content-Length", 0))

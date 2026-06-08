@@ -87,6 +87,36 @@
     background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
   .foot .h{margin-left:auto}.foot b{color:var(--text)}
   .empty{color:var(--muted);padding:24px;font-size:13px}
+  /* provenance chip — third-party (community-source) entries, docs/29 */
+  .cat.src{color:#ffcf8b;background:#ffb86b14;border-color:#ffb86b55;margin-left:6px}
+  /* Sources tab */
+  .srcc{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:13px}
+  .srcc .sh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .srcc .snm{font-weight:700;font-size:15px}
+  .srcc .sml{color:var(--muted);font-size:11px;word-break:break-all;margin-top:4px}
+  .srcc .meta{color:var(--muted);font-size:12px;margin-top:6px;line-height:1.5}
+  .srcc .acts{display:flex;gap:8px;margin-top:10px}
+  .sbtn{border-radius:9px;padding:7px 14px;font-weight:600;font-size:13px;cursor:pointer;border:2px solid var(--line);background:var(--surface2);color:var(--text);white-space:nowrap;font-family:inherit}
+  .sbtn.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .sbtn.accent{background:var(--accent);color:#06121a;border-color:transparent}
+  .sbtn.accent.focus{border-color:#fff}
+  .sbtn.danger{background:transparent;color:#ff8e8e;border-color:#ff8e8e55}
+  .srchead{color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;margin:16px 2px 8px}
+  /* add-source modal (URL -> preview -> terms) */
+  .scrim{position:fixed;inset:0;background:#000000aa;z-index:80;display:none;align-items:center;justify-content:center}
+  .scrim.on{display:flex}
+  .modal{width:620px;max-width:92vw;max-height:78vh;overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 24px}
+  .modal h2{margin:0 0 8px;font-size:17px}
+  .modal .bd{color:var(--muted);font-size:13px;line-height:1.6}
+  .modal .bd b{color:var(--text)}
+  .modal input{width:100%;margin:12px 0 8px;background:var(--surface2);border:2px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--text);font-size:14px;outline:none;box-sizing:border-box;font-family:inherit}
+  .modal input:focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .modal .chars{display:flex;gap:6px;margin:2px 0 4px;flex-wrap:wrap}
+  .modal .chars .ck{min-width:36px;text-align:center;padding:7px 9px;border-radius:9px;background:var(--surface2);border:2px solid var(--line);font-weight:700;font-size:13px;cursor:pointer;color:var(--text);font-family:inherit}
+  .modal .chars .ck.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .modal .btns{display:flex;gap:10px;margin-top:16px;justify-content:flex-end}
+  .modal .terms{background:#ffb86b10;border:1px solid #ffb86b55;border-radius:11px;padding:12px 14px;margin-top:10px;font-size:13px;line-height:1.65;color:var(--text)}
+  .modal .errs{background:#ff8e8e12;border:1px solid #ff8e8e44;border-radius:10px;padding:9px 12px;margin-top:10px;font-size:12px;color:#ffb3b3;max-height:130px;overflow:auto}
   .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
     border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.show{opacity:1}
@@ -100,6 +130,7 @@
     <div class="tab" data-tab="apps"><span class="ic" data-i="apps"></span> Apps</div>
     <div class="tab" data-tab="emulators"><span class="ic" data-i="emulators"></span> Emulators</div>
     <div class="tab" data-tab="games"><span class="ic" data-i="games"></span> Games</div>
+    <div class="tab" data-tab="sources"><span class="ic" data-i="globe"></span> Sources</div>
     <div class="ltrig"><b>L1</b>/<b>R1</b> switch tabs</div>
   </div>
   <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search…" autofocus></div>
@@ -109,6 +140,7 @@
   <div class="scroll" id="scroll"><div class="grid" id="grid"></div></div>
   <div class="foot"><span class="ic" data-i="store"></span> <span id="footlabel">GOSE Store</span>
     <span class="h" id="foothint"></span></div>
+  <div class="scrim" id="scrim"><div class="modal" id="modal"></div></div>
   <div class="toast" id="toast"></div>
 <script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
@@ -117,13 +149,17 @@
   var $=function(id){return document.getElementById(id);};
   function paint(){if(window.GICON){GICON.paint(document);return;}var ns=document.querySelectorAll("[data-i]");for(var i=0;i<ns.length;i++){var e=ns[i];e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)");}}
   function say(m){var t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(function(){t.classList.remove("show");},2200);}
+  // manifest-derived strings (names/descs/licenses from third-party sources) are UNTRUSTED:
+  // everything a source controls renders through esc() (XSS hardening, docs/29 §5)
+  function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 
-  var TABS=["apps","emulators","games"];
+  var TABS=["apps","emulators","games","sources"];
   var TAB="apps";
   // ---- per-tab state ----
   var apps=[], appsShown=[], appsFoc=0;
-  var emuSystems=[], emuShown=[], emuFlat=[], emuFoc=0, emuShowAll=false;
+  var emuSystems=[], emuCommunity=[], emuShown=[], emuFlat=[], emuFoc=0, emuShowAll=false;
   var games=[], gamesShown=[], gamesFoc=0;
+  var sourcesD=null, srcItems=[], srcFoc=0;
 
   function setTab(t,push){
     if(TABS.indexOf(t)<0) t="apps";
@@ -131,9 +167,11 @@
     var els=$("tabs").querySelectorAll(".tab");
     for(var i=0;i<els.length;i++) els[i].classList.toggle("on",els[i].dataset.tab===t);
     $("q").value="";
-    $("q").placeholder = t==="apps"?"Search apps…":t==="emulators"?"Search systems & cores…":"Search games…";
+    $("q").placeholder = t==="apps"?"Search apps…":t==="emulators"?"Search systems & cores…"
+      : t==="sources"?"Search your sources…":"Search games…";
     $("subtitle").textContent = t==="apps"?"Install apps from Flathub — they become launchable in Apps"
       : t==="emulators"?"Emulator cores per system — swap defaults or add personal-use cores"
+      : t==="sources"?"Community source repos — you bring the URL; GOSE suggests none"
       : "Free & homebrew games — downloaded straight into your library";
     $("banner").style.display = t==="emulators" ? "" : "none";
     $("chiprow").style.display = t==="emulators" ? "" : "none";
@@ -148,6 +186,7 @@
     else { $("scroll").innerHTML='<div id="grid"></div>'; }
     $("foothint").innerHTML = t==="emulators"
       ? '<b>L1/R1</b> tabs · <b>↑↓</b> move · <b>Enter</b> install / set default · <b>X</b> remove · <b>Esc</b> desktop'
+      : t==="sources" ? '<b>L1/R1</b> tabs · <b>↑↓</b> move · <b>Enter</b> activate · <b>Esc</b> desktop'
       : '<b>L1/R1</b> tabs · <b>↑↓←→</b> move · <b>Enter</b> install / open · <b>X</b> remove · <b>Esc</b> desktop';
     render();
     if(push!==false){ try{history.replaceState(null,"","?tab="+t);}catch(e){} }
@@ -225,7 +264,12 @@
     if(emuFoc>=emuFlatLen())emuFoc=0;
     renderEmu();
   }
-  function emuFlatLen(){var n=0;for(var i=0;i<emuShown.length;i++)n+=dedupeCores(emuShown[i].cores).length;return n;}
+  function emuFlatLen(){var n=0;for(var i=0;i<emuShown.length;i++)n+=dedupeCores(emuShown[i].cores).length;
+    var q=$("q").value.toLowerCase().trim();
+    for(var s=0;s<emuCommunity.length;s++)for(var j=0;j<emuCommunity[s].cores.length;j++){
+      var cc=emuCommunity[s].cores[j];
+      if(!q||((cc.core||"")+" "+(cc.name||"")+" "+(emuCommunity[s].source||"")).toLowerCase().indexOf(q)>=0)n++;}
+    return n;}
   function coreBadge(c,isDefault){
     if(isDefault) return '<span class="badge act">Default</span>';
     if(c.verdict==="review") return '<span class="badge rev">Review</span>';
@@ -242,7 +286,6 @@
   }
   function renderEmu(){
     var root=$("grid");
-    if(!emuShown.length){root.innerHTML='<div class="empty">No systems match.</div>';paint();return;}
     var flat=[],html="";
     for(var i=0;i<emuShown.length;i++){
       var s=emuShown[i], cores=dedupeCores(s.cores);
@@ -262,6 +305,28 @@
         +'<span class="def">default: <b>'+defName+'</b>'+(s.default_commercial_ok?'':' · personal-use')+'</span></div>'
         +rows+'</div>';
     }
+    // community cores from user-added sources (docs/29) — labeled per source + provenance chip
+    var q2=$("q").value.toLowerCase().trim();
+    for(var ci=0;ci<emuCommunity.length;ci++){
+      var src=emuCommunity[ci], rows2="", any=false;
+      for(var cj=0;cj<src.cores.length;cj++){
+        var cc=src.cores[cj];
+        if(q2&&((cc.core||"")+" "+(cc.name||"")+" "+(src.source||"")).toLowerCase().indexOf(q2)<0)continue;
+        var fi2=flat.length; flat.push({community:true,id:cc.id,core:cc.core,cm:cc,srcName:src.source});
+        rows2+='<div class="core '+(fi2===emuFoc?'focus':'')+'" data-fi="'+fi2+'">'
+          +'<span class="cn">'+esc(cc.core)+'</span>'
+          +(cc.installed?'<span class="badge act">Installed</span>':'<span class="badge pu">3rd-party</span>')
+          +'<span class="lic">'+esc(cc.license)+'</span><span class="sp"></span>'
+          +(cc.busy?'<span class="btn busy">Working…</span>'
+            :(cc.installed?'<span class="btn unins" data-cact="uninstall">Remove</span>'
+                          :'<span class="btn get" data-cact="install">Install</span>'))
+          +'</div>';
+        any=true;
+      }
+      if(any) html+='<div class="sys flag"><div class="sh"><span class="snm">'+esc(src.source)+'</span>'
+        +'<span class="cat src">community source'+(src.orphan?' · removed':'')+'</span></div>'+rows2+'</div>';
+    }
+    if(!flat.length){root.innerHTML='<div class="empty">No systems match.</div>';emuFlat=[];paint();return;}
     emuFlat=flat;
     root.innerHTML=html;
     var rowsEls=root.querySelectorAll(".core");
@@ -278,12 +343,35 @@
   }
   function emuPrimary(){ // Enter behaviour
     var it=emuFlat[emuFoc];if(!it)return;
+    if(it.community){
+      if(!it.cm.installed) emuDo("install");
+      else say(it.core+" is installed — defaults are set on the system cards above");
+      return;
+    }
     if(!it.c.installed) emuDo("install");
     else if(!it.c.active) emuDo("default");
     else say(it.core+" is already the default for "+it.sys);
   }
   function emuDo(act){
-    var it=emuFlat[emuFoc];if(!it)return;var c=it.c;
+    var it=emuFlat[emuFoc];if(!it)return;
+    if(it.community){ // community-source core: installs route through the source machinery
+      if(act==="install"){
+        if(it.cm.installed){say(it.core+" is already installed");return;}
+        it.cm.busy=true;renderEmu();say("Installing "+it.core+" from "+(it.srcName||"the source")+"…");
+        fetch("/games/install",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:it.id})})
+          .then(function(r){return r.json();}).then(function(d){
+            say(d.ok?(it.core+(d.already?" already installed":" installed")+(d.sha256_verified?" (sha256 verified)":"")):("Install failed: "+(d.error||"?")));
+            setTimeout(loadEmu,400);}).catch(function(){it.cm.busy=false;say("Install failed");renderEmu();});
+      } else if(act==="uninstall"){
+        if(!it.cm.installed)return;
+        say("Removing "+it.core+"…");
+        fetch("/games/uninstall",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:it.id})})
+          .then(function(r){return r.json();}).then(function(d){
+            say(d.ok?(it.core+" removed"):(d.error||"Remove failed"));setTimeout(loadEmu,400);});
+      }
+      return;
+    }
+    var c=it.c;
     if(act==="install"){
       c.busy=true;renderEmu();say("Installing "+it.core+" from the libretro buildbot…");
       fetch("/emulators/install",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({core:it.core})})
@@ -305,7 +393,7 @@
   }
   function loadEmu(){
     fetch("/emulators",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
-      emuSystems=d.systems||[];if(TAB==="emulators")filterEmu();});
+      emuSystems=d.systems||[];emuCommunity=d.community||[];if(TAB==="emulators")filterEmu();});
   }
   function renderChips(){
     $("chiprow").innerHTML='<span class="chip '+(emuShowAll?'on':'')+'" id="chipall">'
@@ -333,9 +421,10 @@
     g.innerHTML=gamesShown.map(function(a,i){
       return '<div class="app '+(i===gamesFoc?'focus':'')+'" data-i2="'+i+'">'
         +'<div class="ai"><span class="ic" data-i="games"></span></div>'
-        +'<div class="mid"><div class="nm">'+a.name+'</div><div class="ds">'+(a.desc||"")+'</div>'
-        +'<span class="cat">'+a.sysname+' · '+a.license+'</span></div>'
-        +'<div class="col">'+gameBtn(a)+'</div></div>';
+        +'<div class="mid"><div class="nm">'+esc(a.name)+'</div><div class="ds">'+esc(a.desc||"")+'</div>'
+        +'<span class="cat">'+esc(a.sysname)+' · '+esc(a.license)+'</span>'
+        +(a.source?'<span class="cat src">'+esc(a.source)+(a.orphan?' · orphaned':'')+'</span>':'')
+        +'</div><div class="col">'+gameBtn(a)+'</div></div>';
     }).join("")||'<div class="empty">No games match.</div>';
     var kids=g.children;
     for(var i=0;i<kids.length;i++){(function(el){
@@ -364,25 +453,251 @@
       games=d.games||[];if(TAB==="games")filterGames();});
   }
 
+  // ---------- SOURCES (docs/29: community source repos; user brings the URL) ----------
+  function fmtT(t){if(!t)return "—";var d=new Date(t*1000);
+    return d.toLocaleDateString()+" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);}
+  function loadSources(){
+    fetch("/store/sources",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+      sourcesD=d;if(TAB==="sources")renderSources();}).catch(function(){});
+  }
+  function renderSources(){
+    var root=$("grid");if(!root)return;
+    if(!sourcesD){root.innerHTML='<div class="empty">Loading…</div>';return;}
+    var q=$("q").value.toLowerCase().trim();
+    var items=[],html='';
+    items.push({act:"add"});
+    html+='<button class="sbtn accent '+(srcFoc===0?'focus':'')+'" data-si="0" style="margin:2px 2px 4px">+ Add source</button>';
+    html+='<div class="srchead">Built-in sources (read-only)</div>';
+    (sourcesD.builtin||[]).forEach(function(b){
+      html+='<div class="srcc"><div class="sh"><span class="snm">'+esc(b.name)+'</span>'
+        +'<span class="badge ok">built-in</span></div>'
+        +'<div class="meta">'+esc(b.desc)+'</div></div>';
+    });
+    var srcs=(sourcesD.sources||[]).filter(function(s){
+      return !q||s.name.toLowerCase().indexOf(q)>=0||s.url.toLowerCase().indexOf(q)>=0;});
+    html+='<div class="srchead">Your sources</div>';
+    if(!srcs.length) html+='<div class="empty" style="padding:6px 2px 12px">None added. GOSE never suggests sources — '
+      +'you bring a manifest URL, and what it serves is between you and its maintainer.</div>';
+    srcs.forEach(function(s){
+      var ri=items.length;items.push({act:"refresh",id:s.id,name:s.name});
+      var xi=items.length;items.push({act:"remove",id:s.id,name:s.name});
+      html+='<div class="srcc"><div class="sh"><span class="snm">'+esc(s.name)+'</span>'
+        +'<span class="cat src">'+s.counts.games+' game'+(s.counts.games===1?'':'s')+' · '
+        +s.counts.emulators+' emulator'+(s.counts.emulators===1?'':'s')+' · '+s.installed+' installed</span></div>'
+        +'<div class="sml">'+esc(s.url)+'</div>'
+        +'<div class="meta">'+(s.maintainer?('Maintainer: '+esc(s.maintainer)+' · '):'')
+        +'terms accepted '+fmtT(s.accepted_terms)+' · refreshed '+fmtT(s.refreshed)
+        +(s.errors&&s.errors.length?(' · <span style="color:#ffb3b3">'+s.errors.length+' entry error'+(s.errors.length>1?'s':'')+'</span>'):'')+'</div>'
+        +'<div class="acts"><button class="sbtn '+(srcFoc===ri?'focus':'')+'" data-si="'+ri+'">Refresh</button>'
+        +'<button class="sbtn danger '+(srcFoc===xi?'focus':'')+'" data-si="'+xi+'">Remove</button></div></div>';
+    });
+    var orph=(sourcesD.orphans||[]);
+    if(orph.length){
+      html+='<div class="srchead">Orphaned installs (their source was removed)</div>';
+      orph.forEach(function(o){
+        var e=o.entry||{};
+        html+='<div class="srcc"><div class="sh"><span class="snm">'+esc(e.name||o.path)+'</span>'
+          +'<span class="cat src">'+esc(o.source_name||'removed source')+' (removed)</span></div>'
+          +'<div class="meta">'+esc(o.path)+' — still installed; remove it from the '
+          +(e.type==="emulator"?"Emulators":"Games")+' tab.</div></div>';
+      });
+    }
+    srcItems=items;
+    if(srcFoc>=items.length)srcFoc=items.length?items.length-1:0;
+    root.innerHTML=html;
+    var bs=root.querySelectorAll("[data-si]");
+    for(var i=0;i<bs.length;i++){(function(b){b.onclick=function(){srcFoc=+b.dataset.si;srcAct();};})(bs[i]);}
+    var f=root.querySelector(".sbtn.focus");if(f)f.scrollIntoView({block:"nearest"});
+    paint();
+  }
+  function srcAct(){
+    var it=srcItems[srcFoc];if(!it)return;
+    if(it.act==="add"){openSrcModal();return;}
+    if(it.act==="refresh"){say("Refreshing "+it.name+"…");
+      fetch("/store/sources/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:it.id})})
+        .then(function(r){return r.json();}).then(function(d){
+          say(d.ok?(it.name+" refreshed — "+d.count+" entries"+(d.errors&&d.errors.length?(" ("+d.errors.length+" entry errors)"):""))
+                  :(d.error||"Refresh failed"));
+          loadSources();loadGames();loadEmu();});
+      return;}
+    if(it.act==="remove"){say("Removing "+it.name+"…");
+      fetch("/store/sources/remove",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:it.id})})
+        .then(function(r){return r.json();}).then(function(d){
+          say(d.ok?(it.name+" removed"+(d.orphaned?(" — "+d.orphaned+" installed file"+(d.orphaned>1?"s":"")+" kept"):""))
+                  :(d.error||"Remove failed"));
+          loadSources();loadGames();loadEmu();});
+    }
+  }
+
+  // ---------- Add-source modal: URL -> preview -> TERMS -> added (docs/29 §6) ----------
+  // Layered-Escape (docs/27 §3.10): GOSE.modalPush/Pop around the modal's lifetime; keys are
+  // captured (stopPropagation) so nothing leaks to page nav; while the shared OSK is open it
+  // owns its keys and we swallow only what it ignores. The OSK has no symbol keys, so the
+  // URL-specific characters (. : / …) are focusable insert chips — page controls, not a
+  // second keyboard (the OSK still does all letters/digits).
+  var M=null;
+  var URLCHARS=[".",":","/","-","_","~","?","=","&"];
+  function openSrcModal(){
+    M={step:"url",url:"",foc:0};
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();
+    document.addEventListener("keydown",mKeys,true);
+    $("scrim").classList.add("on");mRender();
+  }
+  function closeSrcModal(){
+    if(!M)return;M=null;
+    if(window.GOSE&&GOSE.osk)GOSE.osk.hide();
+    if(window.GOSE&&GOSE.modalPop)GOSE.modalPop();
+    document.removeEventListener("keydown",mKeys,true);
+    $("scrim").classList.remove("on");$("modal").innerHTML="";
+    if(TAB==="sources")renderSources();
+  }
+  function mItems(){return [].slice.call($("modal").querySelectorAll("[data-mi]"));}
+  function mMark(){var its=mItems();
+    for(var i=0;i<its.length;i++)its[i].classList.toggle("focus",i===M.foc);
+    var el=its[M.foc];if(!el)return;
+    try{el.focus();}catch(e){}
+    // landing back on the URL field must re-open the OSK even when the field never
+    // blurred (focusin won't refire) — pad-drive found this (WebKitGTK)
+    if(el.id==="murl"&&window.GOSE&&GOSE.osk)GOSE.osk.show();}
+  function mRender(){
+    var m=$("modal"),h="";if(!M)return;
+    if(M.step==="url"){
+      h='<h2>Add a source</h2><div class="bd">Enter the source\'s <b>manifest URL</b> (a <b>gose_source</b> JSON file). '
+       +'GOSE doesn\'t suggest or recommend sources — the URL is yours to bring.</div>'
+       +'<input id="murl" data-mi spellcheck="false" autocomplete="off" placeholder="https://…/manifest.json" value="'+esc(M.url)+'">'
+       +'<div class="chars">'+URLCHARS.map(function(c){return '<button type="button" class="ck" data-mi data-ch="'+esc(c)+'">'+esc(c)+'</button>';}).join("")+'</div>'
+       +'<div class="btns"><button class="sbtn accent" data-mi data-osk-primary id="mnext">Next</button>'
+       +'<button class="sbtn" data-mi id="mcancel">Cancel</button></div>';
+    } else if(M.step==="busy"){
+      h='<h2>'+esc(M.msg||"Working…")+'</h2><div class="bd">Talking to the source…</div>';
+    } else if(M.step==="preview"){
+      var p=M.prev;
+      h='<h2>'+esc(p.name)+'</h2>'
+       +'<div class="bd">'+(p.description?esc(p.description)+'<br>':'')
+       +(p.maintainer?('Maintainer: <b>'+esc(p.maintainer)+'</b><br>'):'')
+       +'<b>'+p.count+'</b> entr'+(p.count===1?'y':'ies')+' — '+p.games+' game'+(p.games===1?'':'s')
+       +', '+p.emulators+' emulator'+(p.emulators===1?'':'s')
+       +(p.already?'<br><b>Already added</b> — continuing will update it.':'')+'</div>'
+       +(p.errors&&p.errors.length?('<div class="errs">'+p.errors.map(esc).join('<br>')+'</div>'):'')
+       +'<div class="btns"><button class="sbtn accent" data-mi id="mcont">Continue</button>'
+       +'<button class="sbtn" data-mi id="mcancel">Cancel</button></div>';
+    } else if(M.step==="terms"){
+      h='<h2>Third-party source terms</h2>'
+       +'<div class="terms"><b>This source\'s content is the responsibility of its maintainer and you. '
+       +'GOSE does not review it.</b><br><br>'
+       +'· GOSE doesn\'t review, endorse, or curate what this source serves — now or after refreshes.<br>'
+       +'· Only add sources you trust, and only download content you have the right to use.<br>'
+       +'· Removing the source later keeps anything you installed (labeled, individually removable).</div>'
+       +'<div class="btns"><button class="sbtn accent" data-mi id="maccept">I accept — add this source</button>'
+       +'<button class="sbtn" data-mi id="mcancel">Cancel</button></div>';
+    }
+    m.innerHTML=h;
+    var inp=$("murl");
+    if(inp)inp.addEventListener("input",function(){M.url=inp.value;});
+    mItems().forEach(function(el,i){
+      el.addEventListener("click",function(ev){ev.stopPropagation();M.foc=i;mMark();mActivate();});
+    });
+    mMark();
+  }
+  function mActivate(){
+    var its=mItems(),el=its[M.foc];if(!el)return;
+    if(el.id==="mcancel"){closeSrcModal();return;}
+    if(el.dataset&&el.dataset.ch){var inp=$("murl");
+      if(inp){inp.value+=el.dataset.ch;M.url=inp.value;}return;}
+    if(el.id==="mnext"){mSubmitUrl();return;}
+    if(el.id==="mcont"){M.step="terms";M.foc=0;mRender();return;}
+    if(el.id==="maccept"){mAccept();return;}
+    if(el.tagName==="INPUT"){try{el.focus();}catch(e){}}   // focusing re-opens the OSK
+  }
+  function mSubmitUrl(){
+    var inp=$("murl");var url=((inp?inp.value:M.url)||"").trim();
+    if(!url){say("Enter a manifest URL first");return;}
+    M.url=url;M.step="busy";M.msg="Checking the source…";
+    if(window.GOSE&&GOSE.osk)GOSE.osk.hide();
+    mRender();
+    fetch("/store/sources/preview",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:url})})
+      .then(function(r){return r.json();}).then(function(d){
+        if(!M)return;
+        if(!d.ok){M.step="url";M.foc=0;mRender();
+          say((d.error||"Preview failed")+(d.errors&&d.errors.length?(" — "+d.errors[0]):""));return;}
+        M.prev=d;M.step="preview";M.foc=0;mRender();
+      }).catch(function(){if(!M)return;M.step="url";M.foc=0;mRender();say("Couldn't reach that URL");});
+  }
+  function mAccept(){
+    M.step="busy";M.msg="Adding source…";mRender();
+    fetch("/store/sources/add",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:M.url,accept_terms:true})})
+      .then(function(r){return r.json();}).then(function(d){
+        if(!M)return;
+        if(!d.ok){M.step="terms";M.foc=0;mRender();say(d.error||"Add failed");return;}
+        say(d.name+" added — "+d.count+" entr"+(d.count===1?"y":"ies")
+          +(d.errors&&d.errors.length?(" ("+d.errors.length+" entry errors)"):""));
+        closeSrcModal();loadSources();loadGames();loadEmu();
+      }).catch(function(){if(!M)return;M.step="terms";M.foc=0;mRender();say("Add failed");});
+  }
+  function mKeys(e){
+    if(!M)return;
+    var oskEl=document.getElementById("osk");
+    var oskOn=oskEl&&oskEl.classList.contains("on");
+    if(oskOn&&!e.__goseOSK){
+      // OSK owns its keys (its own capture handler consumes them; it registered first).
+      // Swallow the rest so nothing (tab switch, page Escape) leaks under the modal.
+      var oskKeys={"Escape":1,"ArrowRight":1,"ArrowLeft":1,"ArrowDown":1,"ArrowUp":1,"Enter":1," ":1,"k":1,"K":1};
+      if(!oskKeys[e.key]){e.preventDefault();e.stopPropagation();}
+      return;
+    }
+    var k=e.key;
+    if(e.__goseOSK){ // the OSK's Enter-commit on the URL field = submit (docs/27 §3.6)
+      if(k==="Enter"&&M.step==="url"){e.preventDefault();e.stopPropagation();mSubmitUrl();}
+      return;
+    }
+    if(k==="Escape"){
+      e.preventDefault();e.stopPropagation();
+      if(M.step==="terms"){M.step="preview";M.foc=0;mRender();}
+      else if(M.step==="preview"){M.step="url";M.foc=0;mRender();}
+      else if(M.step!=="busy")closeSrcModal();
+      return;
+    }
+    if(M.step==="busy"){e.preventDefault();e.stopPropagation();return;}
+    if(k==="ArrowRight"||k==="ArrowDown"||k==="Right"||k==="Down"){
+      e.preventDefault();e.stopPropagation();
+      var n=mItems().length;if(n){M.foc=(M.foc+1)%n;mMark();}return;}
+    if(k==="ArrowLeft"||k==="ArrowUp"||k==="Left"||k==="Up"){
+      e.preventDefault();e.stopPropagation();
+      var n2=mItems().length;if(n2){M.foc=(M.foc-1+n2)%n2;mMark();}return;}
+    if(k==="Enter"){
+      e.preventDefault();e.stopPropagation();
+      // decide by the ROVING focus, not DOM focus — WebKitGTK can refuse focus() on
+      // some elements, leaving activeElement stale (pad-drive found this)
+      var cur=mItems()[M.foc];
+      if(M.step==="url"&&cur&&cur.id==="murl")mSubmitUrl();
+      else mActivate();
+      return;}
+    // typing into the URL field with a real keyboard: let the character land, but
+    // stop it from reaching page nav (q/e/[/] switch tabs out there)
+    if(document.activeElement&&document.activeElement.id==="murl"){e.stopPropagation();return;}
+    e.preventDefault();e.stopPropagation();
+  }
+
   // ---------- shared nav ----------
   function render(){
     if(TAB==="apps") renderApps();
     else if(TAB==="emulators"){ renderChips(); renderEmu(); }
+    else if(TAB==="sources") renderSources();
     else renderGames();
   }
-  function curMax(){return TAB==="apps"?appsShown.length:TAB==="emulators"?emuFlat.length:gamesShown.length;}
-  function getFoc(){return TAB==="apps"?appsFoc:TAB==="emulators"?emuFoc:gamesFoc;}
-  function setFoc(v){if(TAB==="apps")appsFoc=v;else if(TAB==="emulators")emuFoc=v;else gamesFoc=v;}
+  function curMax(){return TAB==="apps"?appsShown.length:TAB==="emulators"?emuFlat.length:TAB==="sources"?srcItems.length:gamesShown.length;}
+  function getFoc(){return TAB==="apps"?appsFoc:TAB==="emulators"?emuFoc:TAB==="sources"?srcFoc:gamesFoc;}
+  function setFoc(v){if(TAB==="apps")appsFoc=v;else if(TAB==="emulators")emuFoc=v;else if(TAB==="sources")srcFoc=v;else gamesFoc=v;}
   function move(d){var n=curMax();if(!n)return;setFoc((getFoc()+d+n)%n);render();}
-  function act(){if(TAB==="apps")appsAct();else if(TAB==="emulators")emuPrimary();else gamesAct();}
-  function uninstall(){if(TAB==="apps")appsUninstall();else if(TAB==="emulators")emuDo("uninstall");else gamesUninstall();}
+  function act(){if(TAB==="apps")appsAct();else if(TAB==="emulators")emuPrimary();else if(TAB==="sources")srcAct();else gamesAct();}
+  function uninstall(){if(TAB==="apps")appsUninstall();else if(TAB==="emulators")emuDo("uninstall");else if(TAB==="sources"){}else gamesUninstall();}
   function switchTab(d){var i=TABS.indexOf(TAB);setTab(TABS[(i+d+TABS.length)%TABS.length]);}
 
-  $("q").addEventListener("input",function(){if(TAB==="apps")filterApps();else if(TAB==="emulators")filterEmu();else filterGames();});
+  $("q").addEventListener("input",function(){if(TAB==="apps")filterApps();else if(TAB==="emulators")filterEmu();else if(TAB==="sources")renderSources();else filterGames();});
   var tabEls=$("tabs").querySelectorAll(".tab");
   for(var ti=0;ti<tabEls.length;ti++){(function(el){el.onclick=function(){setTab(el.dataset.tab);};})(tabEls[ti]);}
 
-  var step = function(){return TAB==="emulators"?1:3;};
+  var step = function(){return (TAB==="emulators"||TAB==="sources")?1:3;};
   addEventListener("keydown",function(e){var k=e.key;
     if(k==="Escape"){location.href="gose-home.html";}
     else if(k==="ArrowRight")move(TAB==="emulators"?1:1);
@@ -404,9 +719,10 @@
     if(!m){var h=(location.hash||"").replace("#","");if(TABS.indexOf(h)>=0)m=h;}
     return TABS.indexOf(m)>=0?m:"apps";
   }
-  loadApps(); loadEmu(); loadGames();
+  loadApps(); loadEmu(); loadGames(); loadSources();
   setTab(initialTab(), false);
-  setInterval(function(){loadApps();if(TAB==="emulators")loadEmu();if(TAB==="games")loadGames();}, 5000);
+  setInterval(function(){loadApps();if(TAB==="emulators")loadEmu();if(TAB==="games")loadGames();
+    if(TAB==="sources"&&!M)loadSources();}, 5000);
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>
