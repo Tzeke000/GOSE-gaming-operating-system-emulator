@@ -2241,6 +2241,245 @@ def game_state_slots(system, game):
         out.sort(key=lambda x: x["slot"])
     return {"ok": True, "system": system, "game": game, "slots": out}
 
+# ===== Game-Bar quick controls (tasks 54/62/70/72) ============================================
+# Surfaced on the Game Bar overlay, pad-driven. All per-game writes go to batocera.conf via the
+# atomic _bconf_set (the same key shapes configgen reads); honest "next launch" where RetroArch
+# can't hot-swap. These reuse the EXISTING Batocera machinery (shaderset / bezel / hud / cheats)
+# rather than reinventing it (docs research: configgen Emulator.py + emulatorlauncher.py).
+
+def _cur_game(system=None, game=None):
+    """Resolve the current game for per-game Game-Bar ops. The bar SIGSTOPs the running
+    game, so RetroArch NCI (GET_STATUS) won't reply — recent.json[0] (written by
+    launch_game) is the reliable, correctly-keyed (rom-stem) source. NCI is a fallback."""
+    if system and game:
+        return system, game
+    try:
+        rec = json.load(open(RECENT_F))
+        if rec and rec[0].get("system") and rec[0].get("game"):
+            return rec[0]["system"], rec[0]["game"]
+    except Exception:
+        pass
+    gr = game_running()
+    return (system or gr.get("system") or ""), (game or gr.get("game") or "")
+
+def _bconf_resolve(k_game, k_sys, k_glob):
+    """Most-specific-wins read across the three batocera.conf scopes configgen merges."""
+    for key, src in ((k_game, "game"), (k_sys, "system"), (k_glob, "global")):
+        v = _bconf_get(key)
+        if v is not None:
+            return v, src
+    return None, "default"
+
+# ---- #70 shaders + bezel (per-game). configgen reads <system>["<rom>"].shaderset and .bezel. ----
+SYS_SHADERS_DIR = "/usr/share/batocera/shaders/configs"
+USER_SHADERS_DIR = "/userdata/shaders/configs"
+_SHADER_LABELS = {"none": "None", "scanlines": "Scanlines", "retro": "CRT",
+                  "curvature": "CRT curved", "zfast": "CRT fast",
+                  "sharp-bilinear-simple": "Sharp", "enhanced": "Enhanced",
+                  "flatten-glow": "Glow", "mega-bezel": "Mega-Bezel",
+                  "mega-bezel-lite": "Mega-Bezel lite", "mega-bezel-ultralite": "Mega-Bezel ulite"}
+
+def _shadersets():
+    # The ONLY valid shaderset values are the configs/<name>/ dirs that ship (plus user ones)
+    # and "none" — never fabricated names. configgen falls back if the dir is missing.
+    out = ["none"]
+    for d in (SYS_SHADERS_DIR, USER_SHADERS_DIR):
+        try:
+            for n in sorted(os.listdir(d)):
+                if not n.startswith(".") and os.path.isdir(os.path.join(d, n)) and n not in out:
+                    out.append(n)
+        except Exception:
+            pass
+    return out
+
+def game_shader(system=None, game=None):
+    system, game = _cur_game(system, game)
+    if not (system and game):
+        return {"ok": False, "error": "no current game"}
+    k = _gkey(system, game)
+    ss, src = _bconf_resolve(k + ".shaderset", system + ".shaderset", "global.shaderset")
+    if ss is None:
+        ss = "none"
+    bz, _bs = _bconf_resolve(k + ".bezel", system + ".bezel", "global.bezel")
+    bezel_on = bz not in (None, "none", "", "0", "false")
+    avail = [{"id": s, "label": _SHADER_LABELS.get(s, s)} for s in _shadersets()]
+    return {"ok": True, "system": system, "game": game, "shaderset": ss, "source": src,
+            "bezel": bezel_on, "available": avail,
+            "note": "applies on next launch (RetroArch can't hot-swap a named shaderset)"}
+
+def set_game_shader(payload):
+    system, game = _cur_game((payload or {}).get("system"), (payload or {}).get("game"))
+    if not (system and game):
+        return {"ok": False, "error": "no current game"}
+    k = _gkey(system, game)
+    out = {"ok": True, "system": system, "game": game}
+    if payload.get("shaderset") is not None:
+        ss = str(payload["shaderset"])
+        if ss != "none" and ss not in _shadersets():
+            return {"ok": False, "error": "unknown shaderset: " + ss}
+        _bconf_set(k + ".shaderset", ss)
+        out["shaderset"] = ss
+    if payload.get("bezel") is not None:
+        on = payload["bezel"] in (True, 1, "1", "true", "on")
+        _bconf_set(k + ".bezel", "default" if on else "none")   # "default" = the bundled decoration
+        out["bezel"] = on
+    out["note"] = "applies on next launch"
+    LOG.info("game shader set: %s shaderset=%s bezel=%s", k, out.get("shaderset"), out.get("bezel"))
+    return out
+
+# ---- #72 cheats (RetroArch cheat DB). cheat_database_path = /userdata/cheats/cht/<DB>/<game>.cht ----
+CHEAT_DB = "/userdata/cheats/cht"
+
+def _find_cht(game):
+    # match <game>.cht (case-insensitive stem) across all cheat-DB subfolders. We never join the
+    # game name into a path — we list dirs and compare stems — so there is no traversal surface.
+    if not (game and os.path.isdir(CHEAT_DB)):
+        return None
+    target = os.path.splitext(str(game))[0].lower()
+    try:
+        dbs = sorted(os.listdir(CHEAT_DB))
+    except Exception:
+        return None
+    for db in dbs:
+        d = os.path.join(CHEAT_DB, db)
+        if not os.path.isdir(d):
+            continue
+        try:
+            for f in os.listdir(d):
+                if f.lower().endswith(".cht") and os.path.splitext(f)[0].lower() == target:
+                    return os.path.join(d, f)
+        except Exception:
+            pass
+    return None
+
+def _parse_cht(path):
+    vals = {}
+    try:
+        for line in open(path, errors="replace"):
+            m = re.match(r'\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$', line)
+            if m:
+                vals[m.group(1)] = m.group(2).strip().strip('"')
+    except Exception:
+        return []
+    try:
+        n = int(vals.get("cheats", "0") or "0")
+    except ValueError:
+        n = 0
+    out = []
+    for i in range(min(n, 512)):
+        out.append({"i": i, "desc": vals.get("cheat%d_desc" % i, "Cheat %d" % i),
+                    "enable": str(vals.get("cheat%d_enable" % i, "false")).lower() == "true"})
+    return out
+
+def game_cheats(system=None, game=None):
+    system, game = _cur_game(system, game)
+    path = _find_cht(game)
+    if not path:
+        return {"ok": True, "system": system, "game": game, "file": None, "cheats": [],
+                "note": ("No cheats for this game" if os.path.isdir(CHEAT_DB)
+                         else "No cheat database on this image")}
+    return {"ok": True, "system": system, "game": game, "file": path,
+            "cheats": _parse_cht(path), "note": "Toggling a cheat applies on next launch"}
+
+def set_game_cheat(payload):
+    system, game = _cur_game((payload or {}).get("system"), (payload or {}).get("game"))
+    path = _find_cht(game)
+    if not path:
+        return {"ok": False, "error": "no cheat file for this game"}
+    try:
+        idx = int(payload.get("index"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "index required"}
+    on = payload.get("enable") in (True, 1, "1", "true", "on")
+    key = "cheat%d_enable" % idx
+    rx = re.compile(r'^(\s*%s\s*=\s*)(.*)$' % re.escape(key))
+    try:
+        lines = open(path, errors="replace").read().splitlines()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    found = False
+    for j, l in enumerate(lines):
+        m = rx.match(l)
+        if m:
+            quoted = '"' in m.group(2)
+            lines[j] = m.group(1) + (('"%s"' % ("true" if on else "false")) if quoted
+                                     else ("true" if on else "false"))
+            found = True
+            break
+    if not found:
+        return {"ok": False, "error": "cheat %d not in file" % idx}
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            f.write("\n".join(lines) + "\n"); f.flush(); os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "index": idx, "enable": on, "note": "applies on next launch"}
+
+# ---- #62 MangoHud perf/battery HUD. Batocera's emulatorlauncher inserts `mangohud` natively when
+# global.hud != none (gated by per-emulator hud_support). We just set the key — surface, don't wrap. ----
+# fps = a lean custom HUD (fps + battery); full = Batocera's built-in "perf" preset (fps/cpu/gpu/temps).
+_HUD_FPS_CUSTOM = "position=top-left\\nbackground_alpha=0.4\\nlegacy_layout=false\\nfps\\nbattery"
+
+def _mangohud_ok():
+    return bool(shutil.which("mangohud"))
+
+def hud_get():
+    raw = _bconf_get("global.hud") or "none"
+    if raw == "custom" and (_bconf_get("global.hud_custom") or "") == _HUD_FPS_CUSTOM:
+        mode = "fps"
+    else:
+        mode = {"none": "off", "perf": "full"}.get(raw, "off" if raw == "none" else "custom")
+    return {"ok": True, "mode": mode, "raw": raw, "available": _mangohud_ok()}
+
+def hud_set(mode):
+    mode = (mode or "off").lower()
+    if mode not in ("off", "fps", "full"):
+        return {"ok": False, "error": "mode must be off/fps/full"}
+    if mode != "off" and not _mangohud_ok():
+        return {"ok": False, "error": "MangoHud is not installed on this image", "available": False}
+    if mode == "off":
+        _bconf_set("global.hud", "none")
+    elif mode == "full":
+        _bconf_set("global.hud", "perf")
+    else:   # fps
+        _bconf_set("global.hud", "custom")
+        _bconf_set("global.hud_custom", _HUD_FPS_CUSTOM)
+    LOG.info("HUD set: %s", mode)
+    return {"ok": True, "mode": mode, "available": True, "note": "applies on next game launch"}
+
+# ---- #54 Wi-Fi quick toggle (the radio's POWER, via connman — real on handheld hardware) ----
+def net_wifi_status():
+    info = net_info()
+    powered = None
+    try:
+        tech = subprocess.run(["connmanctl", "technologies"],
+                              capture_output=True, text=True, timeout=8).stdout
+        cur = None
+        for line in tech.splitlines():
+            s = line.strip()
+            if s.startswith("/net/connman/technology/"):
+                cur = s
+            elif cur and cur.endswith("/wifi") and s.startswith("Powered ="):
+                powered = "True" in s
+    except Exception:
+        pass
+    return {"ok": True, "has_wifi": bool(info.get("has_wifi")), "powered": powered,
+            "connection": info.get("connection"), "online": info.get("online")}
+
+def net_wifi_toggle(on=None):
+    st = net_wifi_status()
+    if not st.get("has_wifi") or st.get("powered") is None:
+        return {"ok": False, "error": "No Wi-Fi radio on this device", "has_wifi": False}
+    target = (not st["powered"]) if on is None else (on in (True, 1, "1", "true", "on"))
+    try:
+        subprocess.run(["connmanctl", "enable" if target else "disable", "wifi"],
+                       capture_output=True, text=True, timeout=10)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    return {"ok": True, "powered": target, "has_wifi": True}
+
 # ---- save-state thumbnails (task 53): RetroArch writes <game>.state[N].png beside each state.
 # The "continue where you left off" picture for library/home resume cards. Path-confined to SAVES. ----
 SAVES_ROOT = "/userdata/saves"
@@ -4588,6 +4827,16 @@ class H(http.server.SimpleHTTPRequestHandler):
         if route == "/game/options":
             q = self._qs()
             return self._json(game_options(q.get("system", ""), q.get("game", "")))
+        if route == "/game/shader":
+            q = self._qs()
+            return self._json(game_shader(q.get("system", ""), q.get("game", "")))
+        if route == "/game/cheats":
+            q = self._qs()
+            return self._json(game_cheats(q.get("system", ""), q.get("game", "")))
+        if route == "/sys/hud":
+            return self._json(hud_get())
+        if route == "/net/wifi/status":
+            return self._json(net_wifi_status())
         if route == "/oobe/status":
             return self._json(oobe_status())
         if route == "/auth/pin":
@@ -4874,6 +5123,19 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(game_state("save"))
         if route == "/game/loadstate":
             return self._json(game_state("load"))
+        if route in ("/game/shader", "/game/cheat", "/sys/hud", "/net/wifi/toggle"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/game/shader":
+                return self._json(set_game_shader(payload))
+            if route == "/game/cheat":
+                return self._json(set_game_cheat(payload))
+            if route == "/sys/hud":
+                return self._json(hud_set(payload.get("mode")))
+            return self._json(net_wifi_toggle(payload.get("on")))
         if route == "/game/slot":
             try:
                 n = int(self.headers.get("Content-Length", 0))

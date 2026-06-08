@@ -75,6 +75,7 @@
       <div class="meta" id="meta">—</div></div>
     <div class="cards">
       <div class="card glass" id="savescard" style="display:none"><h3><span class="ic" data-i="hard-drive"></span>Save States</h3><div id="saves"></div></div>
+      <div class="card glass" id="gfxcard" style="display:none"><h3><span class="ic" data-i="film"></span><span id="gfxtitle">Video &amp; Cheats</span></h3><div id="gfx"></div></div>
       <div class="card glass"><h3><span class="ic" data-i="cpu"></span>Performance</h3><div id="perf"></div></div>
       <div class="card glass"><h3><span class="ic" data-i="volume-2"></span>Audio &amp; Display</h3><div id="av"></div></div>
       <div class="card glass"><h3><span class="ic" data-i="image"></span>Capture</h3><div id="cap"></div></div>
@@ -92,11 +93,20 @@
   function api(p,b){return fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{cache:"no-store"}).then(r=>r.json()).catch(()=>({ok:false}));}
   function ico(n){return '<span class="ic" style="-webkit-mask:url(assets/icons/'+n+'.svg) center/contain no-repeat;mask:url(assets/icons/'+n+'.svg) center/contain no-repeat;background:currentColor;display:inline-block"></span>';}
   let S={vol:50,mute:false,bri:null,briHas:true,perf:"balanced",batt:null,charging:false,net:"—",
-         cpu:null,gpu:null,ram:null,temp:null,cputemp:null,gpuName:null,powerMode:false,buffer:false,slots:[]};
+         cpu:null,gpu:null,ram:null,temp:null,cputemp:null,gpuName:null,powerMode:false,buffer:false,slots:[],
+         hud:"off",hudHas:false,quiet:false,hasWifi:false,
+         shaderset:"none",shaderList:[],bezel:false,cheats:[],cheatNote:"",cheatsExpanded:false};
   let foc=0, items=[];
   function say(m){var t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(function(){t.classList.remove("show");},1800);}
   function build(){
     items=[{k:"vol",type:"slider"},{k:"bri",type:"slider"},{k:"perf",type:"seg"}];
+    if(S.hudHas)items.push({k:"hud",type:"hudseg"});   // #62 perf/battery HUD (off/FPS/full)
+    if(IN_GAME){   // #70 per-game shader + bezel, #72 cheats (inline-expanding under the Cheats row)
+      items.push({k:"shader",type:"shadercyc",card:"gfx"});
+      items.push({k:"bezel",type:"toggle",card:"gfx"});
+      items.push({k:"cheats",type:"act",ic:"sparkles",lab:"Cheats",cheatsopen:true,card:"gfx"});
+      if(S.cheatsExpanded)S.cheats.forEach(function(c){items.push({k:"ch"+c.i,type:"cheat",idx:c.i,card:"gfx"});});
+    }
     items.push({k:"shot",type:"act",ic:"image",lab:"Screenshot",shot:true,card:"cap"});
     items.push({k:"buffer",type:"act",ic:"rotate-ccw",lab:"Replay buffer",buffer:true,card:"cap"});
     if(S.buffer){
@@ -110,6 +120,8 @@
       items.push({k:"slotprev",type:"act",ic:"chevron-left",lab:"Previous slot",slot:"prev",card:"saves"});
       items.push({k:"slotnext",type:"act",ic:"chevron-right",lab:"Next slot",slot:"next",card:"saves"});
     }
+    items.push({k:"wifi",type:"act",ic:"wifi",lab:"Wi-Fi",wifi:true});       // #54 quick-settings
+    items.push({k:"quiet",type:"act",ic:"moon",lab:"Quiet mode",quiet:true});
     if(S.powerMode){
       items.push({k:"sleep",type:"act",ic:"moon",lab:"Sleep",act:"sleep"});
       items.push({k:"restart",type:"act",ic:"rotate-ccw",lab:"Restart",act:"restart"});
@@ -134,6 +146,10 @@
       statRow("RAM", S.ram==null?"—":S.ram+"%", S.ram)+
       statRow("Temp", S.temp==null?"—":S.temp+"°C", S.temp)+
       (S.gpuName?'<div style="font-size:10.5px;color:#8b92b0;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+S.gpuName+'">'+S.gpuName+(S.cputemp!=null?' · CPU '+S.cputemp+'°C':'')+'</div>':'');
+    // Performance HUD (MangoHud) segment — off/FPS/full, applies next launch
+    if(S.hudHas){var hi=items.findIndex(x=>x.k==="hud");if(hi>=0){var hm=[["off","Off"],["fps","FPS"],["full","Full"]];
+      $("perf").innerHTML+='<div class="row '+(foc===hi?"focus":"")+'" style="margin-top:11px"><div class="lab">'+ico("monitor")+'On-screen HUD</div><div class="seg">'+
+        hm.map(m=>'<span class="'+(S.hud===m[0]?"sel":"")+'">'+m[1]+'</span>').join("")+'</div></div>';}}
     // Audio & Display card
     var av="";[{k:"vol"},{k:"bri"}].forEach(function(o){var it=items.find(x=>x.k===o.k);var i=items.indexOf(it);
       var val=o.k==="vol"?S.vol:S.bri, dis=o.k==="bri"&&!S.briHas;
@@ -146,13 +162,31 @@
     var modes=[["battery","Battery"],["balanced","Balanced"],["performance","Perf"]];
     sys+='<div class="row '+(foc===si?"focus":"")+'"><div class="lab">'+ico("cpu")+'Performance mode</div><div class="seg">'+
       modes.map(m=>'<span class="'+(S.perf===m[0]?"sel":"")+'">'+m[1]+'</span>').join("")+'</div></div>';
-    var cap="", saves="";
-    items.forEach(function(it,i){ if(it.type!=="act")return;
+    var cap="", saves="", gfx="";
+    // Video & Cheats card (IN_GAME only): shader cycle + bezel toggle (#70), then the loop adds
+    // the Cheats row (#72) and, when expanded, each cheat toggle.
+    if(IN_GAME){
+      var shi=items.findIndex(x=>x.k==="shader");
+      if(shi>=0){var sl=(S.shaderList.find(x=>x.id===S.shaderset)||{}).label||S.shaderset;
+        gfx+='<div class="row '+(foc===shi?"focus":"")+'"><div class="lab">'+ico("film")+'Shader<span class="v">‹ '+sl+' ›</span></div></div>';}
+      var bzi=items.findIndex(x=>x.k==="bezel");
+      if(bzi>=0)gfx+='<div class="row '+(foc===bzi?"focus":"")+'"><div class="lab">'+ico("monitor")+'Bezel<span class="v">'+(S.bezel?"On":"Off")+'</span></div></div>';
+    }
+    items.forEach(function(it,i){
+      if(it.type==="cheat"){var c=S.cheats[it.idx]||{};
+        gfx+='<div class="row '+(foc===i?"focus":"")+'" style="margin-left:14px"><div class="lab">'+ico("sparkles")+(c.desc||("Cheat "+it.idx))+'<span class="v">'+(c.enable?"On":"Off")+'</span></div></div>';return;}
+      if(it.type!=="act")return;
       var sub=it.sub; if(it.buffer) sub=S.buffer?"On":"Off";
+      if(it.wifi) sub=S.hasWifi?(S.net||"On"):"n/a";
+      if(it.quiet) sub=S.quiet?"On":"Off";
+      if(it.cheatsopen) sub=(S.cheats.length?(S.cheats.length+(S.cheatsExpanded?" ▾":" ▸")):"none");
       var html='<div class="row '+(foc===i?"focus":"")+(it.danger?" danger":"")+'"><div class="lab">'+ico(it.ic)+it.lab+
         (sub?'<span class="v">'+sub+'</span>':"")+'</div></div>';
-      if(it.card==="cap") cap+=html; else if(it.card==="saves") saves+=html; else sys+=html;});
+      if(it.card==="cap") cap+=html; else if(it.card==="saves") saves+=html;
+      else if(it.card==="gfx") gfx+=html; else sys+=html;});
     $("sys").innerHTML=sys; $("cap").innerHTML=cap;
+    var gc=$("gfxcard"); if(gc) gc.style.display=(IN_GAME?"":"none");
+    if($("gfx")) $("gfx").innerHTML=gfx;
     var sc=$("savescard"); if(sc) sc.style.display=IN_GAME?"":"none";
     if(IN_GAME){
       var thumbs = S.slots.length
@@ -165,6 +199,14 @@
   }
   function loadSlots(){ if(!IN_GAME)return;
     api("/game/state/slots").then(function(d){ if(d&&d.slots){S.slots=d.slots;render();} }); }
+  function loadExtras(){   // #62 HUD state, #54 quiet, #70 shader/bezel, #72 cheats (per-game)
+    api("/sys/hud").then(d=>{if(d){S.hudHas=!!d.available;if(d.mode)S.hud=d.mode;build();}});
+    api("/ui/prefs").then(d=>{if(d&&d.prefs){S.quiet=(d.prefs["gose-snd-quiet"]==="1");render();}});
+    if(IN_GAME){
+      api("/game/shader").then(d=>{if(d&&d.ok){S.shaderset=d.shaderset||"none";S.shaderList=d.available||[];S.bezel=!!d.bezel;render();}});
+      api("/game/cheats").then(d=>{if(d&&d.ok){S.cheats=d.cheats||[];S.cheatNote=d.note||"";render();}});
+    }
+  }
   function refreshPerf(){   // REAL host stats (laptop CPU/GPU/RAM/temps) — NOT the VM's own /status.json
     api("/sys/perf").then(d=>{if(d&&d.ok){
       if(d.cpu_pct!=null)S.cpu=Math.round(d.cpu_pct);
@@ -177,23 +219,27 @@
   function refresh(){
     // status.json's cpu_pct/mem_pct are the GUEST VM (fake) — perf comes from /sys/perf instead.
     api("/status.json").then(d=>{if(d){if(d.battery_pct!=null)S.batt=d.battery_pct;S.charging=!!d.charging;}render();});
-    api("/net.json").then(d=>{if(d&&d.ok)S.net=d.connection||(d.online?"Online":"Offline");render();});
+    api("/net.json").then(d=>{if(d&&d.ok){S.net=d.connection||(d.online?"Online":"Offline");S.hasWifi=!!d.has_wifi;}render();});
     api("/sys/audio").then(d=>{if(d&&d.ok){S.vol=d.volume==null?S.vol:d.volume;S.mute=!!d.mute;}render();});
     api("/sys/brightness").then(d=>{if(d){S.briHas=d.ok!==false;if(d.ok&&d.level!=null)S.bri=d.level;}render();});
   }
   function setVol(v){v=Math.max(0,Math.min(100,v));S.vol=v;render();clearTimeout(setVol._t);setVol._t=setTimeout(()=>api("/sys/audio",{volume:v}),110);}
   function setBri(v){if(!S.briHas)return;v=Math.max(0,Math.min(100,v));S.bri=v;render();clearTimeout(setBri._t);setBri._t=setTimeout(()=>api("/sys/brightness",{level:v}),110);}
   function setPerf(d){var m=["battery","balanced","performance"],i=Math.max(0,Math.min(2,m.indexOf(S.perf)+d));S.perf=m[i];render();api("/sys/perf",{mode:S.perf});}
+  function setHud(d){var m=["off","fps","full"],i=Math.max(0,Math.min(2,m.indexOf(S.hud)+d));if(m[i]===S.hud)return;S.hud=m[i];render();
+    api("/sys/hud",{mode:S.hud}).then(x=>{if(x&&x.ok===false)say(x.error||"HUD unavailable");else say("HUD: "+S.hud+" — next launch");});}
+  function cycShader(d){if(!S.shaderList.length)return;var ids=S.shaderList.map(x=>x.id),i=(ids.indexOf(S.shaderset)+d+ids.length)%ids.length;S.shaderset=ids[i];render();
+    api("/game/shader",{shaderset:S.shaderset}).then(x=>say((x&&x.ok!==false)?("Shader: "+((S.shaderList.find(y=>y.id===S.shaderset)||{}).label||S.shaderset)+" — next launch"):"Shader change failed"));}
   function focusVisible(){var el=document.querySelector(".row.focus");if(el&&el.scrollIntoView)el.scrollIntoView({block:"nearest",inline:"nearest"});}
   function move(d){foc=(foc+d+items.length)%items.length;render();focusVisible();}
   // which visual card a focusable item lives in — for L1/R1 ([ / ]) section hopping
-  function secOf(it){if(!it)return"sys";if(it.k==="vol"||it.k==="bri")return"av";if(it.type==="seg")return"sys";return it.card||"sys";}
+  function secOf(it){if(!it)return"sys";if(it.k==="vol"||it.k==="bri")return"av";if(it.k==="hud")return"perf";if(it.type==="seg")return"sys";return it.card||"sys";}
   function jumpSection(d){if(!items.length)return;
     var order=[];items.forEach(function(it){var s=secOf(it);if(order.indexOf(s)<0)order.push(s);});
     var ci=order.indexOf(secOf(items[foc])),ns=order[(ci+d+order.length)%order.length];
     var ni=items.findIndex(function(it){return secOf(it)===ns;});
     if(ni>=0){foc=ni;render();focusVisible();}}
-  function adjust(d){var it=items[foc];if(!it)return;if(it.k==="vol")setVol(S.vol+d*5);else if(it.k==="bri")setBri((S.bri||0)+d*5);else if(it.type==="seg")setPerf(d);}
+  function adjust(d){var it=items[foc];if(!it)return;if(it.k==="vol")setVol(S.vol+d*5);else if(it.k==="bri")setBri((S.bri||0)+d*5);else if(it.k==="hud")setHud(d);else if(it.k==="shader")cycShader(d);else if(it.type==="seg")setPerf(d);}
   function enter(){var it=items[foc];if(!it)return;
     if(it.savestate){say(it.savestate==="save"?"Saving state…":"Loading state…");
       api("/game/"+(it.savestate==="save"?"savestate":"loadstate"),{}).then(function(){
@@ -206,6 +252,13 @@
     if(it.clip){if(!S.buffer){say("Turn on the Replay buffer first");return;}
       var lbl=it.clip>=60?(it.clip/60)+"m":it.clip+"s";say("Saving last "+lbl+" clip…");
       api("/capture/clip",{seconds:it.clip}).then(d=>say(d&&d.ok?("Clip saved to Videos: "+d.name):(d&&d.error||"Clip failed")));return;}
+    if(it.k==="bezel"){var bon=!S.bezel;S.bezel=bon;render();api("/game/shader",{bezel:bon}).then(x=>say((x&&x.ok!==false)?("Bezel "+(bon?"on":"off")+" — next launch"):"Bezel change failed"));return;}
+    if(it.cheatsopen){if(!S.cheats.length){say(S.cheatNote||"No cheats for this game");return;}S.cheatsExpanded=!S.cheatsExpanded;build();return;}
+    if(it.type==="cheat"){var c=S.cheats[it.idx];if(!c)return;var con=!c.enable;c.enable=con;render();
+      api("/game/cheat",{index:it.idx,enable:con}).then(x=>say((x&&x.ok!==false)?((c.desc||("Cheat "+it.idx))+": "+(con?"On":"Off")+" — next launch"):"Cheat change failed"));return;}
+    if(it.wifi){if(!S.hasWifi){say("No Wi-Fi radio on this device");return;}say("Toggling Wi-Fi…");
+      api("/net/wifi/toggle",{}).then(x=>{say((x&&x.ok)?("Wi-Fi "+(x.powered?"on":"off")):((x&&x.error)||"Wi-Fi toggle failed"));refresh();});return;}
+    if(it.quiet){var q=!S.quiet;S.quiet=q;render();api("/ui/prefs",{set:{"gose-snd-quiet":q?"1":"0"}}).then(()=>say(q?"Quiet mode on — all sounds off":"Quiet mode off"));return;}
     if(it.act){api("/sys/power",{action:it.act});return;}
     if(it.power){S.powerMode=true;build();return;}
     if(it.exit){api("/game/exit",{});return;}
@@ -221,6 +274,7 @@
   refreshPerf();setInterval(refreshPerf,1200);   // live host perf while the bar is open (stays under /sys/perf 60/60 limit)
   api("/capture/buffer").then(d=>{if(d){S.buffer=!!d.running;build();}});   // reflect replay-buffer state on open
   loadSlots();   // populate the saved-states thumbnails when the Game Bar opens over a game
+  loadExtras();   // HUD/quiet/shader/bezel/cheats state for the game-bar quick controls
   try{document.body.tabIndex=-1;window.focus();document.body.focus();}catch(e){}   // make sure keys land here
   (function(){var done=false;function go(){if(done)return;done=true;requestAnimationFrame(function(){document.body.classList.add("ready");});}
     var im=new Image();im.onload=go;im.onerror=go;im.src="_gbg.jpg?"+bgn;setTimeout(go,240);})();   // reveal once the frozen frame is ready (or 240ms cap)
