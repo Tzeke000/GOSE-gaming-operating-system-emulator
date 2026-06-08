@@ -138,9 +138,11 @@
       {ic:"sun", nm:"High contrast", sub:"Stronger text, colors and borders", t:"cycle", v:["Off","On"], apply:"a11y_contrast"},
       {ic:"monitor", nm:"Bold text", sub:"Heavier font weight everywhere", t:"cycle", v:["Off","On"], apply:"a11y_bold"},
       {ic:"palette", nm:"Color filters", sub:"Colorblind-friendly palette, or full-screen correction", t:"cycle", v:["Off","Friendly palette","Deuteranopia","Protanopia","Tritanopia"], apply:"a11y_cb"},
+      {ic:"palette", nm:"Colorblind accent palette", sub:"Swap UI accent colors to inherently CVD-safe hues (Okabe-Ito / Wong 2011) — orthogonal to the filter above", t:"cycle", v:["Default","Deuteranopia-safe","Protanopia-safe","Tritanopia-safe"], apply:"a11y_cbpalette"},
       {ic:"sparkles", nm:"Reduce motion", sub:"Stop animations and live wallpaper", t:"cycle", v:["Off","On"], apply:"a11y_motion"},
       {ic:"monitor", nm:"Reduce transparency", sub:"Make frosted panels solid", t:"cycle", v:["Off","On"], apply:"a11y_opaque"},
       {ic:"target", nm:"Larger focus outline", sub:"Thicker highlight on the selected item", t:"cycle", v:["Off","On"], apply:"a11y_focus"},
+      {ic:"gamepad-2", nm:"Hold-alternative chords", sub:"Treat Guide-hold / L2+dpad / hold-A as tap-sequences instead — UI flag now; bridge build wires the mechanical tap-to-sequence (docs/27 §1)", t:"cycle", v:["Off","On"], apply:"a11y_holdalt"},
       {ic:"sparkles", nm:"First-time tips", sub:"Show one-time hints on new screens", t:"cycle", v:["On","Off"], apply:"tips"},
       {ic:"sparkles", nm:"Show tips again", sub:"Replay the one-time hints you've already seen", t:"action", val:"Reset", tips:true, act:"Tips reset — they'll show again on new screens"},
     ]},
@@ -514,6 +516,9 @@
     else if(r.apply==="a11y_motion"){prefs({"gose-motion":r.i===1?"on":"off"});showToast("Reduce motion: "+r.v[r.i]);}
     else if(r.apply==="a11y_opaque"){prefs({"gose-opaque":r.i===1?"on":"off"});showToast("Reduce transparency: "+r.v[r.i]);}
     else if(r.apply==="a11y_focus"){prefs({"gose-focus":r.i===1?"on":"off"});showToast("Larger focus: "+r.v[r.i]);}
+    else if(r.apply==="a11y_cbpalette"){prefs({"gose-cb-palette":["off","deut","prot","trit"][r.i||0]});showToast("Colorblind accent palette: "+r.v[r.i]);}
+    else if(r.apply==="a11y_holdalt"){prefs({"gose-hold-alt":r.i===1?"on":"off"});
+      showToast(r.i===1?"Hold-alternative chords: On — UI flag set. Bridge build needed for mechanical tap-sequences (docs/27 §1).":"Hold-alternative chords: Off");}
     // First-time tips (tips.js) — v:["On","Off"]. localStorage-ONLY by design: the server's
     // prefs store rejects unknown keys, so this writes gose-tips-off directly, never via prefs().
     else if(r.apply==="tips"){const off=(r.i===1);localStorage.setItem("gose-tips-off",off?"1":"0");
@@ -556,6 +561,8 @@
     const rmo=findRow("a11y_motion","apply"); if(rmo)rmo.i=onoff("gose-motion");
     const rop=findRow("a11y_opaque","apply"); if(rop)rop.i=onoff("gose-opaque");
     const rfo=findRow("a11y_focus","apply"); if(rfo)rfo.i=onoff("gose-focus");
+    const rcbp=findRow("a11y_cbpalette","apply"); if(rcbp){const k=["off","deut","prot","trit"].indexOf(localStorage.getItem("gose-cb-palette")||"off");rcbp.i=k<0?0:k;}
+    const rha=findRow("a11y_holdalt","apply"); if(rha)rha.i=onoff("gose-hold-alt");
   })();
   // live readouts in Network / Power / About, pulled from the same /status.json the desktop uses
   function setLive(tag,val){let chg=false;

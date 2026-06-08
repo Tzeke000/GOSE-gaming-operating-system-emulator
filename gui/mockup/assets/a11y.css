@@ -36,3 +36,51 @@ html[data-motion="reduce"] *, html[data-motion="reduce"] *::before, html[data-mo
 /* Colorblind-friendly palette (Okabe-Ito) — remaps the token accent (CVD *correction*
    filters for deut/prot/trit are applied to <html> by a11y.js, recoloring the whole screen). */
 html[data-cbpalette="friendly"]{ --accent:#0072B2; --accent2:#E69F00; }
+
+/* Colorblind-safe accent presets (gose-cb-palette) — per-CVD-type safe accent sets so the
+   UI's own colors are distinguishable without a full-screen filter. Each palette uses hues
+   from the Okabe-Ito / WCAG-AAA-verified colorblind-safe sets (research: datawrapper, Wong 2011).
+   These are accent/focus tokens only — status reds/greens are overridden via CSS vars below.
+   Orthogonal to the CVD correction filter (gose-cb): you can use both, or either, or neither. */
+
+/* Deuteranopia (green-weak, ~5% of males): distinguish blue/orange/black — avoid red/green pairs.
+   Safe hues: blue #0072B2, orange #E69F00, sky-blue #56B4E9, vermillion #D55E00 */
+html[data-cbpalette-type="deut"]{
+  --accent:#56B4E9;
+  --accent2:#E69F00;
+  --focusglow:0 0 0 2px #56B4E9, 0 0 18px #56B4E955;
+  --cb-ok:#0072B2;      /* status: success/safe (replaces green) */
+  --cb-warn:#E69F00;    /* status: warning (orange, distinguishable) */
+  --cb-err:#D55E00;     /* status: error (vermillion, not red-green conflict) */
+}
+
+/* Protanopia (red-weak, ~1% of males): distinguish blue/orange/yellow — red is nearly invisible.
+   Safe hues: blue #0072B2, yellow #F0E442, sky-blue #56B4E9, orange #E69F00 */
+html[data-cbpalette-type="prot"]{
+  --accent:#0072B2;
+  --accent2:#F0E442;
+  --focusglow:0 0 0 2px #0072B2, 0 0 18px #0072B255;
+  --cb-ok:#56B4E9;      /* status: success/safe (blue, not green) */
+  --cb-warn:#E69F00;    /* status: warning (orange) */
+  --cb-err:#D55E00;     /* status: error (vermillion) */
+}
+
+/* Tritanopia (blue-yellow blind, ~0.01%): distinguish red/green/black — blue/yellow pair is lost.
+   Safe hues: vermillion #D55E00, teal #009E73, pink #CC79A7, black/white contrast */
+html[data-cbpalette-type="trit"]{
+  --accent:#009E73;
+  --accent2:#D55E00;
+  --focusglow:0 0 0 2px #009E73, 0 0 18px #009E7355;
+  --cb-ok:#009E73;      /* status: success/safe (teal-green) */
+  --cb-warn:#CC79A7;    /* status: warning (pink) */
+  --cb-err:#D55E00;     /* status: error (vermillion) */
+}
+
+/* Large-text mode (gose-hold-alt) — visual cue for hold-alternative active state in the UI.
+   The mechanical hold→tap-sequence behaviour is handled by gose-pad-nav.py (bridge-side);
+   this attribute lets pages style their chord-hint labels differently when hold-alt is on. */
+html[data-holdalt="1"] .chord-hold-hint::after{
+  content:" (tap twice)";
+  font-size:.8em;
+  opacity:.7;
+}
