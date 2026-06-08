@@ -138,21 +138,31 @@
         else say("Scrape: "+(d.error||"failed"));}).catch(e=>say("Scrape failed (network?)"));}
   // ---- per-game options modal ----
   function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-  let GOPT={open:false,foc:0,items:[],sys:"",game:"",data:null,cores:[],default:null};
+  let GOPT={open:false,foc:0,items:[],sys:"",game:"",data:null,cores:[],default:null,shadersets:["none"],shLabels:{none:"None"}};
   function openOptions(){const s=SYS[cat],gm=tgtGame();if(!s||!gm)return;
     const sys=gm.system||s.system, game=gm.name;
-    fetch("/game/options?system="+encodeURIComponent(sys)+"&game="+encodeURIComponent(game),{cache:"no-store"})
-      .then(r=>r.json()).then(d=>{ if(!d.ok||!(d.cores&&d.cores.length)){say("No options for this system");return;}
+    const qs="system="+encodeURIComponent(sys)+"&game="+encodeURIComponent(game);
+    Promise.all([
+      fetch("/game/options?"+qs,{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+      // Shader lives on its OWN endpoint: /game/shader writes the REAL batocera key (.shaderset)
+      // with REAL shaderset ids from available[]. The old library .shaders key + fabricated
+      // ["scanlines","crt","lcd"] values were ignored by configgen entirely (task 79, docs/30).
+      fetch("/game/shader?"+qs,{cache:"no-store"}).then(r=>r.json()).catch(()=>({}))
+    ]).then(([d,sh])=>{ if(!d.ok||!(d.cores&&d.cores.length)){say("No options for this system");return;}
+        const avail=(sh&&sh.ok&&Array.isArray(sh.available)&&sh.available.length)?sh.available:[{id:"none",label:"None"}];
+        const shadersets=avail.map(a=>a.id), shLabels={}; avail.forEach(a=>{shLabels[a.id]=a.label||a.id;});
+        let cur=(sh&&sh.ok&&sh.shaderset)?sh.shaderset:"none"; if(shadersets.indexOf(cur)<0)cur="none";
         GOPT={open:true,foc:0,items:[],sys:sys,game:game,cores:d.cores,default:d.default,
-              data:{core:d.core,ratio:d.ratio,shaders:d.shaders,rewind:d.rewind}};
+              shadersets:shadersets,shLabels:shLabels,
+              data:{core:d.core,ratio:d.ratio,shaderset:cur,rewind:d.rewind}};
         renderOpt(); if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();   // docs/27 §3.10
         $("gopt").classList.add("on");
       }).catch(()=>say("Options offline"));}
-  const RATIOS=["auto","4/3","16/9","core"], SHADERS=["none","scanlines","crt","lcd"];
+  const RATIOS=["auto","4/3","16/9","core"];
   function renderOpt(){
     GOPT.items=GOPT.cores.map(c=>({t:"core",val:c}));
     GOPT.items.push({t:"cycle",key:"ratio",vals:RATIOS,label:"Aspect ratio"});
-    GOPT.items.push({t:"cycle",key:"shaders",vals:SHADERS,label:"Shader"});
+    GOPT.items.push({t:"cycle",key:"shaderset",vals:GOPT.shadersets,label:"Shader",disp:GOPT.shLabels});
     GOPT.items.push({t:"cycle",key:"rewind",vals:["0","1"],label:"Rewind",disp:{"0":"Off","1":"On"}});
     GOPT.items.push({t:"save"});
     let h='<h3>'+esc(GOPT.game)+'</h3><div class="gs">'+esc(GOPT.sys)+' · per-game settings · applies next launch</div><div class="sec">Emulator core</div>';
@@ -171,9 +181,17 @@
     else if(it.t==="cycle")goptCycle(1);
     else saveOptions();}
   function goptClose(){if(GOPT.open&&window.GOSE&&GOSE.modalPop)GOSE.modalPop();GOPT.open=false;$("gopt").classList.remove("on");}
-  function saveOptions(){fetch("/game/options",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({system:GOPT.sys,game:GOPT.game,core:GOPT.data.core,ratio:GOPT.data.ratio,shaders:GOPT.data.shaders,rewind:GOPT.data.rewind})})
-    .then(r=>r.json()).then(d=>{goptClose();say(d.ok?("Saved — "+GOPT.data.core+" · applies next launch"):"Save failed");}).catch(()=>{goptClose();say("Save failed");});}
+  function saveOptions(){
+    // core/ratio/rewind via /game/options; shaderset via /game/shader (the real .shaderset key).
+    const optP=fetch("/game/options",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system:GOPT.sys,game:GOPT.game,core:GOPT.data.core,ratio:GOPT.data.ratio,rewind:GOPT.data.rewind})})
+      .then(r=>r.json()).catch(()=>({ok:false}));
+    const shP=fetch("/game/shader",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system:GOPT.sys,game:GOPT.game,shaderset:GOPT.data.shaderset})})
+      .then(r=>r.json()).catch(()=>({ok:false}));
+    Promise.all([optP,shP]).then(([o,sh])=>{goptClose();
+      say((o.ok&&sh.ok)?("Saved — "+GOPT.data.core+" · applies next launch"):"Save failed");})
+      .catch(()=>{goptClose();say("Save failed");});}
   function moveCat(d){if(!SYS.length)return;cat=(cat+d+SYS.length)%SYS.length;foc=0;lastG=0;render();}
   function moveFoc(d){const s=SYS[cat];if(!s)return;const n=total();if(n<=0)return;
     if(Math.abs(d)>1&&foc<s.games.length){           // row jump from the grid
