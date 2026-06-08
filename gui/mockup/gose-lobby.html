@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Party Lobby</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 4px}
+  .top img{width:32px;height:32px}.top h1{font-size:20px;margin:0}
+  .top .sub{color:var(--muted);font-size:12.5px;margin-left:2px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .ctx{margin:2px 36px 0;color:var(--muted);font-size:12.5px;line-height:1.5}
+  .ctx b{color:var(--text)}
+  .ctx.warn{color:#ffd479}
+  /* seat cards */
+  .seats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:14px 36px 0}
+  .seat{background:var(--surface);border:2px solid var(--line);border-radius:16px;padding:14px;
+    min-height:148px;display:flex;flex-direction:column;cursor:pointer;position:relative}
+  .seat.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .seat .pn{font-size:12px;font-weight:700;letter-spacing:.7px;color:var(--muted)}
+  .seat .plr{font-size:10.5px;font-weight:700;color:#3fe0a0;border:1px solid currentColor;
+    border-radius:8px;padding:2px 7px;position:absolute;top:12px;right:12px}
+  .seat .body{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:8px;text-align:center}
+  .seat .av{font-size:30px;color:#8d94ab}.seat .av.human{color:#3fe0a0}.seat .av.ai{color:#b18cff}
+  .seat .nm{font-weight:600;font-size:14px;line-height:1.25;word-break:break-word}
+  .seat .who{color:var(--muted);font-size:11.5px;line-height:1.35}
+  .seat .who b{color:#b18cff}
+  .seat.empty .nm{color:var(--muted);font-weight:600}
+  .src{font-size:10px;font-weight:700;border-radius:8px;padding:2px 7px;border:1px solid currentColor}
+  .src.passthrough{color:#3fe0a0}.src.virtual{color:#b18cff}.src.bluetooth{color:#5cd0ff}.src.native{color:#ffd479}
+  .badge{font-size:9.5px;font-weight:700;border-radius:7px;padding:2px 6px;border:1px solid var(--accent);color:var(--accent)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+  /* start */
+  .startrow{margin:16px 36px 0;display:flex;flex-direction:column;gap:8px}
+  .start{display:flex;align-items:center;gap:10px;justify-content:center;background:var(--accent);color:#06121a;
+    border:2px solid transparent;border-radius:13px;padding:14px;font-weight:700;font-size:16px;cursor:pointer}
+  .start.focus{border-color:#fff;box-shadow:var(--focusglow)}
+  .start.disabled{background:var(--surface2);color:var(--muted);cursor:not-allowed}
+  .maprow{color:var(--muted);font-size:12px;text-align:center;line-height:1.5;min-height:18px}
+  .maprow b{color:var(--text)}
+  .honest{margin:auto 36px 8px;display:flex;gap:10px;align-items:flex-start;color:var(--muted);font-size:11.5px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 14px;line-height:1.5}
+  .honest .ic{flex:none;margin-top:1px}.honest b{color:var(--text)}
+  .foot{margin:8px 36px 14px;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:12.5px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  /* assign modal */
+  .modal{position:fixed;inset:0;background:#06060cd8;display:none;align-items:center;justify-content:center;
+    z-index:60;backdrop-filter:blur(6px)}
+  .modal.on{display:flex}
+  .modal .box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;
+    width:460px;max-width:92vw;max-height:84vh;overflow:auto}
+  .modal h3{margin:0 0 2px;font-size:17px}.modal .ms{color:var(--muted);font-size:12px;margin-bottom:8px}
+  .opt{display:flex;align-items:center;gap:11px;padding:10px 12px;border:2px solid transparent;border-radius:11px;
+    background:#ffffff06;margin-bottom:7px;cursor:pointer}
+  .opt.focus{border-color:var(--accent);background:#5cd0ff14}
+  .opt .ic{font-size:18px;flex:none}.opt .ic.human{color:#3fe0a0}.opt .ic.ai{color:#b18cff}.opt .ic.none{color:#6b7180}
+  .opt .col{flex:1;min-width:0}
+  .opt .nm{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .opt .sub{color:var(--muted);font-size:11.5px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .opt .chk{color:#3fe0a0;font-weight:700;font-size:16px}
+  .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;
+    transition:opacity .2s;pointer-events:none;max-width:80%;text-align:center}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-crystal.png" alt="GOSE">
+    <div><h1>Party Lobby</h1><span class="sub" id="ctxsub">— who's playing, then Start</span></div>
+    <div class="home"><span class="ic" data-i="users"></span> B / Esc — back</div>
+  </div>
+  <div class="ctx" id="ctx"></div>
+  <div class="seats" id="seats"></div>
+  <div class="startrow">
+    <div class="start" id="start"><span class="ic" data-i="play"></span> <span id="starttxt">Start</span></div>
+    <div class="maprow" id="maprow"></div>
+  </div>
+  <div class="honest"><span class="ic" data-i="info"></span>
+    <div><b>Seats launch in order</b> — empty seats are skipped, so the occupied seats become Player 1, 2, …
+    The pad-to-player mapping below is exactly the <b>-pN</b> cmdline GOSE builds (verified live).
+    The <b>AI agent</b> pinned to a virtual seat is chosen in the <b>AI Hub</b> (shown here, not set here);
+    this screen assigns which <b>controller</b> drives each player slot.</div></div>
+  <div class="foot"><span class="ic" data-i="gamepad-2"></span> Pre-launch party setup
+    <span class="h"><b>↑↓←→</b> move · <b>A</b> assign / Start · <b>B</b> back</span></div>
+  <div class="toast" id="toast"></div>
+  <div class="modal" id="modal"><div class="box" id="modal-box"></div></div>
+<script src="assets/icons.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  const $=id=>document.getElementById(id);
+  function paint(){if(window.GICON){GICON.paint(document);return;}
+    document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+  function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),2400);}
+  function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+  const SRCLBL={passthrough:"Your pad",virtual:"AI seat",bluetooth:"Bluetooth",native:"Controller"};
+
+  // ---- game context (the launch hook): ?system=&game=&title= . No game => degrade honestly. ----
+  const Q=new URLSearchParams(location.search);
+  const GAME={system:Q.get("system")||"",game:Q.get("game")||"",title:Q.get("title")||Q.get("game")||""};
+  const HAS_GAME=!!(GAME.system&&GAME.game);
+
+  // ---- state ----
+  // seats[i] = device event path assigned to player-seat i (P{i+1}), or null (empty).
+  let avail=[], loaded=false, dataOk=null, seats=[null,null,null,null];
+  let foc=0;                 // flat focus: 0..3 = seat cards, 4 = Start
+  let M={open:false,seat:0,foc:0,opts:[]};
+
+  // ---- derived ----
+  function devByPath(p){return avail.find(d=>d.path===p)||null;}
+  function seatOfPath(p){return seats.indexOf(p);}
+  // effective launch player slot for seat i (1-based among NON-EMPTY seats, in seat order)
+  function playerSlot(i){ if(!seats[i])return 0; let n=0; for(let k=0;k<=i;k++) if(seats[k])n++; return n; }
+  function chosenPaths(){return seats.filter(p=>p);}   // P1-first order sent to /launch
+
+  // ---- render ----
+  function avatarIcon(d){return d&&d.source==="virtual"?"cpu":"gamepad-2";}
+  function avatarClass(d){return d?(d.source==="virtual"?"ai":"human"):"";}
+  function aiLabel(d){return (d&&d.ai&&d.ai.length)?d.ai.join(", "):null;}
+
+  function renderCtx(){
+    if(HAS_GAME){
+      $("ctxsub").textContent="— "+GAME.title;
+      $("ctx").className="ctx";
+      $("ctx").innerHTML="Setting up <b>"+esc(GAME.title)+"</b>. Assign a controller to each player, then Start.";
+    }else{
+      $("ctxsub").textContent="— no game selected";
+      $("ctx").className="ctx warn";
+      $("ctx").innerHTML="Opened without a game. Pick a game from the <b>Library</b> to launch — "+
+        "you can still arrange seats here to preview the mapping.";
+    }
+  }
+  function renderSeats(){
+    let h="";
+    for(let i=0;i<4;i++){
+      const d=devByPath(seats[i]); const f=(foc===i);
+      const ps=playerSlot(i);
+      const plr=ps?`<span class="plr">Player ${ps}</span>`:"";
+      let body;
+      if(d){
+        const chips=`<span class="src ${esc(d.source)}">${SRCLBL[d.source]||esc(d.source)}</span>`+
+          (d.is_os_admin?'<span class="badge">OS admin</span>':"")+
+          (d.is_dev&&!d.is_os_admin?'<span class="badge">dev pad</span>':"");
+        const ai=aiLabel(d);
+        body=`<span class="ic av ${avatarClass(d)}" data-i="${avatarIcon(d)}"></span>
+          <div class="nm">${esc(d.name)}</div>
+          ${ai?`<div class="who">agent <b>${esc(ai)}</b></div>`:(d.source==="virtual"?`<div class="who">unpinned — assign an agent in the AI Hub</div>`:"")}
+          <div class="chips">${chips}</div>`;
+      }else{
+        body=`<span class="ic av" data-i="circle-user"></span><div class="nm">Empty</div>
+          <div class="who">A — assign a player</div>`;
+      }
+      h+=`<div class="seat ${d?'':'empty'} ${f?'focus':''}" data-s="${i}">
+        <div class="pn">P${i+1}</div>${plr}<div class="body">${body}</div></div>`;
+    }
+    $("seats").innerHTML=h;
+    [...$("seats").children].forEach(el=>el.onclick=()=>{foc=+el.dataset.s;render();openAssign(+el.dataset.s);});
+  }
+  function renderStart(){
+    const st=$("start"); const chosen=chosenPaths();
+    const canStart=HAS_GAME&&chosen.length>0;
+    st.className="start"+(foc===4?" focus":"")+(canStart?"":" disabled");
+    $("starttxt").textContent=HAS_GAME?(chosen.length?("Start — "+chosen.length+" player"+(chosen.length>1?"s":"")):"Start (assign a player first)"):"Open from a game to launch";
+    if(!loaded){$("maprow").textContent="";return;}
+    if(!chosen.length){$("maprow").innerHTML="No players assigned — assign at least Player 1.";return;}
+    const parts=[];
+    for(let i=0;i<4;i++){const d=devByPath(seats[i]);if(d)parts.push("<b>P"+playerSlot(i)+"</b> "+esc(d.name));}
+    $("maprow").innerHTML="Launch mapping: "+parts.join(" · ");
+  }
+  function render(){renderCtx();renderSeats();renderStart();paint();
+    const fe=document.querySelector(".seat.focus,.start.focus");if(fe)fe.scrollIntoView({block:"nearest"});}
+
+  // ---- assign modal (docs/27 §3.10 modal contract) ----
+  function modalPush(){if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();else document.body.dataset.goseModal="1";}
+  function modalPop(){if(window.GOSE&&GOSE.modalPop)GOSE.modalPop();else delete document.body.dataset.goseModal;}
+  function openAssign(seat){
+    if(!loaded||dataOk===false){say("Controllers offline — can't assign yet");return;}
+    M.seat=seat;M.foc=0;M.open=true;
+    // options: every connected pad (mark where it's already seated), then "Leave empty"
+    M.opts=avail.map(d=>({kind:"dev",d:d})); M.opts.push({kind:"none"});
+    // focus the current occupant if any
+    const cur=seats[seat]; const ci=avail.findIndex(d=>d.path===cur);
+    M.foc=cur?(ci<0?0:ci):M.opts.length-1;
+    modalPush(); renderAssign(); $("modal").classList.add("on");
+  }
+  function renderAssign(){
+    let h=`<h3>Assign Player ${M.seat+1}</h3>
+      <div class="ms">Pick a controller for this player slot. A pad already in another seat will move here.</div>`;
+    M.opts.forEach((o,i)=>{
+      const f=(i===M.foc?" focus":"");
+      if(o.kind==="none"){
+        const sel=seats[M.seat]?"":'<span class="chk">✓</span>';
+        h+=`<div class="opt${f}" data-o="${i}"><span class="ic none" data-i="circle-user"></span>
+          <div class="col"><div class="nm">Leave empty</div><div class="sub">no player in P${M.seat+1}</div></div>${sel}</div>`;
+      }else{
+        const d=o.d; const at=seatOfPath(d.path);
+        const here=(at===M.seat); const elsewhere=(at>=0&&at!==M.seat);
+        const ai=aiLabel(d);
+        const sub=(SRCLBL[d.source]||d.source)+(ai?" · agent "+ai:(d.source==="virtual"?" · unpinned (set in AI Hub)":""))
+          +(d.is_os_admin?" · OS admin":"")+(elsewhere?" · now in P"+(at+1):"");
+        h+=`<div class="opt${f}" data-o="${i}"><span class="ic ${avatarClass(d)}" data-i="${avatarIcon(d)}"></span>
+          <div class="col"><div class="nm">${esc(d.name)}</div><div class="sub">${esc(sub)}</div></div>${here?'<span class="chk">✓</span>':''}</div>`;
+      }
+    });
+    $("modal-box").innerHTML=h;
+    [...$("modal-box").querySelectorAll(".opt")].forEach(el=>el.onclick=()=>{M.foc=+el.dataset.o;renderAssign();chooseAssign();});
+    paint();
+    const fe=$("modal-box").querySelector(".opt.focus");if(fe)fe.scrollIntoView({block:"nearest"});
+  }
+  function chooseAssign(){
+    const o=M.opts[M.foc];
+    if(o.kind==="none"){seats[M.seat]=null;}
+    else{
+      const p=o.d.path; const at=seatOfPath(p);
+      if(at>=0&&at!==M.seat)seats[at]=null;   // a pad lives in exactly one slot — move it
+      seats[M.seat]=p;
+    }
+    closeAssign(); render();
+  }
+  function closeAssign(){if(M.open){modalPop();M.open=false;$("modal").classList.remove("on");}}
+
+  // ---- start ----
+  function doStart(){
+    if(!HAS_GAME){say("Open the lobby from a game in the Library to launch");return;}
+    const players=chosenPaths();
+    if(!players.length){say("Assign at least Player 1 first");return;}
+    say("Starting "+GAME.title+"…");
+    fetch("/launch",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system:GAME.system,game:GAME.game,players:players})})
+      .then(r=>r.json()).then(d=>{
+        if(d.ok)say("Launching "+GAME.title+" — "+players.length+" player"+(players.length>1?"s":""));
+        else say("Couldn't launch: "+(d.error||"?"));
+      }).catch(()=>say("Launch failed (network?)"));
+  }
+
+  // ---- input: one keydown consuming the docs/27 vocabulary (no getGamepads, ever) ----
+  function move(d){foc=(foc+d+5)%5;render();}
+  function activate(){ if(foc<4)openAssign(foc); else doStart(); }
+  addEventListener("keydown",e=>{const k=e.key;
+    if(M.open){
+      if(k==="ArrowDown"||k==="Down"||k==="ArrowRight"||k==="Right")M.foc=(M.foc+1)%M.opts.length,renderAssign();
+      else if(k==="ArrowUp"||k==="Up"||k==="ArrowLeft"||k==="Left")M.foc=(M.foc-1+M.opts.length)%M.opts.length,renderAssign();
+      else if(k==="Enter"||k===" ")chooseAssign();
+      else if(k==="Escape"||k==="Backspace")closeAssign();      // B backs out one level (§3.2)
+      else return; e.preventDefault(); return;
+    }
+    if(k==="ArrowRight"||k==="Right"||k==="ArrowDown"||k==="Down")move(1);
+    else if(k==="ArrowLeft"||k==="Left"||k==="ArrowUp"||k==="Up")move(-1);
+    else if(k==="Enter"||k===" ")activate();
+    else if(k==="Escape"||k==="Backspace"){location.href=HAS_GAME?"gose-library.html":"gose-home.html";}
+    else return; e.preventDefault();
+  });
+  $("start").onclick=()=>{foc=4;render();doStart();};
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) is the single input authority (docs/27 §2.1).
+
+  // ---- data ----
+  function seedSeats(d){
+    // initialize seats from the launcher's DEFAULT order (so the lobby opens already showing
+    // what would launch: P1 = first human pad, then AI seats), capped at 4 slots.
+    seats=[null,null,null,null];
+    (d.default_order||[]).forEach(o=>{if(o.slot>=1&&o.slot<=4)seats[o.slot-1]=o.path;});
+  }
+  function load(first){
+    fetch("/lobby/state",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      dataOk=!!(d&&d.ok); avail=(d&&d.available)||[];
+      if(first)seedSeats(d||{});
+      // drop any seat whose device vanished (unplugged) so the mapping never lies
+      seats=seats.map(p=>p&&avail.some(x=>x.path===p)?p:null);
+      loaded=true; render();
+    }).catch(()=>{dataOk=false;avail=[];loaded=true;render();});
+  }
+  renderCtx();render();load(true);
+  setInterval(()=>load(false),3000);   // background refresh; keeps focus + seats (§3.9)
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>

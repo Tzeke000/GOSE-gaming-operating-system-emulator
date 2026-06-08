@@ -1410,17 +1410,21 @@ def _sdl_guid(bus, vendor, product, version):
         return "%02x%02x" % (v & 0xFF, (v >> 8) & 0xFF)
     return le(bus) + "0000" + le(vendor) + "0000" + le(product) + "0000" + le(version) + "0000"
 
-def _virtual_pad_args(max_players=5):
-    """Build emulatorlauncher -pN controller args (the job EmulationStation used to do).
-    Players = HUMAN physical pads first, then our uinput virtual pads (AI seats, identified
-    by phys 'py-evdev-uinput'), so a human always lands on the lowest player slot when one
-    is plugged in. NOTE: a physical pad's GUID must exist in the launcher's controller DB to
-    generate binds — true for common pads (same constraint ES had); the AI pads guarantee it
-    by masquerading as Xbox 360."""
+def _player_devices():
+    """Enumerate player-capable pads from /proc/bus/input/devices in the launcher's DEFAULT
+    player order: HUMAN pads (passthrough/native) first, then our uinput virtual AI seats,
+    each sorted by js index, so a human always lands on the lowest player slot when present.
+    Returns (all_js, devices) where devices is a list of dicts
+    {js, path, guid, name, source}. SINGLE source of truth for both _virtual_pad_args (what
+    actually launches) and the pre-launch lobby (/lobby/state) — so the lobby can never show
+    a seat->player mapping that disagrees with the cmdline GOSE will build.
+    NOTE: a physical pad's GUID must exist in the launcher's controller DB to generate binds —
+    true for common pads (same constraint ES had); the AI pads guarantee it by masquerading as
+    Xbox 360 while reporting their own name ("AI virtual controller N", bind keys off GUID)."""
     try:
         txt = open("/proc/bus/input/devices").read()
     except Exception:
-        return []
+        return [], []
     all_js, virt, phys = [], [], []
     for blk in txt.split("\n\n"):
         jss = re.findall(r"js(\d+)", blk); evs = re.findall(r"event(\d+)", blk)
@@ -1432,36 +1436,52 @@ def _virtual_pad_args(max_players=5):
         all_js.append(int(jss[0]))
         if not evs:
             continue
-        entry = (int(jss[0]), "/dev/input/event" + evs[0])
+        js = int(jss[0]); path = "/dev/input/event" + evs[0]
         name_m = re.search(r'Name="([^"]*)"', blk)
         name = name_m.group(1) if name_m else "pad"
         if "gose-passthrough" in blk:
-            # Host-pad PASSTHROUGH (uinput mirror of the human's physical pad).
-            # Goes to the PHYS list — it IS a human player, lowest player slot —
-            # with its REAL GUID (pt_open recreated the real vendor/product/version,
-            # so the kernel-id GUID matches the launcher DB's entry for that pad).
+            # Host-pad PASSTHROUGH (uinput mirror of the human's physical pad). It IS a human
+            # player (lowest player slot) with its REAL GUID (pt_open recreated the real
+            # vendor/product/version, so the kernel-id GUID matches the launcher DB entry).
             ids = re.search(r"Bus=(\w+) Vendor=(\w+) Product=(\w+) Version=(\w+)", blk)
             guid = (_sdl_guid(*(int(x, 16) for x in ids.groups())) if ids else _XBOX_GUID)
-            phys.append(entry + (guid, name))
+            phys.append((js, path, guid, name, "passthrough"))
         elif "py-evdev-uinput" in blk:
-            # AI seat pad. Bind with the Xbox-360 GUID (identity → real button maps),
-            # but report its OWN name ("AI virtual controller N") to the launcher; the
-            # bind keys off the GUID, not the name, so this is purely cosmetic/legible.
-            virt.append(entry + (_XBOX_GUID, name))
+            virt.append((js, path, _XBOX_GUID, name, "virtual"))
         elif not any(s in name.lower() for s in _NON_PADS):
             ids = re.search(r"Bus=(\w+) Vendor=(\w+) Product=(\w+) Version=(\w+)", blk)
             guid = (_sdl_guid(*(int(x, 16) for x in ids.groups())) if ids else _XBOX_GUID)
-            phys.append(entry + (guid, name))
+            phys.append((js, path, guid, name, "native"))
     all_js = sorted(set(all_js)); virt.sort(); phys.sort()
+    devices = [{"js": js, "path": path, "guid": guid, "name": name, "source": src}
+               for (js, path, guid, name, src) in (phys + virt)]
+    return all_js, devices
+
+def _virtual_pad_args(max_players=5, order=None):
+    """Build emulatorlauncher -pN controller args (the job EmulationStation used to do).
+    Default order is _player_devices' (humans then AI seats). `order`, when given, is a list
+    of device event paths (the pre-launch lobby's seat->player mapping, P1 first): devices are
+    emitted in THAT order and any path not present is skipped — so a stale/garbage mapping
+    degrades to whatever real pads remain, and an order that matches NOTHING falls back to the
+    historical positional default rather than launching with zero pads. order=None keeps the
+    exact pre-lobby behaviour. Each device keeps its OWN SDL joystick index (-pNindex) no
+    matter which player slot it lands in."""
+    all_js, devices = _player_devices()
+    if order:
+        by_path = {d["path"]: d for d in devices}
+        chosen = [by_path[p] for p in order if p in by_path]
+        if chosen:                       # all-stale order → keep the safe default mapping
+            devices = chosen
     args = []
-    for n, (js, path, guid, name) in enumerate((phys + virt)[:max_players], start=1):
+    for n, d in enumerate(devices[:max_players], start=1):
+        js = d["js"]
         idx = all_js.index(js) if js in all_js else (n - 1)
-        args += ["-p%dindex" % n, str(idx), "-p%dguid" % n, guid,
-                 "-p%dname" % n, name, "-p%ddevicepath" % n, path,
+        args += ["-p%dindex" % n, str(idx), "-p%dguid" % n, d["guid"],
+                 "-p%dname" % n, d["name"], "-p%ddevicepath" % n, d["path"],
                  "-p%dnbbuttons" % n, "11", "-p%dnbhats" % n, "1", "-p%dnbaxes" % n, "6"]
     return args
 
-def launch_game(system, game):
+def launch_game(system, game, players=None):
     d = os.path.join(ROMS, system)
     if not os.path.isdir(d):
         return {"ok": False, "error": "unknown system"}
@@ -1482,7 +1502,7 @@ def launch_game(system, game):
     if not rom:
         return {"ok": False, "error": "rom not found for " + game}
     try:
-        _spawn(["emulatorlauncher"] + _virtual_pad_args() + ["-system", system, "-rom", rom])
+        _spawn(["emulatorlauncher"] + _virtual_pad_args(order=players) + ["-system", system, "-rom", rom])
         record_recent(system, game)
         _TIMECTL["slot"] = 0; _TIMECTL["ff"] = False   # #37 RetroArch launch defaults
         return {"ok": True, "rom": rom}
@@ -1549,7 +1569,11 @@ def launch_app(payload):
     if payload.get("file"):
         return run_file(payload["file"])
     if payload.get("system") and payload.get("game"):
-        return launch_game(payload["system"], payload["game"])
+        # players: optional list of device event paths (the pre-launch lobby's seat->player
+        # mapping, P1 first). Absent → the historical default order (humans then AI seats).
+        pl = payload.get("players")
+        return launch_game(payload["system"], payload["game"],
+                           pl if isinstance(pl, list) and pl else None)
     app = payload.get("app"); cmd = payload.get("cmd")
     if app == "moonlight":
         return launch_moonlight()
@@ -4913,6 +4937,53 @@ def controllers_admin_set(payload):
     LOG.info("OS admin controller set: %s", cid)
     return {"ok": True, "id": cid}
 
+# ---- Pre-launch PARTY/SEAT LOBBY state (docs/27): who can play + the seat->player mapping
+#      the launcher WILL use. Read-only; the lobby page POSTs the chosen order to /launch as
+#      {players:[event-path,...]} (consumed by _virtual_pad_args(order=)). This endpoint NEVER
+#      mutates anything — it derives a view over _player_devices (the launch source of truth),
+#      the controller registry (source chips / OS-admin), and the AI grant store (seated AIs). ----
+_AI_SEAT_RE = re.compile(r"AI virtual controller\s+(\d+)", re.I)
+
+def lobby_state():
+    # available players: every player-capable pad in the EXACT order/identity the launcher sees
+    # (_player_devices), enriched with registry source/admin flags so the page shows source chips
+    # and the OS-admin/dev-pad badges without a second, drift-prone enumeration.
+    all_js, devices = _player_devices()
+    reg = {p["path"]: p for p in _parse_controllers() if p.get("path")}
+    admin, _stored = _effective_admin(list(reg.values()))
+    # seated AIs: grant.seat (1-4, play/admin tier) pins an AI to the N-th virtual pad in js
+    # order == "AI virtual controller N" (docs/27 §6, agent _pin_seat). This is the AGENT-side
+    # pin — surfaced here for display; the launcher only maps evdev devices to -pN slots.
+    grants = _ai_grants_load()
+    seat_ai = {}
+    for name, rec in grants.items():
+        s = rec.get("seat")
+        if s and ai_tier(name) in ("play", "admin"):
+            try:
+                seat_ai.setdefault(int(s), []).append(name)
+            except (TypeError, ValueError):
+                pass
+    avail, vi = [], 0
+    for d in devices:
+        rp = reg.get(d["path"], {})
+        item = {"path": d["path"], "name": d["name"], "source": d["source"],
+                "guid": d["guid"], "js": d["js"],
+                "id": rp.get("id"), "is_dev": bool(rp.get("is_dev")),
+                "is_os_admin": (rp.get("id") == admin) if rp.get("id") else False}
+        if d["source"] == "virtual":
+            m = _AI_SEAT_RE.search(d["name"] or "")
+            vi += 1
+            seat = int(m.group(1)) if m else vi      # name's N, else js-order ordinal
+            item["seat"] = seat
+            item["ai"] = seat_ai.get(seat) or []     # AI agent(s) pinned to this seat (display)
+        avail.append(item)
+    # default_order = exactly what _virtual_pad_args() emits with no override (P1 first),
+    # capped at the lobby's 4 seats — the honest "this is what launches if you change nothing".
+    default_order = [{"slot": i + 1, "path": d["path"], "name": d["name"], "source": d["source"]}
+                     for i, d in enumerate(devices[:4])]
+    return {"ok": True, "max_players": 4, "available": avail, "default_order": default_order,
+            "grants": {n: {"tier": ai_tier(n), "seat": grants[n].get("seat")} for n in grants}}
+
 # ---- Host-bridge proxies: real laptop perf + brightness (tolerate the bridge being down) ----
 def sys_perf_host():
     r = host_bridge("/perf", timeout=4)
@@ -5418,6 +5489,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(controllers_list())
         if route == "/controllers/admin":
             return self._json(controllers_admin_get())
+        if route == "/lobby/state":
+            return self._json(lobby_state())
         if route == "/net/scan":
             return self._json(host_bridge("/wifi/scan"))
         if route == "/net/wifi":
