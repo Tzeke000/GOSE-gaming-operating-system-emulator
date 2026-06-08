@@ -239,6 +239,43 @@ _STATS_LOCK = threading.Lock()
 _SESSION = {"system": None, "game": None, "t": None}
 _SESSION_LOCK = threading.Lock()
 
+# #115 current-activity state file: written on game enter, deleted on exit.
+# Consumers (Guide header, AI #113 foundation): read this to know what's running.
+ACTIVITY_F = "/userdata/system/gose/activity.json"
+
+def _write_activity(system, game):
+    """Write the current-activity file when a game starts."""
+    try:
+        os.makedirs(os.path.dirname(ACTIVITY_F), exist_ok=True)
+        d = {"system": system, "game": game, "since": time.time(), "state": "playing"}
+        with open(ACTIVITY_F, "w") as f:
+            json.dump(d, f)
+    except Exception as e:
+        LOG.warning("activity write failed: %s", e)
+
+def _clear_activity():
+    """Delete the activity file when the game ends or on exit."""
+    try:
+        os.remove(ACTIVITY_F)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        LOG.warning("activity clear failed: %s", e)
+
+def game_activity():
+    """GET /game/activity — current game state for the Guide header and AI."""
+    try:
+        d = json.load(open(ACTIVITY_F))
+        if isinstance(d, dict) and d.get("game"):
+            return {"ok": True, "playing": True,
+                    "system": d.get("system", ""), "game": d.get("game", ""),
+                    "since": d.get("since"), "state": d.get("state", "playing")}
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return {"ok": True, "playing": False, "state": "desktop"}
+
 def _playstats():
     """Load playstats.json; migrate from legacy playtime.json if playstats is empty/absent."""
     try:
@@ -302,6 +339,7 @@ def _session_start(system, game):
         _SESSION["system"] = system
         _SESSION["game"] = game
         _SESSION["t"] = time.time()
+    _write_activity(system, game)   # #115 current-activity file
 
 def _finalize_session_locked():
     """Finalize the in-flight session (caller must hold _SESSION_LOCK)."""
@@ -312,6 +350,7 @@ def _finalize_session_locked():
     _SESSION["system"] = _SESSION["game"] = _SESSION["t"] = None
     if sys_ and game_ and elapsed >= 1:
         _record_session(sys_, game_, elapsed)
+    _clear_activity()   # #115 remove activity file when game ends
 
 def _finalize_session():
     """Finalize the in-flight session (public, acquires lock)."""
@@ -8202,6 +8241,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(list_games())
         if route == "/game/running":
             return self._json(game_running())
+        if route == "/game/activity":
+            return self._json(game_activity())   # #115 current-activity state
         if route == "/game/playmap":
             return self._json(game_playmap(self._qs().get("id", "")))
         if route == "/game/stats":

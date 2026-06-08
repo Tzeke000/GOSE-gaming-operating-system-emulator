@@ -112,6 +112,8 @@
          slot:0,ff:false,rewindEnabled:false,   // #37 time controls
          hud:"off",hudHas:false,quiet:false,hasWifi:false,
          shaderset:"none",shaderList:[],bezel:false,cheats:[],cheatNote:"",cheatsExpanded:false,
+         // #115 current-activity (game name in header)
+         curGame:null,   // null = desktop, string = game name currently running
          // #41 AI assist
          aiPaired:null,   // null=unknown, false=no paired AI, true=at least one paired AI
          assistState:"idle",  // idle | asking | sent | error
@@ -164,8 +166,13 @@
   function statRow(k,val,pct){return '<div class="stat"><span class="k">'+k+'</span><span class="track"><i style="width:'+(pct||0)+'%"></i></span><span class="v">'+val+'</span></div>';}
   function render(){
     var now=new Date(),hh=now.getHours(),mm=now.getMinutes(),ap=hh>=12?"PM":"AM",h12=((hh+11)%12)+1;
+    var dayNames=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    var monNames=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    var dateStr=dayNames[now.getDay()]+", "+monNames[now.getMonth()]+" "+now.getDate();
     var batt=S.batt==null?"":(" · "+S.batt+"%"+(S.charging?" ⚡":""));
-    $("meta").innerHTML='<b>'+h12+':'+(mm<10?"0":"")+mm+' '+ap+'</b> &nbsp; '+(S.net||"—")+batt;
+    // #115: game name in header — "Now playing: <game>" when a game is active
+    var gameTag=S.curGame?(' &nbsp;<span style="color:#5cd0ff;font-size:11px;letter-spacing:.03em">&#9654; '+S.curGame+'</span>'):"";
+    $("meta").innerHTML='<b>'+h12+':'+(mm<10?"0":"")+mm+' '+ap+'</b> &nbsp; '+dateStr+batt+gameTag;
     // Performance widget — live HOST telemetry from /sys/perf (the real laptop), read-only
     $("perf").innerHTML=
       statRow("CPU", S.cpu==null?"—":S.cpu+"%", S.cpu)+
@@ -256,6 +263,14 @@
     api("/net.json").then(d=>{if(d&&d.ok){S.net=d.connection||(d.online?"Online":"Offline");S.hasWifi=!!d.has_wifi;}render();});
     api("/sys/audio").then(d=>{if(d&&d.ok){S.vol=d.volume==null?S.vol:d.volume;S.mute=!!d.mute;}render();});
     api("/sys/brightness").then(d=>{if(d){S.briHas=d.ok!==false;if(d.ok&&d.level!=null)S.bri=d.level;}render();});
+  }
+  // #115 activity — load current game name for the header
+  function loadActivity(){
+    api("/game/activity").then(function(d){
+      if(d&&d.playing&&d.game){S.curGame=d.game.replace(/_/g," ");}
+      else{S.curGame=null;}
+      render();
+    });
   }
   // #41 AI assist — load paired state on open, post request, handle modal
   function loadAiPaired(){
@@ -371,6 +386,7 @@
   loadTime();    // #37 fast-forward + rewind-enable + active slot
   loadExtras();   // HUD/quiet/shader/bezel/cheats state for the game-bar quick controls
   loadAiPaired();  // #41 check if an AI is paired (tier-gate display)
+  loadActivity();  // #115 current game name for header
   try{document.body.tabIndex=-1;window.focus();document.body.focus();}catch(e){}   // make sure keys land here
   (function(){var done=false;function go(){if(done)return;done=true;requestAnimationFrame(function(){document.body.classList.add("ready");});}
     var im=new Image();im.onload=go;im.onerror=go;im.src="_gbg.jpg?"+bgn;setTimeout(go,240);})();   // reveal once the frozen frame is ready (or 240ms cap)

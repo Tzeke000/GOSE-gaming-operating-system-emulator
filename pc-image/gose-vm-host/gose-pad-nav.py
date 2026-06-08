@@ -165,6 +165,8 @@ WM_EVENT_URL = SERVER_URL + "/wm/event"
 # as a logged NO-OP. The POST runs on a tiny worker thread so the host screencap
 # (a few seconds worst case) never blocks the evdev loop.
 CAPTURE_URL = SERVER_URL + "/capture/shot"
+# #118 in-game Guide trigger: POST /guide/toggle fires the overlay while a game runs.
+GUIDE_TOGGLE_URL = SERVER_URL + "/guide/toggle"
 GUIDE_HOLD_S = 0.35      # Guide released after this long = "release selects"
 L2_THRESHOLD = 100       # ABS_Z (0-255) past this counts as L2 held
 # keysym -> semantic event while a WM modal is open (reuses map_event's output)
@@ -405,11 +407,39 @@ def capture_post():
         log("screenshot chord: capture queue full -> dropped (one already in flight)")
 
 
+# #118 Guide toggle while a game is running: POST /guide/toggle on a tiny worker
+# thread so the network round-trip never blocks the evdev loop. Uses the same
+# bounded-queue pattern as capture_post.
+_GUIDE_TOG_Q = _queue.Queue(maxsize=4)
+
+def _guide_toggle_worker():
+    while True:
+        _GUIDE_TOG_Q.get()
+        try:
+            req = urllib.request.Request(
+                GUIDE_TOGGLE_URL, data=b"{}",
+                headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=2.0).read()
+            log("in-game Guide toggle -> overlay fired")
+        except Exception as e:
+            log("Guide toggle POST failed: %s" % e)
+
+def guide_toggle_post():
+    """Fire the Guide overlay (POST /guide/toggle) — non-blocking."""
+    try:
+        _GUIDE_TOG_Q.put_nowait(1)
+        log("#118 in-game Guide: queued toggle")
+    except _queue.Full:
+        log("#118 in-game Guide: queue full -> dropped (already in flight)")
+
+
 class WMLayer:
     """The modal window-management layer (docs/23 §7).
 
     States:  None (normal nav) | "carousel" (Guide) | "snap" (L2+d-pad).
     * Guide DOWN  -> enter carousel, drop WM_FLAG, post wm.carousel.
+    * Guide DOWN while a game runs (#118) -> fire the Guide overlay instead of
+      the carousel (game-bar is more useful than window-switcher during play).
     * Guide UP    -> held >= GUIDE_HOLD_S: post wm.select + exit (release-selects);
                      shorter: STICKY — the modal stays, A/B finish it.
     * In a modal every mapped keysym becomes a semantic event (WM_FROM_KEYSYM);
@@ -432,7 +462,7 @@ class WMLayer:
     """
 
     def __init__(self, post=None, flag_path=WM_FLAG, gate=None, capture=None,
-                 oobe_done_fn=None):
+                 oobe_done_fn=None, game_check=None, guide_toggle=None):
         self.post = post or wm_post
         # capture() fires the global screenshot (POST /capture/shot). Injectable
         # so --selftest can record chord fires without hitting the real server.
@@ -444,6 +474,11 @@ class WMLayer:
         # game-bar and window-switcher can't escape setup.  None = always-done (safe
         # default for callers that don't care).
         self._oobe_done_fn = oobe_done_fn or (lambda: True)
+        # #118: game_check() returns True when a game/emulator is running.  When set,
+        # a Guide press during a game fires the overlay instead of the carousel.
+        self._game_check = game_check   # None = no in-game divert (selftest compat)
+        # #118: guide_toggle() fires the Guide overlay (POST /guide/toggle).
+        self._guide_toggle = guide_toggle or guide_toggle_post
         self.mode = None          # None | "carousel" | "snap"
         self.guide_t = 0.0
         self._shot_taken = False  # a screenshot chord fired during THIS Guide hold
@@ -507,6 +542,22 @@ class WMLayer:
                 if not oobe_done:
                     log("wm layer: Guide suppressed — OOBE wizard in progress")
                     return True          # consume the event; no carousel, no game-bar
+                # #118 in-game Guide: when a game is running, fire the Guide overlay
+                # (Game Bar) instead of the window carousel — the carousel is for the
+                # desktop; the overlay is what the user wants mid-game.  The game_check
+                # uses the same GameWatch cadence the bridge already maintains.
+                if self._game_check is not None:
+                    try:
+                        in_game = self._game_check()
+                    except Exception:
+                        in_game = False
+                    if in_game:
+                        log("#118 Guide in-game -> Guide overlay (not carousel)")
+                        try:
+                            self._guide_toggle()
+                        except Exception as e:
+                            log("#118 guide_toggle failed: %s" % e)
+                        return True   # consumed; no carousel, no flag, no wm.carousel
                 self.guide_t = time.time()
                 self._shot_taken = False      # fresh hold: no chord yet
                 self._enter("carousel")
@@ -1738,14 +1789,18 @@ def run():
         pass
     _threading.Thread(target=_wm_post_worker, daemon=True).start()
     _threading.Thread(target=_capture_post_worker, daemon=True).start()
+    _threading.Thread(target=_guide_toggle_worker, daemon=True).start()   # #118
     engine = make_engine()              # XTEST (persistent X conn) or xdotool
     gate = AdminGate().allows
     gamewatch = GameWatch().start()     # off-hot-path pgrep (shared instance)
     # #102: WMLayer gets an oobe_done_fn so Guide/snap are suppressed during the wizard.
+    # #118: WMLayer gets game_check so Guide in-game fires the overlay, not the carousel.
     _oobe_done = lambda: os.path.exists(OOBE_DONE_FILE)
     nav = PadNav(emit=engine.key, pointer=engine,
                  game_check=gamewatch.is_running,
-                 gate=gate, wm=WMLayer(gate=gate, oobe_done_fn=_oobe_done),
+                 gate=gate,
+                 wm=WMLayer(gate=gate, oobe_done_fn=_oobe_done,
+                             game_check=gamewatch.is_running),   # #118
                  native=make_native_watch(gamewatch.is_running))
     db = ControllerDB()
     norm = Normalizer(db)
@@ -2103,6 +2158,49 @@ def selftest():
     check("#102: Guide allowed after OOBE done -> carousel opens",
           cwo2.mode == "carousel" and posts == ["wm.carousel"])
     cwo2._exit()   # cleanup
+
+    # ----- #118 IN-GAME GUIDE TRIGGER ------------------------------------------
+    # When a game is running, Guide should fire the overlay, NOT open the carousel.
+    # WMLayer.game_check is injected; guide_toggle is captured to verify the call.
+    guide_fires = []
+
+    def wm_pair_game(game_running_val):
+        posts.clear(); rec.clear(); guide_fires.clear()
+        try:
+            os.remove(flagp)
+        except Exception:
+            pass
+        wm = WMLayer(post=posts.append, flag_path=flagp,
+                     gate=lambda p, n=None: (True, "ok"),
+                     capture=lambda: caps.append(1),
+                     game_check=lambda: game_running_val,
+                     guide_toggle=lambda: guide_fires.append(1))
+        n = hnav(wm=wm, wm_check=lambda: os.path.exists(flagp))
+        return n, wm
+
+    # Guide DOWN while a game runs -> overlay fires, no carousel, no flag
+    ig1, wm_ig1 = wm_pair_game(True)
+    ig1.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    check("#118: Guide in-game -> guide_toggle fired", guide_fires == [1])
+    check("#118: Guide in-game -> NO carousel opened", wm_ig1.mode is None)
+    check("#118: Guide in-game -> NO wm.carousel posted", posts == [])
+    check("#118: Guide in-game -> WM flag NOT set", not os.path.exists(flagp))
+    # Guide UP after in-game press -> carousel is not in mode, so release is ignored
+    ig1.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 0), DEV)
+    check("#118: Guide release after in-game press -> no wm.select (mode was None)",
+          posts == [])
+    # Guide DOWN while NO game -> carousel as normal
+    ig2, wm_ig2 = wm_pair_game(False)
+    ig2.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    check("#118: Guide NOT in-game -> carousel (normal path)", wm_ig2.mode == "carousel")
+    check("#118: Guide NOT in-game -> guide_toggle NOT fired", guide_fires == [])
+    check("#118: Guide NOT in-game -> wm.carousel posted", posts == ["wm.carousel"])
+    wm_ig2._exit()
+    # WMLayer with no game_check set -> normal carousel (backward compat, selftest)
+    ig3, wm_ig3 = wm_pair(game=False)   # wm_pair uses no game_check
+    ig3.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    check("#118: WMLayer(no game_check) -> carousel (compat)", wm_ig3.mode == "carousel")
+    wm_ig3._exit()
 
     # ----- NATIVE-APP DISCIPLINE (docs/27 §4.1: the browser-trap killer) -----
     # classification is pure: the kiosk family is NOT native; everything else is.
