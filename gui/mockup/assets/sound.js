@@ -33,8 +33,11 @@
   var BYPASS_DUCK = { 'battery-critical':1, 'battery-low':1, error:1, warning:1 };
   // per-category default volume 0..100: UI ticks quiet (they fire constantly), alerts loud.
   // Round to the Settings volume steps (25/50/75/100) so the picker matches the stored value.
-  var DEFV = { system:75, notify:75, battery:100, ui:50 };
-  var CATS = ['system','notify','battery','ui'];
+  // 'music' = the looping menu soundtrack (assets/music.js): default ON but QUIET (~20%);
+  // it has no one-shot events here (no EVENTS entry) — it's a continuous category the
+  // player reads via vol('music')/muted('music')/quiet(). 20 rounds to the 25% picker step.
+  var DEFV = { system:75, notify:75, battery:100, ui:50, music:20 };
+  var CATS = ['system','notify','battery','ui','music'];
 
   function lsGet(k,d){ var v=localStorage.getItem(k); return v==null?d:v; }
   function vol(cat){ var v=parseInt(lsGet('gose-snd-vol-'+cat, DEFV[cat]),10);
@@ -81,4 +84,11 @@
     defaultVol:function(c){return DEFV[c];},
     isGame:function(){return _game;}
   };
+
+  // Menu music (looping shell soundtrack) lives in its own player module so this file
+  // stays the one-shot SFX manager. Inject it once; it rides this loader onto every
+  // shell page (cursor.js auto-loads sound.js everywhere), reuses the 'music' category
+  // above for volume/mute + quiet-mode, and the SAME /game/running gate for its pause.
+  try{ if(!window.GOSEMUSIC){ var _ms=document.createElement('script');
+    _ms.src='assets/music.js'; (document.head||document.documentElement).appendChild(_ms); } }catch(e){}
 })();

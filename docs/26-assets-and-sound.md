@@ -94,6 +94,69 @@ Settings → Sound adds: **Quiet mode**, and per-category volume/mute pickers fo
 each with a preview on change. The old single "UI sounds" on/off is folded into
 the UI picker (`gose-sounds` kept in sync for back-compat).
 
+## Menu music (shell soundtrack)
+
+A quiet ambient loop under the **menu shell** — added 2026-06-08 (task 46). It is a
+fifth sound **category** (`music`) registered in `sound.js` (`DEFV.music = 20`,
+default ON at ~20%), but the looping playback lives in its own player so `sound.js`
+stays the one-shot SFX manager:
+
+- **`assets/music.js`** (`GOSEMUSIC`) — the player. It rides the existing loader:
+  `cursor.js` auto-injects `sound.js` on every shell page, and `sound.js` injects
+  `music.js`. Reuses the `music` category for **volume + mute** and the global
+  **quiet-mode**, and the **same `/game/running` gate** the SFX duck + `gose-pad-nav`
+  use — so Settings → Sound is still the single control surface and a launched game
+  pauses the music (polled at 700 ms = near-instant; resumes on return). Verified live
+  on the VM: home plays, `pong1k2p` launch paused it, kill-by-PID resumed it.
+- **Engine = an `<audio>` element** (verified). NOT Web Audio — this WebKit2GTK build's
+  `AudioContext.decodeAudioData` **hangs** (no callback). The `<audio>` media pipeline
+  also can't load a *large* file over the shell's range-less HTTP server: a 3 MB src
+  errors `MEDIA_ERR_SRC_NOT_SUPPORTED` while small clips load fine — so the track must
+  stay small (the placeholder is ~1.1 MB and loads cleanly). MP3 has **no decoder** here.
+- **Shell-only scope.** Plays on home/library/store/apps/settings/files/gallery/
+  task-manager/etc.; a deny-list keeps it silent on boot, OOBE, BIOS setup, the lock
+  screen, the in-game overlay, and login.
+- **No nav restart-stutter.** Each page nav is a full reload, so the position + a
+  wall-clock timestamp are persisted to `localStorage` (`gose-music-pos`) on
+  `pagehide` and every 1.5 s; the next page resumes at *position + elapsed* (mod loop
+  length). home→store→home never restarts the track from zero.
+- **Autoplay is GATED here** (verified): the kiosk blocks audio autostart —
+  `<audio>.play()` rejects `NotAllowedError` until a user gesture. The shell is
+  controller/key-driven, so the **first** d-pad/key/pointer input starts the music
+  (the rejection arms a one-shot gesture listener). For true play-on-boot, `kiosk.py`
+  would set `WebKitSettings media-playback-requires-user-gesture = FALSE` (one line in
+  the shell launcher — out of scope for this asset track; flagged as the follow-up).
+- **OFF path.** Quiet-mode, category mute, or category volume **0** all silence it
+  (each makes `wantOn()` false → the same pause path the game-gate uses; verified by
+  loading home under each preset). Track is `localStorage gose-music-src` if set.
+
+**Placeholder track** — `assets/sounds/menu-music-placeholder.wav` (36 s, 16 kHz/16-bit
+**mono**, ~1.1 MB — small on purpose, see the range-less-server note above).
+**100% synthesized** (pure sine/pad stdlib synthesis — no licensing): a seamless
+**C–G–C** ambient motif (low-C drone with integer-cycle period-fit + slow detune
+tremolo, three 12 s pad bars Cmaj→Gmaj→Cmaj windowed to zero at the bar edges so the
+loop point is click-free, plus sparse decaying bells). Onyx/warm GOSE identity. The
+owner's real track replaces it — see `docs/asset-prompts/06-menu-music.txt`.
+Generator: `<agent-home>/scratch/make_menu_music.py`.
+
+### Settings row — NOT auto-covered (spec to add)
+
+The Sound tab's rows are a **hand-enumerated** array and its init reads a **hardcoded**
+category list (`["system","notify","battery","ui"]`), so a new category is NOT picked up
+automatically — but the generic `snd_<cat>` apply handler already supports any category.
+The OFF path works today via Quiet mode (and any agent/`localStorage` write); to expose a
+**Menu music** row, `gose-settings.html` (owned by another track — left untouched here)
+should add to the `sound` tab `rows`:
+
+```js
+{ic:"music", nm:"Menu music", sub:"Looping ambient soundtrack under the menus (pauses in-game)",
+ t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_music"},
+```
+
+and add `"music"` to the init list that calls `volIdxLS(...)` (the `["system","notify",
+"battery","ui"]` array). No handler change is needed — `snd_music` flows through the
+existing `apply.indexOf("snd_")===0` branch. (Lucide `music` icon already exists.)
+
 ## Corrections / pending
 
 - **Gallery + System icons (2026-06-07)** — the first integration ran before the owner

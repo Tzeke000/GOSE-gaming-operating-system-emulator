@@ -1,0 +1,63 @@
+MENU MUSIC — GOSE SHELL SOUNDTRACK (ElevenLabs / any source)
+
+WHAT THIS IS
+  The quiet ambient loop that plays UNDER the GOSE menus (home, library, store,
+  apps, settings, …) and pauses the instant a game launches. A placeholder is
+  shipped (assets/sounds/menu-music-placeholder.wav — 100% synthesized, no
+  licensing); this file is the brief for the REAL track that replaces it.
+
+IDENTITY  (match the brand: onyx, warm, premium-calm — see 15-brand.md)
+  Onyx/warm. Dark, spacious, unhurried — a "settled" room tone, not a hook. The
+  audio twin of the crystal-on-black home screen and the narrator voice in 05
+  (warm, low-to-mid, confident, never a salesperson). It must survive being heard
+  for a long time without fatigue or earworm: background, not foreground.
+
+MUSICAL CORE  (keep this — the placeholder is built on it)
+  - Motif: C – G – C.  A low C tonal home, a lift to G, a return to C. That's the
+    whole emotional arc; resolve gently back to C so the loop never feels "cut".
+  - Key: C major / C Lydian-ish. Slow. ~50-60 BPM feel or free-time pad.
+  - Palette: a low C drone/sub bed; soft warm pads (sine/triangle-ish, gentle
+    harmonics, no harsh saw); sparse high bell/pluck accents, very quiet. Optional
+    light air/noise bed for warmth. NO drums, NO vocals, NO strong melodic lead.
+  - Dynamics: low and even. This sits at ~20% category volume by default.
+
+SEAMLESS LOOP  (hard requirement — it plays for minutes)
+  - Must loop with NO audible seam, click, or swell-reset. Easiest path: start and
+    end on silence/near-silence at the same point, or render an integer number of
+    bars and crossfade-match head/tail. The placeholder does both (pads windowed to
+    zero at the loop point; drone uses integer-cycle period-fit). Verify by looping
+    it 3-4x and listening across the boundary on headphones.
+  - First and last samples should be ~0. Avoid a reverb tail that gets chopped.
+
+FORMAT / PACK  (CONSTRAINED by the GOSE WebKit kiosk — learned the hard way, task 46)
+  - Length: 30-90 s (the loop repeats). 36-60 s is the sweet spot.
+  - Master at 44.1/48 kHz 16-bit stereo, BUT the SHIPPED file must be:
+      * SMALL — keep it under ~1.5 MB. The in-VM shell server has no HTTP range
+        support, and the kiosk's <audio> errors MEDIA_ERR_SRC_NOT_SUPPORTED on a
+        large file (a 3 MB WAV failed; the ~1.1 MB placeholder loads fine).
+      * a codec this WebKit can decode: **WAV (PCM) or OGG/Vorbis**. NOT MP3 — this
+        build has no MP3 decoder (boot.mp3 fails too). NOT Web Audio formats that need
+        decodeAudioData — it hangs here; playback is via a plain <audio> element.
+      * To stay small + good quality, prefer **OGG/Vorbis ~96-128 kbps** (a 45 s
+        stereo OGG is ~0.5-0.7 MB). A low-rate/mono WAV also works (the placeholder is
+        mono 16 kHz). Verify the OGG actually loads on the kiosk before relying on it.
+  - Name it  menu-music.<ext>  and drop it in  gui/mockup/assets/sounds/.
+  - Wire it ONE of these ways (assets/music.js):
+      a) set  TRACK = 'assets/sounds/menu-music.<ext>'  (replace the placeholder
+         default), OR
+      b) leave the code and set  localStorage['gose-music-src'] = the path
+         (lets a future "music pack" picker swap tracks with no code change).
+  - You may keep multiple tracks (a "pack") in assets/sounds/ and let the source
+    setting choose; the player just needs one resolvable URL.
+
+DELIVERY NOTES
+  - Render 2-3 variations (a touch brighter / darker / sparser) so we can pick the
+    one that disappears best behind the UI.
+  - The OS quiet-mode, the per-category volume/mute, and the in-game pause already
+    exist — the track just has to be a clean seamless loop; the shell handles the
+    rest (see docs/26 → "Menu music").
+  - Heads-up: the kiosk gates audio autostart, so on the current shell the music
+    begins on the FIRST controller/key input (not literally at boot). If we want it
+    to start the instant the home screen paints, flip kiosk.py's
+    media-playback-requires-user-gesture to FALSE (one line) — that's a shell change,
+    independent of the track itself.
