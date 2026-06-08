@@ -43,7 +43,7 @@ def rate_ok(key, limit, window):
         q.append(now); return True
 
 _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer": (20, 60),
-           "/net/scan": (10, 60), "/launch": (30, 60), "/store/install": (20, 60),
+           "/net/scan": (10, 60), "/net/connections": (30, 60), "/launch": (30, 60), "/store/install": (20, 60),
            "/splice/cut": (10, 120), "/fs/op": (60, 60), "/scrape": (6, 120), "/game/scrape": (20, 60),
            "/store/uninstall": (15, 60), "/ai/request": (6, 60),
            "/emulators/install": (10, 60), "/emulators/uninstall": (15, 60),
@@ -2360,6 +2360,238 @@ def security_smb(payload):
     LOG.info("smb %s (security settings)", "ENABLED" if on else "disabled")
     st = security_smb_state()
     return st
+
+# ---- Network Activity Monitor (Task #84, docs/31) ----------------------------------
+# Lightweight "what is my device talking to" view — complementary to the #83 audit
+# (which explains what's exposed) and to #82 Wireshark (which is the deep tool).
+# This is visibility/monitoring only, NOT a full IDS.
+#
+# GET /net/connections:
+#   {ok, generated_at, slirp_vm, connections:[...], listeners:[...], note}
+#
+# connections[]:
+#   {local, remote, state, process, hostname, verdict, verdict_reason}
+# listeners[]:
+#   {local_addr, local_port, process, verdict, verdict_reason}
+#
+# Verdicts:
+#   "loopback"   — bound to 127.x / ::1 (not LAN-reachable)
+#   "gose-stack" — known GOSE service port (8780/8731)
+#   "slirp-gw"   — remote is 10.0.2.x (SLIRP gateway/DNS, not the real internet)
+#   "external"   — routable non-loopback remote (on real hardware = actual internet)
+#   "exposed"    — listener on 0.0.0.0 / :: (reachable on real LAN)
+#   "ok"         — listener on loopback or gose-internal
+#
+# Reverse DNS: best-effort, per-IP, max 1.5 s timeout, results cached for the
+# life of one /net/connections call (avoids hanging the server on DNS misses).
+# Process name: from ss -tunp output; cmdline is NOT exposed (could carry tokens).
+#
+# Security: local network metadata only — connection tuples + port + process name.
+# No cmdlines, no environment, no file paths. Scrubbed at parse time.
+
+_NETMON_KNOWN_PORTS = {
+    8780: ("GOSE UI Server", "gose-stack"),
+    8731: ("GOSE Agent", "gose-stack"),
+    22:   ("SSH (dropbear)", "ssh"),
+    5357: ("WSD/WSDD discovery", "discovery"),
+    111:  ("rpcbind", "nfs-rpc"),
+    2049: ("NFS server", "nfs-rpc"),
+}
+_NETMON_NFS_RPC_RANGE = range(32768, 65536)   # dynamic rpc ports fall here
+_NETMON_KNOWN_PROCS = {"connmand", "dropbear", "rpcbind", "rpc.mountd",
+                        "rpc.statd", "smbd", "nmbd", "python3", "WebKitNetworkPr"}
+
+def _netmon_rdns(ip, cache, timeout=1.5):
+    """Reverse-DNS lookup for a single IP.  Returns hostname or None.
+    Cached per call. Never raises."""
+    if ip in cache:
+        return cache[ip]
+    # skip loopback / APIPA — no useful PTR exists
+    if ip.startswith("127.") or ip == "::1" or ip.startswith("169.254."):
+        cache[ip] = None; return None
+    result = [None]
+    def _work():
+        try:
+            name = socket.gethostbyaddr(ip)[0]
+            if name and name != ip:
+                result[0] = name
+        except Exception:
+            pass
+    t = threading.Thread(target=_work, daemon=True)
+    t.start(); t.join(timeout)
+    cache[ip] = result[0]
+    return result[0]
+
+def _netmon_conn_verdict(local_ip, local_port, remote_ip, remote_port):
+    """Classify one active connection."""
+    # loopback both ends → internal
+    def _is_lo(ip): return ip.startswith("127.") or ip == "::1"
+    if _is_lo(local_ip) and _is_lo(remote_ip):
+        return "loopback", "both ends loopback"
+    # SLIRP gateway / DNS (10.0.2.x)
+    if remote_ip.startswith("10.0.2."):
+        svc = "SLIRP gateway" if remote_ip == "10.0.2.2" else \
+              "SLIRP DNS"     if remote_ip == "10.0.2.3" else "SLIRP network"
+        return "slirp-gw", svc
+    # known GOSE stack port
+    if local_port in _NETMON_KNOWN_PORTS:
+        return "gose-stack", _NETMON_KNOWN_PORTS[local_port][0]
+    if remote_port in _NETMON_KNOWN_PORTS:
+        return "gose-stack", _NETMON_KNOWN_PORTS[remote_port][0]
+    # remote is routable non-loopback
+    return "external", "non-loopback remote"
+
+def _netmon_listener_verdict(addr, port):
+    """Classify one listening socket."""
+    loopback = (addr in ("127.0.0.1", "::1", "127.0.0.1"))
+    if addr == "127.0.0.1" or addr == "::1":
+        if port in _NETMON_KNOWN_PORTS:
+            return "gose-stack", _NETMON_KNOWN_PORTS[port][0] + " (loopback)"
+        return "ok", "loopback only — not LAN-reachable"
+    # interface-bound (not 0.0.0.0 or ::) — limited exposure
+    if addr not in ("0.0.0.0", "::"):
+        if port in _NETMON_KNOWN_PORTS:
+            lbl = _NETMON_KNOWN_PORTS[port][0]
+            return "gose-stack", lbl + " (interface-bound)"
+        return "ok", "interface-bound (%s)" % addr
+    # 0.0.0.0 / :: — exposed on all interfaces (critical on real hardware)
+    if port in _NETMON_KNOWN_PORTS:
+        lbl, cat = _NETMON_KNOWN_PORTS[port]
+        return "exposed", "%s — 0.0.0.0 (exposed on real LAN; SLIRP-contained in dev VM)" % lbl
+    # dynamic NFS RPC ports
+    if port in _NETMON_NFS_RPC_RANGE:
+        return "exposed", "NFS RPC (dynamic port) — 0.0.0.0 (exposed on real LAN)"
+    return "exposed", "0.0.0.0 — exposed on real LAN (SLIRP-contained in dev VM)"
+
+def _netmon_parse_ss(raw):
+    """Parse 'ss -tunp' output into a list of connection dicts.
+    Only established/close-wait TCP + established UDP."""
+    conns = []
+    for line in raw.splitlines():
+        parts = line.split()
+        if len(parts) < 5: continue
+        netid, state = parts[0], parts[1]
+        if netid not in ("tcp", "udp"): continue
+        # only meaningful states
+        if state not in ("ESTAB", "CLOSE-WAIT", "SYN-SENT", "SYN-RECV"): continue
+        # columns: netid state recv-q send-q local peer [process]
+        local_raw = parts[4] if len(parts) > 4 else ""
+        peer_raw  = parts[5] if len(parts) > 5 else ""
+        proc_raw  = parts[6] if len(parts) > 6 else ""
+
+        def _split_addr(s):
+            # handle [ipv6]:port and ipv4:port and addr%iface:port
+            s = re.sub(r'%[a-zA-Z0-9]+:', ':', s)  # strip interface suffix from addr
+            if s.startswith('['):
+                m = re.match(r'\[([^\]]+)\]:(\d+)', s)
+                return (m.group(1), int(m.group(2))) if m else (s, 0)
+            parts2 = s.rsplit(':', 1)
+            try: return (parts2[0], int(parts2[1]))
+            except Exception: return (s, 0)
+
+        local_ip, local_port = _split_addr(local_raw)
+        remote_ip, remote_port = _split_addr(peer_raw)
+
+        # process name — extract from users:(("name",...)) ; never expose args/cmdline
+        proc = ""
+        m = re.search(r'users:\(\("([^"]{1,32})"', proc_raw)
+        if m: proc = m.group(1)
+
+        verdict, reason = _netmon_conn_verdict(local_ip, local_port, remote_ip, remote_port)
+        conns.append({
+            "local": "%s:%s" % (local_ip, local_port),
+            "remote": "%s:%s" % (remote_ip, remote_port),
+            "proto": netid, "state": state,
+            "process": proc,
+            "verdict": verdict, "verdict_reason": reason,
+            "hostname": None,   # filled in by caller after rdns
+        })
+    return conns
+
+def _netmon_parse_listeners(raw):
+    """Parse 'ss -tlnp' (TCP listeners) into list of listener dicts."""
+    listeners = []
+    for line in raw.splitlines():
+        parts = line.split()
+        if len(parts) < 5: continue
+        state = parts[0]
+        if state != "LISTEN": continue
+        local_raw = parts[3] if len(parts) > 3 else ""
+        proc_raw  = parts[5] if len(parts) > 5 else ""
+
+        def _split_addr(s):
+            s = re.sub(r'%[a-zA-Z0-9]+:', ':', s)
+            if s.startswith('['):
+                m = re.match(r'\[([^\]]+)\]:(\d+)', s)
+                return (m.group(1), int(m.group(2))) if m else (s, 0)
+            p2 = s.rsplit(':', 1)
+            try: return (p2[0], int(p2[1]))
+            except Exception: return (s, 0)
+
+        addr, port = _split_addr(local_raw)
+        proc = ""
+        m = re.search(r'users:\(\("([^"]{1,32})"', proc_raw)
+        if m: proc = m.group(1)
+
+        verdict, reason = _netmon_listener_verdict(addr, port)
+        listeners.append({
+            "local_addr": addr, "local_port": port,
+            "process": proc,
+            "verdict": verdict, "verdict_reason": reason,
+        })
+    return listeners
+
+def net_connections():
+    """GET /net/connections — active connections + listeners with verdicts.
+    Calls ss with a 6-second timeout; returns a fallback payload on failure.
+    Reverse DNS is attempted per unique remote IP, max 1.5s each, cached."""
+    try:
+        r1 = subprocess.run(["/bin/sh", "-c", "ss -tunp 2>/dev/null"],
+                            capture_output=True, text=True, timeout=8)
+        r2 = subprocess.run(["/bin/sh", "-c", "ss -tlnp 2>/dev/null"],
+                            capture_output=True, text=True, timeout=8)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "ss timed out (>8 s) — try again", "connections": [], "listeners": []}
+    except Exception as e:
+        return {"ok": False, "error": "ss unavailable: %s" % e, "connections": [], "listeners": []}
+
+    conns = _netmon_parse_ss(r1.stdout or "")
+    listeners = _netmon_parse_listeners(r2.stdout or "")
+
+    # Reverse DNS: collect unique non-trivial remote IPs, resolve in parallel threads
+    rdns_cache = {}
+    unique_remotes = set()
+    for c in conns:
+        ip = c["remote"].rsplit(":", 1)[0]
+        if ip and not ip.startswith("127.") and ip != "::1" and ip != "*":
+            unique_remotes.add(ip)
+
+    if unique_remotes:
+        threads = []
+        for ip in unique_remotes:
+            t = threading.Thread(target=_netmon_rdns, args=(ip, rdns_cache, 1.5), daemon=True)
+            t.start(); threads.append(t)
+        for t in threads:
+            t.join(2.0)   # outer cap: all threads together get 2 s
+        for c in conns:
+            ip = c["remote"].rsplit(":", 1)[0]
+            c["hostname"] = rdns_cache.get(ip)
+
+    slirp = _is_slirp_vm()
+    return {
+        "ok": True,
+        "generated_at": int(time.time()),
+        "slirp_vm": slirp,
+        "connections": conns,
+        "listeners": listeners,
+        "note": (
+            "Dev VM (SLIRP): all '0.0.0.0' listeners are isolated by the hypervisor — "
+            "only ports 8780/8731/22 are host-forwarded (loopback only). "
+            "On real hardware every 'exposed' listener is reachable on your Wi-Fi."
+        ) if slirp else (
+            "Running on real hardware. 'exposed' listeners are reachable on your network."
+        ),
+    }
 
 def sys_display(mode=None):
     # Real guest video mode via xrandr on :0 (virtio-vga). GET lists what the panel
@@ -7007,6 +7239,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(host_bridge("/wifi/scan"))
         if route == "/net/wifi":
             return self._json(host_bridge("/wifi/status"))
+        if route == "/net/connections":
+            return self._json(net_connections())
         if route == "/capture/buffer":
             return self._json(host_bridge("/clip/status"))
         if route == "/bt/status":

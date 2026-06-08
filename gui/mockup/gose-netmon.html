@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Network Activity</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  /* header */
+  .top{display:flex;align-items:center;gap:12px;padding:16px 36px 4px;flex:none}
+  .top img{width:30px;height:30px}.top h1{font-size:19px;margin:0}
+  .top .sub{color:var(--muted);font-size:12.5px;margin-left:2px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px;cursor:pointer;
+    background:none;border:none;font-family:inherit;padding:4px 8px;border-radius:8px}
+  .top .home:focus,.top .home.focus{outline:none;box-shadow:var(--focusglow);border:2px solid var(--accent)}
+  /* toolbar */
+  .toolbar{display:flex;align-items:center;gap:10px;padding:0 36px 8px;flex:none}
+  .btn{font:inherit;font-weight:700;font-size:13px;padding:8px 16px;border-radius:10px;
+    cursor:pointer;border:2px solid transparent;outline:none;transition:opacity .15s}
+  .btn:focus,.btn.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .btn.primary{background:var(--accent);color:#06121a}
+  .btn.ghost{background:var(--surface2);color:var(--text);border-color:var(--line)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .ts{color:var(--muted);font-size:11.5px;margin-left:4px}
+  /* disclaimer */
+  .disc{margin:0 36px 8px;padding:10px 14px;background:var(--surface);
+    border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--muted);line-height:1.5;flex:none}
+  .disc strong{color:var(--text)}
+  /* main columns */
+  .main{flex:1;display:flex;gap:12px;margin:0 36px 8px;min-height:0;overflow:hidden}
+  /* panes */
+  .col{display:flex;flex-direction:column;gap:8px;min-height:0;overflow:hidden}
+  .col.left{width:340px;flex:none}
+  .col.right{flex:1}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    overflow:hidden;display:flex;flex-direction:column;min-height:0}
+  .card.grow{flex:1;min-height:0}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);
+    padding:10px 16px 4px;flex:none;display:flex;align-items:center;gap:6px}
+  .ph .cnt{background:var(--surface2);color:var(--text);font-size:10px;padding:2px 6px;
+    border-radius:6px;font-weight:700;letter-spacing:0}
+  .scroll{flex:1;overflow-y:auto;min-height:0}
+  /* connection row */
+  .row{display:flex;align-items:flex-start;gap:10px;padding:9px 14px;
+    border-bottom:1px solid var(--line);cursor:pointer;border:2px solid transparent;border-radius:0}
+  .row:last-child{border-bottom:none}
+  .row.focus{border-color:var(--accent);box-shadow:var(--focusglow);background:#5cd0ff0e;border-radius:6px}
+  .dot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:4px}
+  .dot.loopback{background:#6b7180}
+  .dot.slirp-gw{background:#6b7180}
+  .dot.gose-stack{background:#37d39b;box-shadow:0 0 5px #37d39b44}
+  .dot.external{background:#ffd479;box-shadow:0 0 5px #ffd47944}
+  .dot.ok{background:#3fe0a0;box-shadow:0 0 5px #3fe0a044}
+  .dot.exposed{background:#ff5c6b;box-shadow:0 0 5px #ff5c6b44}
+  .row .col2{flex:1;min-width:0}
+  .row .nm{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .sub{font-size:11.5px;color:var(--muted);margin-top:1px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .row .tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;
+    border:1px solid currentColor;flex:none;white-space:nowrap}
+  .tag.loopback{color:#6b7180}.tag.slirp-gw{color:#6b7180}.tag.gose-stack{color:#37d39b}
+  .tag.external{color:#ffd479}.tag.ok{color:#3fe0a0}.tag.exposed{color:#ff5c6b}
+  /* empty / error */
+  .empty{color:var(--muted);font-size:13px;padding:24px 16px;text-align:center}
+  .err{color:#ff5c6b;font-size:12.5px;padding:14px 16px}
+  /* slirp note */
+  .slirp-note{margin:0 36px 6px;padding:8px 14px;background:#5cd0ff0a;
+    border:1px solid #5cd0ff22;border-radius:10px;font-size:11.5px;color:#5cd0ff99;line-height:1.5;flex:none}
+  /* hint */
+  .hint{color:var(--muted);font-size:12px;padding:0 36px 10px;text-align:right;flex:none}
+  /* spinner */
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spin{display:inline-block;animation:spin .8s linear infinite}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <img src="assets/img/gose-logo.svg" alt="" onerror="this.style.display='none'">
+  <h1>Network Activity</h1>
+  <span class="sub">What this device is talking to</span>
+  <button class="home" id="btn-back" data-focus="1" tabindex="0">Settings</button>
+</div>
+
+<div class="toolbar">
+  <button class="btn primary" id="btn-refresh" data-focus="1" tabindex="0">
+    <span class="ic" data-i="refresh-cw"></span> Refresh
+  </button>
+  <span class="ts" id="ts">—</span>
+</div>
+
+<div class="disc">
+  <strong>Visibility monitor, not a firewall.</strong>
+  Shows active connections and listening ports using <code>ss</code> — the same tool the
+  security audit (Settings &rsaquo; Security) uses. For packet-level inspection use the
+  Wireshark feature (Settings &rsaquo; System &rsaquo; Diagnostics).
+  Process names are shown; command-line arguments (which may carry tokens) are never exposed.
+</div>
+
+<div class="slirp-note" id="slirp-note" style="display:none"></div>
+
+<div class="main">
+  <!-- LEFT: Active connections -->
+  <div class="col left">
+    <div class="card grow">
+      <div class="ph">ACTIVE CONNECTIONS <span class="cnt" id="conn-cnt">—</span></div>
+      <div class="scroll" id="conn-list">
+        <div class="empty"><span class="spin">&#8635;</span> Loading…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Listening ports -->
+  <div class="col right">
+    <div class="card grow">
+      <div class="ph">LISTENING PORTS (attack surface) <span class="cnt" id="listen-cnt">—</span></div>
+      <div class="scroll" id="listen-list">
+        <div class="empty"><span class="spin">&#8635;</span> Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="hint" id="hint-bar">
+  &#x2191;&#x2193;&#160;navigate &nbsp;|&nbsp; [&#160;]&#160;/&#160;]&#160;switch column &nbsp;|&nbsp; Enter&#160;refresh &nbsp;|&nbsp; B&#160;back
+</div>
+
+<script src="assets/cursor.js"></script>
+<script>
+/* ======================================================================
+   gose-netmon.html — Network Activity Monitor (Task #84, docs/31)
+   "What is my device talking to?"
+
+   Layout: two-column. Left = active connections, right = listening ports.
+   Pad-nav: Up/Down moves within the active column; [ ] switches column.
+   Enter on Refresh button (or any non-row element) triggers a refresh.
+   Escape / B → gose-settings.html#security.
+
+   Data source: GET /net/connections (server calls ss -tunp / ss -tlnp
+   with a 8s timeout; reverse DNS per unique remote IP, max 1.5s each,
+   capped at 2s total). No cmdlines are ever returned.
+   ====================================================================== */
+
+'use strict';
+
+/* ---- focus engine ---- */
+let zone = 'toolbar';   // 'toolbar' | 'left' | 'right'
+let foc  = { toolbar: 0, left: 0, right: 0 };
+const ZONES = ['toolbar', 'left', 'right'];
+
+function focusEls(z) {
+  return [...document.querySelectorAll(`#${z === 'toolbar' ? 'btn-refresh,#btn-back' : z + '-list'} [data-focus], ${z === 'toolbar' ? '#btn-refresh,#btn-back' : ''}`)]
+    .filter(Boolean);
+}
+
+function allFocusables() {
+  // toolbar buttons
+  const tb = [...document.querySelectorAll('[data-focus="1"]')].filter(el => el.closest('.toolbar,.top'));
+  const left  = [...document.querySelectorAll('#conn-list [data-focus]')];
+  const right = [...document.querySelectorAll('#listen-list [data-focus]')];
+  return { toolbar: tb, left, right };
+}
+
+function paintFocus() {
+  const all = allFocusables();
+  Object.keys(all).forEach(z => {
+    all[z].forEach((el, i) => {
+      const active = z === zone && i === foc[z];
+      el.classList.toggle('focus', active);
+      el.setAttribute('tabindex', active ? '0' : '-1');
+    });
+  });
+}
+
+function moveFoc(d) {
+  const all = allFocusables();
+  const els = all[zone] || [];
+  if (!els.length) return;
+  foc[zone] = Math.max(0, Math.min(els.length - 1, foc[zone] + d));
+  paintFocus();
+  els[foc[zone]]?.scrollIntoView({ block: 'nearest' });
+}
+
+function switchZone(d) {
+  const zi = ZONES.indexOf(zone);
+  const nz = ZONES[(zi + d + ZONES.length) % ZONES.length];
+  // skip toolbar when navigating left/right between columns
+  const targets = d !== 0 ? ['left', 'right'] : ZONES;
+  const ti = targets.indexOf(zone);
+  if (ti >= 0) {
+    zone = targets[(ti + (d > 0 ? 1 : -1) + targets.length) % targets.length];
+  } else {
+    zone = nz;
+  }
+  foc[zone] = Math.max(0, Math.min(foc[zone], (allFocusables()[zone] || []).length - 1));
+  paintFocus();
+}
+
+/* ---- key handler ---- */
+document.addEventListener('keydown', e => {
+  const k = e.key;
+  if (k === 'Escape' || k === 'Backspace') { goBack(); return; }
+  if (k === 'ArrowUp'   || k === 'Up')    { moveFoc(-1); e.preventDefault(); return; }
+  if (k === 'ArrowDown' || k === 'Down')  { moveFoc( 1); e.preventDefault(); return; }
+  if (k === '[' || k === 'bracketleft')   { switchZone(-1); e.preventDefault(); return; }
+  if (k === ']' || k === 'bracketright')  { switchZone( 1); e.preventDefault(); return; }
+  if (k === 'Enter') {
+    const all = allFocusables();
+    const el = (all[zone] || [])[foc[zone]];
+    if (el) { el.click ? el.click() : null; }
+    else { doRefresh(); }
+    e.preventDefault();
+  }
+});
+
+function goBack() { location.href = 'gose-settings.html#security'; }
+
+/* ---- helpers ---- */
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+const VERDICT_LABEL = {
+  loopback:   'Loopback',
+  'slirp-gw': 'SLIRP',
+  'gose-stack':'GOSE',
+  external:   'External',
+  ok:         'OK',
+  exposed:    'Exposed',
+};
+
+/* ---- render connections ---- */
+function renderConns(data) {
+  const list = document.getElementById('conn-list');
+  const conns = (data && data.connections) || [];
+
+  // group: external first, then slirp-gw, then gose-stack, then loopback
+  const ORDER = { external: 0, 'slirp-gw': 1, 'gose-stack': 2, loopback: 3, ok: 4 };
+  conns.sort((a, b) => (ORDER[a.verdict] ?? 9) - (ORDER[b.verdict] ?? 9));
+
+  document.getElementById('conn-cnt').textContent = conns.length;
+  if (!conns.length) {
+    list.innerHTML = '<div class="empty">No active connections found.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  conns.forEach((c, i) => {
+    const el = document.createElement('div');
+    el.className = 'row';
+    el.dataset.focus = '1';
+    const hostname = c.hostname ? `<span style="color:var(--text)"> (${esc(c.hostname)})</span>` : '';
+    const proc = c.process ? `<span class="ic" data-i="terminal"></span> ${esc(c.process)} &nbsp;` : '';
+    el.innerHTML =
+      `<div class="dot ${esc(c.verdict)}"></div>` +
+      `<div class="col2">` +
+        `<div class="nm">${esc(c.remote)}${hostname}</div>` +
+        `<div class="sub">${proc}← ${esc(c.local)} &nbsp; ${esc(c.proto.toUpperCase())} ${esc(c.state)}</div>` +
+        `<div class="sub">${esc(c.verdict_reason)}</div>` +
+      `</div>` +
+      `<span class="tag ${esc(c.verdict)}">${esc(VERDICT_LABEL[c.verdict] || c.verdict)}</span>`;
+    list.appendChild(el);
+  });
+  paintFocus();
+}
+
+/* ---- render listeners ---- */
+function renderListeners(data) {
+  const list = document.getElementById('listen-list');
+  const listeners = (data && data.listeners) || [];
+
+  // group: exposed first, then gose-stack, then ok/loopback
+  const ORDER = { exposed: 0, 'gose-stack': 1, ok: 2, loopback: 3 };
+  listeners.sort((a, b) => (ORDER[a.verdict] ?? 9) - (ORDER[b.verdict] ?? 9));
+
+  // Deduplicate: if same port appears in both 0.0.0.0 and :: with same verdict,
+  // show once with "IPv4+IPv6" label
+  const seen = new Map();
+  const deduped = [];
+  for (const l of listeners) {
+    const key = `${l.local_port}|${l.verdict}`;
+    if (seen.has(key)) {
+      const prev = seen.get(key);
+      prev._dual = true;
+    } else {
+      seen.set(key, l);
+      deduped.push(l);
+    }
+  }
+
+  document.getElementById('listen-cnt').textContent = deduped.length;
+  if (!deduped.length) {
+    list.innerHTML = '<div class="empty">No listening ports found.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  deduped.forEach(l => {
+    const el = document.createElement('div');
+    el.className = 'row';
+    el.dataset.focus = '1';
+    const dual = l._dual ? ' <span style="color:var(--muted);font-size:10.5px">IPv4+IPv6</span>' : '';
+    const addrLabel = (l.local_addr === '0.0.0.0' || l.local_addr === '::')
+      ? `<span style="color:#ff5c6b">0.0.0.0${dual}</span>`
+      : `<span style="color:var(--muted)">${esc(l.local_addr)}</span>`;
+    const proc = l.process ? `<span class="ic" data-i="terminal"></span> ${esc(l.process)} &nbsp;` : '';
+    el.innerHTML =
+      `<div class="dot ${esc(l.verdict)}"></div>` +
+      `<div class="col2">` +
+        `<div class="nm">:${l.local_port} &nbsp; ${addrLabel}</div>` +
+        `<div class="sub">${proc}${esc(l.verdict_reason)}</div>` +
+      `</div>` +
+      `<span class="tag ${esc(l.verdict)}">${esc(VERDICT_LABEL[l.verdict] || l.verdict)}</span>`;
+    list.appendChild(el);
+  });
+  paintFocus();
+}
+
+/* ---- load data ---- */
+let loading = false;
+
+async function doRefresh() {
+  if (loading) return;
+  loading = true;
+  const btn = document.getElementById('btn-refresh');
+  const ts  = document.getElementById('ts');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">&#8635;</span> Loading…';
+  document.getElementById('conn-list').innerHTML   = '<div class="empty"><span class="spin">&#8635;</span> Loading…</div>';
+  document.getElementById('listen-list').innerHTML = '<div class="empty"><span class="spin">&#8635;</span> Loading…</div>';
+
+  try {
+    const r = await fetch('/net/connections', { cache: 'no-store' });
+    const d = await r.json();
+
+    if (!d.ok) {
+      document.getElementById('conn-list').innerHTML =
+        `<div class="err">Error: ${esc(d.error || 'unknown error')}</div>`;
+      document.getElementById('listen-list').innerHTML = '';
+    } else {
+      renderConns(d);
+      renderListeners(d);
+      ts.textContent = 'Updated ' + fmtTime(d.generated_at);
+
+      // SLIRP note
+      const sn = document.getElementById('slirp-note');
+      if (d.slirp_vm && d.note) {
+        sn.textContent = 'Dev VM note: ' + d.note;
+        sn.style.display = 'block';
+      } else {
+        sn.style.display = 'none';
+      }
+    }
+  } catch(e) {
+    document.getElementById('conn-list').innerHTML =
+      `<div class="err">Could not reach server: ${esc(String(e))}</div>`;
+    document.getElementById('listen-list').innerHTML = '';
+  } finally {
+    loading = false;
+    btn.disabled = false;
+    btn.innerHTML = '<span class="ic" data-i="refresh-cw"></span> Refresh';
+    paintFocus();
+  }
+}
+
+/* ---- wiring ---- */
+document.getElementById('btn-refresh').addEventListener('click', doRefresh);
+document.getElementById('btn-back').addEventListener('click', goBack);
+
+function paintIcons() {
+  if (window.GICON) { GICON.paint(document); return; }
+  document.querySelectorAll('[data-i]').forEach(e =>
+    e.style.setProperty('--u', `url(assets/icons/${e.dataset.i}.svg)`));
+}
+
+/* ---- boot ---- */
+paintFocus();
+paintIcons();
+doRefresh();
+</script>
+</body>
+</html>
