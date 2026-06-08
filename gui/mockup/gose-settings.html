@@ -141,6 +141,8 @@
       {ic:"sparkles", nm:"Reduce motion", sub:"Stop animations and live wallpaper", t:"cycle", v:["Off","On"], apply:"a11y_motion"},
       {ic:"monitor", nm:"Reduce transparency", sub:"Make frosted panels solid", t:"cycle", v:["Off","On"], apply:"a11y_opaque"},
       {ic:"target", nm:"Larger focus outline", sub:"Thicker highlight on the selected item", t:"cycle", v:["Off","On"], apply:"a11y_focus"},
+      {ic:"sparkles", nm:"First-time tips", sub:"Show one-time hints on new screens", t:"cycle", v:["On","Off"], apply:"tips"},
+      {ic:"sparkles", nm:"Show tips again", sub:"Replay the one-time hints you've already seen", t:"action", val:"Reset", tips:true, act:"Tips reset — they'll show again on new screens"},
     ]},
     {id:"display", ic:"monitor", nm:"Display", rows:[
       {ic:"monitor", nm:"Mode", sub:"PC desktop, or Odin 2 handheld-console feel — pages adopt it as they load", t:"cycle", v:["PC desktop","Console (handheld)"], apply:"platform"},
@@ -159,6 +161,7 @@
       {ic:"bell", nm:"Notification sounds", sub:"Pings, downloads done, warnings & errors", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_notify"},
       {ic:"battery", nm:"Battery alerts", sub:"Charging, low & critical battery", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_battery"},
       {ic:"gamepad-2", nm:"UI & navigation sounds", sub:"Clicks and cursor feedback (auto-ducked while a game is open)", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_ui"},
+      {ic:"music", nm:"Menu music", sub:"Shell soundtrack volume", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_music"},
     ]},
     {id:"net", ic:"wifi", nm:"Network & internet", rows:[
       {ic:"globe", nm:"Status", sub:"Active connection (live, via connman)", t:"info", val:"—", live:"net"},
@@ -228,12 +231,14 @@
       {ic:"volume-2", nm:"Voice", sub:"Agents speaking / listening in-session", t:"dis", tag:"[needs build]", why:"No voice pipeline exists in GOSE yet"},
     ]},
     {id:"system", ic:"hard-drive", nm:"System", rows:[
+      {ic:"hard-drive", nm:"BIOS files", sub:"Check which systems need a BIOS", t:"link", go:"gose-bios.html"},
       {ic:"hard-drive", nm:"Latest backup", sub:"Most recent GOSE backup saved on this device", t:"info", val:"—", live:"backup"},
       {ic:"download", nm:"Back up GOSE", sub:"Save accounts, grants, favorites & settings to /userdata/backups — not your games or saves", t:"sys", op:"backup", val:"Back up"},
       {ic:"rotate-ccw", nm:"Restore", sub:"Roll GOSE back to the latest backup (press twice to confirm)", t:"sys", op:"restore", val:"Restore"},
       {ic:"triangle-alert", nm:"Reset GOSE", sub:"Wipe accounts, grants & settings to defaults — keeps your games and saves (press twice to confirm)", t:"sys", op:"reset", val:"Reset"},
     ]},
     {id:"about", ic:"info", nm:"About", rows:[
+      {ic:"info", nm:"How to use GOSE", sub:"Controller guide — every button, in one screen", t:"link", go:"gose-help.html"},
       {ic:"info", nm:"GOSE", sub:"Gaming Operating System Emulator", t:"info", val:"—", live:"ver"},
       {ic:"hard-drive", nm:"Base", sub:"Linux platform under the GOSE shell", t:"info", val:"—", live:"base"},
       {ic:"monitor", nm:"Graphics", sub:"How the picture is rendered", t:"info", val:"virtio-vga-gl · host GPU (virgl)"},
@@ -344,6 +349,10 @@
     else if(r.t==="agents"){location.href="gose-ai.html";}
     else if(r.t==="dis"){showToast(r.why||r.tag);}   // honest: say WHY it can't apply yet
     else if(r.t==="action"){
+      if(r.tips){   // "Show tips again" — clear the once-only seen map (tips.js reset, or its LS fallback when tips.js isn't loaded here)
+        if(window.GOSE&&GOSE.tips&&GOSE.tips.reset)GOSE.tips.reset(); else localStorage.removeItem("gose-tips");
+        showToast(r.act||"Tips reset"); return;
+      }
       if(r.clear){
         if(r._armed!==true){r._armed=true;showToast("Resets theme, accent, sounds & UI prefs. Press again to confirm");
           clearTimeout(r._t);r._t=setTimeout(()=>{r._armed=false;},3000);return;}
@@ -485,6 +494,10 @@
     else if(r.apply==="a11y_motion"){prefs({"gose-motion":r.i===1?"on":"off"});showToast("Reduce motion: "+r.v[r.i]);}
     else if(r.apply==="a11y_opaque"){prefs({"gose-opaque":r.i===1?"on":"off"});showToast("Reduce transparency: "+r.v[r.i]);}
     else if(r.apply==="a11y_focus"){prefs({"gose-focus":r.i===1?"on":"off"});showToast("Larger focus: "+r.v[r.i]);}
+    // First-time tips (tips.js) — v:["On","Off"]. localStorage-ONLY by design: the server's
+    // prefs store rejects unknown keys, so this writes gose-tips-off directly, never via prefs().
+    else if(r.apply==="tips"){const off=(r.i===1);localStorage.setItem("gose-tips-off",off?"1":"0");
+      showToast("First-time tips: "+r.v[r.i]+(off?" — hidden on new screens":""));}
   }
   function findRow(tag,key){for(const c of CATS)for(const r of c.rows)if(r[key]===tag)return r;return null;}
   (function initPersist(){
@@ -507,12 +520,13 @@
     const sg=findRow("signin","apply"); if(sg){const k=["None","PIN","Password"].indexOf(localStorage.getItem("gose-signin")||"None");sg.i=k<0?0:k;}
     const ar=findRow("airemote","apply"); if(ar)ar.i=(localStorage.getItem("gose-ai-remote")==="off")?1:0;
     // sound surface: read straight from localStorage (the manager may load async)
-    const SDEF={system:75,notify:75,battery:100,ui:50};
+    const SDEF={system:75,notify:75,battery:100,ui:50,music:20};   // music default matches sound.js DEFV (20% → "25%" step)
     function volIdxLS(sc){ if(localStorage.getItem("gose-snd-mute-"+sc)==="1")return 0;
       let v=parseInt(localStorage.getItem("gose-snd-vol-"+sc)||SDEF[sc],10); if(isNaN(v))v=SDEF[sc];
       return v<=0?0:v<37?1:v<63?2:v<88?3:4; }
     const rq=findRow("snd_quiet","apply"); if(rq)rq.i=(localStorage.getItem("gose-snd-quiet")==="1")?1:0;
-    ["system","notify","battery","ui"].forEach(sc=>{const rr=findRow("snd_"+sc,"apply"); if(rr)rr.i=volIdxLS(sc);});
+    ["system","notify","battery","ui","music"].forEach(sc=>{const rr=findRow("snd_"+sc,"apply"); if(rr)rr.i=volIdxLS(sc);});
+    const rtp=findRow("tips","apply"); if(rtp){const tv=localStorage.getItem("gose-tips-off");rtp.i=(tv==="1"||tv==="on"||tv==="true")?1:0;}
     const onoff=(k)=>localStorage.getItem(k)==="on"?1:0;
     const rsc=findRow("a11y_scale","apply"); if(rsc){const k=["1","1.15","1.3","1.5"].indexOf(localStorage.getItem("gose-ui-scale")||"1");rsc.i=k<0?0:k;}
     const rct=findRow("a11y_contrast","apply"); if(rct)rct.i=onoff("gose-contrast");
