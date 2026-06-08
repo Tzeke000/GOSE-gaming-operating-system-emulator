@@ -350,10 +350,10 @@
         '<div class="field"><label>Username</label>'+
           '<input class="inp focusable" data-field="username" placeholder="e.g. alex — shown on the lock screen" value="'+esc(S.account.username)+'"></div>'+
         '<div class="grid2">'+
-          '<div class="field"><label>Password (optional)</label>'+
-            '<input class="inp focusable" data-field="password" type="password" placeholder="••••••" value="'+esc(S.account.password)+'"></div>'+
-          '<div class="field"><label>Quick PIN (optional)</label>'+
-            '<input class="inp focusable" data-field="pin" inputmode="numeric" placeholder="4–6 digits" value="'+esc(S.account.pin)+'"></div>'+
+          '<div class="field"><label>Password (optional — 8+ characters)</label>'+
+            '<input class="inp focusable" data-field="password" type="password" placeholder="8 or more characters" value="'+esc(S.account.password)+'"></div>'+
+          '<div class="field"><label>Quick PIN (optional — exactly 8 digits)</label>'+
+            '<input class="inp focusable" data-field="pin" inputmode="numeric" placeholder="8 digits" value="'+esc(S.account.pin)+'"></div>'+
         '</div>'+
         '<div class="field"><label>Your color</label>'+
           '<div class="swatches">'+ACCENTS.map(function(a){
@@ -708,8 +708,16 @@
   function canAdvance(){
     var s=STEPS[idx];
     if(s.id==="license" && !S.license) return "Please accept the terms to continue.";
-    if(s.id==="account" && !String(S.account.username||"").trim())
-      return "Enter a username — this first account is the device owner.";
+    if(s.id==="account"){
+      if(!String(S.account.username||"").trim())
+        return "Enter a username — this first account is the device owner.";
+      var pin=String(S.account.pin||"");
+      if(pin && !/^\d{8}$/.test(pin))
+        return "PIN must be exactly 8 digits.";
+      var pw=String(S.account.password||"");
+      if(pw && pw.length<8)
+        return "Password must be at least 8 characters.";
+    }
     return null;
   }
   function flashDone(cb){

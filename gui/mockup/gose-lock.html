@@ -87,7 +87,7 @@
   // where any-key-unlock was live before the account record loaded). The decide() promise
   // ALWAYS resolves (both fetches catch) and always lands on a real mode — never bricks.
   let mode="init", entered="", newPin="", pinLen=0, lockT=null;
-  const MAXLEN=8, MINLEN=4;
+  const MAXLEN=8, MINLEN=8;  // policy: PIN must be exactly 8 digits (Zeke, 2026-06-08)
   function unlock(){if(window.GOSE&&GOSE.modalPop)GOSE.modalPop();location.href="gose-home.html";}
   function hint(t,err){const h=$("hint");h.textContent=t;h.classList.toggle("err",!!err);}
   function dots(){const n=(mode==="enter"&&pinLen)?pinLen:Math.min(MAXLEN,Math.max(MINLEN,entered.length||MINLEN));
@@ -108,7 +108,7 @@
     mode=m;$("pad").classList.add("on");$("pin").style.display="flex";dots();
     if(!was&&window.GOSE&&GOSE.modalPush)GOSE.modalPush();   // modal layer signal (docs/27 §3.10)
     hint(m==="enter"?"Enter your PIN":(m==="confirm"?"Re-enter your PIN to confirm"
-      :"Set a PIN ("+MINLEN+"–"+MAXLEN+" digits) to finish setting up your lock"));}
+      :"Set a PIN ("+MINLEN+" digits) to finish setting up your lock"));}
   function digit(d){if(mode==="locked")return;
     if(entered.length>=MAXLEN)return;
     entered+=d;dots();
@@ -124,7 +124,7 @@
   function submit(){
     if(mode==="locked"||!entered)return;
     if(mode==="setup"){
-      if(entered.length<MINLEN){hint("PIN must be at least "+MINLEN+" digits",true);shake();return;}
+      if(entered.length<MINLEN){hint("PIN must be exactly "+MINLEN+" digits",true);shake();return;}
       newPin=entered;entered="";showPad("confirm");return;}
     if(mode==="confirm"){
       if(entered!==newPin){entered="";newPin="";shake();showPad("setup");hint("Didn't match — choose your PIN again",true);return;}

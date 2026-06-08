@@ -2164,14 +2164,22 @@ def _owner_ok(payload):
 
 def _credential_is_weak(cred):
     """Honest remote-SSH strength check on the credential that will become the root password.
-    A SHORT NUMERIC PIN (<=6 digits) is brute-forceable over the network, so it earns a warning (the
-    owner may still proceed — their call, docs/31). A longer/complex sign-in password or the dev token
-    is not flagged."""
-    return bool(cred) and cred.isdigit() and len(cred) <= 6
+    Policy (2026-06-08): 8 digits is the minimum compliant PIN, so an 8-digit numeric PIN is NOT
+    flagged as weak for SSH. Only an all-same-digit trivial PIN (e.g. 00000000) or an unusually
+    short credential (< 8 chars) earns a warning. A longer/complex password or the dev token is
+    not flagged."""
+    if not cred:
+        return False
+    if cred.isdigit():
+        # Compliant 8-digit PINs: warn only for trivially weak patterns (all-same digit)
+        if len(cred) >= 8:
+            return len(set(cred)) == 1   # e.g. "00000000" — all same digit is still trivial
+        return True  # numeric and < 8 chars (shouldn't be settable, but gate it anyway)
+    return False  # password (non-numeric) or dev token — not flagged
 
-_WEAK_PIN_MSG = ("Your device sign-in PIN is short and numeric — that's weak for REMOTE SSH "
-                 "(it can be brute-forced over the network). Consider a longer sign-in password or "
-                 "an SSH key. GOSE rate-limits SSH auth, but a longer secret is far stronger.")
+_WEAK_PIN_MSG = ("Your device sign-in credential is a trivially weak numeric PIN (all the same digit). "
+                 "Consider a more varied PIN or a longer sign-in password — SSH auth is rate-limited, "
+                 "but a less predictable secret is far stronger.")
 
 def _ssh_harden_dropbear(write=True):
     """Rate-limit remote SSH auth (docs/31). dropbear's init sources /etc/default/dropbear and honors
@@ -3145,7 +3153,12 @@ def oobe_reset(payload=None):
 # (pin_salt / pin_hash / pin_algo / pin_len). Brute force: 5 consecutive misses lock
 # verification for 30 s (in-memory — a server restart clears it, which is fine for a
 # convenience lock and means the lockout can never brick the lock screen permanently).
-PIN_RE = re.compile(r"^\d{4,8}$")
+# Credential policy (Zeke, 2026-06-08): NEW PINs must be exactly 8 digits.
+# PIN_RE enforces this on set. Existing (grandfathered) PINs of any digit length
+# are still VERIFIED so existing owners are never locked out — PIN_VERIFY_RE accepts
+# 4-8 digits for the verify path only (the migration path prompts upgrade on next change).
+PIN_RE        = re.compile(r"^\d{8}$")      # set/change: must be exactly 8 digits
+PIN_VERIFY_RE = re.compile(r"^\d{4,8}$")   # verify: accept any stored-length PIN (grandfather)
 PIN_ALGO = "scrypt-16384-8-1"
 PIN_MAX_TRIES = 5
 PIN_LOCKOUT_S = 30
@@ -3184,7 +3197,7 @@ def pin_verify(payload):
         if lf > 0:
             return {"ok": True, "valid": False, "locked_for": round(lf, 1), "tries_left": 0}
         valid = False
-        if PIN_RE.match(pin):
+        if PIN_VERIFY_RE.match(pin):   # grandfather: accept any stored-length PIN for verify
             try:
                 import hmac
                 valid = hmac.compare_digest(_pin_compute(pin, o["pin_salt"]), o["pin_hash"])
@@ -3213,7 +3226,7 @@ def pin_set(payload):
     p = payload or {}
     pin = str(p.get("pin") or "")
     if not PIN_RE.match(pin):
-        return {"ok": False, "error": "PIN must be 4-8 digits"}
+        return {"ok": False, "error": "PIN must be exactly 8 digits"}
     acc = _accounts_load()
     o = _owner_record(acc)
     if not o:
