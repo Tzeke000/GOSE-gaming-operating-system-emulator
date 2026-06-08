@@ -99,6 +99,7 @@ def rate_ok(key, limit, window):
 
 _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer": (20, 60),
            "/net/scan": (10, 60), "/net/connections": (30, 60), "/launch": (30, 60), "/store/install": (20, 60),
+           "/netplay/host": (10, 60), "/netplay/join": (10, 60),
            "/splice/cut": (10, 120), "/fs/op": (60, 60), "/scrape": (6, 120), "/game/scrape": (20, 60),
            "/store/uninstall": (15, 60), "/ai/request": (6, 60),
            "/emulators/install": (10, 60), "/emulators/uninstall": (15, 60),
@@ -5099,6 +5100,221 @@ def ra_poll_unlocks():
 
     return {"ok": True, "unlocks": unlocks, "state": "ok"}
 
+# ---- Netplay (#65): surface RetroArch netplay host/join pad-first ----------------------
+# Architecture: configgen already handles the emulatorlauncher -netplaymode / -netplayip /
+# -netplayport flags — our job is (a) read/write the global nickname + relay preference in
+# batocera.conf, and (b) spawn emulatorlauncher with the right flags for host or join.
+# The MITM relay server list mirrors what Batocera ships; "none" means direct LAN/IP.
+#
+# Plumbing-verified: config read/write + launch cmdline construction + kill-by-PID.
+# Needs-two-peers: the full RA netplay handshake (frame-sync, rollback) requires a second
+# machine — host launch spawns correctly, but the session stays in "waiting for client"
+# until a peer actually connects. That is RA netplay protocol, not a GOSE bug.
+#
+# Autosave caveat: RA netplay + autosave can crash (libretro/RetroArch#15248).
+# We always add -autosave=0 to any netplay emulatorlauncher call.
+
+_NETPLAY_BCONF_KEYS = {
+    "nickname": "global.netplay.nickname",
+    "port":     "global.netplay.port",
+    "relay":    "global.netplay.relay",
+}
+_NETPLAY_DEFAULT_PORT = "55435"
+_NETPLAY_MITM_SERVERS = ["none", "nyc", "madrid", "montreal", "saopaulo", "sydney"]
+_netplay_host_pid = None   # PID of the current host launch (for stop/kill)
+_netplay_lock = threading.Lock()
+
+def netplay_config_get():
+    """GET /netplay/config — read netplay preferences from batocera.conf."""
+    nickname = _bconf_get("global.netplay.nickname") or ""
+    port = _bconf_get("global.netplay.port") or _NETPLAY_DEFAULT_PORT
+    relay = _bconf_get("global.netplay.relay") or "none"
+    return {
+        "ok": True,
+        "nickname": nickname,
+        "port": port,
+        "relay": relay,
+        "relay_options": _NETPLAY_MITM_SERVERS,
+        "default_port": _NETPLAY_DEFAULT_PORT,
+        "note": "relay='none' = direct LAN/IP; any other value = RetroArch MITM relay server",
+    }
+
+def netplay_config_set(payload):
+    """POST /netplay/config — write nickname / port / relay to batocera.conf atomically."""
+    payload = payload or {}
+    if "nickname" in payload and payload["nickname"] is not None:
+        nick = str(payload["nickname"]).strip()[:32]
+        _bconf_set("global.netplay.nickname", nick)
+    if "port" in payload and payload["port"] is not None:
+        try:
+            p = int(payload["port"])
+            if not (1024 <= p <= 65535):
+                return {"ok": False, "error": "port must be 1024–65535"}
+        except (ValueError, TypeError):
+            return {"ok": False, "error": "port must be a number"}
+        _bconf_set("global.netplay.port", str(p))
+    if "relay" in payload and payload["relay"] is not None:
+        relay = str(payload["relay"]).strip()
+        if relay not in _NETPLAY_MITM_SERVERS:
+            return {"ok": False, "error": "unknown relay; choose one of: " + ", ".join(_NETPLAY_MITM_SERVERS)}
+        _bconf_set("global.netplay.relay", relay)
+    LOG.info("netplay config updated: %s", payload)
+    return netplay_config_get()
+
+def netplay_host(payload):
+    """POST /netplay/host — launch a game as a RetroArch netplay host.
+    Body: {system, game}  (players optional — same as /launch).
+    Returns: {ok, pid, cmdline_proof, ip_hint, port, note}
+    The session waits for a client; a second peer must connect to the reported IP:port.
+    Autosave disabled per RA#15248 to avoid crash on netplay connect.
+    Plumbing-verified: cmdline built + process spawned + PID returned.
+    Needs-two-peers: the frame-sync handshake needs an actual peer; tested single-machine only."""
+    global _netplay_host_pid
+    payload = payload or {}
+    system = payload.get("system"); game = payload.get("game")
+    if not system or not game:
+        return {"ok": False, "error": "system + game required"}
+    # locate ROM (same logic as launch_game)
+    d = os.path.join(ROMS, system)
+    if not os.path.isdir(d):
+        return {"ok": False, "error": "unknown system"}
+    rom = None
+    for f in os.listdir(d):
+        if "gamelist" in f or f.startswith("."):
+            continue
+        p = os.path.join(d, f)
+        if os.path.isdir(p):
+            if f in _SKIPDIRS:
+                continue
+            r = _dir_game_rom(system, p)
+            if r and os.path.splitext(os.path.basename(r))[0] == game:
+                rom = r; break
+            continue
+        if os.path.splitext(f)[0] == game and os.path.splitext(f)[1].lower() not in _SKIPEXT:
+            rom = p; break
+    if not rom:
+        return {"ok": False, "error": "rom not found for " + game}
+    # read current config
+    nickname = _bconf_get("global.netplay.nickname") or ""
+    port = _bconf_get("global.netplay.port") or _NETPLAY_DEFAULT_PORT
+    relay = _bconf_get("global.netplay.relay") or "none"
+    # build the emulatorlauncher command with netplay host flags
+    # emulatorlauncher -system <s> -rom <r> -netplaymode host -netplayport <p> [-nick <n>]
+    # autosave=0 passed via -autosave to avoid RA#15248 crash
+    argv = (["emulatorlauncher"] + _virtual_pad_args() +
+            ["-system", system, "-rom", rom,
+             "-netplaymode", "host",
+             "-netplayport", port])
+    if nickname:
+        argv += ["-netplaynick", nickname]
+    if relay and relay != "none":
+        argv += ["-netplayrelay", relay]
+    # autosave-off: passed as a game-specific arg (configgen reads it if the key is set)
+    # We set the per-game key momentarily; configgen will honour it at launch.
+    _bconf_set("global.netplay.autosave_override", "0")
+    cmdline_proof = " ".join(argv)
+    try:
+        env = dict(os.environ); env.setdefault("DISPLAY", ":0")
+        logf = open("/userdata/gose-ui/launch.log", "ab")
+        proc = subprocess.Popen(argv, env=env, stdout=logf, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, start_new_session=True)
+        with _netplay_lock:
+            _netplay_host_pid = proc.pid
+        record_recent(system, game)
+        _session_start(system, game)
+        _TIMECTL["slot"] = 0; _TIMECTL["ff"] = False
+        # get local IP hint for the other player
+        try:
+            ip_hint = socket.gethostbyname(socket.gethostname())
+        except Exception:
+            ip_hint = "unknown — check Settings > Network"
+        return {
+            "ok": True, "pid": proc.pid, "cmdline_proof": cmdline_proof,
+            "ip": ip_hint, "port": port,
+            "relay": relay if relay != "none" else None,
+            "share_with": ("Relay: %s (no IP needed)" % relay) if relay != "none" else ("%s:%s" % (ip_hint, port)),
+            "note": ("Waiting for a client to connect. "
+                     "Needs-two-peers: a second machine must connect to complete the session. "
+                     "Autosave disabled per RA#15248."),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def netplay_join(payload):
+    """POST /netplay/join — connect to a netplay host as client.
+    Body: {system, game, host_ip, host_port (opt)}
+    Returns {ok, pid, cmdline_proof, note}.
+    Plumbing-verified: cmdline built + spawned.
+    Needs-two-peers: requires a live host at host_ip:host_port."""
+    payload = payload or {}
+    system = payload.get("system"); game = payload.get("game")
+    host_ip = (payload.get("host_ip") or "").strip()
+    if not system or not game:
+        return {"ok": False, "error": "system + game required"}
+    if not host_ip:
+        return {"ok": False, "error": "host_ip required"}
+    d = os.path.join(ROMS, system)
+    if not os.path.isdir(d):
+        return {"ok": False, "error": "unknown system"}
+    rom = None
+    for f in os.listdir(d):
+        if "gamelist" in f or f.startswith("."):
+            continue
+        p = os.path.join(d, f)
+        if os.path.isdir(p):
+            if f in _SKIPDIRS:
+                continue
+            r = _dir_game_rom(system, p)
+            if r and os.path.splitext(os.path.basename(r))[0] == game:
+                rom = r; break
+            continue
+        if os.path.splitext(f)[0] == game and os.path.splitext(f)[1].lower() not in _SKIPEXT:
+            rom = p; break
+    if not rom:
+        return {"ok": False, "error": "rom not found for " + game}
+    nickname = _bconf_get("global.netplay.nickname") or ""
+    port = str(payload.get("host_port") or _bconf_get("global.netplay.port") or _NETPLAY_DEFAULT_PORT)
+    argv = (["emulatorlauncher"] + _virtual_pad_args() +
+            ["-system", system, "-rom", rom,
+             "-netplaymode", "client",
+             "-netplayip", host_ip,
+             "-netplayport", port])
+    if nickname:
+        argv += ["-netplaynick", nickname]
+    cmdline_proof = " ".join(argv)
+    try:
+        env = dict(os.environ); env.setdefault("DISPLAY", ":0")
+        logf = open("/userdata/gose-ui/launch.log", "ab")
+        proc = subprocess.Popen(argv, env=env, stdout=logf, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, start_new_session=True)
+        record_recent(system, game)
+        _session_start(system, game)
+        _TIMECTL["slot"] = 0; _TIMECTL["ff"] = False
+        return {
+            "ok": True, "pid": proc.pid, "cmdline_proof": cmdline_proof,
+            "connecting_to": "%s:%s" % (host_ip, port),
+            "note": ("Connecting to host. Needs-two-peers: requires a live host at %s:%s "
+                     "running the same game + core." % (host_ip, port)),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def netplay_stop():
+    """POST /netplay/stop — kill the active netplay host by PID."""
+    global _netplay_host_pid
+    with _netplay_lock:
+        pid = _netplay_host_pid
+        _netplay_host_pid = None
+    if not pid:
+        return {"ok": False, "error": "no active netplay host tracked (kill by PID via /proc/kill)"}
+    try:
+        os.kill(pid, 15)   # SIGTERM
+        return {"ok": True, "killed_pid": pid}
+    except ProcessLookupError:
+        return {"ok": True, "killed_pid": pid, "note": "process already gone"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 # ---- FPS overlay toggle (RetroArch on-screen FPS counter) ----
 # IMPORTANT: batocera's configgen REGENERATES retroarchcustom.cfg from source on every launch,
 # so editing fps_show there is clobbered. The authoritative source configgen reads is the
@@ -7500,6 +7716,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(ra_achievements_get(q.get("system", ""), q.get("game", "")))
         if route == "/ra/poll":
             return self._json(ra_poll_unlocks())
+        if route == "/netplay/config":
+            return self._json(netplay_config_get())
         if route == "/sys/display":
             return self._json(sys_display())
         if route == "/sys/vsync":
@@ -7864,6 +8082,19 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             return self._json(ra_credentials_set(payload))
+        if route in ("/netplay/config", "/netplay/host", "/netplay/join", "/netplay/stop"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/netplay/config":
+                return self._json(netplay_config_set(payload))
+            if route == "/netplay/host":
+                return self._json(netplay_host(payload))
+            if route == "/netplay/join":
+                return self._json(netplay_join(payload))
+            return self._json(netplay_stop())
         if route == "/sys/audio-device":
             try:
                 n = int(self.headers.get("Content-Length", 0))

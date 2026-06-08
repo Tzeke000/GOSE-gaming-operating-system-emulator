@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Netplay</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  /* header */
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 4px}
+  .top img{width:34px;height:34px}.top h1{font-size:20px;margin:0}
+  .top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  /* tabs: L1/R1 per docs/27 §3.3 */
+  .tabs{display:flex;gap:8px;margin:8px 36px 0}
+  .tab{display:flex;align-items:center;gap:8px;background:var(--surface);border:2px solid transparent;
+    border-radius:11px;padding:8px 16px;font-weight:600;font-size:13px;color:var(--muted);cursor:pointer}
+  .tab.on{color:var(--text);background:var(--surface2);border-color:var(--accent)}
+  /* scrollable body */
+  .body{flex:1;overflow-y:auto;overflow-x:hidden;padding:12px 36px 0;min-height:0}
+  /* config card */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:18px 22px;margin-bottom:14px}
+  .card h2{margin:0 0 3px;font-size:16px}.card .csub{color:var(--muted);font-size:12px;margin-bottom:14px}
+  /* field rows */
+  .frow{margin-bottom:13px}
+  .frow label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);
+    letter-spacing:.4px;margin-bottom:5px}
+  .frow input,.frow select{width:100%;background:#ffffff0c;border:1.5px solid var(--line);
+    border-radius:9px;color:var(--text);font-size:14px;font-family:inherit;padding:9px 13px;outline:none}
+  .frow input:focus,.frow select:focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .frow select option{background:var(--surface);color:var(--text)}
+  /* action buttons */
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;
+    background:var(--accent);color:#06121a;border:2px solid transparent;border-radius:12px;
+    padding:12px 20px;font-weight:700;font-size:14px;cursor:pointer;width:100%;margin-top:8px}
+  .btn.focus,.btn:focus{border-color:#fff;box-shadow:var(--focusglow);outline:none}
+  .btn.sec{background:var(--surface2);color:var(--text);border-color:var(--line)}
+  .btn.sec.focus,.btn.sec:focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .btn.disabled{background:var(--surface2);color:var(--muted);cursor:not-allowed;border-color:var(--line)}
+  /* share box (host result) */
+  .sharebox{background:#1b2b38;border:1.5px solid var(--accent);border-radius:12px;padding:14px 18px;
+    margin-top:12px;display:none}
+  .sharebox.show{display:block}
+  .sharebox .slbl{font-size:11px;font-weight:700;color:var(--accent);letter-spacing:.5px;margin-bottom:4px}
+  .sharebox .sval{font-size:18px;font-weight:700;font-family:monospace;letter-spacing:.5px;color:#fff}
+  .sharebox .snote{color:var(--muted);font-size:11.5px;margin-top:6px;line-height:1.5}
+  /* game picker list */
+  .gpick{list-style:none;margin:0;padding:0}
+  .gpick li{display:flex;align-items:center;gap:10px;padding:9px 12px;border:2px solid transparent;
+    border-radius:10px;cursor:pointer;background:#ffffff04;margin-bottom:5px}
+  .gpick li.focus{border-color:var(--accent);background:#5cd0ff14;box-shadow:var(--focusglow)}
+  .gpick li .gnm{font-weight:600;font-size:14px}
+  .gpick li .gsys{color:var(--muted);font-size:11.5px}
+  .gpick li .chk{color:#3fe0a0;font-weight:700;margin-left:auto;font-size:16px}
+  /* honest note */
+  .honest{display:flex;gap:10px;align-items:flex-start;color:var(--muted);font-size:11.5px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 14px;
+    line-height:1.5;margin-bottom:12px}
+  .honest .ic{flex:none;margin-top:1px}.honest b{color:var(--text)}
+  /* footer */
+  .foot{margin:10px 36px 14px;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12.5px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:8px 16px;font-size:13px;opacity:0;
+    transition:opacity .25s;pointer-events:none;text-align:center;max-width:80vw}
+  .toast.show{opacity:1}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid #ffffff22;
+    border-top-color:currentColor;border-radius:50%;animation:spin .6s linear infinite;vertical-align:-.15em}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+  <div class="top">
+    <img src="assets/brand/gose-crystal.png" alt="GOSE">
+    <div><h1>Netplay</h1><span class="s" id="topsub">Online retro multiplayer via RetroArch</span></div>
+    <div class="home"><span class="ic" data-i="wifi"></span> B / Esc — back</div>
+  </div>
+
+  <!-- L1/R1 tabs: docs/27 §3.3 -->
+  <div class="tabs">
+    <div class="tab on" id="tab-host"><span class="ic" data-i="wifi"></span> Host a game</div>
+    <div class="tab" id="tab-join"><span class="ic" data-i="plug-zap"></span> Join a game</div>
+    <div class="tab" id="tab-cfg"><span class="ic" data-i="settings"></span> Settings</div>
+  </div>
+
+  <div class="body" id="body">
+
+    <!-- ═══ HOST PANE ═══ -->
+    <div id="pane-host">
+      <div class="honest">
+        <span class="ic" data-i="info"></span>
+        <div><b>Needs two machines.</b> Host launches the game and waits; a second device must
+        connect to the IP:port shown. Frame-sync and rollback are RetroArch's — GOSE wires the
+        launch flags and shows you the connection details. Same ROM + same core required on both sides.</div>
+      </div>
+      <div class="card">
+        <h2>Pick a game to host</h2>
+        <div class="csub">Select from your library, then press Start to host.</div>
+        <ul class="gpick" id="host-gpick"><li style="color:var(--muted);padding:12px">Loading library…</li></ul>
+        <div class="btn disabled" id="host-btn" tabindex="-1">
+          <span class="ic" data-i="wifi"></span> <span id="host-btn-txt">Select a game first</span>
+        </div>
+        <div class="sharebox" id="host-sharebox">
+          <div class="slbl">GIVE THIS TO YOUR FRIEND</div>
+          <div class="sval" id="host-share-addr">—</div>
+          <div class="snote" id="host-share-note">Waiting for client… share the address above (IP:port or relay name).
+          Both sides need the same ROM and same emulator core.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ JOIN PANE ═══ -->
+    <div id="pane-join" style="display:none">
+      <div class="honest">
+        <span class="ic" data-i="info"></span>
+        <div><b>Needs two machines.</b> Enter the host's IP:port (or relay name). Both you and the
+        host need the same game + core. Your GOSE nickname will be shown to the host.</div>
+      </div>
+      <div class="card">
+        <h2>Connect to a host</h2>
+        <div class="csub">Enter the host's address, pick a matching game, then press Connect.</div>
+        <div class="frow">
+          <label>HOST IP ADDRESS</label>
+          <input type="text" id="join-ip" placeholder="e.g. 192.168.1.42" autocomplete="off" inputmode="url">
+        </div>
+        <div class="frow">
+          <label>PORT (default 55435)</label>
+          <input type="text" id="join-port" placeholder="55435" value="55435" autocomplete="off" inputmode="numeric">
+        </div>
+        <div class="card" style="margin:0 0 14px;padding:12px 16px">
+          <h2 style="font-size:14px;margin-bottom:8px">Pick a matching game</h2>
+          <ul class="gpick" id="join-gpick"><li style="color:var(--muted);padding:12px">Loading library…</li></ul>
+        </div>
+        <div class="btn disabled" id="join-btn" tabindex="-1">
+          <span class="ic" data-i="plug-zap"></span> <span id="join-btn-txt">Enter host IP and pick a game</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ SETTINGS PANE ═══ -->
+    <div id="pane-cfg" style="display:none">
+      <div class="card">
+        <h2>Netplay settings</h2>
+        <div class="csub">Stored in batocera.conf — survive reboots.</div>
+        <div class="frow">
+          <label>NICKNAME (shown to opponents)</label>
+          <input type="text" id="cfg-nick" placeholder="Your name in netplay sessions" autocomplete="off" maxlength="32">
+        </div>
+        <div class="frow">
+          <label>DEFAULT PORT</label>
+          <input type="text" id="cfg-port" placeholder="55435" autocomplete="off" inputmode="numeric">
+        </div>
+        <div class="frow">
+          <label>RELAY SERVER (for players behind NAT)</label>
+          <select id="cfg-relay">
+            <option value="none">None — direct connection (LAN / port-forwarded)</option>
+            <option value="nyc">New York (nyc)</option>
+            <option value="madrid">Madrid (madrid)</option>
+            <option value="montreal">Montreal (montreal)</option>
+            <option value="saopaulo">São Paulo (saopaulo)</option>
+            <option value="sydney">Sydney (sydney)</option>
+          </select>
+        </div>
+        <div class="btn" id="cfg-save-btn" tabindex="-1">
+          <span class="ic" data-i="check"></span> Save settings
+        </div>
+        <div class="honest" style="margin-top:12px;margin-bottom:0">
+          <span class="ic" data-i="info"></span>
+          <div><b>Relay servers</b> are RetroArch's public MITM infrastructure — they relay traffic
+          so NAT-blocked players can connect without port-forwarding. No relay = direct IP (fastest,
+          but requires port-forwarding or LAN). <b>Relay does not guarantee connectivity</b> — server
+          availability is RetroArch's, not GOSE's.</div>
+        </div>
+      </div>
+      <div class="honest">
+        <span class="ic" data-i="info"></span>
+        <div><b>What's plumbing-verified vs needs-two-peers:</b><br>
+        <b>Verified:</b> config read/write (nickname/port/relay written to batocera.conf);
+        host + join launch commands built correctly (emulatorlauncher with correct -netplaymode/-netplayip flags);
+        kill-by-PID works.<br>
+        <b>Not verifiable single-machine:</b> the RetroArch frame-sync / rollback handshake
+        — that requires a second peer to actually connect. "Waiting for client" is correct behavior,
+        not a bug.</div>
+      </div>
+    </div>
+
+  </div><!-- .body -->
+
+  <div class="foot">
+    <span class="ic" data-i="wifi"></span> Netplay — online retro multiplayer
+    <span class="h"><b>L1/R1</b> tabs · <b>↑↓</b> move · <b>A</b> select · <b>B</b> back</span>
+  </div>
+  <div class="toast" id="toast"></div>
+
+<script src="assets/icons.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
+  const $ = id => document.getElementById(id);
+  function paint() {
+    if (window.GICON) { GICON.paint(document); return; }
+    document.querySelectorAll("[data-i]").forEach(e =>
+      e.style.setProperty("--u", `url(assets/icons/${e.dataset.i}.svg)`));
+  }
+  function esc(s) {
+    return (s == null ? "" : String(s)).replace(/[&<>"]/g,
+      c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  }
+  function say(m, dur) {
+    const t = $("toast"); t.textContent = m; t.classList.add("show");
+    clearTimeout(say._t); say._t = setTimeout(() => t.classList.remove("show"), dur || 2800);
+  }
+
+  // ─── state ───
+  let TAB = 0;  // 0=host 1=join 2=cfg
+  const TABS = ["host", "join", "cfg"];
+  let games = [];           // [{system, game, title}]
+  let hostSel = null;       // selected game for host
+  let joinSel = null;       // selected game for join
+  let cfgData = {};         // loaded from /netplay/config
+  // focus tracking per pane
+  // host: 0..N-1 = game list, N = host-btn
+  // join: 0=join-ip, 1=join-port, 2..M = game list, M+1 = join-btn
+  // cfg: 0=nick, 1=port, 2=relay, 3=save-btn
+  let focH = 0, focJ = 0, focC = 0;
+
+  // ─── tab switching ───
+  function switchTab(t) {
+    TAB = ((t % 3) + 3) % 3;
+    TABS.forEach((nm, i) => {
+      $("tab-" + nm).classList.toggle("on", i === TAB);
+      $("pane-" + nm).style.display = i === TAB ? "" : "none";
+    });
+    paint();
+  }
+
+  // ─── games list ───
+  function loadGames() {
+    fetch("/games.json", {cache: "no-store"}).then(r => r.json()).then(d => {
+      games = (d.games || []).map(g => ({
+        system: g.system || "", game: g.id || g.game || g.name || "",
+        title: g.name || g.id || g.game || ""
+      })).filter(g => g.system && g.game);
+      renderHostPick(); renderJoinPick();
+    }).catch(() => {
+      games = [];
+      $("host-gpick").innerHTML = '<li style="color:var(--muted);padding:12px">Library unavailable</li>';
+      $("join-gpick").innerHTML = '<li style="color:var(--muted);padding:12px">Library unavailable</li>';
+    });
+  }
+
+  function renderHostPick() {
+    const ul = $("host-gpick");
+    if (!games.length) {
+      ul.innerHTML = '<li style="color:var(--muted);padding:12px">No games in library yet — add ROMs first.</li>';
+      return;
+    }
+    ul.innerHTML = games.map((g, i) => {
+      const sel = (hostSel && hostSel.game === g.game && hostSel.system === g.system);
+      const f = (TAB === 0 && focH === i) ? " focus" : "";
+      return `<li class="${f}" data-hi="${i}">
+        <span class="ic" data-i="gamepad-2"></span>
+        <span><div class="gnm">${esc(g.title)}</div><div class="gsys">${esc(g.system)}</div></span>
+        ${sel ? '<span class="chk">✓</span>' : ""}
+      </li>`;
+    }).join("");
+    ul.querySelectorAll("li[data-hi]").forEach(li => {
+      li.onclick = () => { focH = +li.dataset.hi; hostSel = games[focH]; renderHostPick(); renderHostBtn(); paint(); };
+    });
+    renderHostBtn(); paint();
+  }
+
+  function renderJoinPick() {
+    const ul = $("join-gpick");
+    if (!games.length) {
+      ul.innerHTML = '<li style="color:var(--muted);padding:12px">No games in library yet.</li>';
+      return;
+    }
+    // in join pane, game list focus starts at index 2 (0=ip, 1=port)
+    ul.innerHTML = games.map((g, i) => {
+      const sel = (joinSel && joinSel.game === g.game && joinSel.system === g.system);
+      const f = (TAB === 1 && focJ === i + 2) ? " focus" : "";
+      return `<li class="${f}" data-ji="${i}">
+        <span class="ic" data-i="gamepad-2"></span>
+        <span><div class="gnm">${esc(g.title)}</div><div class="gsys">${esc(g.system)}</div></span>
+        ${sel ? '<span class="chk">✓</span>' : ""}
+      </li>`;
+    }).join("");
+    ul.querySelectorAll("li[data-ji]").forEach(li => {
+      li.onclick = () => { focJ = +li.dataset.ji + 2; joinSel = games[+li.dataset.ji]; renderJoinPick(); renderJoinBtn(); paint(); };
+    });
+    renderJoinBtn(); paint();
+  }
+
+  function renderHostBtn() {
+    const btn = $("host-btn"); const txt = $("host-btn-txt");
+    const canHost = !!hostSel;
+    btn.className = "btn" + (canHost ? "" : " disabled") + (TAB === 0 && focH === games.length ? " focus" : "");
+    txt.textContent = canHost ? ("Host " + hostSel.title) : "Select a game first";
+  }
+
+  function renderJoinBtn() {
+    const btn = $("join-btn"); const txt = $("join-btn-txt");
+    const ip = ($("join-ip").value || "").trim();
+    const canJoin = !!joinSel && !!ip;
+    const joinFocIdx = 2 + games.length;
+    btn.className = "btn" + (canJoin ? "" : " disabled") + (TAB === 1 && focJ === joinFocIdx ? " focus" : "");
+    txt.textContent = canJoin ? ("Connect to " + ip) : (!joinSel ? "Pick a game above" : "Enter host IP");
+  }
+
+  // ─── cfg load ───
+  function loadCfg() {
+    fetch("/netplay/config", {cache: "no-store"}).then(r => r.json()).then(d => {
+      cfgData = d;
+      $("cfg-nick").value = d.nickname || "";
+      $("cfg-port").value = d.port || "55435";
+      const sel = $("cfg-relay"); sel.value = d.relay || "none";
+    }).catch(() => say("Settings unavailable (server offline?)"));
+  }
+
+  function renderCfgFocus() {
+    const fields = [$("cfg-nick"), $("cfg-port"), $("cfg-relay"), $("cfg-save-btn")];
+    fields.forEach((el, i) => {
+      if (!el) return;
+      if (i === 3) { el.classList.toggle("focus", TAB === 2 && focC === 3); }
+      else { el.style.borderColor = (TAB === 2 && focC === i) ? "var(--accent)" : ""; }
+    });
+  }
+
+  // ─── host action ───
+  function doHost() {
+    if (!hostSel) { say("Pick a game first"); return; }
+    const btn = $("host-btn"); const txt = $("host-btn-txt");
+    btn.classList.add("disabled"); txt.innerHTML = '<span class="spinner"></span> Starting…';
+    fetch("/netplay/host", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({system: hostSel.system, game: hostSel.game})})
+      .then(r => r.json()).then(d => {
+        btn.classList.remove("disabled"); txt.textContent = "Host " + hostSel.title;
+        if (d.ok) {
+          const box = $("host-sharebox"); box.classList.add("show");
+          $("host-share-addr").textContent = d.share_with || (d.ip + ":" + d.port);
+          $("host-share-note").textContent =
+            "PID " + d.pid + " — waiting for client. Share the address above. " +
+            "Same ROM + same core required. " + (d.note || "");
+          say("Hosting " + hostSel.title + " — share the address with your friend", 4000);
+        } else {
+          say("Host failed: " + (d.error || "unknown error"));
+        }
+      }).catch(() => { btn.classList.remove("disabled"); txt.textContent = "Host " + hostSel.title; say("Network error"); });
+  }
+
+  // ─── join action ───
+  function doJoin() {
+    if (!joinSel) { say("Pick a matching game first"); return; }
+    const ip = ($("join-ip").value || "").trim();
+    if (!ip) { say("Enter the host's IP address"); return; }
+    const port = ($("join-port").value || "").trim() || "55435";
+    const btn = $("join-btn"); const txt = $("join-btn-txt");
+    btn.classList.add("disabled"); txt.innerHTML = '<span class="spinner"></span> Connecting…';
+    fetch("/netplay/join", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({system: joinSel.system, game: joinSel.game, host_ip: ip, host_port: port})})
+      .then(r => r.json()).then(d => {
+        btn.classList.remove("disabled");
+        if (d.ok) {
+          say("Connecting to " + ip + ":" + port + " — launching " + joinSel.title, 4000);
+          txt.textContent = "Connect to " + ip;
+        } else {
+          txt.textContent = "Connect to " + ip;
+          say("Join failed: " + (d.error || "unknown error"));
+        }
+      }).catch(() => { btn.classList.remove("disabled"); txt.textContent = "Connect to " + ip; say("Network error"); });
+  }
+
+  // ─── save cfg ───
+  function doSaveCfg() {
+    const nick = ($("cfg-nick").value || "").trim();
+    const port = ($("cfg-port").value || "").trim() || "55435";
+    const relay = $("cfg-relay").value || "none";
+    const btn = $("cfg-save-btn");
+    btn.innerHTML = '<span class="spinner"></span> Saving…';
+    fetch("/netplay/config", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({nickname: nick, port: port, relay: relay})})
+      .then(r => r.json()).then(d => {
+        if (d.ok) {
+          cfgData = d;
+          say("Settings saved — nickname: " + (nick || "(none)") + ", port: " + port + ", relay: " + relay);
+        } else {
+          say("Save failed: " + (d.error || "?"));
+        }
+        btn.innerHTML = '<span class="ic" data-i="check"></span> Save settings'; paint();
+      }).catch(() => { btn.innerHTML = '<span class="ic" data-i="check"></span> Save settings'; say("Network error"); paint(); });
+  }
+
+  // ─── input: one keydown, docs/27 vocabulary only (no getGamepads, ever) ───
+  // Focus model:
+  //   host tab:  0..games.length-1 = game items, games.length = host-btn
+  //   join tab:  0 = join-ip, 1 = join-port, 2..2+games.length-1 = game items, 2+games.length = join-btn
+  //   cfg tab:   0 = nick field, 1 = port field, 2 = relay select, 3 = save-btn
+  function focusEl() {
+    if (TAB === 0) {
+      if (focH < games.length) return $("host-gpick").children[focH];
+      return $("host-btn");
+    }
+    if (TAB === 1) {
+      if (focJ === 0) return $("join-ip");
+      if (focJ === 1) return $("join-port");
+      if (focJ < 2 + games.length) return $("join-gpick").children[focJ - 2];
+      return $("join-btn");
+    }
+    if (TAB === 2) {
+      if (focC === 0) return $("cfg-nick");
+      if (focC === 1) return $("cfg-port");
+      if (focC === 2) return $("cfg-relay");
+      return $("cfg-save-btn");
+    }
+    return null;
+  }
+
+  function scrollFocus() {
+    const el = focusEl(); if (el) el.scrollIntoView({block: "nearest"});
+  }
+
+  function hostFocCount() { return games.length + 1; }
+  function joinFocCount() { return 2 + games.length + 1; }
+  const cfgFocCount = 4;
+
+  addEventListener("keydown", e => {
+    const k = e.key;
+    const isText = ["INPUT","SELECT","TEXTAREA"].includes(document.activeElement && document.activeElement.tagName);
+
+    // L1/R1 = tab prev/next (docs/27 §1, §3.3)
+    if (k === "[" || k === "bracketleft") { switchTab(TAB - 1); e.preventDefault(); return; }
+    if (k === "]" || k === "bracketright") { switchTab(TAB + 1); e.preventDefault(); return; }
+
+    // Escape = back (docs/27 §3.2)
+    if (k === "Escape" || k === "Backspace") {
+      location.href = "gose-settings.html";
+      e.preventDefault(); return;
+    }
+
+    if (TAB === 0) {
+      // host pane
+      if (k === "ArrowDown" || k === "Down") { focH = (focH + 1) % hostFocCount(); }
+      else if (k === "ArrowUp" || k === "Up") { focH = (focH - 1 + hostFocCount()) % hostFocCount(); }
+      else if (k === "Enter" || k === " ") {
+        if (focH < games.length) { hostSel = games[focH]; renderHostPick(); renderHostBtn(); }
+        else doHost();
+        e.preventDefault(); return;
+      } else return;
+      renderHostPick(); renderHostBtn(); scrollFocus(); e.preventDefault();
+    } else if (TAB === 1) {
+      // join pane — text fields get normal input; nav only when not in a text input
+      if ((k === "ArrowDown" || k === "Down") && !isText) {
+        focJ = (focJ + 1) % joinFocCount();
+      } else if ((k === "ArrowUp" || k === "Up") && !isText) {
+        focJ = (focJ - 1 + joinFocCount()) % joinFocCount();
+      } else if (k === "Enter") {
+        if (focJ === 0 || focJ === 1) {
+          // advance focus
+          focJ = (focJ + 1) % joinFocCount();
+        } else if (focJ >= 2 && focJ < 2 + games.length) {
+          joinSel = games[focJ - 2]; renderJoinPick();
+        } else {
+          doJoin(); e.preventDefault(); return;
+        }
+        e.preventDefault();
+      } else return;
+      renderJoinPick(); renderJoinBtn();
+      const fe = focusEl(); if (fe && typeof fe.focus === "function") fe.focus();
+      scrollFocus();
+      if (k !== "Enter") e.preventDefault();
+    } else if (TAB === 2) {
+      // cfg pane
+      if ((k === "ArrowDown" || k === "Down") && !isText) {
+        focC = (focC + 1) % cfgFocCount;
+      } else if ((k === "ArrowUp" || k === "Up") && !isText) {
+        focC = (focC - 1 + cfgFocCount) % cfgFocCount;
+      } else if (k === "Enter") {
+        if (focC < 3) {
+          focC = (focC + 1) % cfgFocCount;
+        } else {
+          doSaveCfg(); e.preventDefault(); return;
+        }
+        e.preventDefault();
+      } else return;
+      renderCfgFocus();
+      const fe = focusEl(); if (fe && typeof fe.focus === "function") fe.focus();
+      scrollFocus();
+      if (k !== "Enter") e.preventDefault();
+    }
+  });
+
+  // click wiring for buttons
+  $("host-btn").onclick = () => { if (!$("host-btn").classList.contains("disabled")) doHost(); };
+  $("join-btn").onclick = () => { if (!$("join-btn").classList.contains("disabled")) doJoin(); };
+  $("cfg-save-btn").onclick = () => doSaveCfg();
+  ["tab-host","tab-join","tab-cfg"].forEach((id, i) => { $(id).onclick = () => switchTab(i); });
+
+  // ip/port changes update join button
+  $("join-ip").addEventListener("input", renderJoinBtn);
+  $("join-port").addEventListener("input", renderJoinBtn);
+
+  // ─── init ───
+  paint(); loadGames(); loadCfg();
+  // No raw-gamepad poll — gose-pad-nav.py is the single input authority (docs/27 §2.1).
+</script>
+<script src="assets/a11y.js"></script>
+</body>
+</html>
