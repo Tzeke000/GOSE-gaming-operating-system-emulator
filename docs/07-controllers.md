@@ -20,8 +20,21 @@ Target: speak Xbox, PlayStation, Nintendo, and 8BitDo natively/auto-mapped; up t
   HDMI out (fall back to USB-C→HDMI adapter if dock HDMI fails on Linux).
 
 ## Setup tasks (mostly handled by the distro; document specifics on hardware)
-- [ ] Confirm `xpadneo` present/loaded on the chosen distro (ROCKNIX/Batocera
-      usually bundle it). `[needs hardware]`
+- [x] **Xbox USB (wired / USB-A cable):** in-kernel `xpad` driver, no config needed.
+      Works OOTB. SDL_GameControllerDB covers Xbox One / Series / Elite GUIDs for Linux
+      (verified in gamecontrollerdb.txt). `[verified in DB]`
+- [x] **Xbox BT (Bluetooth wireless):** `xpadneo` kernel module. Batocera ships it in the
+      package tree (`package/batocera/controllers/pads/xpadneo`). GOSE bakes the required
+      modprobe options (`bluetooth disable_ertm=1`, `hid_xpadneo disable_shift_mode=1`)
+      into `/etc/modprobe.d/xpadneo.conf` via `boot-custom.sh` (runs before ES every
+      boot). This covers the case where xpadneo IS compiled into the image; if absent on
+      the pinned Batocera x86_64 build, the options are a no-op and the user falls back to
+      USB. **Whether Batocera's x86_64 build actually compiles xpadneo** depends on the
+      board config (`BR2_PACKAGE_XPADNEO=y`) — not confirmed without a real sudo build.
+      `[needs hardware + real build to confirm BT path]`
+- [x] **First-boot controller log:** `harden-firstboot.sh` enumerates all gamepads and
+      logs driver + vid/pid — lets us/downloaders diagnose "pad doesn't work cold" without
+      a screen. See `/userdata/system/logs/gose-agent.log` on first boot.
 - [ ] Pair + verify each pad; capture per-pad mapping quirks here as we hit them.
 - [ ] Test the 8BitDo USB Adapter 2 as the universal fallback.
 - [ ] Validate 6 pads docked.

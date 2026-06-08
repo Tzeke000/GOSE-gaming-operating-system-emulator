@@ -20,6 +20,25 @@
 # Batocera passes "start"/"stop"; only act on start (and on a bare invocation).
 [ "$1" = "stop" ] && exit 0
 
+# --- Xbox controller Bluetooth options (pre-mortem #6, Task #94) ---
+# xpadneo is the correct Linux driver for Xbox One / Series BT controllers.
+# Batocera packages it but its board-config inclusion is board-specific; these
+# options are the same ones Batocera's own xpadneo.mk installs. Writing them from
+# boot-custom.sh (which runs inside the runtime squashfs overlay — /etc is writable)
+# ensures they are present before any hotplug event loads hid_xpadneo, regardless of
+# whether the module was compiled into this image or not.
+# If hid_xpadneo is absent the options sit idle in /etc/modprobe.d — no harm done.
+# USB Xbox pads load the in-kernel xpad driver automatically on plug; no options needed.
+mkdir -p /etc/modprobe.d
+cat > /etc/modprobe.d/xpadneo.conf << 'MODPEOF'
+# GOSE: Xbox BT controller options (boot-custom.sh, Task #94)
+# disable_ertm=1: required for stable Xbox BT connection on most kernel/BT stacks
+options bluetooth disable_ertm=1
+# disable_shift_mode=1: emit clean standard evdev codes (BTN_SOUTH/EAST/...) —
+# the codes gose-pad-nav.py and the SDL normalizer expect
+options hid_xpadneo disable_shift_mode=1
+MODPEOF
+
 ESS=/usr/bin/emulationstation-standalone
 SESSION=/userdata/gose-ui/gose-session.sh
 
