@@ -2539,6 +2539,25 @@ def ai_audit(limit=100):
         pass                                          # no audit file yet — empty is honest
     return {"ok": True, "entries": entries[-limit:]}
 
+# ---- AI activity feed: the public-facing "your AI did X at Y" endpoint consumed by
+#      gose-ai-about.html. Newest-first (reversed from the append-order audit log).
+#      SCRUBBED: only {ts, name, op, ok, code} pass through — no tokens, no secrets.
+#      Audit entries never contain tokens by design (server.py audit_append), but the
+#      scrub is explicit and defensive so this contract holds even if the schema grows.
+_ACTIVITY_SAFE_KEYS = frozenset(("ts", "name", "op", "ok", "code"))
+
+def ai_activity(limit=50):
+    try:
+        limit = max(1, min(int(limit), 200))
+    except (TypeError, ValueError):
+        limit = 50
+    raw = ai_audit(limit)
+    entries = raw.get("entries", [])
+    # scrub: keep only the declared safe keys, strip everything else
+    scrubbed = [{k: e[k] for k in _ACTIVITY_SAFE_KEYS if k in e} for e in entries]
+    scrubbed.reverse()                                # newest first
+    return {"ok": True, "entries": scrubbed}
+
 # ---- First-boot / OOBE (docs/25) -------------------------------------------------------
 # A flag file decides whether the kiosk lands on the first-boot wizard or the desktop.
 # Completing the wizard WRITES the flag, persists the owner account, applies the privacy
@@ -6131,6 +6150,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(ai_requests())
         if route == "/ai/audit":
             return self._json(ai_audit(self._qs().get("limit", 100)))
+        if route == "/ai/activity":
+            return self._json(ai_activity(self._qs().get("limit", 50)))
         if route == "/game/options":
             q = self._qs()
             return self._json(game_options(q.get("system", ""), q.get("game", "")))

@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — What Your AI Can Do</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  /* top bar */
+  .top{display:flex;align-items:center;gap:12px;padding:16px 36px 4px;flex:none}
+  .top img{width:30px;height:30px}.top h1{font-size:19px;margin:0;font-weight:700}
+  .top .sub{color:var(--muted);font-size:12.5px;margin-left:2px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px;white-space:nowrap}
+  /* scroll body */
+  .body{flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 36px 14px;
+    display:flex;flex-direction:column;gap:16px}
+  /* section header */
+  .sh{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);
+    text-transform:uppercase;margin:4px 0 6px;padding:0 2px}
+  /* capability cards — in a 2-col grid */
+  .capgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+  .cap{background:var(--surface);border:2px solid transparent;border-radius:14px;
+    padding:14px 16px;cursor:pointer;transition:border-color .12s,box-shadow .12s}
+  .cap.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .cap .ch{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .cap .ci{font-size:20px;color:var(--accent);flex:none}
+  .cap .cnm{font-size:14px;font-weight:700}
+  .cap .csub{color:var(--muted);font-size:12px;line-height:1.5}
+  .cap .ctag{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;
+    border-radius:7px;padding:2px 8px;border:1px solid var(--line);color:var(--muted)}
+  /* permission tier rows */
+  .tierlist{display:flex;flex-direction:column;gap:6px}
+  .tier{background:var(--surface);border:2px solid transparent;border-radius:12px;
+    padding:11px 14px;display:flex;align-items:center;gap:12px;cursor:pointer;
+    transition:border-color .12s,box-shadow .12s}
+  .tier.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .tier .tdot{width:11px;height:11px;border-radius:50%;flex:none}
+  .tier .tnm{font-size:13px;font-weight:700}
+  .tier .tsub{color:var(--muted);font-size:12px;line-height:1.4;margin-top:2px;flex:1}
+  .tier .tbadge{font-size:11px;font-weight:700;border-radius:8px;padding:3px 9px;
+    border:1px solid var(--line);margin-left:auto;white-space:nowrap}
+  .tier.observe .tdot{background:#9aa3b8}.tier.observe .tbadge{color:#9aa3b8}
+  .tier.play    .tdot{background:#5cd0ff}.tier.play    .tbadge{color:#5cd0ff;background:#5cd0ff14;border-color:#5cd0ff44}
+  .tier.admin   .tdot{background:#ffb74d}.tier.admin   .tbadge{color:#ffb74d;background:#ffb74d14;border-color:#ffb74d44}
+  /* hub CTA */
+  .cta{background:var(--surface);border:2px solid var(--accent);border-radius:14px;
+    padding:14px 18px;display:flex;align-items:center;gap:14px;cursor:pointer;
+    transition:box-shadow .12s}
+  .cta.focus{box-shadow:var(--focusglow)}
+  .cta .ctxt{flex:1}
+  .cta .cnm{font-size:14px;font-weight:700;color:var(--accent)}
+  .cta .csub{color:var(--muted);font-size:12px;line-height:1.5;margin-top:3px}
+  .cta .carr{font-size:18px;color:var(--accent);flex:none}
+  /* activity feed */
+  .feed{background:var(--surface);border:1px solid var(--line);border-radius:13px;
+    padding:10px 16px;display:flex;flex-direction:column;gap:6px;max-height:170px;overflow-y:auto}
+  .feed-empty{color:var(--muted);font-size:13px;line-height:1.5;padding:4px 0}
+  .ae{display:flex;align-items:baseline;gap:8px;font-size:12.5px}
+  .ae .at{color:var(--muted);flex:none;min-width:56px;font-size:11px}
+  .ae .anm{font-weight:700;color:var(--text);flex:none}
+  .ae .aop{color:var(--muted);flex:1}
+  .ae .aok{font-size:11px;font-weight:700;flex:none}
+  .ae .aok.ok{color:#3fe0a0}.ae .aok.no{color:#ff8a8a}
+  /* foot */
+  .foot{flex:none;margin:0 36px 14px;display:flex;gap:10px;align-items:center;color:var(--muted);
+    font-size:12.5px;background:var(--surface);border:1px solid var(--line);border-radius:11px;
+    padding:10px 16px}
+  .foot b{color:var(--text)}.foot .h{margin-left:auto}
+</style></head>
+<body>
+  <div class="top">
+    <img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <h1>What Your AI Can Do</h1><span class="sub">— real capabilities on this device</span>
+    <div class="home"><span class="ic" data-i="sparkles"></span> B / Esc — back</div>
+  </div>
+
+  <div class="body" id="body">
+    <!-- capabilities section -->
+    <div>
+      <div class="sh">Capabilities</div>
+      <div class="capgrid" id="caps">
+        <div class="cap focusable" tabindex="-1" data-link="gose-lobby.html">
+          <div class="ch"><span class="ic ci" data-i="gamepad-2"></span><div class="cnm">Play games with you</div></div>
+          <div class="csub">Your AI takes a seat in the multiplayer lobby — up to 4 players.
+            It drives a <b>virtual Xbox controller</b> (seats 1–4), so it works with any
+            RetroArch game without extra setup. You pick who plays P1, P2… in the lobby before
+            launch. The AI can also play solo, or watch you and read the game state.</div>
+          <span class="ctag">Lobby — gose-lobby.html</span>
+        </div>
+        <div class="cap focusable" tabindex="-1" data-link="gose-library.html">
+          <div class="ch"><span class="ic ci" data-i="folder"></span><div class="cnm">Manage your library</div></div>
+          <div class="csub">With <b>Play</b> access an AI can browse your ROM library, launch
+            and stop games on your behalf, and scrape cover art. With <b>Admin</b> it can also
+            install, uninstall, and import — the same actions you can do in the Library and Store.</div>
+          <span class="ctag">Library — gose-library.html</span>
+        </div>
+        <div class="cap focusable" tabindex="-1" data-link="gose-term.html">
+          <div class="ch"><span class="ic ci" data-i="terminal"></span><div class="cnm">Fix &amp; tinker</div></div>
+          <div class="csub">With <b>Admin</b> access an AI gets a real shell — it can read
+            logs, restart services, adjust settings, and help diagnose problems. This is the
+            same shell you use in Terminal. <b>The owner must explicitly grant Admin</b>; no
+            AI can self-elevate.</div>
+          <span class="ctag">Admin-tier only · docs/16</span>
+        </div>
+        <div class="cap focusable" tabindex="-1">
+          <div class="ch"><span class="ic ci" data-i="eye"></span><div class="cnm">Watch &amp; read state</div></div>
+          <div class="csub">Even at <b>Observe</b> (the safe default for new pairings) an AI
+            can take screenshots, read the game-state RAM profile, and list what's installed —
+            enough to narrate, coach, or build overlays without any control over the system.</div>
+          <span class="ctag">Default for new pairings</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- permission tiers section -->
+    <div>
+      <div class="sh">Permission tiers — you grant, the AI can never self-elevate</div>
+      <div class="tierlist" id="tiers">
+        <div class="tier observe focusable" tabindex="-1">
+          <div class="tdot"></div>
+          <div><div class="tnm">Observe</div>
+          <div class="tsub">Screenshot, list games, read game state. Read-only — can't launch, control, or modify anything.</div></div>
+          <div class="tbadge observe">Default</div>
+        </div>
+        <div class="tier play focusable" tabindex="-1">
+          <div class="tdot"></div>
+          <div><div class="tnm">Play</div>
+          <div class="tsub">Everything in Observe, plus: launch and stop games, send controller input on a virtual seat, scrape cover art.</div></div>
+          <div class="tbadge play">Human grant required</div>
+        </div>
+        <div class="tier admin focusable" tabindex="-1">
+          <div class="tdot"></div>
+          <div><div class="tnm">Admin</div>
+          <div class="tsub">Full OS: shell, settings, install / uninstall, network, power. Use only for trusted AI with a real job to do.</div></div>
+          <div class="tbadge admin">Human grant required</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CTA — link to AI Hub -->
+    <div>
+      <div class="sh">Pair an AI</div>
+      <div class="cta focusable" tabindex="-1" id="cta-hub" data-link="gose-ai.html">
+        <span class="ic ci" data-i="sparkles" style="font-size:22px;color:var(--accent)"></span>
+        <div class="ctxt">
+          <div class="cnm">Open AI Hub</div>
+          <div class="csub">Grant access, revoke, and see which AIs are connected.
+            An AI asks for a tier; you approve it here. Tokens are never shown to this page.</div>
+        </div>
+        <span class="ic carr" data-i="chevron-right"></span>
+      </div>
+    </div>
+
+    <!-- activity feed -->
+    <div>
+      <div class="sh" id="feed-hdr">AI Activity — loading…</div>
+      <div class="feed" id="feed"><div class="feed-empty">Loading…</div></div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span class="ic" data-i="sparkles"></span>
+    Your AI earns its access; you hold the grant
+    <span class="h"><b>↑↓←→</b> move · <b>A / Enter</b> open · <b>B / Esc</b> back</span>
+  </div>
+
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
+  var $ = function(id){ return document.getElementById(id); };
+  function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+  // paint icon masks
+  function paint(){ document.querySelectorAll("[data-i]").forEach(function(e){
+    e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)"); }); }
+
+  // ---- roving focus (docs/27 §3.1 — left→right, top→down, wraps) ----
+  var foc = 0;
+  function focusables(){
+    return [].slice.call(document.querySelectorAll(".focusable")).filter(function(el){
+      return el.offsetParent !== null; });
+  }
+  function applyFocus(){
+    var items = focusables();
+    items.forEach(function(el, i){ el.classList.toggle("focus", i === foc); });
+    var fe = items[foc];
+    if(fe && fe.scrollIntoView) fe.scrollIntoView({block:"nearest", behavior:"smooth"});
+  }
+  function move(d){
+    var n = focusables().length;
+    if(!n) return;
+    foc = ((foc + d) % n + n) % n;
+    applyFocus();
+  }
+  function activate(){
+    var items = focusables();
+    var el = items[foc];
+    if(!el) return;
+    var link = el.dataset.link;
+    if(link) location.href = link;
+  }
+  function goBack(){
+    if(history.length > 1) history.back();
+    else location.href = "gose-home.html";
+  }
+
+  // pad / keyboard nav (docs/27 §3 — accept both ArrowX and bare X for WebKitGTK, §3.8)
+  // No getGamepads / gamepad events — bridge is single input authority (docs/27 §2.1).
+  document.addEventListener("keydown", function(e){
+    var k = e.key;
+    if(k === "ArrowDown" || k === "Down"){ move(1); e.preventDefault(); }
+    else if(k === "ArrowUp" || k === "Up"){ move(-1); e.preventDefault(); }
+    else if(k === "ArrowRight" || k === "Right"){ move(1); e.preventDefault(); }
+    else if(k === "ArrowLeft" || k === "Left"){ move(-1); e.preventDefault(); }
+    else if(k === "Enter" || k === " "){ activate(); e.preventDefault(); }
+    else if(k === "Escape" || k === "Backspace"){ goBack(); e.preventDefault(); }
+    // [ ] = tab-prev/next — no tabs on this page, ignored (docs/27 §3.3)
+  });
+  // click support
+  document.addEventListener("click", function(e){
+    var el = e.target.closest && e.target.closest(".focusable");
+    if(!el) return;
+    var items = focusables();
+    var idx = items.indexOf(el);
+    if(idx >= 0){ foc = idx; applyFocus(); }
+    activate();
+  });
+
+  // ---- activity feed ----
+  // Friendly op labels — maps agent op names to human-readable descriptions.
+  // Unknown ops fall back to the raw op string (honest, not hidden).
+  var OP_LABEL = {
+    "ping":             "pinged GOSE",
+    "agent.info":       "read agent info",
+    "system.status":    "checked system status",
+    "screen.capture":   "took a screenshot",
+    "games.systems":    "listed game systems",
+    "games.list":       "listed games",
+    "games.launch":     "launched a game",
+    "games.stop":       "stopped a game",
+    "input.button":     "pressed a button",
+    "input.combo":      "pressed a button combo",
+    "input.axis":       "moved a stick / axis",
+    "input.type":       "typed text",
+    "input.seats":      "listed controller seats",
+    "input.seat_open":  "opened a controller seat",
+    "input.seat_close": "closed a controller seat",
+    "state.attach":     "attached game-state profile",
+    "state.read":       "read game state",
+    "state.profiles":   "listed state profiles",
+    "system.run":       "ran a shell command",
+    "system.service":   "managed a system service"
+  };
+  function fmtOp(op){ return OP_LABEL[op] || op; }
+  function fmtTs(ts){
+    if(!ts) return "—";
+    var d = new Date(ts * 1000);
+    var h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
+    return ("0"+h).slice(-2)+":"+("0"+m).slice(-2)+":"+("0"+s).slice(-2);
+  }
+
+  function loadActivity(){
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET","/ai/activity?limit=40");
+    xhr.onload = function(){
+      var hdr = $("feed-hdr"), feed = $("feed");
+      if(xhr.status !== 200){ hdr.textContent = "AI Activity"; feed.innerHTML = '<div class="feed-empty">Could not reach the server — is the VM running?</div>'; return; }
+      try {
+        var data = JSON.parse(xhr.responseText);
+        var entries = (data && data.entries) || [];
+        hdr.textContent = "AI Activity" + (entries.length ? " — last "+entries.length+" ops" : "");
+        if(!entries.length){
+          feed.innerHTML = '<div class="feed-empty">No AI activity yet — once a paired AI connects and runs an op, its actions appear here.</div>';
+          return;
+        }
+        // entries are newest-first (server reversed them)
+        var rows = entries.map(function(e){
+          var ok = e.ok !== false;
+          var code = e.code ? ' <span style="color:#ff8a8a;font-size:10px">('+esc(e.code)+')</span>' : '';
+          return '<div class="ae">'+
+            '<span class="at">'+esc(fmtTs(e.ts))+'</span>'+
+            '<span class="anm">'+esc(e.name||"?")+'</span>'+
+            '<span class="aop">'+esc(fmtOp(e.op||"?"))+'</span>'+
+            code+
+            '<span class="aok '+(ok?"ok":"no")+'">'+(ok?"PASS":"DENY")+'</span>'+
+          '</div>';
+        }).join("");
+        feed.innerHTML = rows;
+      } catch(ex){
+        hdr.textContent = "AI Activity";
+        feed.innerHTML = '<div class="feed-empty">Could not parse activity data.</div>';
+      }
+    };
+    xhr.onerror = function(){
+      $("feed-hdr").textContent = "AI Activity";
+      $("feed").innerHTML = '<div class="feed-empty">Could not reach the server.</div>';
+    };
+    xhr.send();
+  }
+
+  // ---- init ----
+  paint();
+  applyFocus();
+  loadActivity();
+  // refresh activity every 30 s — background poll, never steals focus (docs/27 §3.9)
+  setInterval(function(){
+    loadActivity();
+    // re-clamp foc in case focusables count changed after refresh
+    var n = focusables().length;
+    if(foc >= n) foc = Math.max(0, n-1);
+  }, 30000);
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>
