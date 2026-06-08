@@ -4224,6 +4224,12 @@ def capture_clip(seconds):
 
 # ---- Guide overlay control (the over-game panel) ----
 def guide_toggle():
+    # #102 server-side OOBE guard: the overlay must not open while the first-time
+    # wizard is in progress.  The pad-nav bridge already blocks Guide during OOBE,
+    # but /guide/toggle is also reachable directly (e.g. from system.run), so we
+    # enforce the same rule here.
+    if not os.path.exists(OOBE_DONE_FLAG):
+        return {"ok": False, "error": "OOBE wizard in progress — overlay unavailable"}
     try:
         subprocess.run(["pkill", "-USR1", "-f", "overlay_window.py"], capture_output=True, text=True, timeout=5)
         return {"ok": True}
