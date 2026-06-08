@@ -1313,6 +1313,9 @@ _STORE = [
     # SuperTuxKart: GPLv3 code, CC-BY-SA assets — fully open-source.
     {"id": "org.kde.kapman", "name": "Kapman", "desc": "Maze-chase classic, fully open-source (KDE Games)", "cat": "Games", "icon": "gamepad-2"},
     {"id": "net.supertuxkart.SuperTuxKart", "name": "SuperTuxKart", "desc": "Open-source kart racer", "cat": "Games", "icon": "gamepad-2"},
+    # Dev / security tools — install-only Flatpaks, not baked into the image.
+    # Wireshark Flathub ID verified live against flathub.org/api/v2/summary 2026-06-08.
+    {"id": "org.wireshark.Wireshark", "name": "Wireshark", "desc": "Network protocol analyzer — inspect exactly what your device sends/receives. A desktop tool (keyboard/mouse), for digging deeper than the built-in Network Monitor.", "cat": "Tools", "icon": "network"},
 ]
 
 _FLATPAK_APP = "/userdata/saves/flatpak/binaries/app"
