@@ -3188,7 +3188,7 @@ UI_PREFS_F = "/userdata/system/gose/ui_prefs.json"
 _PREFS_LOCK = threading.Lock()
 _PREF_KEY_RE = re.compile(
     r"^gose-(theme|accent|wp|live|glow|tz|clockfmt|signin|input|platform|sounds|ai-remote|"
-    r"ui-scale|contrast|bold|cb|motion|opaque|focus|snd-quiet|"
+    r"ui-scale|uiscale|contrast|bold|cb|motion|opaque|focus|snd-quiet|"
     r"snd-(?:vol|mute)-(?:system|notify|battery|ui))$")
 # NEVER server-synced (deliberately outside the whitelist above, and stripped on load in
 # case a stale/hand-edited prefs file carries them): these localStorage keys are LIVE

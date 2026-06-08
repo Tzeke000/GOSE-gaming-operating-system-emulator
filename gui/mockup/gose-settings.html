@@ -147,6 +147,7 @@
     {id:"display", ic:"monitor", nm:"Display", rows:[
       {ic:"monitor", nm:"Mode", sub:"PC desktop, or Odin 2 handheld-console feel — pages adopt it as they load", t:"cycle", v:["PC desktop","Console (handheld)"], apply:"platform"},
       {ic:"monitor", nm:"Resolution", sub:"Real panel mode via xrandr — press twice to switch (it applies immediately)", t:"cycle", v:["1280 x 720"], apply:"resmode", confirm:true},
+      {ic:"monitor", nm:"UI scale", sub:"Shell zoom for 4K TV / 1080p monitor / handheld — scales the whole interface; applies instantly, survives reload", t:"cycle", v:["90%","100%","110%","125%"], apply:"uiscale"},
       {ic:"smartphone", nm:"Output", sub:"Where the picture goes — one virtual output on this VM", t:"dis", tag:"[needs hardware]", why:"The VM exposes a single virtual display; output switching needs real HDMI/dock hardware"},
       {ic:"sun", nm:"VSync", sub:"Tear-free in games (RetroArch) at a small latency cost — applies next launch", t:"cycle", v:["On","Off"], apply:"vsync"},
       {ic:"monitor", nm:"FPS counter", sub:"Show frames-per-second overlay in games — applies on next launch", t:"cycle", v:["Off","On"], apply:"fps"},
@@ -501,6 +502,7 @@
       showToast((x&&x.ok)?("Cover art download: "+r.v[r.i]):"Cover art: failed");})();}
     else if(r.apply==="diag"){(async()=>{const x=await postJSON("/privacy",{diagnostics:r.i===1});
       showToast((x&&x.ok)?("Diagnostics: "+r.v[r.i]+" — GOSE sends nothing today"):"Diagnostics: failed");})();}
+    else if(r.apply==="uiscale"){prefs({"gose-uiscale":["0.9","1","1.1","1.25"][r.i||0]});showToast("UI scale: "+r.v[r.i]);}
     else if(r.apply==="a11y_scale"){prefs({"gose-ui-scale":["1","1.15","1.3","1.5"][r.i||0]});showToast("Text size: "+r.v[r.i]);}
     else if(r.apply==="a11y_contrast"){prefs({"gose-contrast":r.i===1?"on":"off"});showToast("High contrast: "+r.v[r.i]);}
     else if(r.apply==="a11y_bold"){prefs({"gose-bold":r.i===1?"on":"off"});showToast("Bold text: "+r.v[r.i]);}
@@ -542,6 +544,7 @@
     ["system","notify","battery","ui","music"].forEach(sc=>{const rr=findRow("snd_"+sc,"apply"); if(rr)rr.i=volIdxLS(sc);});
     const rtp=findRow("tips","apply"); if(rtp){const tv=localStorage.getItem("gose-tips-off");rtp.i=(tv==="1"||tv==="on"||tv==="true")?1:0;}
     const onoff=(k)=>localStorage.getItem(k)==="on"?1:0;
+    const rus=findRow("uiscale","apply"); if(rus){const k=["0.9","1","1.1","1.25"].indexOf(localStorage.getItem("gose-uiscale")||"1");rus.i=k<0?1:k;}
     const rsc=findRow("a11y_scale","apply"); if(rsc){const k=["1","1.15","1.3","1.5"].indexOf(localStorage.getItem("gose-ui-scale")||"1");rsc.i=k<0?0:k;}
     const rct=findRow("a11y_contrast","apply"); if(rct)rct.i=onoff("gose-contrast");
     const rbd=findRow("a11y_bold","apply"); if(rbd)rbd.i=onoff("gose-bold");

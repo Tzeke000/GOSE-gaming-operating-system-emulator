@@ -35,6 +35,11 @@
       root.style.removeProperty('--focusglow');
     }
     root.style.setProperty('--ui-scale', g('gose-ui-scale', '1'));
+    // UI Scale (Display > UI scale): shell-wide zoom — 4K TV vs 1080p monitor vs handheld.
+    // Stored as a fractional multiplier (0.9/1/1.1/1.25); applied as CSS zoom on <html>
+    // so the whole page viewport scales uniformly without touching rem/font-size (text-size
+    // a11y is a separate control). Default 1 = zoom:1 = no change from today.
+    root.style.zoom = g('gose-uiscale', '1');
     setAttr('data-contrast', g('gose-contrast', 'off') === 'on' ? 'high' : null);
     setAttr('data-bold', g('gose-bold', 'off') === 'on' ? '1' : null);
     setAttr('data-opaque', g('gose-opaque', 'off') === 'on' ? '1' : null);
