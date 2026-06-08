@@ -154,7 +154,7 @@
       {ic:"sun", nm:"Brightness", sub:"Display backlight — controls the real laptop panel (←/→ to adjust)", t:"slider", min:0, max:100, step:5, get:"/sys/brightness", post:"/sys/brightness", key:"level", live:"brightness"},
     ]},
     {id:"sound", ic:"volume-2", nm:"Sound", rows:[
-      {ic:"volume-2", nm:"Output device", sub:"Where audio plays", t:"dis", tag:"[needs build]", why:"Output routing isn't built yet — audio follows the system default device"},
+      {ic:"volume-2", nm:"Output device", sub:"Where audio plays", t:"cycle", v:["Loading…"], i:0, apply:"audiodev", _devIds:[""]},
       {ic:"volume-2", nm:"Master volume", sub:"Real ALSA mixer level (←/→ to adjust)", t:"slider", min:0, max:100, step:5, get:"/sys/audio", post:"/sys/audio", key:"volume"},
       {ic:"bluetooth", nm:"Bluetooth audio", sub:"Pair wireless headphones / earbuds", t:"link", go:"gose-bluetooth.html"},
       {ic:"moon", nm:"Quiet mode", sub:"Silence ALL GOSE sounds — overrides the per-category levels", t:"cycle", v:["Off","On"], apply:"snd_quiet"},
@@ -469,6 +469,10 @@
       showToast("Time zone: "+TZONES[i][0]);}
     else if(r.apply==="clockfmt"){const f=(r.i===1)?"24":"12";prefs({"gose-clockfmt":f});
       showToast("Clock: "+(f==="24"?"24-hour":"12-hour"));}
+    else if(r.apply==="audiodev"){(async()=>{
+      const devId=(r._devIds||[])[r.i||0]||"auto";
+      const x=await postJSON("/sys/audio-device",{device:devId});
+      showToast((x&&x.ok)?("Output: "+r.v[r.i||0]):"Output device: failed");})();}
     else if(r.apply==="snd_quiet"){const on=(r.i===1);if(window.GOSESOUND)GOSESOUND.setQuiet(on);
       prefs({"gose-snd-quiet":on?"1":"0"});
       showToast("Quiet mode: "+(on?"On — all sounds off":"Off"));if(!on&&window.GOSESOUND)GOSESOUND.play("notify");}
@@ -604,6 +608,19 @@
         if(v.base)setLive("base",v.base);}}catch(e){}
     try{const s=await(await fetch("/security/smb",{cache:"no-store"})).json();
       if(s&&s.ok)setLive("smb", s.enabled?"On — "+s.unc:"Off");}catch(e){}
+    // Output device picker: load available sinks from /sys/audio-devices; update the row live
+    try{const ad=await(await fetch("/sys/audio-devices",{cache:"no-store"})).json();
+      const r=findRow("audiodev","apply");
+      if(r&&ad&&ad.ok&&ad.devices&&ad.devices.length){
+        r.v=ad.devices.map(d=>d.label);
+        r._devIds=ad.devices.map(d=>d.id);
+        // if only one device, mark it read-only so the user can see it but knows there's nothing to switch to
+        if(ad.devices.length===1){r.sub="Where audio plays — only one output available on this system";}
+        const ci=ad.devices.findIndex(d=>d.id===(ad.current||"auto"));
+        r.i=ci<0?0:ci;
+        rerowIf("sound");
+      }
+    }catch(e){}
   })();
   async function refreshAgents(){
     try{const d=await(await fetch("/ai/grants",{cache:"no-store"})).json();

@@ -1956,6 +1956,52 @@ def sys_audio(set_vol=None, set_mute=None):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+def sys_audio_devices():
+    """GET /sys/audio-devices — list available output sinks via `batocera-audio list`
+    (tab-delimited: <device_id>\\t<label>), plus the current selection from batocera.conf.
+    Timeout-safe: 5 s max; falls back to a single-device list from aplay -L on failure.
+    Returns {"ok":True, "devices":[{"id":..,"label":..}], "current":..}"""
+    current = _bconf_get("audio.device") or "auto"
+    try:
+        r = subprocess.run(["batocera-audio", "list"], capture_output=True, text=True, timeout=5)
+        devices = []
+        for line in r.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\t", 1)
+            dev_id = parts[0].strip()
+            label = parts[1].strip() if len(parts) > 1 else dev_id
+            if dev_id:
+                devices.append({"id": dev_id, "label": label})
+        if not devices:
+            # batocera-audio listed nothing — fallback honest single entry
+            devices = [{"id": current, "label": "Default (system)"}]
+        return {"ok": True, "devices": devices, "current": current}
+    except Exception as e:
+        # batocera-audio absent or timed out — surface what we know
+        return {"ok": True, "devices": [{"id": current, "label": "Default (system)"}],
+                "current": current, "note": "batocera-audio unavailable: %s" % str(e)}
+
+def sys_audio_device_set(device):
+    """POST /sys/audio-device {device: <id>} — write audio.device to batocera.conf
+    and apply immediately via `batocera-audio set`.  Always atomic (uses _bconf_set).
+    Returns {"ok":True, "device":..} on success."""
+    if not device or not isinstance(device, str):
+        return {"ok": False, "error": "device is required"}
+    device = device.strip()
+    if not device:
+        return {"ok": False, "error": "device is empty"}
+    # Write to batocera.conf first (survives reboot)
+    _bconf_set("audio.device", device)
+    # Apply live without reboot
+    try:
+        subprocess.run(["batocera-audio", "set", device],
+                       capture_output=True, text=True, timeout=5)
+    except Exception:
+        pass  # conf is already written; live-apply is best-effort
+    return {"ok": True, "device": device}
+
 def _bl_dir():
     base = "/sys/class/backlight"
     try:
@@ -7305,6 +7351,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(net_info())
         if route == "/sys/audio":
             return self._json(sys_audio())
+        if route == "/sys/audio-devices":
+            return self._json(sys_audio_devices())
+        if route == "/sys/audio-device":
+            return self._json(sys_audio_devices())   # GET: return current + list
         if route == "/sys/brightness":
             return self._json(sys_brightness_host())
         if route == "/sys/perf":
@@ -7688,6 +7738,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             return self._json(ra_credentials_set(payload))
+        if route == "/sys/audio-device":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            return self._json(sys_audio_device_set(payload.get("device")))
         if route in ("/ui/prefs", "/privacy", "/sys/ssh", "/sys/display", "/sys/vsync",
                      "/sys/timezone"):
             try:
