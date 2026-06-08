@@ -229,6 +229,7 @@
       {ic:"lock", nm:"Sign-in", sub:"What the lock screen asks for — real credential auth lands with docs/24 §1.5", t:"cycle", v:["None","PIN","Password"], apply:"signin"},
     ]},
     {id:"ai", ic:"sparkles", nm:"AI & Remote", rows:[
+      {ic:"sparkles", nm:"What your AI can do", sub:"Capabilities, permission tiers, and recent AI activity", t:"link", go:"gose-ai-about.html"},
       {ic:"sparkles", nm:"AI access & players", sub:"Grant or revoke each AI's access — Observe / Play / Admin", t:"link", go:"gose-ai.html"},
       {ic:"plug-zap", nm:"Remote agent control", sub:"Master switch — Disabled refuses every new AI session join", t:"cycle", v:["Enabled","Disabled"], apply:"airemote", confirm:true},
       {ic:"users", nm:"Allowed agents", sub:"Who may join your session (live roster)", t:"agents"},
@@ -237,9 +238,11 @@
       {ic:"volume-2", nm:"Voice", sub:"Agents speaking / listening in-session", t:"dis", tag:"[needs build]", why:"No voice pipeline exists in GOSE yet"},
     ]},
     {id:"system", ic:"hard-drive", nm:"System", rows:[
+      {ic:"chart-bar", nm:"Play Stats", sub:"Total playtime · most played · session history", t:"link", go:"gose-library.html"},
       {ic:"hard-drive", nm:"Storage", sub:"See what's using space & free it up", t:"link", go:"gose-storage.html"},
       {ic:"bell", nm:"Notifications", sub:"Review history · clear all · auto-DND in games", t:"link", go:"gose-home.html#notif"},
       {ic:"hard-drive", nm:"BIOS files", sub:"Check which systems need a BIOS", t:"link", go:"gose-bios.html"},
+      {ic:"wrench", nm:"Diagnostics", sub:"Service health & support bundle export", t:"link", go:"gose-diagnostics.html"},
       {ic:"hard-drive", nm:"Latest backup", sub:"Most recent GOSE backup saved on this device", t:"info", val:"—", live:"backup"},
       {ic:"download", nm:"Back up GOSE", sub:"Save accounts, grants, favorites & settings to /userdata/backups — not your games or saves", t:"sys", op:"backup", val:"Back up"},
       {ic:"rotate-ccw", nm:"Restore", sub:"Roll GOSE back to the latest backup (press twice to confirm)", t:"sys", op:"restore", val:"Restore"},
