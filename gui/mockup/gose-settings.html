@@ -220,7 +220,7 @@
       // Owner-only switches that change WHO can reach the device. An AI can never flip these —
       // the server gates them on an owner secret, not an AI tier (docs/16 + docs/31 SB-1).
       {ic:"shield", nm:"Owner-only controls", sub:"These switches change who can reach your device. Only you can flip them — an AI never can (docs/16/31).", t:"info", val:"Owner-gated"},
-      {ic:"usb", nm:"SSH (remote console)", sub:"Off by default. Remote root console + file push over the network. Enabling generates a one-time password, shown once.", t:"ssh2"},
+      {ic:"usb", nm:"SSH (remote console)", sub:"Off by default. Remote root console + file push over the network. You sign in with your device PIN/password — one credential, rate-limited.", t:"ssh2"},
     ]},
     {id:"accounts", ic:"users", nm:"Accounts", rows:[
       {ic:"user", nm:"You", sub:"Primary account on this device", t:"info", val:"—", live:"owner"},
@@ -690,51 +690,67 @@
       showToast(r.nm+" default core: "+x.core+(x.warn?(" — "+x.warn):""));
     } else showToast("Couldn't set core: "+((x&&x.error)||"failed"));
   }
-  // ===== Owner-gated SSH (Security, docs/31 SB-1) =====
+  // ===== Owner-gated SSH (Security, docs/31 SB-1 + #87 unify) =====
   // The toggle is just the front-end; the SERVER refuses any enable/disable that can't prove
   // owner identity (the device PIN, or the dev/owner token) — so an AI can never flip SSH.
-  // Enabling generates a one-time root password the server returns once; we show it & never store it.
-  const SSH={open:false,row:null,state:"view",foc:0,items:[],pinSet:false,pw:null,busy:false};
+  // THE UNIFY (#87): enabling sets the SSH/root credential to the SAME device PIN/password you just
+  // signed in with — sign in with X, SSH with X. No separate password is generated or shown. If that
+  // PIN is short & numeric we warn (weak for remote SSH) but let you proceed. Auth is rate-limited.
+  const SSH={open:false,row:null,state:"view",foc:0,items:[],pinSet:false,busy:false,pin:null,info:null};
   async function openSshModal(r){
-    SSH.open=true; SSH.row=r; SSH.state="view"; SSH.foc=0; SSH.pw=null; SSH.busy=false;
+    SSH.open=true; SSH.row=r; SSH.state="view"; SSH.foc=0; SSH.pin=null; SSH.info=null; SSH.busy=false;
     if(window.GOSE&&GOSE.modalPush)GOSE.modalPush(); else document.body.dataset.goseModal="1"; // docs/27 §3.10
     try{const s=await(await fetch("/security/ssh",{cache:"no-store"})).json();
       if(s&&s.ok){r.enabled=!!s.enabled;}}catch(e){}
     try{const ps=await(await fetch("/auth/pin",{cache:"no-store"})).json(); SSH.pinSet=!!(ps&&ps.set);}catch(e){SSH.pinSet=false;}
     sshRender(); scrim.classList.add("show");
   }
-  function closeSshModal(){ if(!SSH.open)return; SSH.open=false; SSH.pw=null; scrim.classList.remove("show");
+  function closeSshModal(){ if(!SSH.open)return; SSH.open=false; SSH.pin=null; SSH.info=null; scrim.classList.remove("show");
     if(window.GOSE&&GOSE.modalPop)GOSE.modalPop(); else delete document.body.dataset.goseModal;
     buildPane(); paintIcons(); }
   function sshItems(){
     const on=SSH.row&&SSH.row.enabled===true;
     if(SSH.state==="result") return [{label:"Done",act:"close"}];
     if(SSH.state==="auth")   return [{label:"Confirm",act:"confirm",kind:"primary"},{label:"Cancel",act:"close"}];
+    if(SSH.state==="warn")   return [{label:"Enable anyway",act:"proceed",kind:"warn"},{label:"Cancel",act:"close"}];
     if(SSH.state==="nopin")  return [{label:"Open Accounts → Sign-in",act:"toaccounts"},{label:"Cancel",act:"close"}];
     return [{label:(on?"Disable SSH":"Enable SSH"),act:(on?"disable":"enable"),kind:on?"":"warn"},{label:"Cancel",act:"close"}];
   }
   function sshRender(){
     const on=SSH.row&&SSH.row.enabled===true; SSH.items=sshItems();
     if(SSH.foc>=SSH.items.length)SSH.foc=0;
+    const warnBox=(msg)=>`<div style="margin:10px 8px;padding:11px 13px;border:1px solid var(--accent);`+
+      `border-radius:10px;background:var(--surface2);font-size:13px;line-height:1.5">⚠ ${msg}</div>`;
     let head="", body="";
     if(SSH.state==="result"){
-      head="SSH enabled — copy this password now";
-      body=`<div class="mh">This is shown ONCE and is not stored. Log in as <b>root</b> with it.</div>`+
-        `<div style="margin:10px 8px;padding:12px 14px;border:1px solid var(--accent);border-radius:10px;`+
-        `background:var(--surface2);font-family:monospace;font-size:18px;letter-spacing:1px;word-break:break-all">${SSH.pw||""}</div>`;
+      const i=SSH.info||{};
+      head="SSH is on — use your device PIN";
+      body=`<div class="mh">Network SSH is enabled. Log in as <b>root</b> with <b>your device sign-in PIN/password</b> — `+
+        `the same one you unlock GOSE with. There's no separate password to copy, and GOSE stores none.</div>`+
+        (i.weak_credential?warnBox(i.weak_warning||"Your PIN is short — weak for remote SSH."):"")+
+        `<div class="mh" style="opacity:.8">Auth is rate-limited (${(i.ssh_rate_limit_args||"-T "+(i.auth_max_tries||3))}). `+
+        `Turn SSH off here when you're done.</div>`;
     } else if(SSH.state==="auth"){
       head="Confirm it's you";
-      body=`<div class="mh">Enter your device PIN to ${on?"disable":"enable"} network SSH. Only the owner can.</div>`+
+      body=`<div class="mh">Enter your device PIN to ${on?"disable":"enable"} network SSH. Only the owner can.`+
+        `${on?"":" Enabling makes <b>this PIN</b> your remote SSH login — one credential."}</div>`+
         `<input id="sshpin" type="password" inputmode="numeric" autocomplete="off" data-osk-primary `+
         `placeholder="Device PIN" style="width:calc(100% - 16px);margin:8px;padding:11px 12px;border-radius:10px;`+
         `border:2px solid var(--line);background:var(--surface2);color:var(--text);font-size:16px">`;
+    } else if(SSH.state==="warn"){
+      head="Short PIN — weak for remote SSH";
+      body=warnBox("Your device PIN is short and numeric. As a <b>remote SSH</b> login it can be brute-forced "+
+        "over the network. A longer sign-in password or an SSH key is far stronger. Auth is rate-limited, "+
+        "but you can also set a longer Sign-in password under Accounts.")+
+        `<div class="mh">Enable SSH with this PIN anyway?</div>`;
     } else if(SSH.state==="nopin"){
       head="Set a sign-in PIN first";
       body=`<div class="mh">Network SSH exposes remote root, so only the owner may turn it on. `+
-        `Set a device sign-in PIN (Accounts → Sign-in) so GOSE can confirm it's you — then come back here.</div>`;
+        `Set a device sign-in PIN (Accounts → Sign-in) so GOSE can confirm it's you — and so SSH has a `+
+        `credential — then come back here.</div>`;
     } else {
       head="Remote SSH access";
-      body=`<div class="mh">SSH is <b>${on?"ON":"OFF"}</b>. ${on?"Anyone with the shown password can reach a root console over the network.":"Enabling exposes a remote root console; GOSE will generate a one-time password and show it once."}</div>`;
+      body=`<div class="mh">SSH is <b>${on?"ON":"OFF"}</b>. ${on?"Anyone with your device PIN/password can reach a root console over the network.":"Enabling exposes a remote root console. You'll sign in with your <b>device PIN/password</b> — one credential, no separate password. Auth is rate-limited."}</div>`;
     }
     scrim.innerHTML=`<div class="modal" role="dialog" aria-modal="true"><h2>${head}</h2>${body}`+
       `<div class="body" id="sshbody"></div>`+
@@ -751,6 +767,21 @@
   }
   function sshMove(d){const n=SSH.items.length; if(!n)return; SSH.foc=(SSH.foc+d+n)%n; sshRender();}
   function sshActivate(){const it=SSH.items[SSH.foc]; if(it)sshDo(it.act);}
+  // client-side mirror of the server's _credential_is_weak: a short (<=6) all-numeric PIN is weak
+  // for REMOTE SSH. We warn before submitting so it's the owner's informed choice (docs/31); the
+  // server returns weak_credential as a backstop too.
+  const sshWeak=(pin)=>/^\d{1,6}$/.test(pin||"");
+  async function sshSubmit(action,pin){
+    if(SSH.busy)return; SSH.busy=true;
+    const x=await postJSON("/security/ssh",{action,pin});
+    SSH.busy=false; SSH.pin=null;
+    if(x&&x.ok){
+      SSH.row.enabled=!!x.enabled;
+      if(action==="enable"){SSH.info=x;SSH.state="result";SSH.foc=0;sshRender();}
+      else {showToast("SSH "+(x.enabled?"enabled":"disabled"));closeSshModal();}
+    } else if(x&&x.code==="ERR_NOT_OWNER"){showToast("Owner authorization required");}
+    else {showToast("SSH: "+((x&&x.error)||"failed"));}
+  }
   async function sshDo(act){
     if(SSH.busy)return;
     if(act==="close")return closeSshModal();
@@ -762,16 +793,16 @@
     if(act==="confirm"){
       const pin=(scrim.querySelector("#sshpin")||{}).value||"";
       if(!pin){showToast("Enter your device PIN");return;}
-      SSH.busy=true;
       const action=SSH._pending||"enable";
-      const x=await postJSON("/security/ssh",{action,pin});
-      SSH.busy=false;
-      if(x&&x.ok){
-        SSH.row.enabled=!!x.enabled;
-        if(action==="enable"&&x.password){SSH.pw=x.password;SSH.state="result";SSH.foc=0;sshRender();}
-        else {showToast("SSH "+(x.enabled?"enabled":"disabled"));closeSshModal();}
-      } else if(x&&x.code==="ERR_NOT_OWNER"){showToast("Owner authorization required");}
-      else {showToast("SSH: "+((x&&x.error)||"failed"));}
+      SSH.pin=pin;
+      if(action==="enable"&&sshWeak(pin)){   // weak PIN -> warn first, but let the owner proceed
+        SSH.state="warn"; SSH.foc=0; sshRender(); return;
+      }
+      await sshSubmit(action,pin);
+    }
+    if(act==="proceed"){   // owner chose to enable despite the short-PIN warning
+      const pin=SSH.pin; if(!pin){closeSshModal();return;}
+      await sshSubmit(SSH._pending||"enable",pin);
     }
   }
   // Pad nav per docs/27: L1/R1 own section switching; ←/→ change the focused value

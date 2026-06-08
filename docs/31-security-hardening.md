@@ -163,3 +163,66 @@ returns a one-time random password (two enables → two different passwords); `s
 holds no plaintext; legacy `/sys/ssh` enable refused without owner proof. Files:
 `gui/mockup/gose-settings.html` (Security category, `ssh2` row + pad-drivable modal),
 `pc-image/gose-vm-host/gose_vm_server.py` (`_owner_ok` / `security_ssh` / routes).
+
+## SB-1, refined — SSH credential = the device sign-in credential (Task #87, 2026-06-08)
+
+#85 generated a **separate random root password** on enable and showed it once. #87 **removes that
+extra credential**: on enable the SSH/root credential is set to the **same value the owner just
+signed in with at the gate** — their device PIN (or the dev token). **Sign in with X, SSH with X —
+one credential**, nothing new to remember or copy.
+
+**Why captured at gate-time.** The login secret is stored only as a non-reversible **scrypt hash**
+(`pin_hash`/`pin_salt`), so we can't derive the plaintext from accounts.json. Instead the gate helper
+`_owner_credential(payload)` returns *both* the gate decision *and* the exact credential the owner
+typed `(ok, cred, kind)`; `enable` sets the root password to that `cred` via `chpasswd`, once. The
+credential is **never logged and never persisted** — `ssh_cred.json` keeps only the non-secret flags
+(`set`/`set_at`/`username`/`source:"login_credential"`). `_owner_ok` stays a thin bool wrapper over
+`_owner_credential` for the paths that only need the gate (`check` / `disable` / legacy `/sys/ssh`).
+
+**The gate is unchanged — the AI still can never enable SSH.** `_owner_credential` accepts the exact
+same two owner proofs as before (device PIN via the rate-limited scrypt path; sandbox-shadowed dev
+token), neither obtainable by an AI. Any ai_token presented as `owner_token`, a wrong PIN, or no proof
+→ `ERR_NOT_OWNER`. The refactor only adds *what credential to set*; it does not widen *who may set it*.
+
+### Honest security rails (because a PIN can now be the remote SSH login)
+
+1. **Weak-PIN warning.** A short numeric PIN is fine as a local lock-screen convenience but **weak for
+   REMOTE SSH** (network brute-force). When the credential being set is **all-digits and ≤6 long**
+   (`_credential_is_weak`), enable returns `weak_credential:true` + a `weak_warning`, and the Settings
+   modal shows a **"Short PIN — weak for remote SSH"** confirm step ("Enable anyway" / "Cancel") before
+   submitting. The owner can still proceed — their choice — and is pointed at the longer Sign-in
+   *password* option (Accounts) or an SSH key. A longer/complex sign-in password or the dev token is
+   not flagged.
+2. **Hard rate-limit on SSH auth.** dropbear's init (`/etc/init.d/S50dropbear`) sources
+   `/etc/default/dropbear` and honors `$DROPBEAR_ARGS`, so enable writes
+   `DROPBEAR_ARGS="-T 3 -I 300"` there (`_ssh_harden_dropbear`): **`-T 3`** caps password attempts to
+   3 per connection (dropbear default is 10) and **`-I 300`** drops idle sessions; dropbear also
+   imposes a built-in fail-delay between attempts. This applies on the dropbear (re)start the enable
+   flow triggers and is surfaced in `GET /security/ssh` + the enable response
+   (`rate_limited`, `auth_max_tries`, `ssh_rate_limit_args`). **Shipped-image add-on (provisioner):**
+   a per-IP throttle on port 22 via Batocera's iptables — e.g.
+   `iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m hashlimit --hashlimit-name ssh \
+   --hashlimit-above 6/min --hashlimit-mode srcip --hashlimit-burst 6 -j DROP` — so a 4-digit PIN
+   can't be hammered across many short connections. (Tune to the firewall already enabled by
+   `system.security.enabled=1`.)
+
+**Endpoint shape (changed).** `enable` no longer returns a `password`. It returns
+`{ok, enabled, username:"root", credential_source:"login", note, rate_limited, auth_max_tries,
+ssh_rate_limit_args, weak_credential?, weak_warning?}`. The DRYRUN seam additionally returns
+`dry_target_sha256 = sha256("root:<cred>\n")` — a hash, never plaintext, so a test can assert
+*the chpasswd target equals the typed credential (not a random one)* without leaking it. `check`
+(non-mutating) and `disable` are unchanged. Settings rows touched by #85 (Security / Storage /
+Notifications) are unaffected.
+
+**Verified 2026-06-08** (live dev VM left ENABLED per guardrail — live gate proven via the
+non-mutating `check`; full enable proven on an isolated `GOSE_SSH_DRYRUN` instance, port-isolated,
+temp accounts/token/cred files, live dropbear + root password untouched): enable with the owner PIN
+sets the chpasswd target to the **same PIN** (`dry_target_sha256 == sha256("root:<pin>\n")`), and
+**two enables with the same PIN produce the same target** (deterministic — proving login-derived, not
+random); enable via the dev token sets the target to the token; ai_token (admin & observe) →
+`ERR_NOT_OWNER`; no-proof / wrong-PIN → `ERR_NOT_OWNER`; **weak-PIN warning fires for a 4–6-digit PIN,
+absent for the long token/password**; rate-limit args present (`-T 3 -I 300`); `ssh_cred.json` holds
+no plaintext (flags only); live `/health` `/auth/pin` `/security/ssh` → 200; Security/Storage/
+Notifications rows still render. Files: `gui/mockup/gose-settings.html`,
+`pc-image/gose-vm-host/gose_vm_server.py` (`_owner_credential` / `_credential_is_weak` /
+`_ssh_harden_dropbear` / `security_ssh`).

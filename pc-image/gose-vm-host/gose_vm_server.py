@@ -1893,8 +1893,19 @@ def sys_ssh(enabled=None):
 OWNER_TOKEN_F = os.environ.get("GOSE_OWNER_TOKEN_FILE") or "/userdata/system/gose/token"
 SSH_CRED_F    = os.environ.get("GOSE_SSH_CRED_FILE") or "/userdata/system/gose/ssh_cred.json"
 _SSH_DRYRUN   = os.environ.get("GOSE_SSH_DRYRUN") == "1"   # test seam: exercise the flow w/o touching dropbear
-# password alphabet excludes ambiguous glyphs (0/O 1/l/I) so a human can copy the shown credential
-_SSH_PW_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+# THE UNIFY (docs/31, Task #87): SSH no longer mints a separate random password. On enable the
+# root credential is set to the SAME value the owner just signed-in/proved with at the gate (their
+# device PIN or the dev token) — one credential. The login scrypt hash isn't reversible, so the
+# value is captured at gate-time, used once to set the root password, and never stored.
+# Rate-limit for remote SSH auth (docs/31): a 4-digit PIN can become the root credential, so we cap
+# dropbear auth tries/connection (-T) + drop idle sessions (-I). The init (/etc/init.d/S50dropbear)
+# sources /etc/default/dropbear and honors $DROPBEAR_ARGS, so we ship the flags there; they apply on
+# the next dropbear (re)start the enable flow triggers. A per-IP throttle (iptables hashlimit) is
+# documented in docs/31 for the shipped image.
+SSH_DROPBEAR_DEFAULT_F = os.environ.get("GOSE_DROPBEAR_DEFAULT_FILE") or "/etc/default/dropbear"
+SSH_AUTH_MAX_TRIES = 3      # dropbear -T : max password attempts per connection (default is 10)
+SSH_IDLE_TIMEOUT_S = 300    # dropbear -I : drop an idle session after 5 min
+SSH_RATE_LIMIT_ARGS = "-T %d -I %d" % (SSH_AUTH_MAX_TRIES, SSH_IDLE_TIMEOUT_S)
 
 def _owner_token():
     try:
@@ -1903,27 +1914,63 @@ def _owner_token():
     except Exception:
         return None
 
-def _owner_ok(payload):
-    """True iff the request proves LOCAL-OWNER identity. Two accepted proofs, neither
-    obtainable by an AI: (1) the device sign-in PIN (the human-at-the-kiosk proof — an AI
-    never knows it), verified through the rate-limited scrypt path; (2) the dev/owner token
-    (sandbox-shadowed from the agent shell). Constant-time compares; deny by default."""
+def _owner_credential(payload):
+    """Owner-gate that ALSO returns the exact credential the owner proved with, so SSH can be set to
+    the SAME value the owner signs in with (one credential — docs/31). Returns (ok, cred, kind):
+      PIN path   -> (True, '<pin>',   'pin')    the device sign-in PIN (the human-at-the-kiosk proof)
+      token path -> (True, '<token>', 'token')  the dev/owner token (sandbox-shadowed from the AI shell)
+      refused    -> (False, None, None)
+    Neither proof is obtainable by an AI: the PIN is verified through the rate-limited scrypt path; the
+    dev token (`/userdata/system/gose/token`) is 0o000-shadowed in the agent mount-ns. Constant-time
+    compares; deny by default. The returned cred is used ONLY to set the live root password and is
+    NEVER logged or persisted (ssh_cred.json keeps non-secret flags only)."""
     p = payload or {}
     ot, given = _owner_token(), str(p.get("owner_token") or "")
     if ot and given:
         try:
             import hmac
             if hmac.compare_digest(given, ot):
-                return True
+                return True, ot, "token"
         except Exception:
             pass
     if p.get("pin"):
+        pin = str(p.get("pin"))
         try:
-            if pin_verify({"pin": str(p.get("pin"))}).get("valid"):
-                return True
+            if pin_verify({"pin": pin}).get("valid"):
+                return True, pin, "pin"
         except Exception:
             pass
-    return False
+    return False, None, None
+
+def _owner_ok(payload):
+    """Owner-gate as a plain bool (the proof, not the credential) — for the paths where only the gate
+    matters (check / disable / the legacy /sys/ssh toggle). Same two proofs as _owner_credential."""
+    return _owner_credential(payload)[0]
+
+def _credential_is_weak(cred):
+    """Honest remote-SSH strength check on the credential that will become the root password.
+    A SHORT NUMERIC PIN (<=6 digits) is brute-forceable over the network, so it earns a warning (the
+    owner may still proceed — their call, docs/31). A longer/complex sign-in password or the dev token
+    is not flagged."""
+    return bool(cred) and cred.isdigit() and len(cred) <= 6
+
+_WEAK_PIN_MSG = ("Your device sign-in PIN is short and numeric — that's weak for REMOTE SSH "
+                 "(it can be brute-forced over the network). Consider a longer sign-in password or "
+                 "an SSH key. GOSE rate-limits SSH auth, but a longer secret is far stronger.")
+
+def _ssh_harden_dropbear(write=True):
+    """Rate-limit remote SSH auth (docs/31). dropbear's init sources /etc/default/dropbear and honors
+    $DROPBEAR_ARGS, so we ship `-T`(max auth tries/conn) + `-I`(idle timeout) there; it applies on the
+    next dropbear (re)start the enable flow triggers. Returns the args string either way, so the
+    rate-limit is verifiable without mutating anything when write=False (dryrun / the 'shown' path)."""
+    if write:
+        try:
+            with open(SSH_DROPBEAR_DEFAULT_F, "w") as f:
+                f.write("# GOSE: rate-limit remote SSH auth (docs/31) — applied on dropbear start\n")
+                f.write('DROPBEAR_ARGS="%s"\n' % SSH_RATE_LIMIT_ARGS)
+        except Exception as e:
+            LOG.warning("dropbear rate-limit config write failed: %s", e)
+    return SSH_RATE_LIMIT_ARGS
 
 def _ssh_cred_load():
     try:
@@ -1935,20 +1982,29 @@ def security_ssh_state():
     cred = _ssh_cred_load()
     enabled = bool(cred.get("_dry_enabled")) if _SSH_DRYRUN else sys_ssh().get("enabled", False)
     return {"ok": True, "enabled": enabled, "has_credential": bool(cred.get("set")),
-            "username": "root", "owner_required": True}
+            "username": "root", "owner_required": True,
+            "credential_source": "login",            # SSH uses the device sign-in PIN/password (docs/31)
+            "rate_limited": True, "auth_max_tries": SSH_AUTH_MAX_TRIES,
+            "ssh_rate_limit_args": SSH_RATE_LIMIT_ARGS}
 
 def security_ssh(payload):
     """POST /security/ssh {action: check|enable|disable|state, owner_token?|pin?}.
-    enable -> generates a RANDOM root password, sets it, starts SSH, and returns the password
-    ONCE (never stored). disable -> stops SSH. check -> owner-gate probe only (no mutation),
-    so the gate can be verified live without changing the running service or its password."""
+    THE UNIFY (docs/31, #87): on enable the SSH/root credential is set to the SAME sign-in credential
+    the owner just typed at the gate (their device PIN, or the dev token) — sign in with X, SSH with X,
+    one credential. No separate random password. The value is captured at gate-time (the login scrypt
+    hash isn't reversible), used once to set the root password, and NEVER stored — ssh_cred.json holds
+    only non-secret flags. enable also rate-limits SSH auth (dropbear -T/-I) and warns when the
+    credential is a short numeric PIN (weak for remote SSH). check -> owner-gate probe only (no
+    mutation), so the gate can be verified live without touching the running service or its password.
+    disable -> stops SSH."""
     p = payload or {}
     action = (p.get("action") or "").lower()
     if action in ("", "state"):
         return security_ssh_state()
     if action not in ("check", "enable", "disable"):
         return {"ok": False, "error": "action must be check|enable|disable|state"}
-    if not _owner_ok(p):
+    ok, cred, kind = _owner_credential(p)   # the gate AND (for enable) the credential to set, in one
+    if not ok:
         LOG.warning("security/ssh %s REFUSED — requester is not the owner", action)
         return {"ok": False, "code": "ERR_NOT_OWNER",
                 "error": "owner authorization required — SSH is owner-only (docs/16/31); "
@@ -1956,42 +2012,54 @@ def security_ssh(payload):
     if action == "check":          # gate passed, no side effects (the safe verification path)
         return {"ok": True, "owner": True, "enabled": security_ssh_state()["enabled"]}
     if action == "enable":
-        pw = "".join(secrets.choice(_SSH_PW_ALPHABET) for _ in range(16))
+        weak = _credential_is_weak(cred)
         if not _SSH_DRYRUN:
             try:
-                r = subprocess.run(["chpasswd"], input="root:%s\n" % pw,
+                r = subprocess.run(["chpasswd"], input="root:%s\n" % cred,   # set root cred == sign-in cred
                                    capture_output=True, text=True, timeout=15)
                 if r.returncode != 0:
                     return {"ok": False, "error": "could not set password: %s"
                             % ((r.stderr or "chpasswd failed").strip()[:160])}
             except Exception as e:
                 return {"ok": False, "error": "could not set password: %s" % e}
+            _ssh_harden_dropbear(write=True)        # rate-limit BEFORE (re)start so it takes effect
             st = sys_ssh(enabled=True)
             if not st.get("ok"):
                 return {"ok": False, "error": st.get("error", "ssh start failed")}
             enabled = bool(st.get("enabled"))
         else:
             enabled = True
-        cred = _ssh_cred_load()
-        cred.update({"set": True, "set_at": int(time.time()), "username": "root"})
+        rec = _ssh_cred_load()
+        rec.update({"set": True, "set_at": int(time.time()), "username": "root",
+                    "source": "login_credential"})   # the WHAT (non-secret flag), never the secret
         if _SSH_DRYRUN:
-            cred["_dry_enabled"] = True
+            rec["_dry_enabled"] = True
         try:
-            write_json_atomic(SSH_CRED_F, cred)
+            write_json_atomic(SSH_CRED_F, rec)
         except Exception as e:
             LOG.warning("ssh cred flag persist failed: %s", e)
-        LOG.info("ssh ENABLED by owner — new random root password set + shown once%s",
-                 " (dryrun)" if _SSH_DRYRUN else "")
-        return {"ok": True, "enabled": enabled, "username": "root", "password": pw,
-                "note": "shown once — copy it now; GOSE does not store it"}
+        LOG.info("ssh ENABLED by owner — root credential set to the owner's sign-in credential%s%s",
+                 " (WEAK short numeric PIN)" if weak else "", " (dryrun)" if _SSH_DRYRUN else "")
+        out = {"ok": True, "enabled": enabled, "username": "root", "credential_source": "login",
+               "note": "SSH uses your device sign-in PIN/password — nothing new to remember; "
+                       "GOSE stores no password.",
+               "rate_limited": True, "auth_max_tries": SSH_AUTH_MAX_TRIES,
+               "ssh_rate_limit_args": _ssh_harden_dropbear(write=False)}
+        if weak:
+            out["weak_credential"] = True
+            out["weak_warning"] = _WEAK_PIN_MSG
+        if _SSH_DRYRUN:    # test seam only: a hash (never plaintext) lets the harness assert the
+            import hashlib  # chpasswd target == the typed credential (not a random one). Not persisted.
+            out["dry_target_sha256"] = hashlib.sha256(("root:%s\n" % cred).encode()).hexdigest()
+        return out
     # disable
     if not _SSH_DRYRUN:
         st = sys_ssh(enabled=False)
         enabled = bool(st.get("enabled"))
     else:
-        cred = _ssh_cred_load(); cred["_dry_enabled"] = False
+        rec = _ssh_cred_load(); rec["_dry_enabled"] = False
         try:
-            write_json_atomic(SSH_CRED_F, cred)
+            write_json_atomic(SSH_CRED_F, rec)
         except Exception:
             pass
         enabled = False
