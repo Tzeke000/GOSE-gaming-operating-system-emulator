@@ -44,7 +44,7 @@ def rate_ok(key, limit, window):
 
 _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer": (20, 60),
            "/net/scan": (10, 60), "/launch": (30, 60), "/store/install": (20, 60),
-           "/splice/cut": (10, 120), "/fs/op": (60, 60), "/scrape": (6, 120),
+           "/splice/cut": (10, 120), "/fs/op": (60, 60), "/scrape": (6, 120), "/game/scrape": (20, 60),
            "/store/uninstall": (15, 60), "/ai/request": (6, 60),
            "/emulators/install": (10, 60), "/emulators/uninstall": (15, 60),
            "/games/install": (12, 60),
@@ -221,7 +221,12 @@ _LIBRETRO_SYS = {
 }
 
 def _scrape_one(sysname, game):
-    import urllib.parse
+    """Fetch box-art bytes for ONE game from libretro-thumbnails (keyless, no account). Returns
+    (data, net_failed): bytes on success; (None, False) = a CLEAN 'no match' (every candidate name
+    404'd — the expected, non-error result for homebrew titles the database never indexed);
+    (None, True) = a NETWORK problem (DNS/timeout/refused/5xx/429) — 'couldn't reach the scraper'.
+    Telling the two apart is what lets the UI say 'no art found' vs 'try again' honestly."""
+    import urllib.parse, urllib.error, socket
     # libretro thumbnails use No-Intro names (with region tags). Real ROM sets already match the name
     # as-is; for tag-less names, try common region tags. Also try a tag-stripped fallback.
     cands = [game]
@@ -231,17 +236,25 @@ def _scrape_one(sysname, game):
     if "(" not in game:   # tag-less filename → try the standard No-Intro region tags
         for tag in [" (USA)", " (World)", " (Europe)", " (Japan, USA)", " (USA, Europe)", " (Japan)"]:
             cands.append(game + tag)
+    net_failed = False
     for nm in cands:
         url = "https://thumbnails.libretro.com/%s/Named_Boxarts/%s.png" % (
             urllib.parse.quote(sysname), urllib.parse.quote(nm))
         try:
-            with urllib.request.urlopen(url, timeout=12) as r:
+            with urllib.request.urlopen(url, timeout=10) as r:   # bounded — never hangs on flaky wifi
                 data = r.read()
             if data and len(data) > 1000:
-                return data
+                return data, False
+        except urllib.error.HTTPError as e:
+            if e.code in (404, 403, 410):
+                continue          # this candidate name simply isn't in the database (a clean miss)
+            net_failed = True; break   # 5xx / 429 rate-limit / auth — the server, not the name → stop
+        except (urllib.error.URLError, socket.timeout, ConnectionError, OSError):
+            net_failed = True; break   # DNS / timeout / no route → the host is down for ALL names too,
+                                       # so don't burn one timeout per candidate (offline returns fast)
         except Exception:
-            continue
-    return None
+            net_failed = True; break
+    return None, net_failed
 
 SCRAPE_STATE_F = "/userdata/gose-ui/scrape_state.json"
 
@@ -251,12 +264,103 @@ def _scrape_state():
     except Exception:
         return {}
 
+def _rom_file_for(system, game):
+    """The real ROM filename (with extension) in the system dir whose stem matches `game`
+    (case-insensitive), or None. Used to anchor the gamelist <path> to an actual ROM."""
+    d = os.path.join(ROMS, system)
+    try:
+        files = os.listdir(d)
+    except Exception:
+        return None
+    gl = game.lower()
+    for f in files:
+        if f.startswith(".") or f in _SKIPDIRS or "gamelist" in f or os.path.isdir(os.path.join(d, f)):
+            continue
+        if os.path.splitext(f)[1].lower() in _SKIPEXT:
+            continue
+        if os.path.splitext(f)[0].lower() == gl:
+            return f
+    return None
+
+def _gamelist_set_image(system, game, img_rel):
+    """Record scraped box art in the system's gamelist.xml the Batocera way — an <image> field with a
+    relative path — MERGING into any existing <game> entry (matched by <path>) without clobbering other
+    games or other fields. Best-effort: a parse error or a missing ROM just skips the gamelist write
+    (the on-disk image still drives the GOSE Library, which reads the images dir directly). Path-safe:
+    img_rel is confined to the system dir; a gamelist whose root isn't <gameList> is left untouched."""
+    import xml.etree.ElementTree as ET
+    sysdir = os.path.join(ROMS, system)
+    sysreal = os.path.realpath(sysdir)
+    gl_path = os.path.join(sysdir, "gamelist.xml")
+    rom_file = _rom_file_for(system, game)
+    if not rom_file:
+        return False
+    img_abs = os.path.realpath(os.path.join(sysdir, img_rel.lstrip("./")))
+    if not (img_abs == sysreal or img_abs.startswith(sysreal + os.sep)):
+        return False                       # refuse a media path that escapes the system dir
+    rom_rel = "./" + rom_file
+    try:
+        if os.path.isfile(gl_path):
+            tree = ET.parse(gl_path)
+            root = tree.getroot()
+            if root.tag != "gameList":
+                return False               # unknown schema — never clobber it
+        else:
+            root = ET.Element("gameList")
+            tree = ET.ElementTree(root)
+    except Exception as e:
+        LOG.warning("gamelist parse failed for %s (left untouched): %s", system, e)
+        return False
+    target = None
+    for gnode in root.findall("game"):
+        p = (gnode.findtext("path") or "").strip()
+        if not p:
+            continue
+        if os.path.basename(p) == rom_file or \
+           os.path.splitext(os.path.basename(p))[0].lower() == game.lower():
+            target = gnode; break
+    if target is None:
+        target = ET.SubElement(root, "game")
+        ET.SubElement(target, "path").text = rom_rel
+        ET.SubElement(target, "name").text = game
+    node = target.find("image")
+    if node is None:
+        node = ET.SubElement(target, "image")
+    node.text = img_rel
+    try:
+        tmp = gl_path + ".tmp"
+        tree.write(tmp, encoding="utf-8", xml_declaration=True)
+        os.replace(tmp, gl_path)
+        return True
+    except Exception as e:
+        LOG.warning("gamelist write failed for %s: %s", system, e)
+        try: os.remove(gl_path + ".tmp")
+        except OSError: pass
+        return False
+
+def _write_art(system, game, data):
+    """Persist scraped box art in BOTH places: the PNG under <system>/images/<game>-image.png (the
+    GOSE Library's media dir) AND a merged <image> entry in gamelist.xml (what the Batocera frontend
+    reads). Path-safe — the filename is confined to the images dir."""
+    imgd = os.path.join(ROMS, system, "images")
+    os.makedirs(imgd, exist_ok=True)
+    fn = game + "-image.png"
+    full = os.path.realpath(os.path.join(imgd, fn))
+    if not full.startswith(os.path.realpath(imgd) + os.sep):
+        raise ValueError("unsafe art filename")
+    tmp = full + ".part"
+    with open(tmp, "wb") as out:
+        out.write(data)
+    os.replace(tmp, full)
+    _gamelist_set_image(system, game, "./images/" + fn)
+
 def scrape_system(system, force=False, state=None):
     # Pull cover art from libretro-thumbnails for any game missing it. Art is written to disk
-    # (/userdata/roms/<sys>/images/<game>-image.png) so it persists across reboots — once scraped,
-    # it's there every load. A scrape_state manifest records ok/miss per game so the auto pass
-    # (force=False) doesn't re-hit the network for known-missing titles on every boot, while still
-    # picking up newly-added games. Manual scrape (S in Library) passes force=True to retry misses.
+    # (/userdata/roms/<sys>/images/<game>-image.png) + recorded in gamelist.xml so it persists across
+    # reboots and the Batocera frontend sees it too. A scrape_state manifest records ok/miss per game so
+    # the auto pass (force=False) doesn't re-hit the network for known-missing titles on every boot,
+    # while still picking up newly-added games. Manual scrape (force=True) retries misses. A network
+    # failure is NEVER cached as 'miss' — so flaky wifi can't poison a title for good.
     sysname = _LIBRETRO_SYS.get(system)
     if not sysname:
         return {"ok": False, "error": "no thumbnail source for '%s'" % system}
@@ -266,7 +370,7 @@ def scrape_system(system, force=False, state=None):
     own_state = state is None
     if state is None:
         state = _scrape_state()
-    scraped, missed, skipped = 0, 0, 0
+    scraped, missed, skipped, net_errors = 0, 0, 0, 0
     try:
         files = os.listdir(d)
     except Exception as e:
@@ -282,17 +386,56 @@ def scrape_system(system, force=False, state=None):
             state[key] = "ok"; skipped += 1; continue
         if not force and state.get(key):   # already attempted (ok/miss) — don't re-network on boot
             skipped += 1; continue
-        data = _scrape_one(sysname, game)
+        data, net_failed = _scrape_one(sysname, game)
         if data:
-            with open(os.path.join(imgd, game + "-image.png"), "wb") as out:
-                out.write(data)
-            scraped += 1; state[key] = "ok"
+            try:
+                _write_art(system, game, data)
+                scraped += 1; state[key] = "ok"
+            except Exception as e:
+                LOG.warning("scrape %s/%s: write failed: %s", system, game, e); net_errors += 1
+        elif net_failed:
+            net_errors += 1                # transient — do NOT cache 'miss', so a later pass retries
         else:
             missed += 1; state[key] = "miss"
     if own_state:
         write_json_atomic(SCRAPE_STATE_F, state)
-    LOG.info("scrape %s: +%d art, %d missed, %d skipped", system, scraped, missed, skipped)
-    return {"ok": True, "system": system, "scraped": scraped, "missed": missed, "had_art": skipped}
+    LOG.info("scrape %s: +%d art, %d missed, %d net-errors, %d skipped",
+             system, scraped, missed, net_errors, skipped)
+    return {"ok": True, "system": system, "scraped": scraped, "missed": missed,
+            "net_errors": net_errors, "had_art": skipped}
+
+def scrape_game(system, game):
+    """Per-game manual 'Fetch art' (Library tile). Honest outcomes the UI can speak verbatim:
+      ok+found=True            → art written (file + gamelist);
+      ok+found=False           → no match in the database (EXPECTED for homebrew — NOT a failure);
+      ok+found=False+no_source → this system has no art database at all;
+      ok=False+net=True        → couldn't reach the scraper (flaky wifi) — try again."""
+    system = (system or "").strip(); game = (game or "").strip()
+    if not system or not game:
+        return {"ok": False, "error": "system and game are required"}
+    if "/" in game or "\\" in game or ".." in game:
+        return {"ok": False, "error": "invalid game name"}
+    sysname = _LIBRETRO_SYS.get(system)
+    if not sysname:
+        return {"ok": True, "found": False, "no_source": True,
+                "error": "no art database for '%s'" % system}
+    data, net_failed = _scrape_one(sysname, game)
+    state = _scrape_state(); key = system + "/" + game
+    if data:
+        try:
+            _write_art(system, game, data)
+        except Exception as e:
+            return {"ok": False, "error": "couldn't save art: %s" % e}
+        state[key] = "ok"; write_json_atomic(SCRAPE_STATE_F, state)
+        LOG.info("scrape-game %s/%s: art found (%d bytes)", system, game, len(data))
+        return {"ok": True, "found": True, "scraped": 1}
+    if net_failed:
+        LOG.info("scrape-game %s/%s: could not reach scraper", system, game)
+        return {"ok": False, "net": True,
+                "error": "couldn't reach the art server — check your connection and try again"}
+    state[key] = "miss"; write_json_atomic(SCRAPE_STATE_F, state)
+    LOG.info("scrape-game %s/%s: no match in database", system, game)
+    return {"ok": True, "found": False, "error": "no art found for this title"}
 
 # Privacy: scraping cover art sends the user's ROM filenames (= their game library) to a
 # third-party art server (thumbnails.libretro.com). So the AUTO pass is OFF by default —
@@ -4447,6 +4590,25 @@ def storage_import(payload):
         write_json_atomic(STORAGE_STATE_F, st)
     LOG.info("STORAGE import %s: +%d skipped=%d errors=%d aborted=%s",
              vol_id, imported, skipped, len(errors), aborted)
+    # Auto-scrape-on-import: fill cover art for the just-imported systems. OPT-IN ONLY — gated on the
+    # SAME privacy flag as the boot pass (scraping leaks ROM filenames; default OFF, docs/24). Runs on
+    # a daemon thread so the import response is never blocked by the (flaky) network; force=False so it
+    # only hits the net for the genuinely-new titles and skips anything already known.
+    if imported and by_system and os.path.exists(SCRAPE_AUTO_FLAG):
+        syslist = [s for s in by_system if s in _LIBRETRO_SYS]
+        if syslist:
+            def _post_import_scrape():
+                try:
+                    st2 = _scrape_state()
+                    for s in syslist:
+                        scrape_system(s, force=False, state=st2)
+                        write_json_atomic(SCRAPE_STATE_F, st2)   # checkpoint per system
+                        time.sleep(0.3)
+                    LOG.info("post-import auto-scrape done for %s", syslist)
+                except Exception as e:
+                    LOG.warning("post-import auto-scrape failed: %s", e)
+            threading.Thread(target=_post_import_scrape, daemon=True).start()
+            LOG.info("post-import auto-scrape queued for %s", syslist)
     return {"ok": True, "vol_id": vol_id, "imported": imported, "skipped": skipped,
             "errors": errors, "by_system": by_system, "aborted": aborted}
 
@@ -5503,7 +5665,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/game/rewind":
                 return self._json(game_rewind(payload.get("on")))
             return self._json(game_slot(payload.get("dir") or payload.get("direction")))
-        if route in ("/scrape", "/game/options"):
+        if route in ("/scrape", "/game/options", "/game/scrape"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
@@ -5511,6 +5673,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 payload = {}
             if route == "/game/options":
                 return self._json(set_game_options(payload))
+            if route == "/game/scrape":
+                return self._json(scrape_game(payload.get("system", ""), payload.get("game", "")))
             return self._json(scrape_system(payload.get("system", ""), force=True))
         if route in ("/ai/join", "/ai/heartbeat", "/ai/leave", "/ai/grant", "/ai/revoke",
                      "/ai/request", "/ai/request/clear"):

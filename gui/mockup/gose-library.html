@@ -71,7 +71,7 @@
   </div>
   <div class="wrap"><div class="rail" id="rail"></div><div class="pane" id="pane"></div></div>
   <div class="foot"><span class="ic" data-i="games"></span> GOSE Library
-    <span class="h">D-pad move · <b>A</b> launch/activate · <b>L1/R1</b> system · <b>B</b> home · kbd: <b>F</b> fav · <b>O</b> options · <b>S</b> scrape</span></div>
+    <span class="h">D-pad move · <b>A</b> launch/activate · <b>L1/R1</b> system · <b>B</b> home · tiles: Fetch art · kbd: <b>F</b> fav · <b>O</b> options · <b>S</b> scrape all</span></div>
   <div class="toast" id="toast"></div>
   <div class="gopt" id="gopt"><div class="box" id="gopt-box"></div></div>
 <script src="assets/platform.js"></script>
@@ -88,11 +88,11 @@
   function buildRail(){rail.innerHTML=SYS.map((s,i)=>
     `<div class="sys ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.logo?`<img src="${s.logo}" alt="" style="height:13px;width:auto;max-width:104px;vertical-align:-2px;margin-right:7px;opacity:.9" onerror="this.remove()">`:''}${s.name}</span><span class="c">${s.games.length}</span></div>`).join("");
     [...rail.children].forEach(el=>el.onclick=()=>{cat=+el.dataset.i2;foc=0;render();});}
-  // focus space = games 0..N-1 then the action tiles (favorite=N, options=N+1, scrape=N+2);
-  // the tiles act on the LAST-FOCUSED game (named on the tile so it's never ambiguous)
+  // focus space = games 0..N-1 then the action tiles (favorite=N, fetch-art=N+1, options=N+2,
+  // scrape-all=N+3); the tiles act on the LAST-FOCUSED game (named on the tile so it's never ambiguous)
   let lastG=0;
   function nGames(){const s=SYS[cat];return s?s.games.length:0;}
-  function total(){return nGames()+3;}
+  function total(){return nGames()+4;}
   function tgtGame(){const s=SYS[cat];if(!s)return null;return s.games[Math.min(lastG,s.games.length-1)]||null;}
   function buildPane(){const s=SYS[cat]; if(!s){pane.innerHTML='<div class="empty">No games found. Drop ROMs into /userdata/roms/&lt;system&gt;.</div>';return;}
     if(foc<s.games.length)lastG=foc;
@@ -100,8 +100,9 @@
     pane.innerHTML=`<div class="ph">${s.logo?`<img src="${s.logo}" alt="${s.name}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode('${s.name.toUpperCase()} '))">`:s.name.toUpperCase()+' '}— ${s.games.length} GAME${s.games.length!=1?'S':''}</div><div class="grid" id="grid"></div>`+
       `<div class="acts">`+
       `<div class="ab ${foc===s.games.length?'focus':''}" id="a-fav">${gm0&&gm0.fav?'☆':'★'}<span class="t">${gm0&&gm0.fav?'Unfavorite':'Favorite'} — ${esc(nm0)}</span></div>`+
-      `<div class="ab ${foc===s.games.length+1?'focus':''}" id="a-opt"><span class="t">Options — ${esc(nm0)}</span></div>`+
-      `<div class="ab ${foc===s.games.length+2?'focus':''}" id="a-scr"><span class="t">Scrape art — ${esc(s.name)}</span></div></div>`;
+      `<div class="ab ${foc===s.games.length+1?'focus':''}" id="a-art"><span class="t">Fetch art — ${esc(nm0)}</span></div>`+
+      `<div class="ab ${foc===s.games.length+2?'focus':''}" id="a-opt"><span class="t">Options — ${esc(nm0)}</span></div>`+
+      `<div class="ab ${foc===s.games.length+3?'focus':''}" id="a-scr"><span class="t">Scrape all — ${esc(s.name)}</span></div></div>`;
     const g=$("grid");
     g.innerHTML=s.games.map((gm,i)=>{
       // a save-state thumbnail (the "where you left off" picture, task 53) beats cover art on
@@ -113,8 +114,9 @@
       <div class="sub">${gm.plays?('▶ '+gm.plays+'× · '+fmtPlay(gm.secs||0)):gm.name}</div></div>`;}).join("");
     [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.g;render();launch();});
     $("a-fav").onclick=()=>{foc=s.games.length;render();toggleFav();};
-    $("a-opt").onclick=()=>{foc=s.games.length+1;render();openOptions();};
-    $("a-scr").onclick=()=>{foc=s.games.length+2;render();scrapeArt();};}
+    $("a-art").onclick=()=>{foc=s.games.length+1;render();fetchArt();};
+    $("a-opt").onclick=()=>{foc=s.games.length+2;render();openOptions();};
+    $("a-scr").onclick=()=>{foc=s.games.length+3;render();scrapeArt();};}
   function render(){buildRail();buildPane();paint();const f=pane.querySelector(".game.focus,.ab.focus");if(f)f.scrollIntoView({block:"nearest"});}
   function launch(){const s=SYS[cat];if(!s||!s.games[foc])return;const gm=s.games[foc];const g=gm.name;
     const sys=gm.system||s.system;
@@ -129,12 +131,26 @@
     fetch("/game/favorite",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({system:sys,game:game,on:on})}).then(r=>r.json())
       .then(d=>{if(d.ok)loadAll(true);else say("Favorite failed");}).catch(()=>say("Favorite failed"));}
+  // per-GAME manual fetch (the "Fetch art — <game>" tile / Enter on it). Honest about every outcome:
+  // found → reload to show it; no match (homebrew) → say so plainly; can't reach server → say try again.
+  function fetchArt(){const s=SYS[cat],gm=tgtGame();if(!s||!gm){say("Pick a game first");return;}
+    const sys=gm.system||s.system, game=gm.name;
+    say("Fetching art for "+game+"…");
+    fetch("/game/scrape",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system:sys,game:game})}).then(r=>r.json()).then(d=>{
+        if(d.ok&&d.found){say("★ Art found for "+game);setTimeout(()=>loadAll(true),700);}
+        else if(d.ok){say("No art found for "+game+(d.no_source?" — no database for "+sys:" (likely homebrew)"));}
+        else if(d.net){say("Couldn't reach the art server — try again");}
+        else say("Fetch failed: "+(d.error||"?"));
+      }).catch(e=>say("Fetch failed (network?)"));}
+  // bulk per-SYSTEM scrape (the "Scrape all — <system>" tile)
   function scrapeArt(){const s=SYS[cat];if(!s||s.system==="__recent"||s.system==="__fav"){say("Pick a system to scrape");return;}
     say("Scraping cover art for "+s.name+"… (this can take a moment)");
     fetch("/scrape",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:s.system})})
       .then(r=>r.json()).then(d=>{
-        if(d.ok){say("Art: +"+d.scraped+" found · "+d.had_art+" already had · "+d.missed+" not in database");
-          if(d.scraped) setTimeout(()=>location.reload(),900);}
+        if(d.ok){let msg="Art: +"+d.scraped+" found · "+d.had_art+" already had · "+d.missed+" not in database";
+          if(d.net_errors)msg+=" · "+d.net_errors+" couldn't reach server";
+          say(msg); if(d.scraped) setTimeout(()=>location.reload(),900);}
         else say("Scrape: "+(d.error||"failed"));}).catch(e=>say("Scrape failed (network?)"));}
   // ---- per-game options modal ----
   function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
@@ -202,8 +218,9 @@
     foc=(foc+d+n)%n;render();}
   function activate(){const s=SYS[cat];if(!s)return;
     if(foc===s.games.length)toggleFav();
-    else if(foc===s.games.length+1)openOptions();
-    else if(foc===s.games.length+2)scrapeArt();
+    else if(foc===s.games.length+1)fetchArt();
+    else if(foc===s.games.length+2)openOptions();
+    else if(foc===s.games.length+3)scrapeArt();
     else launch();}
   addEventListener("keydown",e=>{const k=e.key;
     if(GOPT.open){
