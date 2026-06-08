@@ -113,3 +113,53 @@ LAN-exposed through SLIRP, so it was unnecessary.
 3. Ship the stricter GOSE-owned firewall + egress kill-switch (docs/24 §1.7/§2.5) and
    move the agent's non-loopback transport behind TLS (today the token is plaintext
    on the wire whenever it's not loopback/Tailscale).
+
+## SB-1, built — the owner-gated SSH toggle (Task #85, 2026-06-08)
+
+The recommendation-#1 / SB-1 follow-up is now built: a **Security** settings pane with an
+**owner-gated SSH toggle** that generates a random password on enable and shows it once —
+killing the `root`/`linux` default credential for good.
+
+**The gate (the security crux): an AI can NEVER enable SSH — not even an admin-tier
+ai_token.** The agent's `observe < play < admin` tiers govern the *agent* (port 8731); this
+gate lives on the *UI server* (loopback `8780`) and checks an **owner secret, not a tier**, so
+"admin AI" buys nothing. Server: `gose_vm_server._owner_ok(payload)` accepts exactly two
+proofs, neither obtainable by an AI:
+- **the device sign-in PIN** (`pin`), verified through the existing rate-limited scrypt path
+  (`pin_verify`) — the human-at-the-kiosk proof; an AI never knows it. This is how the
+  **kiosk page** authorizes (a PIN modal in the SSH flow); it requires the owner to have a
+  sign-in PIN (Accounts → Sign-in) — the page guides them there if none is set.
+- **the dev/owner token** (`owner_token` == `/userdata/system/gose/token`) — the developer/
+  owner identity. It is **sandbox-shadowed** (`agent/gose_agent/sandbox.py` `TOKEN_PATHS`,
+  `0o000` bind + dropped DAC caps), so the agent's `system.run` shell — an admin AI's only
+  route to `8780` — literally cannot read it.
+
+Anything else (no proof, a wrong PIN, or an ai_token presented as `owner_token`) →
+`{"ok":false,"code":"ERR_NOT_OWNER"}`. The legacy ungated `POST /sys/ssh` enable bypass is
+**closed** (same `_owner_ok` gate at the route); the in-UI ungated SSH cycle row was removed
+and the Network row now links to the Security pane.
+
+**Endpoints** (`gose_vm_server.security_ssh`): `GET /security/ssh` →
+`{enabled, has_credential, username:"root", owner_required:true}`; `POST /security/ssh
+{action: check|enable|disable, owner_token?|pin?}`. `check` is the **side-effect-free owner
+probe** (so the gate can be verified on a live VM without touching the running service or its
+password). `enable` generates a 16-char random password (no ambiguous glyphs), sets it
+(`chpasswd`), starts dropbear via the existing `sys_ssh`, persists only a **non-secret**
+`ssh_cred.json` flag (`set/set_at/username` — **never the plaintext**), and returns the
+password **once**. `disable` stops SSH.
+
+**Honest boundary.** SSH-when-on still needs the shown credential — the UI surfaces it
+clearly and stores nothing. Setting the root password via `chpasswd` is the shipped
+mechanism (env seam `GOSE_SSH_DRYRUN=1` exercises the full flow without touching dropbear,
+used to verify on an isolated instance). On a device with no sign-in PIN and no dev token,
+the gate **fails closed** (refuses everyone) and the page directs the owner to set a PIN
+first — the security-correct posture for remote root.
+
+**Verified 2026-06-08 (live dev VM, SSH left ENABLED per guardrail — gate proven via the
+non-mutating `check` path; full enable/disable proven on an isolated `GOSE_SSH_DRYRUN`
+instance):** admin-tier ai_token → `ERR_NOT_OWNER`; observe ai_token → `ERR_NOT_OWNER`;
+no-proof/wrong-PIN → `ERR_NOT_OWNER`; owner token → allowed; owner PIN → allowed; enable
+returns a one-time random password (two enables → two different passwords); `ssh_cred.json`
+holds no plaintext; legacy `/sys/ssh` enable refused without owner proof. Files:
+`gui/mockup/gose-settings.html` (Security category, `ssh2` row + pad-drivable modal),
+`pc-image/gose-vm-host/gose_vm_server.py` (`_owner_ok` / `security_ssh` / routes).

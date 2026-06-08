@@ -168,7 +168,7 @@
       {ic:"wifi", nm:"Wi-Fi", sub:"Connect & manage known networks", t:"link", go:"gose-wifi.html", live:"wifi"},
       {ic:"plane", nm:"Airplane mode", sub:"VM: turns Bluetooth off — Wi-Fi rides the host laptop's radio", t:"cycle", v:["Off","On"], apply:"airplane"},
       {ic:"globe", nm:"Hostname", sub:"How the device is named on the network (live)", t:"info", val:"—", live:"host"},
-      {ic:"usb", nm:"SSH access", sub:"Console + file push over the network — takes effect immediately", t:"cycle", v:["Enabled","Disabled"], apply:"ssh", confirm:true},
+      {ic:"shield", nm:"SSH (remote console)", sub:"Owner-gated remote console — manage it under Settings › Security", t:"link", go:"gose-settings.html#security"},
     ]},
     {id:"btdev", ic:"bluetooth", nm:"Bluetooth & devices", rows:[
       {ic:"bluetooth", nm:"Bluetooth", sub:"Wireless radio — pair controllers, audio & accessories", t:"cycle", v:["On","Off"], apply:"bt", live:"bt"},
@@ -216,6 +216,12 @@
       {ic:"sparkles", nm:"Usage diagnostics", sub:"Records your choice — GOSE sends nothing today", t:"cycle", v:["Off","On"], apply:"diag"},
       {ic:"hard-drive", nm:"Clear UI data", sub:"Reset theme, accent, sounds & UI prefs to defaults (press twice) — games & saves untouched", t:"action", val:"clear", clear:true, confirm:true},
     ]},
+    {id:"security", ic:"shield", nm:"Security", rows:[
+      // Owner-only switches that change WHO can reach the device. An AI can never flip these —
+      // the server gates them on an owner secret, not an AI tier (docs/16 + docs/31 SB-1).
+      {ic:"shield", nm:"Owner-only controls", sub:"These switches change who can reach your device. Only you can flip them — an AI never can (docs/16/31).", t:"info", val:"Owner-gated"},
+      {ic:"usb", nm:"SSH (remote console)", sub:"Off by default. Remote root console + file push over the network. Enabling generates a one-time password, shown once.", t:"ssh2"},
+    ]},
     {id:"accounts", ic:"users", nm:"Accounts", rows:[
       {ic:"user", nm:"You", sub:"Primary account on this device", t:"info", val:"—", live:"owner"},
       {ic:"sparkles", nm:"AI players", sub:"Paired agents & their access tier — manage in the AI Hub", t:"agents"},
@@ -231,6 +237,8 @@
       {ic:"volume-2", nm:"Voice", sub:"Agents speaking / listening in-session", t:"dis", tag:"[needs build]", why:"No voice pipeline exists in GOSE yet"},
     ]},
     {id:"system", ic:"hard-drive", nm:"System", rows:[
+      {ic:"hard-drive", nm:"Storage", sub:"See what's using space & free it up", t:"link", go:"gose-storage.html"},
+      {ic:"bell", nm:"Notifications", sub:"Review history · clear all · auto-DND in games", t:"link", go:"gose-home.html#notif"},
       {ic:"hard-drive", nm:"BIOS files", sub:"Check which systems need a BIOS", t:"link", go:"gose-bios.html"},
       {ic:"hard-drive", nm:"Latest backup", sub:"Most recent GOSE backup saved on this device", t:"info", val:"—", live:"backup"},
       {ic:"download", nm:"Back up GOSE", sub:"Save accounts, grants, favorites & settings to /userdata/backups — not your games or saves", t:"sys", op:"backup", val:"Back up"},
@@ -279,6 +287,9 @@
       return `<span class="val sld"><span class="cy ic" data-i="chevron-left"></span>`+
         `<span class="track"><span class="fill" style="width:${v}%"></span></span>`+
         `<span class="pct">${loaded?v+"%":"—"}</span><span class="cy ic" data-i="chevron-right"></span></span>`;}
+    if(r.t==="ssh2"){const on=r.enabled===true, kn=r.enabled==null;
+      return `<span class="val"><span class="${on?'':'off'}">${kn?'—':(on?'Enabled':'Disabled')}</span>`+
+        ` <span class="ic" data-i="chevron-right"></span></span>`;}
     const i=r.i||0, cur=r.v[i];
     const isOff=/^(off|disabled)$/i.test(cur);
     const dot=(r.apply==="accent"&&ACCENTS[i][1])?`<span class="sw" style="background:${ACCENTS[i][1]}"></span>`:"";
@@ -345,6 +356,7 @@
       if(r.apply)applyRow(r); else showToast(r.nm+": "+r.v[r.i]);
     }
     else if(r.t==="core"){openCorePicker(r);}
+    else if(r.t==="ssh2"){openSshModal(r);}
     else if(r.t==="link"){location.href=r.go;}
     else if(r.t==="agents"){location.href="gose-ai.html";}
     else if(r.t==="dis"){showToast(r.why||r.tag);}   // honest: say WHY it can't apply yet
@@ -465,10 +477,6 @@
     else if(r.apply==="airplane"){const on=(r.i===1);post("/bt",{action:"power",on:!on});  // v:["Off","On"]
       const bt=findRow("bt","apply"); if(bt)bt.i=on?1:0; buildPane(); paintIcons();
       showToast("Airplane mode: "+(on?"On — Bluetooth off":"Off"));}
-    else if(r.apply==="ssh"){(async()=>{const x=await postJSON("/sys/ssh",{enabled:r.i===0});
-      if(x&&x.ok){r.i=x.enabled?0:1;buildPane();paintIcons();
-        showToast("SSH: "+(x.enabled?"Enabled":"Disabled"));}
-      else showToast("SSH: "+((x&&x.error)||"failed"));})();}
     else if(r.apply==="resmode"){(async()=>{const m=r.v[r.i].replace(/\s/g,"");
       const x=await postJSON("/sys/display",{mode:m});
       if(x&&x.ok)showToast("Resolution: "+(x.mode||m));
@@ -565,8 +573,9 @@
   }
   // one-shot loads: real backend state into the rows that mirror it
   (async function initBackend(){
-    try{const s=await(await fetch("/sys/ssh",{cache:"no-store"})).json();
-      const r=findRow("ssh","apply"); if(r&&s&&s.ok){r.i=s.enabled?0:1; rerowIf("net");}}catch(e){}
+    try{const s=await(await fetch("/security/ssh",{cache:"no-store"})).json();
+      let r=null; for(const c of CATS)for(const rr of c.rows)if(rr.t==="ssh2"){r=rr;break;}
+      if(r&&s&&s.ok){r.enabled=!!s.enabled; rerowIf("security");}}catch(e){}
     try{const v=await(await fetch("/sys/vsync",{cache:"no-store"})).json();
       const r=findRow("vsync","apply"); if(r&&v&&v.ok){r.i=v.on?0:1; rerowIf("display");}}catch(e){}
     try{const d=await(await fetch("/sys/display",{cache:"no-store"})).json();
@@ -610,7 +619,7 @@
   // tab shows). A opens a pad-drivable picker; pick -> POST /emulators/default; row reflects.
   // Only systems with >1 core get a picker (a single-core system has nothing to choose).
   const scrim=document.getElementById("scrim");
-  scrim.onclick=(e)=>{if(e.target===scrim)closeCorePicker();};   // click the backdrop to dismiss
+  scrim.onclick=(e)=>{if(e.target===scrim){if(SSH.open)closeSshModal();else closeCorePicker();}};   // click the backdrop to dismiss
   const PICK={open:false,row:null,foc:0};
   async function loadCores(){
     try{const d=await(await fetch("/emulators",{cache:"no-store"})).json();
@@ -681,11 +690,105 @@
       showToast(r.nm+" default core: "+x.core+(x.warn?(" — "+x.warn):""));
     } else showToast("Couldn't set core: "+((x&&x.error)||"failed"));
   }
+  // ===== Owner-gated SSH (Security, docs/31 SB-1) =====
+  // The toggle is just the front-end; the SERVER refuses any enable/disable that can't prove
+  // owner identity (the device PIN, or the dev/owner token) — so an AI can never flip SSH.
+  // Enabling generates a one-time root password the server returns once; we show it & never store it.
+  const SSH={open:false,row:null,state:"view",foc:0,items:[],pinSet:false,pw:null,busy:false};
+  async function openSshModal(r){
+    SSH.open=true; SSH.row=r; SSH.state="view"; SSH.foc=0; SSH.pw=null; SSH.busy=false;
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush(); else document.body.dataset.goseModal="1"; // docs/27 §3.10
+    try{const s=await(await fetch("/security/ssh",{cache:"no-store"})).json();
+      if(s&&s.ok){r.enabled=!!s.enabled;}}catch(e){}
+    try{const ps=await(await fetch("/auth/pin",{cache:"no-store"})).json(); SSH.pinSet=!!(ps&&ps.set);}catch(e){SSH.pinSet=false;}
+    sshRender(); scrim.classList.add("show");
+  }
+  function closeSshModal(){ if(!SSH.open)return; SSH.open=false; SSH.pw=null; scrim.classList.remove("show");
+    if(window.GOSE&&GOSE.modalPop)GOSE.modalPop(); else delete document.body.dataset.goseModal;
+    buildPane(); paintIcons(); }
+  function sshItems(){
+    const on=SSH.row&&SSH.row.enabled===true;
+    if(SSH.state==="result") return [{label:"Done",act:"close"}];
+    if(SSH.state==="auth")   return [{label:"Confirm",act:"confirm",kind:"primary"},{label:"Cancel",act:"close"}];
+    if(SSH.state==="nopin")  return [{label:"Open Accounts → Sign-in",act:"toaccounts"},{label:"Cancel",act:"close"}];
+    return [{label:(on?"Disable SSH":"Enable SSH"),act:(on?"disable":"enable"),kind:on?"":"warn"},{label:"Cancel",act:"close"}];
+  }
+  function sshRender(){
+    const on=SSH.row&&SSH.row.enabled===true; SSH.items=sshItems();
+    if(SSH.foc>=SSH.items.length)SSH.foc=0;
+    let head="", body="";
+    if(SSH.state==="result"){
+      head="SSH enabled — copy this password now";
+      body=`<div class="mh">This is shown ONCE and is not stored. Log in as <b>root</b> with it.</div>`+
+        `<div style="margin:10px 8px;padding:12px 14px;border:1px solid var(--accent);border-radius:10px;`+
+        `background:var(--surface2);font-family:monospace;font-size:18px;letter-spacing:1px;word-break:break-all">${SSH.pw||""}</div>`;
+    } else if(SSH.state==="auth"){
+      head="Confirm it's you";
+      body=`<div class="mh">Enter your device PIN to ${on?"disable":"enable"} network SSH. Only the owner can.</div>`+
+        `<input id="sshpin" type="password" inputmode="numeric" autocomplete="off" data-osk-primary `+
+        `placeholder="Device PIN" style="width:calc(100% - 16px);margin:8px;padding:11px 12px;border-radius:10px;`+
+        `border:2px solid var(--line);background:var(--surface2);color:var(--text);font-size:16px">`;
+    } else if(SSH.state==="nopin"){
+      head="Set a sign-in PIN first";
+      body=`<div class="mh">Network SSH exposes remote root, so only the owner may turn it on. `+
+        `Set a device sign-in PIN (Accounts → Sign-in) so GOSE can confirm it's you — then come back here.</div>`;
+    } else {
+      head="Remote SSH access";
+      body=`<div class="mh">SSH is <b>${on?"ON":"OFF"}</b>. ${on?"Anyone with the shown password can reach a root console over the network.":"Enabling exposes a remote root console; GOSE will generate a one-time password and show it once."}</div>`;
+    }
+    scrim.innerHTML=`<div class="modal" role="dialog" aria-modal="true"><h2>${head}</h2>${body}`+
+      `<div class="body" id="sshbody"></div>`+
+      `<div class="mf">Owner-only (docs/16/31) — an AI can never enable SSH. ↑↓ choose · A select · B / Esc back</div></div>`;
+    const b=scrim.querySelector("#sshbody");
+    SSH.items.forEach((it,i)=>{const el=document.createElement("div");
+      el.className="pick"+(i===SSH.foc?" focus":"");
+      el.innerHTML=`<span class="nm">${it.label}</span>`+(it.kind==="warn"?`<span class="meta"><span class="badge rev">caution</span></span>`:``);
+      el.onclick=()=>{SSH.foc=i;sshActivate();}; b.appendChild(el);});
+    paintIcons();
+    if(SSH.state==="auth"){const pin=scrim.querySelector("#sshpin");
+      if(pin){pin.onkeydown=(ev)=>{if(ev.key==="Enter"){ev.preventDefault();sshDo("confirm");}};
+        try{pin.focus();}catch(e){}}}
+  }
+  function sshMove(d){const n=SSH.items.length; if(!n)return; SSH.foc=(SSH.foc+d+n)%n; sshRender();}
+  function sshActivate(){const it=SSH.items[SSH.foc]; if(it)sshDo(it.act);}
+  async function sshDo(act){
+    if(SSH.busy)return;
+    if(act==="close")return closeSshModal();
+    if(act==="toaccounts"){closeSshModal();location.href="gose-settings.html#accounts";return;}
+    if(act==="enable"||act==="disable"){
+      if(!SSH.pinSet){SSH.state="nopin";SSH.foc=0;sshRender();return;}
+      SSH._pending=act; SSH.state="auth"; SSH.foc=0; sshRender(); return;
+    }
+    if(act==="confirm"){
+      const pin=(scrim.querySelector("#sshpin")||{}).value||"";
+      if(!pin){showToast("Enter your device PIN");return;}
+      SSH.busy=true;
+      const action=SSH._pending||"enable";
+      const x=await postJSON("/security/ssh",{action,pin});
+      SSH.busy=false;
+      if(x&&x.ok){
+        SSH.row.enabled=!!x.enabled;
+        if(action==="enable"&&x.password){SSH.pw=x.password;SSH.state="result";SSH.foc=0;sshRender();}
+        else {showToast("SSH "+(x.enabled?"enabled":"disabled"));closeSshModal();}
+      } else if(x&&x.code==="ERR_NOT_OWNER"){showToast("Owner authorization required");}
+      else {showToast("SSH: "+((x&&x.error)||"failed"));}
+    }
+  }
   // Pad nav per docs/27: L1/R1 own section switching; ←/→ change the focused value
   // (← NEVER jumps to the rail — the rail double-drove tab switching, owner walkthrough
   // 2026-06-07); B/Esc backs out one level (pane → rail → desktop) and never traps.
   addEventListener("keydown",e=>{
     let k=e.key; if(/^(Up|Down|Left|Right)$/.test(k))k="Arrow"+k;   // accept both spellings (docs/27 §3.8)
+    if(SSH.open){   // SSH modal owns the pad while open (docs/27 §3.10)
+      const onPin=document.activeElement&&document.activeElement.id==="sshpin";
+      if(k==="Escape"||k==="Backspace"){closeSshModal();}
+      else if(onPin){return;}   // typing the PIN — let the field/OSK have the keys
+      else if(k==="ArrowDown")sshMove(1);
+      else if(k==="ArrowUp")sshMove(-1);
+      else if(k==="Enter"||k===" "||k==="ArrowRight")sshActivate();
+      else return;
+      e.preventDefault();e.stopPropagation();return;
+    }
     if(PICK.open){   // core picker modal owns the whole pad while open (docs/27 §3.10)
       if(k==="Escape"||k==="Backspace")closeCorePicker();
       else if(k==="ArrowDown")pickMove(1);

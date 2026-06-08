@@ -1882,6 +1882,122 @@ def sys_ssh(enabled=None):
         running = False
     return {"ok": True, "enabled": running}
 
+# ---- Security: owner-gated SSH (docs/31 SB-1) ------------------------------------------------
+# THE GATE (docs/16/31): turning network SSH on exposes remote ROOT, so it is reserved to the
+# human OWNER and an AI can NEVER flip it — not even an admin-tier ai_token. The agent's
+# observe<play<admin tiers govern the *agent* (port 8731); this gate lives on the *UI server*
+# (loopback 8780) and checks an OWNER SECRET, not a tier, so "admin AI" buys nothing here. The
+# only route an AI has to 8780 is its sandboxed `system.run` shell, which (a) cannot read the
+# dev/owner token (`/userdata/system/gose/token` is shadowed 0o000 in the agent mount-ns) and
+# (b) does not know the device sign-in PIN. Either proof = owner; neither = refused.
+OWNER_TOKEN_F = os.environ.get("GOSE_OWNER_TOKEN_FILE") or "/userdata/system/gose/token"
+SSH_CRED_F    = os.environ.get("GOSE_SSH_CRED_FILE") or "/userdata/system/gose/ssh_cred.json"
+_SSH_DRYRUN   = os.environ.get("GOSE_SSH_DRYRUN") == "1"   # test seam: exercise the flow w/o touching dropbear
+# password alphabet excludes ambiguous glyphs (0/O 1/l/I) so a human can copy the shown credential
+_SSH_PW_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+
+def _owner_token():
+    try:
+        t = open(OWNER_TOKEN_F).read().strip()
+        return t or None
+    except Exception:
+        return None
+
+def _owner_ok(payload):
+    """True iff the request proves LOCAL-OWNER identity. Two accepted proofs, neither
+    obtainable by an AI: (1) the device sign-in PIN (the human-at-the-kiosk proof — an AI
+    never knows it), verified through the rate-limited scrypt path; (2) the dev/owner token
+    (sandbox-shadowed from the agent shell). Constant-time compares; deny by default."""
+    p = payload or {}
+    ot, given = _owner_token(), str(p.get("owner_token") or "")
+    if ot and given:
+        try:
+            import hmac
+            if hmac.compare_digest(given, ot):
+                return True
+        except Exception:
+            pass
+    if p.get("pin"):
+        try:
+            if pin_verify({"pin": str(p.get("pin"))}).get("valid"):
+                return True
+        except Exception:
+            pass
+    return False
+
+def _ssh_cred_load():
+    try:
+        return json.load(open(SSH_CRED_F))
+    except Exception:
+        return {}
+
+def security_ssh_state():
+    cred = _ssh_cred_load()
+    enabled = bool(cred.get("_dry_enabled")) if _SSH_DRYRUN else sys_ssh().get("enabled", False)
+    return {"ok": True, "enabled": enabled, "has_credential": bool(cred.get("set")),
+            "username": "root", "owner_required": True}
+
+def security_ssh(payload):
+    """POST /security/ssh {action: check|enable|disable|state, owner_token?|pin?}.
+    enable -> generates a RANDOM root password, sets it, starts SSH, and returns the password
+    ONCE (never stored). disable -> stops SSH. check -> owner-gate probe only (no mutation),
+    so the gate can be verified live without changing the running service or its password."""
+    p = payload or {}
+    action = (p.get("action") or "").lower()
+    if action in ("", "state"):
+        return security_ssh_state()
+    if action not in ("check", "enable", "disable"):
+        return {"ok": False, "error": "action must be check|enable|disable|state"}
+    if not _owner_ok(p):
+        LOG.warning("security/ssh %s REFUSED — requester is not the owner", action)
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner authorization required — SSH is owner-only (docs/16/31); "
+                         "an AI can never enable it"}
+    if action == "check":          # gate passed, no side effects (the safe verification path)
+        return {"ok": True, "owner": True, "enabled": security_ssh_state()["enabled"]}
+    if action == "enable":
+        pw = "".join(secrets.choice(_SSH_PW_ALPHABET) for _ in range(16))
+        if not _SSH_DRYRUN:
+            try:
+                r = subprocess.run(["chpasswd"], input="root:%s\n" % pw,
+                                   capture_output=True, text=True, timeout=15)
+                if r.returncode != 0:
+                    return {"ok": False, "error": "could not set password: %s"
+                            % ((r.stderr or "chpasswd failed").strip()[:160])}
+            except Exception as e:
+                return {"ok": False, "error": "could not set password: %s" % e}
+            st = sys_ssh(enabled=True)
+            if not st.get("ok"):
+                return {"ok": False, "error": st.get("error", "ssh start failed")}
+            enabled = bool(st.get("enabled"))
+        else:
+            enabled = True
+        cred = _ssh_cred_load()
+        cred.update({"set": True, "set_at": int(time.time()), "username": "root"})
+        if _SSH_DRYRUN:
+            cred["_dry_enabled"] = True
+        try:
+            write_json_atomic(SSH_CRED_F, cred)
+        except Exception as e:
+            LOG.warning("ssh cred flag persist failed: %s", e)
+        LOG.info("ssh ENABLED by owner — new random root password set + shown once%s",
+                 " (dryrun)" if _SSH_DRYRUN else "")
+        return {"ok": True, "enabled": enabled, "username": "root", "password": pw,
+                "note": "shown once — copy it now; GOSE does not store it"}
+    # disable
+    if not _SSH_DRYRUN:
+        st = sys_ssh(enabled=False)
+        enabled = bool(st.get("enabled"))
+    else:
+        cred = _ssh_cred_load(); cred["_dry_enabled"] = False
+        try:
+            write_json_atomic(SSH_CRED_F, cred)
+        except Exception:
+            pass
+        enabled = False
+    LOG.info("ssh DISABLED by owner%s", " (dryrun)" if _SSH_DRYRUN else "")
+    return {"ok": True, "enabled": enabled}
+
 def sys_display(mode=None):
     # Real guest video mode via xrandr on :0 (virtio-vga). GET lists what the panel
     # supports + which is live; POST switches. Bad/unsupported modes are refused.
@@ -5553,6 +5669,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(battery_info())
         if route == "/sys/ssh":
             return self._json(sys_ssh())
+        if route == "/security/ssh":
+            return self._json(security_ssh_state())
         if route == "/sys/display":
             return self._json(sys_display())
         if route == "/sys/vsync":
@@ -5888,12 +6006,25 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/privacy":
                 return self._json(privacy_set(payload))
             if route == "/sys/ssh":
+                # legacy toggle: a STATE change is owner-only now (docs/31 SB-1) — closes the
+                # ungated-enable bypass; the canonical, credential-generating path is /security/ssh.
+                if payload.get("enabled") is not None and not _owner_ok(payload):
+                    return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                       "error": "owner authorization required — SSH is owner-only "
+                                                "(docs/16/31); use Settings > Security"})
                 return self._json(sys_ssh(payload.get("enabled")))
             if route == "/sys/display":
                 return self._json(sys_display(payload.get("mode")))
             if route == "/sys/vsync":
                 return self._json(sys_vsync(payload.get("on")))
             return self._json(sys_timezone(payload.get("tz")))
+        if route == "/security/ssh":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            return self._json(security_ssh(payload))
         if route in ("/notifications", "/notifications/read", "/notifications/clear"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
