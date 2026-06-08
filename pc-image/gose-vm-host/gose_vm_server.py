@@ -4558,7 +4558,11 @@ def play_history_get():
     hist = cfg.get("history", [])
     if not isinstance(hist, list):
         hist = []
-    human_wins = sum(1 for e in hist if e.get("score_human", 0) > e.get("score_ai", 0))
+    # Guard against non-numeric score fields (history is externally appendable)
+    human_wins = sum(1 for e in hist
+                     if isinstance(e.get("score_human"), (int, float))
+                     and isinstance(e.get("score_ai"), (int, float))
+                     and e["score_human"] > e["score_ai"])
     total = len(hist)
     win_rate = round(human_wins / total, 2) if total else None
     return {"ok": True, "entries": hist[-50:], "total": total,
@@ -4572,7 +4576,10 @@ def _learning_params(history):
       - If human is winning < 40% → ease off (decrease HZ, increase dead-zone)
       - Otherwise stay near base (med)
     HZ range 5–25; dead range 3–15. Bounded so it never exceeds Hard or falls below Easy."""
-    recent = [e for e in (history or [])[-20:] if isinstance(e, dict)]
+    recent = [e for e in (history or [])[-20:]
+              if isinstance(e, dict)
+              and isinstance(e.get("score_human"), (int, float))
+              and isinstance(e.get("score_ai"), (int, float))]
     if len(recent) < 3:
         # Not enough data — start at easy to give the human a confidence baseline
         return {"hz": 6, "dead": 13, "label": "Learning (calibrating)", "games_seen": len(recent)}

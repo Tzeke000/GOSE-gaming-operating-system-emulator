@@ -203,6 +203,8 @@ def main():
     tick = 1.0 / HZ
     # Score tracking for history posting
     game_sl = game_sr = 0
+    # Guard: post history + gameover flag exactly once per game (not on every 3s tick)
+    history_posted = False
 
     try:
         while os.path.exists(RUNFLAG):
@@ -223,8 +225,9 @@ def main():
                 DEAD = diff_cfg["dead"]
                 current_diff = diff_cfg["diff"]
                 tick = 1.0 / HZ
-                # Reset prediction state for the new game
+                # Reset prediction state and history guard for the new game
                 pred.update({"x": None, "y": None, "mx": 220, "ylo": 80, "yhi": 200})
+                history_posted = False
                 log.info("SERVE detected (ball %d,%d) — playing RIGHT paddle, score %d-%d | %s hz=%s dead=%s",
                          bx, by, sl, sr, current_diff, HZ, DEAD)
 
@@ -258,15 +261,16 @@ def main():
 
             if over:
                 release_all(); held = None
-                if time.time() - last_log > 3:
+                if not history_posted:
                     # I'm RIGHT = score_right; Zeke is LEFT = score_left
                     who = "I (Wren)" if sr > sl else "Zeke"
                     log.info("GAME OVER %d-%d — %s won. | diff=%s", sl, sr, who, current_diff)
                     last_log = time.time()
-                    # Record history (human=sl=LEFT=Zeke; ai=sr=RIGHT=Wren)
+                    # Record history exactly once per game (human=sl=LEFT=Zeke; ai=sr=RIGHT=Wren)
                     _post_history(score_human=sl, score_ai=sr, difficulty=current_diff)
                     # #112: write gameover flag so the server deletes the stale auto-save on next launch
                     _write_gameover_flag(score_left=sl, score_right=sr)
+                    history_posted = True
 
             dt = time.time() - t0
             if dt < tick:
