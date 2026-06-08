@@ -62,6 +62,25 @@
     border:1px solid var(--accent);border-radius:11px;padding:8px 16px;font-size:13px;opacity:0;
     transition:opacity .25s;pointer-events:none}
   .toast.show{opacity:1}
+  /* core picker modal — pad-drivable; layered-Escape per docs/27 §3.10 */
+  .scrim{position:fixed;inset:0;background:#05050acc;display:none;align-items:center;justify-content:center;z-index:60}
+  .scrim.show{display:flex}
+  .modal{width:min(560px,92vw);max-height:80vh;display:flex;flex-direction:column;background:var(--surface);
+    border:1px solid var(--line);border-radius:16px;box-shadow:0 24px 80px #000a;overflow:hidden}
+  .modal h2{margin:0;font-size:16px;padding:16px 18px 8px}
+  .modal .mh{color:var(--muted);font-size:12px;padding:0 18px 10px;border-bottom:1px solid var(--line)}
+  .modal .mf{border-top:1px solid var(--line);color:var(--muted);font-size:11px;padding:9px 18px}
+  .modal .body{overflow:auto;padding:8px;min-height:0}
+  .pick{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;
+    border:2px solid transparent;cursor:pointer}
+  .pick.focus{border-color:var(--accent);background:#5cd0ff14;box-shadow:var(--focusglow)}
+  .pick.dim{opacity:.5}
+  .pick .nm{font-weight:600}
+  .pick .meta{margin-left:auto;display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .pick .lic{color:var(--muted);font-size:12px}
+  .pick .cur{color:var(--accent);font-size:12px;font-weight:700}
+  .badge{font-size:11px;font-weight:700;border-radius:8px;padding:2px 7px;border:1px solid var(--line);white-space:nowrap}
+  .badge.ok{color:#37d39b}.badge.rev{color:#ffce5c}.badge.pu{color:#ff7a9c}
 </style></head>
 <body>
   <div class="top"><img class="lg" src="assets/brand/gose-crystal.png" alt="GOSE">
@@ -74,6 +93,7 @@
   </div>
   <div class="foot"><span class="ic" data-i="settings"></span> GOSE Settings
     <span class="h"><b>↑↓</b> move · <b>←→</b> change value · <b>L1/R1</b> section · <b>Esc</b> back</span></div>
+  <div class="scrim" id="scrim"></div>
   <div class="toast" id="toast"></div>
 <script src="assets/platform.js"></script>
 <script src="assets/icons.js"></script>
@@ -156,6 +176,7 @@
     ]},
     {id:"controllers", ic:"gamepad-2", nm:"Controllers", rows:[
       {ic:"target", nm:"Layout & remap", sub:"Pick your controller and remap every button", t:"link", go:"gose-remap.html"},
+      {ic:"gamepad-2", nm:"Controller test & latency", sub:"See what GOSE hears + measure input lag", t:"link", go:"gose-padtest.html"},
       {ic:"mouse", nm:"Stick deadzone", sub:"Override the bridge's stick deadzone", t:"dis", tag:"[needs build]", why:"Deadzone is a bridge constant (gose-pad-nav.py) — a settable override needs a bridge build"},
       {ic:"power", nm:"Rumble", sub:"Controller vibration feedback", t:"dis", tag:"[needs build]", why:"No OS-level rumble switch exists yet — games drive vibration directly"},
       {ic:"gamepad-2", nm:"Button prompts", sub:"Icon style shown in menus", t:"dis", tag:"[needs build]", why:"Menus don't render per-brand button icons yet, so a style picker would do nothing"},
@@ -163,6 +184,11 @@
     {id:"input", ic:"keyboard", nm:"Input", rows:[
       {ic:"gamepad-2", nm:"Default input mode", sub:"What pages assume you navigate with — pages adopt it as they load", t:"cycle", v:["Keyboard","Controller","Native"], apply:"inputmode"},
       {ic:"keyboard", nm:"On-screen keyboard", sub:"Auto-opens on text fields", t:"dis", tag:"[needs build]", why:"The shared OSK is always available on text fields — an off switch needs cursor.js work"},
+    ]},
+    {id:"emulators", ic:"cpu", nm:"Emulators", rows:[
+      // per-system default-core rows are loaded live from GET /emulators (loadCores); only
+      // systems with >1 core get a picker. This placeholder shows until the catalog loads.
+      {ic:"cpu", nm:"Default cores", sub:"Which emulator core each system runs by default", t:"info", val:"Loading…"},
     ]},
     {id:"time", ic:"clock", nm:"Time & Language", rows:[
       {ic:"globe", nm:"Set time zone automatically", sub:"Needs a location source", t:"dis", tag:"[needs build]", why:"No location source is wired (and it would be opt-in) — set the zone manually below"},
@@ -236,6 +262,9 @@
   function valHtml(r){
     if(r.t==="info") return `<span class="val">${r.val}</span>`;
     if(r.t==="link") return `<span class="val">Open <span class="ic" data-i="chevron-right"></span></span>`;
+    if(r.t==="core"){const act=(r.cores||[]).find(c=>c.core===r.cur), pu=act&&act.verdict==="personal-use";
+      return `<span class="val"><span>${r.cur||"—"}</span>`+(pu?` <span class="off">· personal-use</span>`:``)+
+        ` <span class="ic" data-i="chevron-right"></span></span>`;}
     if(r.t==="action"||r.t==="sys") return `<span class="val">${r.val} <span class="ic" data-i="chevron-right"></span></span>`;
     if(r.t==="dis") return `<span class="val off">${r.tag}</span>`;
     if(r.t==="agents") return `<span class="val agts">`+(AGENTS.length?AGENTS.map(a=>
@@ -310,6 +339,7 @@
       r._armed=false; r.i=ni; buildPane(); paintIcons();
       if(r.apply)applyRow(r); else showToast(r.nm+": "+r.v[r.i]);
     }
+    else if(r.t==="core"){openCorePicker(r);}
     else if(r.t==="link"){location.href=r.go;}
     else if(r.t==="agents"){location.href="gose-ai.html";}
     else if(r.t==="dis"){showToast(r.why||r.tag);}   // honest: say WHY it can't apply yet
@@ -551,6 +581,7 @@
   loadSliders(); setInterval(loadSliders, 3000);   // keep brightness + volume synced to the real device
   refreshBackups();   // populate the System > Latest backup readout
   refreshAgents(); setInterval(refreshAgents, 6000);   // live AI roster for the agents rows
+  loadCores();   // build the per-system default-core rows (Emulators category) from /emulators
   function moveCat(d){cat=(cat+d+CATS.length)%CATS.length;foc=0;render();}
   // tab-switch (L1/R1 + [ ] / Tab): change category AND drop focus into its content so D-pad moves within the tab
   function switchCat(d){cat=(cat+d+CATS.length)%CATS.length;foc=0;zone="pane";render();}
@@ -559,11 +590,96 @@
 
   function enterPane(){zone="pane";foc=0;render();}
   function toRail(){zone="rail";render();}
+
+  // ===== Per-system default-core picker (tasks 55+77) =====
+  // Rows are built live from GET /emulators (license-aware, same catalog the store's Emulators
+  // tab shows). A opens a pad-drivable picker; pick -> POST /emulators/default; row reflects.
+  // Only systems with >1 core get a picker (a single-core system has nothing to choose).
+  const scrim=document.getElementById("scrim");
+  scrim.onclick=(e)=>{if(e.target===scrim)closeCorePicker();};   // click the backdrop to dismiss
+  const PICK={open:false,row:null,foc:0};
+  async function loadCores(){
+    try{const d=await(await fetch("/emulators",{cache:"no-store"})).json();
+      const sys=(d&&d.systems)||[]; const ec=CATS.find(c=>c.id==="emulators"); if(!ec)return;
+      const rows=[];
+      sys.forEach(s=>{
+        // es_systems lists the same core under multiple emulator labels → dedupe by core name,
+        // so "two identical mame entries" isn't mistaken for a real choice.
+        const seen={}, cores=[];
+        (s.cores||[]).forEach(c=>{ const e=seen[c.core];
+          if(e){ if(c.installed)e.installed=true; if(c.active)e.active=true; }
+          else { seen[c.core]=Object.assign({},c); cores.push(seen[c.core]); } });
+        if(cores.length<2)return;   // need a real choice between distinct cores
+        rows.push({ic:"cpu", nm:s.name, sub:"Default emulator core for "+s.name, t:"core",
+                   system:s.system, cores:cores, cur:s.default}); });
+      ec.rows = rows.length ? rows
+        : [{ic:"info", nm:"No alternate cores", sub:"Every installed system has a single core — add more in the Store.", t:"info", val:"—"}];
+      if(CATS[cat] && CATS[cat].id==="emulators"){ if(foc>=ec.rows.length)foc=0; buildPane(); paintIcons(); }
+    }catch(e){}
+  }
+  function coreBadge(c){
+    if(c.verdict==="review") return `<span class="badge rev">Review</span>`;
+    if(c.commercial_ok) return `<span class="badge ok">Commercial-OK</span>`;
+    return `<span class="badge pu">Personal-use</span>`;   // non-commercial — fenced, but user may run it
+  }
+  function openCorePicker(r){
+    if(!r.cores||!r.cores.length)return;
+    PICK.open=true; PICK.row=r;
+    PICK.foc=Math.max(0,r.cores.findIndex(c=>c.core===r.cur));
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush(); else document.body.dataset.goseModal="1";  // docs/27 §3.10
+    renderPicker(); scrim.classList.add("show");
+  }
+  function closeCorePicker(){
+    if(!PICK.open)return; PICK.open=false; scrim.classList.remove("show");
+    if(window.GOSE&&GOSE.modalPop)GOSE.modalPop(); else delete document.body.dataset.goseModal;
+  }
+  function renderPicker(){
+    const r=PICK.row, cs=r.cores||[];
+    scrim.innerHTML=`<div class="modal" role="dialog" aria-modal="true">`+
+      `<h2>Default core — ${r.nm}</h2>`+
+      `<div class="mh">↑↓ choose · A set · B / Esc back — uninstalled cores: add them in the Store first</div>`+
+      `<div class="body" id="pickbody"></div>`+
+      `<div class="mf">Commercial-OK ships in the paid build · Personal-use cores are non-commercial-licensed (anyone may add them for their own use)</div>`+
+    `</div>`;
+    const body=scrim.querySelector("#pickbody");
+    cs.forEach((c,i)=>{ const el=document.createElement("div");
+      el.className="pick"+(i===PICK.foc?" focus":"")+(c.installed?"":" dim");
+      el.innerHTML=`<span class="nm">${c.core}</span><span class="meta">`+
+        (c.core===r.cur?`<span class="cur">current</span>`:``)+
+        (c.installed?``:`<span class="lic">not installed</span>`)+
+        `<span class="lic">${c.license}</span>`+coreBadge(c)+`</span>`;
+      el.onclick=()=>{PICK.foc=i;chooseCore();};
+      body.appendChild(el); });
+    const f=body.querySelector(".pick.focus"); if(f)f.scrollIntoView({block:"nearest"});
+  }
+  function pickMove(d){const n=(PICK.row.cores||[]).length; if(!n)return;
+    PICK.foc=(PICK.foc+d+n)%n; renderPicker();}
+  function pickChoose(){chooseCore();}
+  async function chooseCore(){
+    const r=PICK.row, c=(r.cores||[])[PICK.foc]; if(!c)return;
+    if(!c.installed){showToast(c.core+" isn't installed — add it in the Store first");return;}
+    if(c.core===r.cur){closeCorePicker();return;}
+    showToast("Setting "+r.nm+" → "+c.core+"…");
+    const x=await postJSON("/emulators/default",{system:r.system,core:c.core});
+    if(x&&x.ok){ r.cur=x.core; r.cores.forEach(cc=>cc.active=(cc.core===x.core));
+      closeCorePicker();
+      if(CATS[cat] && CATS[cat].id==="emulators"){buildPane();paintIcons();}
+      showToast(r.nm+" default core: "+x.core+(x.warn?(" — "+x.warn):""));
+    } else showToast("Couldn't set core: "+((x&&x.error)||"failed"));
+  }
   // Pad nav per docs/27: L1/R1 own section switching; ←/→ change the focused value
   // (← NEVER jumps to the rail — the rail double-drove tab switching, owner walkthrough
   // 2026-06-07); B/Esc backs out one level (pane → rail → desktop) and never traps.
   addEventListener("keydown",e=>{
     let k=e.key; if(/^(Up|Down|Left|Right)$/.test(k))k="Arrow"+k;   // accept both spellings (docs/27 §3.8)
+    if(PICK.open){   // core picker modal owns the whole pad while open (docs/27 §3.10)
+      if(k==="Escape"||k==="Backspace")closeCorePicker();
+      else if(k==="ArrowDown")pickMove(1);
+      else if(k==="ArrowUp")pickMove(-1);
+      else if(k==="Enter"||k===" "||k==="ArrowRight")pickChoose();
+      else return;
+      e.preventDefault();e.stopPropagation();return;
+    }
     if(k==="Escape"||k==="Backspace"){ if(zone==="pane")toRail(); else location.href="gose-home.html"; }
     else if(k==="["||k==="PageUp"){switchCat(-1);}      // global tab prev → land in content
     else if(k==="]"||k==="PageDown"){switchCat(1);}      // global tab next → land in content
