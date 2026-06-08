@@ -37,14 +37,26 @@ if (Test-Path $bridge) {
 # controller passthrough: forwards REAL host pads into the guest as input events
 # (agent input.pt_* -> uinput). Replaces usb-redir for controllers — usb-redir on a
 # 1 kHz pad (DualSense) measured 4-7 s of input lag; this path is milliseconds.
-# It waits for the agent itself, so starting it before the VM boots is fine.
-$padpt = $(if ($env:GOSE_PADPT) { $env:GOSE_PADPT } else { "D:\gose-vm\pad_passthrough.py" })
-if (Test-Path $padpt) {
+# pad_passthrough_watch.py (the watchdog) supervises pad_passthrough.py and relaunches
+# it within ~1s of any exit (crash, last-pad-unplug, etc.) — boot launches the
+# WATCHDOG, not the daemon directly. Kill both on restart so ports + pt devices are clean.
+# TODO (future): wrap with WinSW for survive-reboot service semantics (see watch file).
+$padptWatch = $(if ($env:GOSE_PADPT_WATCH) { $env:GOSE_PADPT_WATCH } else { "D:\gose-vm\pad_passthrough_watch.py" })
+$padptDaemon = $(if ($env:GOSE_PADPT) { $env:GOSE_PADPT } else { "D:\gose-vm\pad_passthrough.py" })
+if (Test-Path $padptWatch) {
+  # Kill existing watchdog + daemon (both cmdline patterns) before relaunching.
+  Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='py.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like "*pad_passthrough*" } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Start-Process py -ArgumentList '-3.11', $padptWatch -WindowStyle Minimized
+  Write-Host "Controller passthrough watchdog started (auto-restarts daemon; host pads -> guest uinput)."
+} elseif (Test-Path $padptDaemon) {
+  # Fallback: watchdog not present — start daemon directly (no auto-restart).
   Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='py.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -like "*pad_passthrough.py*" } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-  Start-Process py -ArgumentList '-3.11', $padpt -WindowStyle Minimized
-  Write-Host "Controller passthrough started (host pads -> guest uinput, instant)."
+  Start-Process py -ArgumentList '-3.11', $padptDaemon -WindowStyle Minimized
+  Write-Host "Controller passthrough started (daemon only — watchdog not found)."
 }
 
 $a = @(

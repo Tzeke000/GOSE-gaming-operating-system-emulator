@@ -487,7 +487,9 @@ class Forwarder:
                     batches.setdefault(ev.instance_id, []).extend(
                         pad.map_jhat(ev.hat, ev.value))
         for iid, events in batches.items():
-            self.send(self.pads[iid], events)
+            pad = self.pads.get(iid)   # a pad can be popped by a REMOVED event in THIS same
+            if pad:                    # pump (unplug delivers final axis events + REMOVED together),
+                self.send(pad, events) # so guard — an unplug must never KeyError out of run()
 
     def cleanup_orphans(self):
         """pt devices only ever come from this daemon — any open at OUR startup are
@@ -507,7 +509,12 @@ class Forwarder:
         self.wait_for_agent()
         self.cleanup_orphans()
         while True:
-            self.pump()
+            try:
+                self.pump()
+            except Exception as e:
+                # never let one bad pump (e.g. a pad vanishing mid-batch) kill the daemon;
+                # log and keep forwarding. The watchdog is the backstop if we somehow still die.
+                log.warning("pump error (continuing): %s", e)
             time.sleep(POLL_S)
 
 
