@@ -46,6 +46,10 @@ if [ -f /userdata/system/gose/.oobe-done ]; then
 else
   LAND=gose-oobe.html
 fi
+# Kiosk guard: kill any stale kiosk.py process before launching so only ONE kiosk ever runs.
+# Uses kill-by-PID (pgrep→xargs kill) — not pkill -f — to avoid self-match accidents.
+# Pattern is the absolute kiosk.py path; gose-session.sh / pad-nav / server do NOT contain it.
+pgrep -f '/userdata/gose-ui/kiosk\.py' | xargs -r kill 2>/dev/null; true
 # Boot splash on the FIRST kiosk launch per VM boot (/tmp clears on reboot); the landing page on relaunches.
 if [ ! -f /tmp/gose-booted ]; then
   touch /tmp/gose-booted
