@@ -192,8 +192,12 @@ def recent_games():
     try:
         rec = json.load(open(RECENT_F)); pt = _playtime(); favset = _fav_set()
         for r in rec:
-            r["secs"] = pt.get(r.get("system", "") + "/" + r.get("game", ""), 0)
-            r["fav"] = (r.get("system", ""), r.get("game", "")) in favset
+            sysn, gamen = r.get("system", ""), r.get("game", "")
+            r["secs"] = pt.get(sysn + "/" + gamen, 0)
+            r["fav"] = (sysn, gamen) in favset
+            # save-state thumbnail (task 53): the "where you left off" picture for resume
+            # cards; additive + null when no state exists, so old consumers are unaffected.
+            r["state_thumb"] = state_thumb_url(sysn, gamen)
         return {"ok": True, "games": rec}
     except Exception:
         return {"ok": True, "games": []}
@@ -1111,6 +1115,8 @@ def launch_app(payload):
     if payload.get("system") and payload.get("game"):
         return launch_game(payload["system"], payload["game"])
     app = payload.get("app"); cmd = payload.get("cmd")
+    if app == "moonlight":
+        return launch_moonlight()
     if app and app in _APPS:
         argv = _APPS[app]
     elif cmd:
@@ -1123,6 +1129,27 @@ def launch_app(payload):
     try:
         _spawn(argv)
         return {"ok": True, "launched": app or cmd}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# ---- Moonlight: stream your PC (task 66). moonlight-qt ships on the Batocera image; we just
+# surface + launch it. Its own UI discovers PCs + handles pairing (Sunshine / GeForce Experience). ----
+MOONLIGHT_BIN = "/usr/bin/moonlight-qt"
+
+def moonlight_status():
+    import shutil
+    p = MOONLIGHT_BIN if os.path.isfile(MOONLIGHT_BIN) else (shutil.which("moonlight-qt") or shutil.which("moonlight"))
+    return {"ok": True, "installed": bool(p), "bin": p}
+
+def launch_moonlight():
+    st = moonlight_status()
+    if not st["installed"]:
+        return {"ok": False, "error": "Moonlight isn't installed on this image."}
+    try:
+        _spawn([st["bin"]])
+        return {"ok": True, "launched": "moonlight",
+                "note": "Moonlight is opening. On your PC, run Sunshine (or GeForce Experience), "
+                        "then pick your PC in Moonlight and enter the PIN to pair."}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -2213,6 +2240,146 @@ def game_state_slots(system, game):
                         "thumb_path": png if os.path.isfile(png) else None})
         out.sort(key=lambda x: x["slot"])
     return {"ok": True, "system": system, "game": game, "slots": out}
+
+# ---- save-state thumbnails (task 53): RetroArch writes <game>.state[N].png beside each state.
+# The "continue where you left off" picture for library/home resume cards. Path-confined to SAVES. ----
+SAVES_ROOT = "/userdata/saves"
+
+def _state_name_ok(s):
+    # a system folder or ROM stem — never a path component. Blocks ../ traversal at the input.
+    return bool(s) and "/" not in s and "\\" not in s and s not in (".", "..") and "\x00" not in s
+
+def latest_state_thumb(system, game):
+    """Path to the NEWEST save-state thumbnail PNG for system/game, or None when no
+    state/png exists. Confined to SAVES_ROOT — rejects traversal in BOTH the input
+    (no path separators) and the resolved path (realpath must stay under saves)."""
+    import glob, re
+    if not (_state_name_ok(system) and _state_name_ok(game)):
+        return None
+    d = os.path.realpath(os.path.join(SAVES_ROOT, system))
+    if d != SAVES_ROOT and not d.startswith(SAVES_ROOT + os.sep):
+        return None
+    if not os.path.isdir(d):
+        return None
+    best, best_mt = None, -1.0
+    for f in glob.glob(glob.escape(os.path.join(d, game)) + ".state*"):
+        if f.endswith(".png") or not re.search(r"\.state(\d*)$", f):
+            continue
+        png = os.path.realpath(f + ".png")
+        if not png.startswith(SAVES_ROOT + os.sep) or not os.path.isfile(png):
+            continue   # missing thumb, or a symlink escaping the saves root
+        try:
+            mt = os.path.getmtime(f)   # newest STATE wins (the latest place you left off)
+        except OSError:
+            continue
+        if mt > best_mt:
+            best, best_mt = png, mt
+    return best
+
+def state_thumb_url(system, game):
+    from urllib.parse import quote
+    if latest_state_thumb(system, game):
+        return "/game/state/thumb?system=" + quote(system) + "&game=" + quote(game)
+    return None
+
+# ---- BIOS checker (task 52): many systems need a user-supplied BIOS; without it a launch
+# silently fails. Batocera ships the authoritative per-system BIOS manifest (with md5s) as a
+# `systems = {...}` dict inside /usr/bin/batocera-systems. We read THAT (the real artifact) —
+# never a hand-maintained copy that could drift — and check /userdata/bios for presence + md5. ----
+BIOS_ROOT = "/userdata/bios"
+BATOCERA_SYSTEMS = "/usr/bin/batocera-systems"
+_BIOS_MANIFEST = None
+
+def _bios_manifest():
+    # Parse the `systems` literal out of batocera-systems with ast (never exec the script).
+    # literal_eval is safe: the dict is pure str/dict/list literals. Cached after first read.
+    global _BIOS_MANIFEST
+    if _BIOS_MANIFEST is not None:
+        return _BIOS_MANIFEST
+    man = {}
+    try:
+        import ast
+        with open(BATOCERA_SYSTEMS) as fh:
+            tree = ast.parse(fh.read())
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and any(
+                    isinstance(t, ast.Name) and t.id == "systems" for t in node.targets):
+                man = ast.literal_eval(node.value)
+                break
+    except Exception as e:
+        LOG.warning("bios manifest parse failed: %s", e)
+        man = {}
+    _BIOS_MANIFEST = man
+    return man
+
+def _md5_file(path, cap=96 * 1024 * 1024):
+    # md5 only when it's cheap+meaningful: skip files larger than cap (PS3 PUP / CHDs) → unverified.
+    try:
+        if os.path.getsize(path) > cap:
+            return None
+        import hashlib
+        h = hashlib.md5()
+        with open(path, "rb") as fh:
+            for blk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(blk)
+        return h.hexdigest()
+    except Exception:
+        return None
+
+def bios_status(system_filter=None):
+    man = _bios_manifest()
+    have = set()
+    try:
+        for s in (list_games().get("systems") or []):
+            if s.get("system"):
+                have.add(s["system"])
+    except Exception:
+        pass
+    out = []
+    for key in sorted(man.keys()):
+        if system_filter and key != system_filter:
+            continue
+        entry = man[key] or {}
+        # dedupe by target file (a .zip appears once per zipped member in the manifest)
+        files, order = {}, []
+        for bf in (entry.get("biosFiles") or []):
+            rel = bf.get("file", "")
+            if not rel:
+                continue
+            if rel not in files:
+                files[rel] = {"md5s": set(), "archive": False}
+                order.append(rel)
+            if bf.get("zippedFile"):
+                files[rel]["archive"] = True          # md5 is of a member inside the zip
+            elif bf.get("md5"):
+                files[rel]["md5s"].add(bf["md5"])
+        flist = []
+        for rel in order:
+            info = files[rel]
+            full = os.path.realpath(os.path.join("/userdata", rel))
+            present = (full == BIOS_ROOT or full.startswith(BIOS_ROOT + os.sep)) and os.path.isfile(full)
+            md5_ok, md5_expected = None, (sorted(info["md5s"])[0] if info["md5s"] else None)
+            if present and info["md5s"] and not info["archive"]:
+                got = _md5_file(full)
+                if got is not None:
+                    md5_ok = got in info["md5s"]      # any listed md5 is an accepted match
+            flist.append({"file": os.path.basename(rel), "rel": rel,
+                          "drop": os.path.dirname(os.path.join("/userdata", rel)),
+                          "present": present, "archive": info["archive"],
+                          "md5_ok": md5_ok, "md5_expected": md5_expected})
+        present_n = sum(1 for f in flist if f["present"])
+        out.append({"system": key, "name": entry.get("name", key), "has_games": key in have,
+                    "files": flist, "required": len(flist), "present_count": present_n,
+                    "missing": [f["file"] for f in flist if not f["present"]],
+                    "complete": bool(flist) and present_n == len(flist)})
+    # the user's own systems that need NOTHING (absent from the manifest) — say so honestly
+    for s in sorted(have):
+        if s not in man and (not system_filter or s == system_filter):
+            out.append({"system": s, "name": _SYS.get(s, s), "has_games": True,
+                        "files": [], "required": 0, "present_count": 0, "missing": [],
+                        "complete": True, "none_needed": True})
+    return {"ok": True, "bios_dir": BIOS_ROOT, "manifest_ok": bool(man),
+            "systems": out, "count": len(out)}
 
 # ---- Screenshots / recording / gallery (player-facing capture via RetroArch NCI) ----
 SHOTS_DIR = "/userdata/screenshots"
@@ -4404,6 +4571,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             from urllib.parse import parse_qs
             q = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
             return self._json(game_state_slots((q.get("system") or [""])[0], (q.get("game") or [""])[0]))
+        if route == "/bios/status":
+            return self._json(bios_status(self._qs().get("system") or None))
+        if route == "/apps/moonlight":
+            return self._json(moonlight_status())
         if route == "/recent.json":
             return self._json(recent_games())
         if route == "/ai/players":
@@ -4495,6 +4666,19 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(peripherals())
         if route == "/apps.json":
             return self._json(installed_apps())
+        if route == "/game/state/thumb":
+            q = self._qs()
+            p = latest_state_thumb(q.get("system", ""), q.get("game", ""))   # path-confined to /userdata/saves
+            if not p or not os.path.isfile(p):
+                self.send_error(404); return
+            try:
+                with open(p, "rb") as fh:
+                    data = fh.read()
+                self.send_response(200); self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+            except Exception:
+                self.send_error(500)
+            return
         if route == "/syslogo":
             p = system_logo_path(self._qs().get("system", ""))
             if not p or not os.path.isfile(p):

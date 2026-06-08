@@ -147,7 +147,7 @@
         fetch("/apps.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}))
       ]).then(([rc,g,ap])=>{
         const games=[], recent=((rc&&rc.games)||[]);
-        if(recent.length) recent.slice(0,4).forEach((r,ci)=>games.push({label:r.game,sub:r.sysname,img:r.img||null,icon:"gamepad-2",color:PAL[ci%PAL.length],go:"gose-library.html"}));
+        if(recent.length) recent.slice(0,4).forEach((r,ci)=>games.push({label:r.game,sub:r.sysname,img:r.state_thumb||r.img||null,icon:"gamepad-2",color:PAL[ci%PAL.length],go:"gose-library.html"}));
         else { let ci=0; ((g&&g.systems)||[]).forEach(s=>s.games.slice(0,2).forEach(x=>{ if(games.length<4)games.push({label:x.name,sub:s.name,img:x.img||null,icon:"gamepad-2",color:PAL[ci++%PAL.length],go:"gose-library.html"}); })); }
         const apps=((ap&&ap.apps)||[]).slice(0,6).map(a=>({label:a.id,icon:"layout-grid",img:"/appicon?id="+a.id,cmd:"flatpak run "+a.id}));
         return {games,apps};

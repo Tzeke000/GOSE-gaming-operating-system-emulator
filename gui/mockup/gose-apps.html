@@ -72,6 +72,7 @@
     {nm:"Settings", ds:"Personalize the whole OS",      ic:"settings-app",   href:"gose-settings.html"},
     {nm:"Gallery",  ds:"Screenshots & game clips",       ic:"gallery",    href:"gose-gallery.html"},
     {nm:"Splice",   ds:"Lossless video trim",           ic:"scissors", href:"gose-splice.html"},
+    {nm:"Moonlight", ds:"Stream games from your PC (Sunshine / GeForce)", ic:"monitor", app:"moonlight"},
     {nm:"Store",    ds:"Get more apps from Flathub",     ic:"store", href:"gose-store.html"},
     {nm:"Terminal", ds:"Command line — the real shell",  ic:"terminal-app", href:"gose-term.html"},
     {nm:"Licenses", ds:"Open-source credits & licenses", ic:"file-text", href:"gose-licenses.html"},
@@ -94,11 +95,18 @@
     paint();
   }
   function launch(){const a=shown[foc];if(!a)return;
-    if(a.soon){say(a.nm+" — coming soon");return;}
-    if(a.cmd){say("Opening "+a.nm+"…");
-      fetch("/launch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd:a.cmd})})
-        .then(r=>r.json()).then(d=>say(d.ok?("Opening "+a.nm):("Couldn't open: "+(d.error||"?"))));return;}
+    if(a.soon){say(a.nm+(a.unavail?(" — "+a.unavail):" — coming soon"));return;}
+    if(a.app||a.cmd){say("Opening "+a.nm+"…");
+      const body=a.app?{app:a.app}:{cmd:a.cmd};
+      fetch("/launch",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+        .then(r=>r.json()).then(d=>say(d.ok?(d.note||("Opening "+a.nm)):("Couldn't open: "+(d.error||"?"))));return;}
     location.href=a.href;}
+  // Moonlight ships on the image as a system binary (not a flatpak), so it won't appear via
+  // /apps.json — it's a built-in tile above. Degrade honestly if the binary isn't present.
+  fetch("/apps/moonlight",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    if(d&&d.ok&&!d.installed){const m=APPS.find(a=>a.app==="moonlight");
+      if(m){m.soon=true;m.unavail="not installed on this image";m.ds="PC game streaming (not installed)";filter();}}
+  }).catch(()=>{});
   const ICONMAP={"com.valvesoftware.Steam":"gamepad-2","org.gimp.GIMP":"palette","org.videolan.VLC":"play",
     "net.lutris.Lutris":"gamepad-2","com.usebottles.bottles":"wrench","com.google.Chrome":"globe",
     "org.chromium.Chromium":"globe","org.mozilla.firefox":"globe","com.heroicgameslauncher.hgl":"gamepad-2",
