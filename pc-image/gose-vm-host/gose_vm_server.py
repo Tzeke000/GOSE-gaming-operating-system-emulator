@@ -52,6 +52,7 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300),
            "/sys/perf": (60, 60), "/widgets/store": (30, 60), "/widgets/steam": (30, 60),
            "/storage/import": (12, 60), "/storage/detected": (30, 60),
+           "/storage/breakdown": (30, 60), "/storage/group": (60, 60), "/storage/delete": (30, 60),
            "/store/sources/add": (6, 60), "/store/sources/preview": (10, 60),
            "/store/sources/refresh": (10, 60),
            # coarse backstop only — the real brute-force guard is the 5-try/30s PIN lockout
@@ -341,6 +342,297 @@ def storage_info():
     except Exception as e:
         out = {"ok": False, "error": str(e)}
     return out
+
+# ===== STORAGE MANAGER (task #38): "what's eating my space" breakdown + confirmed deletes =====
+# Disk totals come from statvfs (authoritative). Category sizes come from du with a hard per-call
+# timeout so a huge tree (saves/ is GBs) can never hang the (threaded) server. Deletes are confirmed
+# AND path-confined: raw deletes are realpath-locked to the data roots below; apps/cores reuse the
+# existing flatpak / libretro uninstall paths (never raw rm) — see store_uninstall / emulator_uninstall.
+THEMES_DIR = "/userdata/themes"
+STORAGE_LOW_FRAC = 0.10                 # banner when free < 10% of the disk ...
+STORAGE_LOW_ABS = 2 * 1024 ** 3         # ... or under 2 GiB absolute (whichever triggers first)
+
+def _store_del_roots():
+    # the ONLY areas storage-manager raw deletes may touch (realpath'd). gallery dirs included so a
+    # screenshot/clip is deletable; the account/PIN file (/userdata/system/gose) is outside ALL of
+    # these AND _is_protected -> doubly unreachable.
+    seen, roots = set(), []
+    for p in (ROMS, SAVES_ROOT, BIOS_ROOT, THEMES_DIR, SHOTS_DIR, *GALLERY_DIRS):
+        rp = os.path.realpath(p)
+        if rp not in seen:
+            seen.add(rp); roots.append(rp)
+    return roots
+
+def _within(path, root):
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+def _du_multi(paths, timeout=25):
+    """du -sb over several paths in ONE call -> {given_path: bytes}. Timeout/missing -> partial/empty.
+    Never raises and never blocks past `timeout` (the watchdog against a huge-tree hang)."""
+    paths = [p for p in paths if p and os.path.exists(p)]
+    if not paths:
+        return {}
+    try:
+        r = subprocess.run(["du", "-sb", "--", *paths], capture_output=True, text=True, timeout=timeout)
+    except Exception:
+        return {}
+    out = {}
+    for line in (r.stdout or "").strip().splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) == 2:
+            try:
+                out[parts[1]] = int(parts[0])
+            except Exception:
+                pass
+    return out
+
+_SZ_UNITS = {"B": 1, "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3, "T": 1024 ** 4,
+             "KB": 1000, "MB": 1000 ** 2, "GB": 1000 ** 3, "TB": 1000 ** 4,
+             "KIB": 1024, "MIB": 1024 ** 2, "GIB": 1024 ** 3, "TIB": 1024 ** 4}
+
+def _parse_size(s):
+    # flatpak's 'size' column is a human string (g_format_size: "1.2 GB", "512.0 MB", "?")
+    try:
+        m = re.match(r"\s*([\d.]+)\s*([A-Za-z]+)?", s or "")
+        if not m:
+            return None
+        return int(float(m.group(1)) * _SZ_UNITS.get((m.group(2) or "B").upper(), 1))
+    except Exception:
+        return None
+
+def _rom_item_count(sysdir):
+    # cheap top-level count of actual game files/dirs (skip art/media + sidecars). Used only for a label.
+    n = 0
+    try:
+        for name in os.listdir(sysdir):
+            full = os.path.join(sysdir, name)
+            if os.path.isdir(full):
+                if name.lower() not in _SKIPDIRS:
+                    n += 1
+            elif os.path.splitext(name)[1].lower() not in _SKIPEXT:
+                n += 1
+    except Exception:
+        pass
+    return n
+
+def _installed_app_sizes():
+    # flatpak's own size column accounts for ostree dedup (a per-app du would over-count shared runtimes)
+    try:
+        r = subprocess.run(["flatpak", "list", "--app", "--columns=application,name,size"],
+                           capture_output=True, text=True, timeout=20)
+    except Exception:
+        return []
+    apps = []
+    for line in r.stdout.splitlines():
+        parts = line.split("\t")
+        if parts and parts[0].strip():
+            apps.append({"id": parts[0].strip(),
+                         "name": (parts[1].strip() if len(parts) > 1 and parts[1].strip() else parts[0].strip()),
+                         "bytes": _parse_size(parts[2]) if len(parts) > 2 else None})
+    apps.sort(key=lambda a: -(a["bytes"] or 0))
+    return apps
+
+def _installed_core_sizes():
+    out = []
+    try:
+        for f in sorted(os.listdir(LIBRETRO_DIR)):
+            if f.endswith("_libretro.so"):
+                try:
+                    b = os.path.getsize(os.path.join(LIBRETRO_DIR, f))
+                except Exception:
+                    b = None
+                out.append({"core": f[:-len("_libretro.so")], "bytes": b})
+    except Exception:
+        pass
+    out.sort(key=lambda c: -(c["bytes"] or 0))
+    return out
+
+def storage_breakdown():
+    """One call: disk totals + a sorted, per-category 'what's eating my space' breakdown.
+    Each ROM SYSTEM is its own row (the big eaters); saves/bios/themes/gallery + installed apps/cores
+    are category rows. `open:true` rows drill into per-item children via /storage/group."""
+    try:
+        st = os.statvfs("/userdata")
+        total = st.f_blocks * st.f_frsize
+        free = st.f_bavail * st.f_frsize
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    frac = (free / total) if total else 1.0
+    out = {"ok": True, "total": total, "free": free, "used": total - free,
+           "low": bool(free < STORAGE_LOW_ABS or frac < STORAGE_LOW_FRAC),
+           "low_pct": int(STORAGE_LOW_FRAC * 100), "free_pct": round(frac * 100, 1),
+           "groups": []}
+    groups = []
+    # --- ROM systems, one row each (skip the ~200 empty placeholder dirs) ---
+    try:
+        sysdirs = sorted(d for d in os.listdir(ROMS)
+                         if os.path.isdir(os.path.join(ROMS, d)) and not d.startswith("."))
+    except Exception:
+        sysdirs = []
+    rsizes = _du_multi([os.path.join(ROMS, d) for d in sysdirs], timeout=30)
+    for d in sysdirs:
+        p = os.path.join(ROMS, d)
+        b = rsizes.get(p)
+        cnt = _rom_item_count(p)
+        if cnt == 0 and (b or 0) <= 1024 * 1024:       # empty / placeholder-only -> not worth a row
+            continue
+        groups.append({"key": "rom:" + d, "cat": "roms", "name": _SYS_EMU.get(d, d),
+                       "sub": "%s · %d item%s" % (d, cnt, "" if cnt == 1 else "s"),
+                       "bytes": b, "open": True})
+    # --- category rows ---
+    sv = _du_multi([SAVES_ROOT], timeout=25).get(SAVES_ROOT)
+    groups.append({"key": "saves", "cat": "saves", "name": "Game saves",
+                   "sub": "per-game progress & states", "bytes": sv, "open": True, "warn": True})
+    apps = _installed_app_sizes()
+    groups.append({"key": "apps", "cat": "apps", "name": "Installed apps",
+                   "sub": "%d app%s · live inside saves" % (len(apps), "" if len(apps) == 1 else "s"),
+                   "bytes": sum(a["bytes"] or 0 for a in apps) if apps else 0, "open": True})
+    cores = _installed_core_sizes()
+    groups.append({"key": "cores", "cat": "cores", "name": "Emulator cores",
+                   "sub": "%d core%s · system partition" % (len(cores), "" if len(cores) == 1 else "s"),
+                   "bytes": sum(c["bytes"] or 0 for c in cores) if cores else 0, "open": True})
+    try:
+        gal = game_gallery().get("items", [])
+    except Exception:
+        gal = []
+    groups.append({"key": "gallery", "cat": "gallery", "name": "Screenshots & clips",
+                   "sub": "%d item%s" % (len(gal), "" if len(gal) == 1 else "s"),
+                   "bytes": sum(i.get("size") or 0 for i in gal), "open": True})
+    groups.append({"key": "bios", "cat": "bios", "name": "BIOS files",
+                   "sub": "console firmware", "bytes": _du_multi([BIOS_ROOT], timeout=15).get(BIOS_ROOT),
+                   "open": True})
+    groups.append({"key": "themes", "cat": "themes", "name": "Themes",
+                   "sub": "EmulationStation themes",
+                   "bytes": _du_multi([THEMES_DIR], timeout=15).get(THEMES_DIR), "open": True})
+    groups.sort(key=lambda g: -(g["bytes"] or 0))
+    out["groups"] = groups
+    return out
+
+def _list_dir_sized(base, warn=False):
+    """Per-entry rows for a directory: files by stat, subdirs by du (one call). Each carries a
+    realpath-locked raw delete descriptor (/storage/delete kind=path)."""
+    items = []
+    try:
+        names = sorted(os.listdir(base))
+    except Exception:
+        return items
+    dir_sizes = _du_multi([os.path.join(base, n) for n in names
+                           if os.path.isdir(os.path.join(base, n))], timeout=25)
+    for name in names:
+        full = os.path.join(base, name)
+        if os.path.isdir(full):
+            b, kind = dir_sizes.get(full), "dir"
+        else:
+            try:
+                b = os.path.getsize(full)
+            except Exception:
+                b = None
+            kind = "file"
+        items.append({"name": name, "bytes": b, "kind": kind, "warn": warn,
+                      "del": {"ep": "/storage/delete",
+                              "body": {"kind": "path", "path": os.path.realpath(full), "confirm": True}}})
+    items.sort(key=lambda x: -(x["bytes"] or 0))
+    return items
+
+def _group_rom_files(system):
+    if not re.match(r"^[A-Za-z0-9][A-Za-z0-9_+\-]{0,63}$", system or ""):
+        return {"ok": False, "error": "invalid system name"}
+    base = os.path.join(ROMS, system)
+    if not _within(os.path.realpath(base), os.path.realpath(ROMS)) or not os.path.isdir(base):
+        return {"ok": False, "error": "no such system"}
+    whole = _du_multi([base], timeout=25).get(base)
+    head = {"name": "Delete ALL of %s" % _SYS_EMU.get(system, system),
+            "sub": "%d item(s) — frees the whole folder" % _rom_item_count(base),
+            "bytes": whole, "kind": "all", "warn": True,
+            "del": {"ep": "/storage/delete",
+                    "body": {"kind": "rom_system", "system": system, "confirm": True}}}
+    return {"ok": True, "name": _SYS_EMU.get(system, system), "key": "rom:" + system,
+            "items": [head] + _list_dir_sized(base)}
+
+def _group_apps():
+    return {"ok": True, "name": "Installed apps", "key": "apps",
+            "items": [{"name": a["name"], "sub": a["id"], "bytes": a["bytes"], "kind": "app",
+                       "del": {"ep": "/store/uninstall", "body": {"id": a["id"]}}}
+                      for a in _installed_app_sizes()]}
+
+def _group_cores():
+    return {"ok": True, "name": "Emulator cores", "key": "cores",
+            "items": [{"name": c["core"], "sub": "libretro core", "bytes": c["bytes"], "kind": "core",
+                       "del": {"ep": "/emulators/uninstall", "body": {"core": c["core"]}}}
+                      for c in _installed_core_sizes()]}
+
+def _group_gallery():
+    try:
+        gal = game_gallery().get("items", [])
+    except Exception:
+        gal = []
+    return {"ok": True, "name": "Screenshots & clips", "key": "gallery",
+            "items": [{"name": i["name"], "bytes": i.get("size"), "kind": i.get("kind", "file"),
+                       "del": {"ep": "/storage/delete",
+                               "body": {"kind": "path", "path": os.path.realpath(i["path"]),
+                                        "confirm": True}}}
+                      for i in gal]}
+
+def storage_group(key):
+    key = (key or "").strip()
+    if key.startswith("rom:"):
+        return _group_rom_files(key[4:])
+    if key == "saves":
+        return {"ok": True, "name": "Game saves", "key": "saves",
+                "items": _list_dir_sized(SAVES_ROOT, warn=True)}
+    if key == "apps":
+        return _group_apps()
+    if key == "cores":
+        return _group_cores()
+    if key == "gallery":
+        return _group_gallery()
+    if key == "bios":
+        return {"ok": True, "name": "BIOS files", "key": "bios", "items": _list_dir_sized(BIOS_ROOT)}
+    if key == "themes":
+        return {"ok": True, "name": "Themes", "key": "themes", "items": _list_dir_sized(THEMES_DIR)}
+    return {"ok": False, "error": "unknown group"}
+
+def storage_delete(payload):
+    """Raw, CONFIRMED, path-confined delete. apps/cores go through their own uninstall routes (not here).
+    Confinement: realpath must land inside /userdata AND inside a data root (_store_del_roots) AND not be
+    _is_protected — so ../ traversal, the OS, and the account/PIN file are all refused."""
+    payload = payload or {}
+    if not payload.get("confirm"):
+        return {"ok": False, "error": "refused: delete requires an explicit confirm"}
+    kind = payload.get("kind")
+    if kind == "rom_system":
+        sysn = payload.get("system") or ""
+        if not re.match(r"^[A-Za-z0-9][A-Za-z0-9_+\-]{0,63}$", sysn):
+            return {"ok": False, "error": "invalid system name"}
+        target = os.path.join(ROMS, sysn)
+    elif kind == "path":
+        target = payload.get("path") or ""
+    else:
+        return {"ok": False, "error": "unknown delete kind"}
+    try:
+        rp = os.path.realpath(target)
+    except Exception:
+        return {"ok": False, "error": "bad path"}
+    if not (rp == FS_ROOT or rp.startswith(FS_ROOT + os.sep)):
+        return {"ok": False, "error": "refused: path escapes /userdata"}
+    roots = _store_del_roots()
+    if not any(_within(rp, r) for r in roots):
+        return {"ok": False, "error": "refused: outside the deletable storage areas"}
+    if rp in roots:
+        return {"ok": False, "error": "refused: can't delete an entire storage root at once"}
+    if _is_protected(rp):
+        return {"ok": False, "error": "refused: that's a protected system path"}
+    if not os.path.lexists(rp):
+        return {"ok": False, "error": "already gone"}
+    try:
+        if os.path.isdir(rp) and not os.path.islink(rp):
+            shutil.rmtree(rp)
+        else:
+            os.remove(rp)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    LOG.info("STORAGE DELETE [%s] %s", kind, rp)
+    return {"ok": True, "deleted": rp, "kind": kind}
 
 _TEXT_EXT = {".txt", ".md", ".cfg", ".conf", ".ini", ".log", ".json", ".xml", ".sh", ".py",
              ".js", ".css", ".html", ".yml", ".yaml", ".csv", ".gamelist"}
@@ -4900,6 +5192,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(pin_status())
         if route == "/storage.json":
             return self._json(storage_info())
+        if route == "/storage/breakdown":
+            return self._json(storage_breakdown())
+        if route == "/storage/group":
+            return self._json(storage_group(self._qs().get("key")))
         if route == "/storage/pending":
             return self._json(storage_pending())
         if route == "/procs.json":
@@ -5128,7 +5424,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             return self._json(controllers_admin_set(payload))
-        if route in ("/storage/detected", "/storage/import", "/storage/dismiss", "/storage/removed"):
+        if route in ("/storage/detected", "/storage/import", "/storage/dismiss", "/storage/removed",
+                     "/storage/delete"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
@@ -5140,6 +5437,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json(storage_import(payload))
             if route == "/storage/dismiss":
                 return self._json(storage_dismiss(payload))
+            if route == "/storage/delete":
+                return self._json(storage_delete(payload))
             return self._json(storage_removed(payload))
         if route in ("/oobe/complete", "/oobe/reset"):
             try:

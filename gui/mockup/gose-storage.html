@@ -19,34 +19,66 @@
   .top img{width:34px;height:34px}.top h1{font-size:20px;margin:0}
   .top .s{color:var(--muted);font-size:12px}
   .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  /* low-space banner */
+  .lowban{margin:6px 38px 0;display:none;align-items:center;gap:10px;padding:11px 16px;border-radius:11px;
+    background:#ff5c5c1f;border:1px solid #ff5c5c66;color:#ffd5d5;font-size:13px;font-weight:600}
+  .lowban.show{display:flex}.lowban .ic{color:#ff8c8c;font-size:18px}
   .wrap{flex:1;display:flex;flex-direction:column;gap:14px;padding:8px 38px 0;min-height:0}
   .disk{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
   .disk .nums{display:flex;gap:24px;align-items:baseline;margin-bottom:10px}
   .disk .big{font-size:26px;font-weight:700}.disk .lbl{color:var(--muted);font-size:13px}
   .bar{height:16px;border-radius:8px;background:#ffffff12;overflow:hidden;display:flex}
   .bar .u{background:linear-gradient(90deg,var(--accent),#7d8cff);height:100%}
-  .tm{display:flex;gap:4px;height:120px;margin-top:4px}
+  .bar .u.low{background:linear-gradient(90deg,#ff5c5c,#ff9a5c)}
+  .tm{display:flex;gap:4px;height:96px;margin-top:4px}
   .tm .cell{border-radius:8px;min-width:6px;display:flex;align-items:flex-end;padding:8px;overflow:hidden;
     color:#fff;font-weight:700;font-size:12px;text-shadow:0 1px 3px #000a;white-space:nowrap}
-  .pane{flex:1;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:8px 10px;overflow:auto}
-  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:8px 8px 6px}
-  .item{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:10px;border:2px solid transparent}
+  .pane{flex:1;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+    padding:8px 10px;overflow:auto}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:8px 8px 6px;
+    display:flex;align-items:center;gap:8px}
+  .ph .crumb{color:var(--text)}.ph .hint{margin-left:auto;color:var(--muted);font-weight:600}
+  .item{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:10px;
+    border:2px solid transparent;cursor:pointer}
   .item.focus{border-color:var(--accent);background:#5cd0ff14}
-  .item .sw{width:12px;height:12px;border-radius:3px;flex:none}
-  .item .nm{font-weight:600;min-width:120px}
+  .item .sw{width:22px;height:22px;border-radius:6px;flex:none;display:grid;place-items:center;
+    color:#fff;font-size:13px;background:#ffffff14}
+  .item .nm{font-weight:600;min-width:150px}.item .nm .sub{display:block;color:var(--muted);
+    font-size:11px;font-weight:400;margin-top:1px}
   .item .mb{flex:1;height:8px;border-radius:5px;background:#ffffff10;overflow:hidden}
   .item .mb i{display:block;height:100%;background:var(--accent)}
-  .item .sz{width:90px;text-align:right;font-weight:600}
-  .item .pc{width:54px;text-align:right;color:var(--muted);font-size:12px}
-  .foot{margin:10px 38px 14px;display:flex;gap:10px;color:var(--muted);font-size:13px;
-    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .item .sz{width:92px;text-align:right;font-weight:600}
+  .item .go{width:20px;color:var(--muted);font-size:15px;text-align:right}
+  .item.warn .sw{background:#ff8c5c22;color:#ffb38c}
+  .empty{color:var(--muted);font-size:13px;padding:18px 12px}
+  .foot{margin:10px 38px 14px;display:flex;gap:10px;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:9px 16px}
   .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  /* confirm modal */
+  .scrim{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:50}
+  .scrim.show{display:flex}
+  .modal{width:min(440px,86vw);background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    padding:22px 24px;box-shadow:0 24px 60px #000a}
+  .modal h2{margin:0 0 6px;font-size:18px;display:flex;align-items:center;gap:9px}
+  .modal h2 .ic{color:#ff8c8c;font-size:20px}
+  .modal .what{font-weight:700;color:var(--text);word-break:break-all}
+  .modal p{color:var(--muted);font-size:13px;margin:8px 0 0;line-height:1.5}
+  .modal p.danger{color:#ffb3b3}
+  .modal .btns{display:flex;gap:12px;margin-top:20px}
+  .modal .btn{flex:1;text-align:center;padding:12px;border-radius:11px;font-weight:700;
+    border:2px solid transparent;background:#ffffff10;cursor:pointer}
+  .modal .btn.del{background:#ff5c5c1f;color:#ffb3b3}
+  .modal .btn.focus{border-color:var(--accent);background:#5cd0ff22}
+  .modal .btn.del.focus{border-color:#ff7a7a;background:#ff5c5c33}
+  .modal .err{color:#ff9a9a;font-size:12.5px;margin-top:12px;min-height:1em}
 </style></head>
 <body>
   <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
     <div><h1>Storage</h1><div class="s" id="sub">scanning…</div></div>
-    <div class="home"><span class="ic" data-i="hard-drive"></span> B / Esc — home</div>
+    <div class="home"><span class="ic" data-i="hard-drive"></span> B / Esc — back</div>
   </div>
+  <div class="lowban" id="lowban"><span class="ic" data-i="triangle-alert"></span>
+    <span id="lowtxt">Storage is running low.</span></div>
   <div class="wrap">
     <div class="disk">
       <div class="nums"><span class="big" id="free">—</span><span class="lbl">free</span>
@@ -54,49 +86,180 @@
       <div class="bar"><div class="u" id="ubar" style="width:0%"></div></div>
       <div class="tm" id="tm"></div>
     </div>
-    <div class="pane"><div class="ph">WHAT'S USING YOUR STORAGE — /userdata</div><div id="list"></div></div>
+    <div class="pane">
+      <div class="ph"><span class="crumb" id="crumb">WHAT'S USING YOUR STORAGE — /userdata</span>
+        <span class="hint" id="hint">↑↓ browse · A open · B back</span></div>
+      <div id="list"></div>
+    </div>
   </div>
   <div class="foot"><span class="ic" data-i="hard-drive"></span> GOSE Storage
-    <span class="h">live disk map · <b>↑↓</b> browse · <b>B</b> home</span></div>
+    <span class="h" id="footh">live disk map · sizes are per-area (some overlap — apps live inside saves)</span></div>
+
+  <div class="scrim" id="scrim">
+    <div class="modal" role="dialog" aria-modal="true">
+      <h2><span class="ic" data-i="triangle-alert"></span> Delete?</h2>
+      <div class="what" id="m_what">—</div>
+      <p id="m_size"></p>
+      <p class="danger" id="m_warn" style="display:none"></p>
+      <div class="btns">
+        <div class="btn focus" id="b_cancel">Cancel</div>
+        <div class="btn del" id="b_del">Delete</div>
+      </div>
+      <div class="err" id="m_err"></div>
+    </div>
+  </div>
+
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const PAL=["#6a4dff","#3a86b0","#37d39b","#ffce5c","#ff7a9c","#b388ff","#5a6b3a","#b0683a","#3a5fb0"];
+  const ICO={roms:"gamepad-2",saves:"download",apps:"layout-grid",cores:"cpu",
+             gallery:"image",bios:"file-text",themes:"image",file:"file-text",dir:"folder",
+             app:"layout-grid",core:"cpu",all:"triangle-alert"};
   const $=id=>document.getElementById(id);
-  function fmt(b){if(b==null)return "—";const u=["B","KB","MB","GB","TB"];let i=0,n=b;while(n>=1024&&i<4){n/=1024;i++;}return (n>=100||i==0?Math.round(n):n.toFixed(1))+" "+u[i];}
-  let items=[],foc=0,total=1;
+  function fmt(b){if(b==null)return "—";const u=["B","KB","MB","GB","TB"];let i=0,n=b;
+    while(n>=1024&&i<4){n/=1024;i++;}return (n>=100||i==0?Math.round(n):n.toFixed(1))+" "+u[i];}
   function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
+
+  // view state: "groups" (level 1) or a group key (level 2). rows[] = focusable list.
+  let total=1, view="groups", viewName="", rows=[], foc=0;
+  let modal=null, mfoc=0;              // modal: {item}, mfoc 0=Cancel 1=Delete
+
+  function setBanner(d){
+    const lb=$("lowban");
+    if(d.low){lb.classList.add("show");
+      $("lowtxt").textContent=`Storage is low — only ${fmt(d.free)} free (${d.free_pct}% of the disk). Free up space below.`;}
+    else lb.classList.remove("show");
+    $("ubar").classList.toggle("low",!!d.low);
+  }
+  function renderTm(items){
+    const sum=items.reduce((a,b)=>a+(b.bytes||0),0)||1;
+    $("tm").innerHTML=items.slice(0,12).map((it,i)=>`<div class="cell" title="${it.name} — ${fmt(it.bytes)}"
+      style="flex:${Math.max(0.02,(it.bytes||0)/sum)};background:linear-gradient(135deg,${PAL[i%PAL.length]},#0c0c1e)">${(it.bytes||0)/sum>0.06?it.name:''}</div>`).join("");
+  }
   function renderList(){
-    const max=items.length?items[0].bytes:1;
-    $("list").innerHTML=items.map((it,i)=>`<div class="item ${i===foc?'focus':''}" data-i2="${i}">
-      <span class="sw" style="background:${PAL[i%PAL.length]}"></span>
-      <span class="nm">${it.name}</span>
-      <span class="mb"><i style="width:${Math.max(2,it.bytes/max*100)}%;background:${PAL[i%PAL.length]}"></i></span>
-      <span class="sz">${fmt(it.bytes)}</span>
-      <span class="pc">${(it.bytes/total*100).toFixed(it.bytes/total<0.01?2:1)}%</span></div>`).join("");
+    const max=rows.reduce((m,r)=>Math.max(m,r.bytes||0),0)||1;
+    if(!rows.length){$("list").innerHTML='<div class="empty">Nothing here.</div>';return;}
+    $("list").innerHTML=rows.map((it,i)=>{
+      const col=PAL[i%PAL.length], ic=ICO[it.cat]||ICO[it.kind]||"file-text";
+      const pct=Math.max(2,(it.bytes||0)/max*100);
+      return `<div class="item ${i===foc?'focus':''} ${it.warn?'warn':''}" data-i2="${i}">
+        <span class="sw"><span class="ic" data-i="${ic}"></span></span>
+        <span class="nm">${it.name}${it.sub?`<span class="sub">${it.sub}</span>`:''}</span>
+        <span class="mb"><i style="width:${pct}%;background:${col}"></i></span>
+        <span class="sz">${fmt(it.bytes)}</span>
+        <span class="go">${it.open?'<span class="ic" data-i="chevron-right"></span>':(it.del?'·':'')}</span>
+      </div>`;}).join("");
+    paint();
     const f=$("list").querySelector(".item.focus"); if(f)f.scrollIntoView({block:"nearest"});
+    $("list").querySelectorAll(".item").forEach(el=>{
+      el.onclick=()=>{foc=+el.dataset.i2;renderList();activate();};});
   }
-  function renderTm(){
-    const sum=items.reduce((a,b)=>a+b.bytes,0)||1;
-    $("tm").innerHTML=items.map((it,i)=>`<div class="cell" title="${it.name} — ${fmt(it.bytes)}"
-      style="flex:${Math.max(0.02,it.bytes/sum)};background:linear-gradient(135deg,${PAL[i%PAL.length]},#0c0c1e)">${it.bytes/sum>0.06?it.name:''}</div>`).join("");
+  function setCrumb(){
+    if(view==="groups"){$("crumb").textContent="WHAT'S USING YOUR STORAGE — /userdata";
+      $("hint").textContent="↑↓ browse · A open · B back";}
+    else{$("crumb").innerHTML=`<span class="ic" data-i="chevron-left"></span> ${viewName} — A to delete`;
+      $("hint").textContent="↑↓ browse · A delete · B back"; paint();}
   }
-  function move(d){if(!items.length)return;foc=(foc+d+items.length)%items.length;renderList();}
-  addEventListener("keydown",e=>{const k=e.key;
-    if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
-    else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
-    else return;e.preventDefault();});
-  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
-  // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
+
+  function loadGroups(){
+    fetch("/storage/breakdown",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      if(!d.ok){$("sub").textContent="couldn't read disk";return;}
+      total=d.total||1;
+      $("total").textContent=fmt(d.total); $("free").textContent=fmt(d.free); $("used").textContent=fmt(d.used);
+      $("ubar").style.width=(d.used/d.total*100).toFixed(1)+"%";
+      $("sub").textContent=`${fmt(d.free)} free of ${fmt(d.total)}`;
+      setBanner(d); renderTm(d.groups||[]);
+      rows=d.groups||[]; view="groups"; viewName=""; foc=Math.min(foc,Math.max(0,rows.length-1));
+      setCrumb(); renderList();
+    }).catch(()=>{$("sub").textContent="storage offline";});
+  }
+  function openGroup(g){
+    if(!g.open)return;
+    fetch("/storage/group?key="+encodeURIComponent(g.key),{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      if(!d.ok){return;}
+      rows=(d.items||[]).map(it=>Object.assign({cat:g.cat},it));
+      view=g.key; viewName=d.name||g.name; foc=0; setCrumb(); renderList();
+    }).catch(()=>{});
+  }
+  function refreshGroup(){
+    // re-fetch the current level-2 group after a delete; if it emptied, fall back to level 1
+    fetch("/storage/group?key="+encodeURIComponent(view),{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      if(!d.ok||!(d.items||[]).length){loadGroups();return;}
+      rows=(d.items||[]).map(it=>Object.assign({cat:rows[0]&&rows[0].cat},it));
+      foc=Math.min(foc,rows.length-1); setCrumb(); renderList();
+    }).catch(()=>loadGroups());
+  }
+
+  function activate(){
+    const it=rows[foc]; if(!it)return;
+    if(view==="groups"){ if(it.open) openGroup(it); }
+    else if(it.del){ openConfirm(it); }
+  }
+
+  // ---- confirm modal (docs/27 §3.7/§3.10: capture-phase priority + layered-Escape signal) ----
+  function openConfirm(it){
+    modal={item:it}; mfoc=0;
+    $("m_what").textContent=it.name;
+    $("m_size").textContent=(it.bytes!=null?`Frees about ${fmt(it.bytes)}. `:"")+"This can't be undone.";
+    const w=$("m_warn");
+    if(it.warn){w.style.display="block";
+      w.textContent=(it.cat==="saves")?"These are your saved games / progress — deleting them is permanent.":
+        "This removes everything in this folder.";}
+    else w.style.display="none";
+    $("m_err").textContent="";
+    $("scrim").classList.add("show");
+    document.body.dataset.goseModal="1"; if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();
+    paintConfirm();
+  }
+  function closeConfirm(){
+    if(!modal)return; modal=null;
+    $("scrim").classList.remove("show");
+    delete document.body.dataset.goseModal; if(window.GOSE&&GOSE.modalPop)GOSE.modalPop();
+  }
+  function paintConfirm(){
+    $("b_cancel").classList.toggle("focus",mfoc===0);
+    $("b_del").classList.toggle("focus",mfoc===1);
+  }
+  function doDelete(){
+    const it=modal&&modal.item; if(!it||!it.del)return;
+    $("m_err").textContent="deleting…";
+    fetch(it.del.ep,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(it.del.body)}).then(r=>r.json()).then(d=>{
+      if(d.ok){closeConfirm(); (view==="groups")?loadGroups():refreshGroup();}
+      else{$("m_err").textContent=d.error||"delete failed";}
+    }).catch(e=>{$("m_err").textContent="delete failed";});
+  }
+  $("b_cancel").onclick=closeConfirm;
+  $("b_del").onclick=doDelete;
+
+  function move(d){if(!rows.length)return;foc=(foc+d+rows.length)%rows.length;renderList();}
+
+  addEventListener("keydown",e=>{
+    const k=e.key;
+    if(modal){                                  // modal owns the pad while open
+      if(k==="ArrowLeft"||k==="Left"||k==="ArrowUp"||k==="Up"){mfoc=0;paintConfirm();}
+      else if(k==="ArrowRight"||k==="Right"||k==="ArrowDown"||k==="Down"){mfoc=1;paintConfirm();}
+      else if(k==="Enter"){ mfoc===1?doDelete():closeConfirm(); }
+      else if(k==="Escape"||k==="Backspace"){ closeConfirm(); }
+      else return;
+      e.preventDefault(); e.stopPropagation(); return;
+    }
+    if(k==="ArrowDown"||k==="Down")move(1);
+    else if(k==="ArrowUp"||k==="Up")move(-1);
+    else if(k==="Enter")activate();
+    else if(k==="Escape"||k==="Backspace"){
+      if(view!=="groups")loadGroups();          // level 2 -> level 1
+      else location.href="gose-home.html";      // level 1 -> home (never traps, docs/27 §3.2)
+    }
+    else return;
+    e.preventDefault();
+  },true);                                       // capture phase (§3.7) — beats other listeners
+  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above; a page-level
+  // getGamepads() loop would be a second input path that double-fires (docs/27 §2.1).
+
   paint();
-  fetch("/storage.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-    if(!d.ok){$("sub").textContent="couldn't read disk";return;}
-    total=d.total||1; items=d.items||[];
-    $("total").textContent=fmt(d.total); $("free").textContent=fmt(d.free); $("used").textContent=fmt(d.used);
-    $("ubar").style.width=(d.used/d.total*100).toFixed(1)+"%";
-    $("sub").textContent=`${fmt(d.free)} free of ${fmt(d.total)}`;
-    renderTm(); renderList(); paint();
-  }).catch(e=>{$("sub").textContent="storage offline";});
+  loadGroups();
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>
