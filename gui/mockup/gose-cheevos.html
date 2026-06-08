@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — RetroAchievements</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 4px}
+  .top img{width:34px;height:34px}.top h1{font-size:20px;margin:0}
+  .top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  /* tabs: Account | Achievements — L1/R1 per docs/27 §3.3 */
+  .tabs{display:flex;gap:8px;margin:8px 36px 0}
+  .tab{display:flex;align-items:center;gap:8px;background:var(--surface);border:2px solid transparent;
+    border-radius:11px;padding:8px 14px;font-weight:600;font-size:13px;color:var(--muted);cursor:pointer}
+  .tab.on{color:var(--text);background:var(--surface2);border-color:var(--accent)}
+  .body{flex:1;overflow:auto;padding:10px 36px 0;min-height:0}
+  /* account pane */
+  .acct-card{background:var(--surface);border:2px solid var(--line);border-radius:14px;
+    padding:20px 24px;margin-bottom:14px;max-width:560px}
+  .acct-card h2{margin:0 0 4px;font-size:18px}
+  .acct-card .sub{color:var(--muted);font-size:12px;margin-bottom:16px}
+  .field-row{margin-bottom:14px}
+  .field-row label{display:block;font-size:12px;font-weight:700;color:var(--muted);
+    letter-spacing:.4px;margin-bottom:5px}
+  .field-row input{width:100%;background:#ffffff0c;border:1.5px solid var(--line);border-radius:9px;
+    color:var(--text);font-size:14px;font-family:inherit;padding:9px 13px;outline:none}
+  .field-row input:focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  /* toggle rows */
+  .trow{display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:11px 0;border-bottom:1px solid #ffffff0a}
+  .trow:last-child{border-bottom:none}
+  .trow .tl{flex:1}
+  .trow .tnm{font-weight:600;font-size:14px}
+  .trow .tsub{color:var(--muted);font-size:12px;margin-top:2px}
+  .trow .chip{padding:5px 12px;border-radius:8px;font-size:12px;font-weight:700;
+    cursor:pointer;background:var(--surface2);color:var(--muted);border:1.5px solid var(--line);
+    white-space:nowrap}
+  .trow .chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .trow.focus-row{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+  /* status banners */
+  .banner{display:flex;align-items:center;gap:10px;padding:11px 16px;border-radius:11px;
+    margin-bottom:12px;font-size:13px;font-weight:600;max-width:560px}
+  .banner.ok{background:#3fe0a01f;border:1px solid #3fe0a066;color:#3fe0a0}
+  .banner.warn{background:#ffb27a1f;border:1px solid #ffb27a66;color:#ffb27a}
+  .banner.info{background:#5cd0ff1f;border:1px solid #5cd0ff66;color:#5cd0ff}
+  .banner .bic{font-size:18px}
+  .btn-row{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+  .btn{padding:9px 20px;border-radius:9px;font-size:13px;font-weight:700;cursor:pointer;
+    background:var(--accent);color:#fff;border:none;font-family:inherit}
+  .btn.sec{background:var(--surface2);color:var(--text);border:1.5px solid var(--line)}
+  .btn:focus{outline:2px solid var(--accent);outline-offset:2px}
+  .btn.focus-btn{outline:2px solid var(--accent);outline-offset:2px}
+  /* achievements pane */
+  .game-search{display:flex;gap:10px;align-items:center;margin-bottom:12px;max-width:640px}
+  .game-search input{flex:1;background:#ffffff0c;border:1.5px solid var(--line);border-radius:9px;
+    color:var(--text);font-size:14px;font-family:inherit;padding:9px 13px;outline:none}
+  .game-search input:focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .game-search .lbtn{padding:9px 16px;border-radius:9px;font-size:13px;font-weight:700;
+    cursor:pointer;background:var(--accent);color:#fff;border:none;font-family:inherit}
+  .game-search .lbtn:focus,.game-search .lbtn.focus-btn{outline:2px solid var(--accent);outline-offset:2px}
+  .ach-list{max-width:640px}
+  .ach-row{display:flex;align-items:flex-start;gap:14px;padding:11px 13px;border-radius:10px;
+    background:#ffffff06;margin-bottom:8px;border:2px solid transparent}
+  .ach-row.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .ach-badge{width:44px;height:44px;border-radius:10px;flex:none;background:#ffffff10;
+    display:grid;place-items:center;font-size:22px;overflow:hidden}
+  .ach-badge img{width:44px;height:44px;object-fit:cover;border-radius:8px}
+  .ach-badge.unlocked{background:#3fe0a01a}
+  .ach-badge.locked{background:#ffffff08;filter:grayscale(1);opacity:.5}
+  .ach-info{flex:1;min-width:0}
+  .ach-title{font-weight:700;font-size:14px}
+  .ach-desc{color:var(--muted);font-size:12px;margin-top:2px;line-height:1.5}
+  .ach-pts{font-size:11px;font-weight:700;color:var(--muted);margin-top:4px}
+  .ach-pts .pts-v{color:var(--text)}
+  .pill{font-size:11px;font-weight:700;border-radius:9px;padding:2px 8px;white-space:nowrap;margin-left:6px}
+  .pill.ok{color:#3fe0a0;background:#3fe0a01a}
+  .pill.hc{color:#f0a000;background:#f0a0001a}
+  .pill.lock{color:#9aa0c0;background:#ffffff10}
+  .empty{color:var(--muted);font-size:14px;padding:24px 0}
+  .note-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+    padding:16px 18px;color:var(--muted);font-size:13px;line-height:1.6;max-width:560px}
+  .note-card b{color:var(--text)}
+  .foot{margin:8px 36px 14px;display:flex;gap:10px;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:9px 16px}
+  .foot .h{margin-left:auto}
+  /* scrim / toast */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    background:var(--surface2);border:1px solid var(--line);border-radius:12px;
+    padding:11px 20px;font-size:13px;font-weight:600;color:var(--text);
+    opacity:0;pointer-events:none;transition:opacity .25s;z-index:100;white-space:nowrap}
+  #toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-crystal.png" alt="GOSE">
+    <div><h1>RetroAchievements</h1><div class="s" id="sub">loading…</div></div>
+    <div class="home"><span class="ic" data-i="star"></span> B / Esc — back to Settings</div>
+  </div>
+  <div class="tabs" id="tabs">
+    <div class="tab on" data-t="0">Account</div>
+    <div class="tab" data-t="1">Achievements</div>
+  </div>
+  <div class="body" id="body"></div>
+  <div class="foot">
+    <span class="ic" data-i="star"></span> retroachievements.org
+    <span class="h"><b>L1/R1</b> switch tab · <b>B</b> back</span>
+  </div>
+  <div id="toast"></div>
+<script src="assets/icons.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
+  const body = document.getElementById("body");
+  const $ = id => document.getElementById(id);
+  function esc(s){ return (s == null ? "" : ("" + s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function paint(){ if(window.GICON){ GICON.paint(document); return; }
+    document.querySelectorAll("[data-i]").forEach(e => e.style.setProperty("--u", `url(assets/icons/${e.dataset.i}.svg)`)); }
+  function showToast(msg, ms){ const t = $("toast"); t.textContent = msg; t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), ms || 2200); }
+  async function postJSON(url, obj){ return fetch(url, {method:"POST",
+    headers:{"Content-Type":"application/json"}, body:JSON.stringify(obj)}).then(r=>r.json()); }
+
+  // ---- state ----
+  let tab = 0; // 0=account, 1=achievements
+  let RA = { ok:false, enabled:false, username:"", has_credentials:false, hardcore:false, leaderboards:false };
+  let focusIdx = 0; // index into the focusable items in the current pane
+
+  // ---- tabs ----
+  const TABS = ["account", "achievements"];
+  function buildTabs(){
+    [...$("tabs").children].forEach((el, i) => {
+      el.classList.toggle("on", i === tab);
+      el.onclick = () => { tab = i; focusIdx = 0; render(); };
+    });
+  }
+
+  // ---- account pane ----
+  let acctInputs = {}; // holds live input values
+  function buildAccount(){
+    const connected = RA.enabled && RA.has_credentials;
+    let banner = "";
+    if(connected){
+      banner = `<div class="banner ok"><span class="bic">⭐</span> Connected as <b>${esc(RA.username)}</b>
+        ${RA.hardcore ? ' · <span style="color:#f0a000">Hardcore ON</span>' : ""}</div>`;
+    } else if(RA.has_credentials && !RA.enabled){
+      banner = `<div class="banner warn"><span class="bic">⚠</span> Credentials saved but RetroAchievements is <b>disabled</b>.
+        Enable it below to earn achievements.</div>`;
+    } else {
+      banner = `<div class="banner info"><span class="bic">ℹ</span> No account configured.
+        Enter your <a href="https://retroachievements.org" style="color:inherit">retroachievements.org</a>
+        username and password below.</div>`;
+    }
+
+    const rows = [
+      // idx 0 — username field
+      { id:"f-username", label:"RetroAchievements username", type:"text", val:RA.username, ph:"your RA username" },
+      // idx 1 — password field (never pre-filled — don't round-trip it from server)
+      { id:"f-password", label:"Password (write-only)", type:"password", val:"", ph:RA.has_credentials?"••••••• (saved — enter to change)":"enter password" },
+    ];
+
+    // toggles: idx 2 = enable, 3 = hardcore, 4 = leaderboards
+    const toggles = [
+      { id:"tog-enabled", nm:"Enable RetroAchievements", sub:"Track and earn achievements in supported games. Sends game ID to retroachievements.org when enabled.", on:RA.enabled, key:"enabled" },
+      { id:"tog-hardcore", nm:"Hardcore mode", sub:"No save-states or rewind. Earns the hardcore badge. Applies on next game launch.", on:RA.hardcore, key:"hardcore" },
+      { id:"tog-ldb", nm:"Leaderboards", sub:"Submit scores to RA global leaderboards.", on:RA.leaderboards, key:"leaderboards" },
+    ];
+
+    // buttons: idx 5 = Save, 6 = Clear
+    body.innerHTML = banner +
+      `<div class="acct-card">
+        <h2>Account</h2>
+        <div class="sub">Credentials are stored only in batocera.conf. They are never included in support bundles.</div>
+        ${rows.map(r => `<div class="field-row"><label>${esc(r.label)}</label>
+          <input id="${r.id}" type="${r.type}" autocomplete="off" spellcheck="false"
+            value="${esc(r.val)}" placeholder="${esc(r.ph)}"></div>`).join("")}
+        <div class="btn-row">
+          <button class="btn" id="btn-save" tabindex="-1">Save credentials</button>
+          <button class="btn sec" id="btn-clear" tabindex="-1">Clear account</button>
+        </div>
+      </div>
+      <div class="acct-card">
+        <h2>Settings</h2>
+        <div class="sub">Applies on next game launch.</div>
+        ${toggles.map(t => `<div class="trow" id="${t.id}">
+          <div class="tl"><div class="tnm">${esc(t.nm)}</div><div class="tsub">${esc(t.sub)}</div></div>
+          <div class="chip ${t.on?"on":""}">${t.on?"ON":"OFF"}</div></div>`).join("")}
+      </div>`;
+
+    // wire inputs
+    acctInputs.username = $("f-username");
+    acctInputs.password = $("f-password");
+
+    // wire buttons
+    $("btn-save").onclick = doSave;
+    $("btn-clear").onclick = doClear;
+
+    // wire toggle chips
+    toggles.forEach(t => {
+      const row = $(t.id); if(!row) return;
+      row.querySelector(".chip").onclick = () => {
+        const on = !RA[t.key];
+        postJSON("/ra/credentials", {[t.key]: on}).then(d => { if(d&&d.ok){ RA=d; buildAccount(); paint(); }
+          showToast(t.nm + ": " + (on?"ON":"OFF")); });
+      };
+    });
+
+    // wire OSK on text fields (docs/27 §3.6: plain inputs get the shared OSK)
+    paintFocus();
+  }
+
+  async function doSave(){
+    const uname = (acctInputs.username && acctInputs.username.value || "").trim();
+    const pw = acctInputs.password && acctInputs.password.value || "";
+    if(!uname){ showToast("Username is required"); return; }
+    const payload = { username: uname, enabled: true };
+    if(pw) payload.password = pw;   // only send if the field was filled
+    const d = await postJSON("/ra/credentials", payload).catch(() => null);
+    if(d && d.ok){ RA = d; buildAccount(); paint(); showToast("Saved — applies on next launch"); }
+    else showToast("Save failed");
+  }
+
+  async function doClear(){
+    const d = await postJSON("/ra/credentials", { username:"", password:"", enabled:false }).catch(() => null);
+    if(d && d.ok){ RA = d; buildAccount(); paint(); showToast("Account cleared"); }
+    else showToast("Clear failed");
+  }
+
+  // ---- achievements pane ----
+  let achData = null; // last fetched achievements
+  let achFocusIdx = 0;
+  let achSystem = "", achGame = "";
+
+  function buildAchievements(){
+    if(!RA.enabled || !RA.has_credentials){
+      body.innerHTML = `<div class="note-card">
+        <b>No RA account configured.</b><br>
+        Set up your RetroAchievements account on the Account tab first.<br><br>
+        <span style="color:var(--muted)">RetroAchievements requires a free account at
+        <b>retroachievements.org</b> and a supported ROM. Homebrew and unlicensed games
+        are not in the RA database — "no achievements" is expected for them.</span>
+      </div>`;
+      return;
+    }
+
+    // game search bar
+    const qSystem = new URLSearchParams(location.search).get("system") || achSystem;
+    const qGame = new URLSearchParams(location.search).get("game") || achGame;
+
+    body.innerHTML = `<div class="game-search">
+      <input id="gs-sys" type="text" autocomplete="off" spellcheck="false" placeholder="System (e.g. snes)" value="${esc(qSystem)}">
+      <input id="gs-game" type="text" autocomplete="off" spellcheck="false" placeholder="Game name" value="${esc(qGame)}">
+      <button class="lbtn" id="gs-load">Load</button>
+    </div>
+    <div id="ach-body"><div class="note-card">Enter a system and game name, then press Load (or Enter).</div></div>`;
+
+    $("gs-load").onclick = () => loadAchievements($("gs-sys").value.trim(), $("gs-game").value.trim());
+
+    // if URL has params, auto-load
+    if(qSystem && qGame) loadAchievements(qSystem, qGame);
+    paintFocus();
+  }
+
+  async function loadAchievements(system, game){
+    achSystem = system; achGame = game;
+    const ab = $("ach-body"); if(!ab) return;
+    ab.innerHTML = '<div class="empty">Loading…</div>';
+    let d;
+    try{ d = await fetch(`/ra/achievements?system=${encodeURIComponent(system)}&game=${encodeURIComponent(game)}`,
+      {cache:"no-store"}).then(r=>r.json()); }
+    catch(e){ ab.innerHTML='<div class="empty">Could not reach the server.</div>'; return; }
+
+    achData = d;
+    achFocusIdx = 0;
+
+    if(!d || !d.ok){
+      ab.innerHTML = `<div class="note-card"><b>Error:</b> ${esc((d&&d.error)||"Unknown error")}</div>`;
+      return;
+    }
+
+    if(d.state === "no_account"){
+      ab.innerHTML = `<div class="note-card">${esc(d.note)}</div>`; return;
+    }
+    if(d.state === "no_cache"){
+      ab.innerHTML = `<div class="note-card"><b>No achievement data cached for this game.</b><br><br>
+        ${esc(d.note)}</div>`; return;
+    }
+
+    const total = d.total || 0;
+    const unlocked = (d.achievements || []).filter(a => a.unlocked).length;
+    const hc = (d.achievements || []).filter(a => a.hardcore).length;
+    let summary = `<b>${esc(d.game)}</b> · ${unlocked}/${total} unlocked`;
+    if(hc) summary += ` · ${hc} hardcore`;
+
+    const rows = (d.achievements || []).map((a, i) => {
+      const uPill = a.hardcore ? '<span class="pill hc">HC</span>'
+                  : a.unlocked ? '<span class="pill ok">Unlocked</span>'
+                  : '<span class="pill lock">Locked</span>';
+      const badgeClass = a.unlocked ? "unlocked" : "locked";
+      const badgeContent = a.badge
+        ? `<img src="https://media.retroachievements.org/Badge/${esc(a.badge)}.png" alt="" loading="lazy" onerror="this.style.display='none'">`
+        : (a.unlocked ? "⭐" : "🔒");
+      return `<div class="ach-row" data-ai="${i}">
+        <div class="ach-badge ${badgeClass}">${badgeContent}</div>
+        <div class="ach-info">
+          <div class="ach-title">${esc(a.title)}${uPill}</div>
+          <div class="ach-desc">${esc(a.description)}</div>
+          <div class="ach-pts"><span class="pts-v">${esc(a.points)}</span> pts</div>
+        </div>
+      </div>`;
+    }).join("");
+
+    ab.innerHTML = `<div class="banner ok" style="margin-bottom:10px"><span class="bic">⭐</span> ${summary}</div>`
+      + `<div class="ach-list">${rows || '<div class="empty">No achievements found.</div>'}</div>`;
+    paintAchFocus();
+    paint();
+  }
+
+  function paintAchFocus(){
+    const rows = document.querySelectorAll(".ach-row"); if(!rows.length) return;
+    rows.forEach((r, i) => r.classList.toggle("focus", i === achFocusIdx));
+    rows[achFocusIdx] && rows[achFocusIdx].scrollIntoView({block:"nearest"});
+  }
+
+  // ---- focus management (account pane) ----
+  // Focusable items (account tab): [0]=username, [1]=password, [2]=save, [3]=clear,
+  //                                 [4]=tog-enabled, [5]=tog-hardcore, [6]=tog-ldb
+  const ACCT_FOC = ["f-username","f-password","btn-save","btn-clear","tog-enabled","tog-hardcore","tog-ldb"];
+  function paintFocus(){
+    ACCT_FOC.forEach((id, i) => {
+      const el = $(id); if(!el) return;
+      const chip = el.classList && el.classList.contains("trow") ? el.querySelector(".chip") : null;
+      if(chip){ chip.classList.toggle("focus-btn", i === focusIdx); }
+      else { el.classList && el.classList.toggle("focus-btn", i === focusIdx); }
+    });
+  }
+  function activateFoc(){
+    const id = ACCT_FOC[focusIdx]; if(!id) return;
+    const el = $(id); if(!el) return;
+    if(el.tagName === "INPUT"){ el.focus(); return; }
+    if(el.tagName === "BUTTON"){ el.click(); return; }
+    // toggle row — click the chip
+    const chip = el.querySelector && el.querySelector(".chip"); if(chip) chip.click();
+  }
+
+  // ---- unified render ----
+  function render(){
+    buildTabs();
+    if(tab === 0) buildAccount();
+    else buildAchievements();
+    paint();
+  }
+
+  // ---- ONE input path (docs/27 §2.1: no getGamepads) ----
+  addEventListener("keydown", e => {
+    const k = e.key;
+    // tab switch (L1/R1)
+    if(k === "[" || k === "PageUp"){ tab = (tab - 1 + TABS.length) % TABS.length; focusIdx = 0; render(); e.preventDefault(); return; }
+    if(k === "]" || k === "PageDown"){ tab = (tab + 1) % TABS.length; focusIdx = 0; render(); e.preventDefault(); return; }
+    // escape = back to settings (docs/27 §3.2)
+    if(k === "Escape" || k === "Backspace"){
+      if(document.activeElement && document.activeElement.tagName === "INPUT"){
+        document.activeElement.blur(); e.preventDefault(); return;
+      }
+      location.href = "gose-settings.html#system"; return;
+    }
+    if(tab === 0){
+      // account pane nav
+      if(k === "ArrowDown" || k === "Down"){
+        focusIdx = (focusIdx + 1) % ACCT_FOC.length; paintFocus(); e.preventDefault();
+      } else if(k === "ArrowUp" || k === "Up"){
+        focusIdx = (focusIdx - 1 + ACCT_FOC.length) % ACCT_FOC.length; paintFocus(); e.preventDefault();
+      } else if(k === "Enter" || k === " "){ activateFoc(); e.preventDefault(); }
+    } else {
+      // achievements pane nav
+      const rows = document.querySelectorAll && document.querySelectorAll(".ach-row");
+      if(!rows || !rows.length) return;
+      if(k === "ArrowDown" || k === "Down"){ achFocusIdx = (achFocusIdx + 1) % rows.length; paintAchFocus(); e.preventDefault(); }
+      else if(k === "ArrowUp" || k === "Up"){ achFocusIdx = (achFocusIdx - 1 + rows.length) % rows.length; paintAchFocus(); e.preventDefault(); }
+    }
+  });
+
+  // ---- poll for new unlocks while page is open ----
+  // Fires GOSE.notify toasts server-side; we just poll to keep the log tail
+  // advancing.  Honest: only fires if RA is enabled + a game is running + the
+  // ROM is RA-supported.
+  let pollTimer = null;
+  function startPoll(){
+    if(pollTimer) return;
+    pollTimer = setInterval(() => {
+      if(!RA.enabled || !RA.has_credentials) return;
+      fetch("/ra/poll", {cache:"no-store"}).then(r => r.json()).then(d => {
+        if(d && d.unlocks && d.unlocks.length){
+          // server already fired the GOSE.notify toast; optionally refresh the achievements list
+          if(tab === 1 && achSystem && achGame) loadAchievements(achSystem, achGame);
+        }
+      }).catch(() => {});
+    }, 5000); // poll every 5 s
+  }
+  function stopPoll(){ if(pollTimer){ clearInterval(pollTimer); pollTimer = null; } }
+  document.addEventListener("visibilitychange", () => document.hidden ? stopPoll() : startPoll());
+
+  // ---- boot ----
+  paint();
+  fetch("/ra/state", {cache:"no-store"}).then(r => r.json()).then(d => {
+    if(d && d.ok) RA = d;
+    const connected = RA.enabled && RA.has_credentials;
+    $("sub").textContent = connected
+      ? "Connected as " + RA.username + (RA.hardcore ? " · Hardcore" : "")
+      : "Not connected — set up your retroachievements.org account";
+    render();
+    startPoll();
+  }).catch(() => {
+    $("sub").textContent = "Server offline";
+    body.innerHTML = '<div class="note-card">Could not reach the GOSE server.</div>';
+  });
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>

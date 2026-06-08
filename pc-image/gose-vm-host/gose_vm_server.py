@@ -4302,6 +4302,207 @@ def diag_bundle_delete(filename):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+# ---- RetroAchievements (#33) -----------------------------------------------
+# Batocera wires RA via batocera.conf global.retroachievements* keys; configgen
+# writes them into cheevos_* in retroarchcustom.cfg at launch.  We never hold
+# the password in our own JSON — only in batocera.conf (Batocera's own design),
+# which _diag_safe_config() already scrubs ("password" pattern).  The RA token
+# that RetroArch exchanges internally is also scrubbed ("token" pattern).
+#
+# Unlock detection: RetroArch logs achievement unlocks to its own log at
+# /userdata/system/configs/retroarch/saves/retroarch.log (or the path in
+# retroarch.cfg log_file).  We tail that log from a known offset and fire a
+# GOSE notify toast via notifications_post() for each newly-seen unlock line.
+# Limitation: requires an RA account + RA-supported game; our homebrew ROMs are
+# NOT in the RA database — "no achievements for this game" is expected, not a bug.
+#
+# Per-game cheevos data: RetroArch downloads per-game achievement definitions
+# into its runtime cache when an RA-supported game is loaded.  The stable
+# in-guest path is /userdata/system/configs/retroarch/cache/cheevos/<gameid>.json
+# (written by rcheevos at game load).  Offline / no account: honest empty.
+
+RA_LOG = "/userdata/system/configs/retroarch/saves/retroarch.log"
+_ra_log_pos = 0      # byte offset: tail from here so we don't re-fire old lines
+_ra_log_lock = threading.Lock()
+
+def ra_state_get():
+    """GET /ra/state — current RA config from batocera.conf (no secrets returned)."""
+    enabled = _bconf_get("global.retroachievements")
+    username = _bconf_get("global.retroachievements.username") or ""
+    hardcore = _bconf_get("global.retroachievements.hardcore")
+    leaderboards = _bconf_get("global.retroachievements.leaderboards")
+    # never return the password/token — just confirm whether credentials are set
+    has_credentials = bool(username.strip())
+    return {
+        "ok": True,
+        "enabled": (enabled or "0").strip() not in ("", "0", "false"),
+        "username": username.strip(),
+        "has_credentials": has_credentials,
+        "hardcore": (hardcore or "0").strip() not in ("", "0", "false"),
+        "leaderboards": (leaderboards or "0").strip() not in ("", "0", "false"),
+        "note": "password is stored in batocera.conf only; never returned by this endpoint"
+    }
+
+def ra_credentials_set(payload):
+    """POST /ra/credentials — set RA username/password and enable/disable/hardcore.
+    The password is written ONLY to batocera.conf (Batocera's canonical store).
+    It is NEVER stored in our own JSON files.  _diag_safe_config() scrubs it
+    from any support bundle (matches 'password' pattern).  Pass enabled=null/
+    missing to leave toggle as-is; pass password='' to clear credentials."""
+    payload = payload or {}
+
+    # --- enabled toggle ---
+    if "enabled" in payload and payload["enabled"] is not None:
+        _bconf_set("global.retroachievements", "1" if payload["enabled"] else "0")
+
+    # --- credentials ---
+    username = payload.get("username")
+    password = payload.get("password")  # RA account password (RA handles token exchange)
+    if username is not None:
+        uname = str(username).strip()[:64]
+        _bconf_set("global.retroachievements.username", uname)
+        if not uname:
+            # clearing username: also clear password and disable
+            _bconf_set("global.retroachievements.password", "")
+            _bconf_set("global.retroachievements", "0")
+    if password is not None:
+        # store in batocera.conf only; _diag_safe_config scrubs "password" lines
+        _bconf_set("global.retroachievements.password", str(password).strip()[:256])
+        # if credentials are provided, auto-enable
+        if str(password).strip() and username is not None and str(username).strip():
+            _bconf_set("global.retroachievements", "1")
+
+    # --- hardcore toggle ---
+    if "hardcore" in payload and payload["hardcore"] is not None:
+        _bconf_set("global.retroachievements.hardcore", "1" if payload["hardcore"] else "0")
+
+    # --- leaderboards toggle ---
+    if "leaderboards" in payload and payload["leaderboards"] is not None:
+        _bconf_set("global.retroachievements.leaderboards", "1" if payload["leaderboards"] else "0")
+
+    LOG.info("RA credentials updated (username=%s, has_pw=%s)",
+             payload.get("username", "(unchanged)"), bool(payload.get("password")))
+    return ra_state_get()
+
+def ra_achievements_get(system, game):
+    """GET /ra/achievements?system=&game= — per-game achievement list from the
+    RetroArch cheevos cache.  Returns honest empty state when no RA account is
+    configured, or game is not in the RA database (homebrew ROMs are not),
+    or cache not yet downloaded (game not yet launched with RA enabled).
+    Never fabricates unlock data."""
+    st = ra_state_get()
+    if not st["enabled"] or not st["has_credentials"]:
+        return {"ok": True, "system": system, "game": game,
+                "achievements": [], "total": 0,
+                "state": "no_account",
+                "note": "RetroAchievements is disabled or no account configured. "
+                        "Set credentials in Settings › RetroAchievements."}
+
+    # RetroArch downloads per-game cheevos JSON into its runtime cache.
+    cache_dir = "/userdata/system/configs/retroarch/cache/cheevos"
+    achievements = []
+    state = "no_data"
+    matched_file = None
+
+    if os.path.isdir(cache_dir):
+        candidates = [f for f in os.listdir(cache_dir) if f.endswith(".json")]
+        for fname in candidates:
+            try:
+                fp = os.path.join(cache_dir, fname)
+                d = json.load(open(fp))
+                # RA cache JSON has a "Title" field matching the game name
+                title = (d.get("Title") or d.get("title") or "").lower()
+                gname = (game or "").lower().replace("_", " ").replace("-", " ")
+                if title and gname and (gname in title or title in gname):
+                    matched_file = fname
+                    raw = d.get("Achievements") or d.get("achievements") or []
+                    if isinstance(raw, list):
+                        achievements = [_ra_fmt_achievement(a) for a in raw
+                                        if isinstance(a, dict)]
+                    elif isinstance(raw, dict):
+                        achievements = [_ra_fmt_achievement(a) for a in raw.values()
+                                        if isinstance(a, dict)]
+                    state = "cached"
+                    break
+            except Exception:
+                continue
+
+    if state == "no_data":
+        return {"ok": True, "system": system, "game": game,
+                "achievements": [], "total": 0,
+                "state": "no_cache",
+                "note": "No achievement data cached for this game. "
+                        "Launch the game once with RA enabled to download achievement data. "
+                        "Homebrew and unlicensed ROMs are not in the RetroAchievements database."}
+
+    return {"ok": True, "system": system, "game": game,
+            "achievements": achievements, "total": len(achievements),
+            "state": state, "cache_file": matched_file}
+
+def _ra_fmt_achievement(a):
+    """Normalize a raw RA cache achievement dict into a clean shape."""
+    if not isinstance(a, dict):
+        return {}
+    return {
+        "id": a.get("ID") or a.get("id"),
+        "title": a.get("Title") or a.get("title") or a.get("name") or "",
+        "description": a.get("Description") or a.get("description") or "",
+        "points": a.get("Points") or a.get("points") or 0,
+        "badge": a.get("BadgeName") or a.get("badge_name") or "",
+        "unlocked": bool(a.get("HardcoreAchieved") or a.get("DateEarned") or
+                         a.get("Unlocked") or a.get("unlocked")),
+        "hardcore": bool(a.get("HardcoreAchieved") or a.get("hardcore_unlocked")),
+    }
+
+def ra_poll_unlocks():
+    """GET /ra/poll — tail the RetroArch log for new achievement unlock lines
+    and fire GOSE notify toasts for each.  Called from the cheevos page while
+    a game is running.  Tracks byte offset so each line fires exactly once.
+    Limitation: requires RA enabled + RA-supported ROM + game launched."""
+    global _ra_log_pos
+    unlocks = []
+    with _ra_log_lock:
+        if not os.path.isfile(RA_LOG):
+            return {"ok": True, "unlocks": [], "state": "no_log",
+                    "note": "RetroArch log not found. Launch an RA-enabled game first."}
+        try:
+            size = os.path.getsize(RA_LOG)
+            if size < _ra_log_pos:
+                _ra_log_pos = 0     # log was rotated / truncated
+            if size == _ra_log_pos:
+                return {"ok": True, "unlocks": [], "state": "idle"}
+            with open(RA_LOG, "rb") as fh:
+                fh.seek(_ra_log_pos)
+                new_data = fh.read(min(size - _ra_log_pos, 65536))   # cap: 64 KB per poll
+                _ra_log_pos += len(new_data)
+        except Exception as e:
+            return {"ok": True, "unlocks": [], "state": "error", "error": str(e)}
+
+    # RA unlock lines look like:
+    #   [CHEEVOS]: Awarded achievement "Name" (1234)
+    #   [CHEEVOS]: Awarded hardcore achievement "Name" (1234)
+    for line in new_data.decode("utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if "[CHEEVOS]" not in line:
+            continue
+        llow = line.lower()
+        if "awarded" not in llow and "unlock" not in llow:
+            continue
+        m = re.search(r'["“”]([^“”"]{1,200})["“”]', line)
+        name = m.group(1).strip() if m else "Achievement"
+        hardcore = "hardcore" in llow
+        pts_m = re.search(r"\((\d+)\)", line)
+        pts = int(pts_m.group(1)) if pts_m else 0
+        ev = {"title": name, "hardcore": hardcore, "points": pts}
+        unlocks.append(ev)
+        # fire a GOSE.notify toast (auto-DND if game running is client-side)
+        title = ("\U0001f3c6 " if hardcore else "⭐ ") + name
+        body = ("Hardcore unlock!" if hardcore else "Achievement unlocked!") + (
+            (" (%d pts)" % pts) if pts else "")
+        notifications_post({"title": title, "body": body, "kind": "success", "icon": "trophy"})
+
+    return {"ok": True, "unlocks": unlocks, "state": "ok"}
+
 # ---- FPS overlay toggle (RetroArch on-screen FPS counter) ----
 # IMPORTANT: batocera's configgen REGENERATES retroarchcustom.cfg from source on every launch,
 # so editing fps_show there is clobbered. The authoritative source configgen reads is the
@@ -6622,6 +6823,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(sys_ssh())
         if route == "/security/ssh":
             return self._json(security_ssh_state())
+        if route == "/ra/state":
+            return self._json(ra_state_get())
+        if route == "/ra/achievements":
+            q = self._qs()
+            return self._json(ra_achievements_get(q.get("system", ""), q.get("game", "")))
+        if route == "/ra/poll":
+            return self._json(ra_poll_unlocks())
         if route == "/sys/display":
             return self._json(sys_display())
         if route == "/sys/vsync":
@@ -6977,6 +7185,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/net/connect":
                 return self._json(host_bridge("/wifi/connect", payload, timeout=30))
             return self._json(host_bridge("/wifi/disconnect", {}, timeout=20))
+        if route == "/ra/credentials":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            return self._json(ra_credentials_set(payload))
         if route in ("/ui/prefs", "/privacy", "/sys/ssh", "/sys/display", "/sys/vsync",
                      "/sys/timezone"):
             try:
