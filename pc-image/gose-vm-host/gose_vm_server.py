@@ -239,6 +239,71 @@ _STATS_LOCK = threading.Lock()
 _SESSION = {"system": None, "game": None, "t": None}
 _SESSION_LOCK = threading.Lock()
 
+# #112 game-over flag: per-game marker written when a session ends with a final score at GAME_OVER.
+# launch_game reads this; if set + .state.auto exists it deletes the stale auto-save so the
+# game starts fresh instead of resuming a frozen 9-0 screen.
+PLAY_CONFIG_F = "/userdata/system/gose/play_config.json"
+_PLAY_CONFIG_LOCK = threading.Lock()
+
+def _play_config():
+    """Load play_config.json; returns {} on missing/corrupt."""
+    try:
+        return json.load(open(PLAY_CONFIG_F))
+    except Exception:
+        return {}
+
+def _play_config_save(cfg):
+    """Atomic write to play_config.json."""
+    try:
+        os.makedirs(os.path.dirname(PLAY_CONFIG_F), exist_ok=True)
+        write_json_atomic(PLAY_CONFIG_F, cfg)
+    except Exception as e:
+        LOG.warning("play_config write failed: %s", e)
+
+def _gameover_flag_path(system, game):
+    """Path for the per-game game-over marker (SAVES_ROOT/<system>/<game>.gameover)."""
+    return os.path.join(SAVES_ROOT, system, game + ".gameover")
+
+def _set_gameover_flag(system, game, score_left, score_right):
+    """Write a game-over marker so the next launch knows to skip the stale auto-save."""
+    path = _gameover_flag_path(system, game)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump({"score_left": score_left, "score_right": score_right,
+                       "ts": time.time()}, f)
+    except Exception as e:
+        LOG.warning("gameover flag write failed %s/%s: %s", system, game, e)
+
+def _clear_gameover_flag(system, game):
+    """Delete the game-over marker after consuming it on launch."""
+    try:
+        os.remove(_gameover_flag_path(system, game))
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        LOG.warning("gameover flag clear failed %s/%s: %s", system, game, e)
+
+def _auto_save_path(system, game):
+    """Path of RetroArch's auto-save for this game (written by autosave=1)."""
+    return os.path.join(SAVES_ROOT, system, game + ".state.auto")
+
+def _nci_score_pong():
+    """Best-effort RAM read of pong1k2p scores via NCI. Returns (left, right) or None."""
+    try:
+        import socket as _s
+        sock = _s.socket(_s.AF_INET, _s.SOCK_DGRAM)
+        sock.settimeout(0.5)
+        sock.sendto(b"READ_CORE_RAM 14 2\n", ("127.0.0.1", 55355))
+        resp = sock.recvfrom(256)[0].decode("utf-8", "replace").strip()
+        sock.close()
+        parts = resp.split()
+        if len(parts) >= 4 and parts[0] == "READ_CORE_RAM":
+            return int(parts[2], 16), int(parts[3], 16)
+    except Exception:
+        pass
+    return None
+
 # #115 current-activity state file: written on game enter, deleted on exit.
 # Consumers (Guide header, AI #113 foundation): read this to know what's running.
 ACTIVITY_F = "/userdata/system/gose/activity.json"
@@ -392,16 +457,27 @@ def _game_stats_one(system, game):
 
 # Background session watcher: polls game_running every 10s; finalizes session when the
 # game is no longer running. Handles SIGKILL (no clean exit path) best-effort.
+# #112: on exit, do a final NCI score read; if at game-over, write the flag so the next
+# launch deletes the stale auto-save rather than resuming a frozen finished match.
 def _session_watcher():
     import time as _time
+    GAME_OVER_SCORE = 9   # pong1k2p: first to 9 (only verified profile so far)
     while True:
         _time.sleep(10)
         try:
             with _SESSION_LOCK:
                 if _SESSION["t"] is None:
                     continue
+                sys_ = _SESSION["system"]
+                game_ = _SESSION["game"]
             gr = game_running()
             if not gr.get("running"):
+                # Final score read before the process fully exits (best-effort).
+                # Only meaningful for pong1k2p (the one verified profile).
+                if sys_ and game_ and "pong" in (game_ or "").lower():
+                    sc = _nci_score_pong()
+                    if sc and (sc[0] >= GAME_OVER_SCORE or sc[1] >= GAME_OVER_SCORE):
+                        _set_gameover_flag(sys_, game_, sc[0], sc[1])
                 _finalize_session()
         except Exception:
             pass
@@ -1765,6 +1841,19 @@ def launch_game(system, game, players=None):
                    _files, "them" if len(_missing_bios) != 1 else "it")
             ),
         }
+    # #112 auto-resume guard: if the previous session of this game ended in a game-over
+    # state (flag written by the session watcher or play scripts), delete the stale
+    # auto-save so RetroArch starts a fresh game instead of resuming a frozen 9-0 screen.
+    _auto = _auto_save_path(system, game)
+    _flag = _gameover_flag_path(system, game)
+    if os.path.exists(_flag):
+        try:
+            if os.path.exists(_auto):
+                os.remove(_auto)
+                LOG.info("#112 deleted stale auto-save %s (previous session ended at game-over)", _auto)
+        except Exception as e:
+            LOG.warning("#112 could not delete auto-save %s: %s", _auto, e)
+        _clear_gameover_flag(system, game)
     try:
         _spawn(["emulatorlauncher"] + _virtual_pad_args(order=players) + ["-system", system, "-rom", rom])
         record_recent(system, game)
@@ -4391,6 +4480,114 @@ def game_playmap(map_id):
     if data is None:
         return {"ok": False, "error": f"no play-map for '{map_id}'"}
     return {"ok": True, "play_map": data}
+
+# ---- #116 AI play difficulty (Easy/Med/Hard/Learning) --------------------------------
+# Config stored in play_config.json under key "difficulty" (default "med").
+# The play script (wren_pong_p2.py) reads /play/difficulty at startup and applies the
+# corresponding reaction parameters. Learning tracks human win-rate history and adapts.
+#
+# Difficulty table (data-driven):
+#   easy:     HZ=5,  dead=15  — slow, misses a lot, beatable by anyone
+#   med:      HZ=12, dead=8   — current default; fair match
+#   hard:     HZ=25, dead=3   — fast, very tight, near-perfect tracking
+#   learning: HZ adapts based on human win-rate history (see below)
+# --------------------------------------------------------------------------------------
+
+DIFFICULTY_TABLE = {
+    "easy":     {"hz": 5,  "dead": 15, "label": "Easy"},
+    "med":      {"hz": 12, "dead": 8,  "label": "Medium"},
+    "hard":     {"hz": 25, "dead": 3,  "label": "Hard"},
+    "learning": {"hz": 12, "dead": 8,  "label": "Learning"},  # base params; adapted at runtime
+}
+DIFFICULTY_DEFAULT = "med"
+
+# Play history log: one entry per completed AI-vs-human game.
+# Stored in play_config.json under "history" (list of dicts).
+HISTORY_MAX = 200   # keep last N games
+
+def play_difficulty_get():
+    """GET /play/difficulty — current difficulty + params."""
+    with _PLAY_CONFIG_LOCK:
+        cfg = _play_config()
+    diff = cfg.get("difficulty", DIFFICULTY_DEFAULT)
+    if diff not in DIFFICULTY_TABLE:
+        diff = DIFFICULTY_DEFAULT
+    params = dict(DIFFICULTY_TABLE[diff])
+    if diff == "learning":
+        params = _learning_params(cfg.get("history", []))
+    return {"ok": True, "difficulty": diff,
+            "params": params,
+            "available": list(DIFFICULTY_TABLE.keys())}
+
+def play_difficulty_set(difficulty):
+    """POST /play/difficulty {difficulty: "easy"|"med"|"hard"|"learning"} — update difficulty."""
+    if not difficulty or difficulty not in DIFFICULTY_TABLE:
+        return {"ok": False,
+                "error": "difficulty must be one of: " + ", ".join(DIFFICULTY_TABLE.keys())}
+    with _PLAY_CONFIG_LOCK:
+        cfg = _play_config()
+        cfg["difficulty"] = difficulty
+        _play_config_save(cfg)
+    params = dict(DIFFICULTY_TABLE[difficulty])
+    if difficulty == "learning":
+        params = _learning_params(cfg.get("history", []))
+    return {"ok": True, "difficulty": difficulty, "params": params}
+
+def play_history_append(entry):
+    """POST /play/history {score_human, score_ai, difficulty, ts} — record a completed game.
+    Called by the play script at game-over. Keeps last HISTORY_MAX entries."""
+    required = ("score_human", "score_ai")
+    if not all(k in entry for k in required):
+        return {"ok": False, "error": "score_human and score_ai required"}
+    entry.setdefault("ts", time.time())
+    entry.setdefault("difficulty", "unknown")
+    with _PLAY_CONFIG_LOCK:
+        cfg = _play_config()
+        hist = cfg.get("history", [])
+        if not isinstance(hist, list):
+            hist = []
+        hist.append(entry)
+        cfg["history"] = hist[-HISTORY_MAX:]
+        _play_config_save(cfg)
+    return {"ok": True, "entries": len(cfg["history"])}
+
+def play_history_get():
+    """GET /play/history — recent play history + win-rate summary."""
+    with _PLAY_CONFIG_LOCK:
+        cfg = _play_config()
+    hist = cfg.get("history", [])
+    if not isinstance(hist, list):
+        hist = []
+    human_wins = sum(1 for e in hist if e.get("score_human", 0) > e.get("score_ai", 0))
+    total = len(hist)
+    win_rate = round(human_wins / total, 2) if total else None
+    return {"ok": True, "entries": hist[-50:], "total": total,
+            "human_wins": human_wins, "win_rate": win_rate,
+            "note": "win_rate=None means no history yet"}
+
+def _learning_params(history):
+    """Compute adaptive difficulty params from play history.
+    Learning logic: track the human's win-rate over the last 20 games.
+      - If human is winning > 60% → ramp up (increase HZ, decrease dead-zone)
+      - If human is winning < 40% → ease off (decrease HZ, increase dead-zone)
+      - Otherwise stay near base (med)
+    HZ range 5–25; dead range 3–15. Bounded so it never exceeds Hard or falls below Easy."""
+    recent = [e for e in (history or [])[-20:] if isinstance(e, dict)]
+    if len(recent) < 3:
+        # Not enough data — start at easy to give the human a confidence baseline
+        return {"hz": 6, "dead": 13, "label": "Learning (calibrating)", "games_seen": len(recent)}
+    wins = sum(1 for e in recent if e.get("score_human", 0) > e.get("score_ai", 0))
+    win_rate = wins / len(recent)
+    # Linear interpolation: win_rate 0.0 (AI dominant) → easy end; 1.0 (human dominant) → hard end
+    # Clamp to [easy, hard]
+    t = max(0.0, min(1.0, win_rate))
+    hz   = round(5 + t * (25 - 5))   # easy=5 … hard=25
+    dead = round(15 - t * (15 - 3))  # easy=15 … hard=3
+    label = ("Learning (easing off)" if win_rate < 0.40 else
+             "Learning (ramping up)" if win_rate > 0.60 else
+             "Learning (balanced)")
+    return {"hz": hz, "dead": dead, "label": label,
+            "win_rate": round(win_rate, 2), "games_seen": len(recent)}
 
 def game_state_slots(system, game):
     # list savestate slots on disk for a ROM: /userdata/saves/<system>/<game>.state[N] (+ .png thumb).
@@ -8251,6 +8448,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(game_activity())   # #115 current-activity state
         if route == "/game/playmap":
             return self._json(game_playmap(self._qs().get("id", "")))
+        if route == "/play/difficulty":
+            return self._json(play_difficulty_get())
+        if route == "/play/history":
+            return self._json(play_history_get())
         if route == "/game/stats":
             q = self._qs()
             if q.get("system") and q.get("game"):
@@ -8844,6 +9045,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/spectate/start":
                 return self._json(spectate_start(payload))
             return self._json(spectate_stop())
+        if route in ("/play/difficulty", "/play/history"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/play/difficulty":
+                return self._json(play_difficulty_set(payload.get("difficulty", "")))
+            return self._json(play_history_append(payload))
         if route in ("/fs/op", "/proc/kill", "/splice/cut", "/launch",
                      "/sys/audio", "/sys/brightness", "/sys/power", "/sys/perf", "/bt"):
             try:
