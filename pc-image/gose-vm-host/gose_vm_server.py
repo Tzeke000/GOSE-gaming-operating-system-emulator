@@ -2259,14 +2259,20 @@ def _ssh_cred_load():
 def security_ssh_state():
     cred = _ssh_cred_load()
     enabled = bool(cred.get("_dry_enabled")) if _SSH_DRYRUN else sys_ssh().get("enabled", False)
+    src = cred.get("source", "login_credential")
+    # can_reveal=True only when a server-generated password was stored and hasn't been revealed yet.
+    # For login_credential the owner already knows their PIN — no reveal window.
+    can_reveal = bool(cred.get("can_reveal")) if src == "generated" else False
+    cred_source = "login" if src == "login_credential" else src
     return {"ok": True, "enabled": enabled, "has_credential": bool(cred.get("set")),
             "username": "root", "owner_required": True,
-            "credential_source": "login",            # SSH uses the device sign-in PIN/password (docs/31)
+            "credential_source": cred_source,
+            "can_reveal": can_reveal,
             "rate_limited": True, "auth_max_tries": SSH_AUTH_MAX_TRIES,
             "ssh_rate_limit_args": SSH_RATE_LIMIT_ARGS}
 
 def security_ssh(payload):
-    """POST /security/ssh {action: check|enable|disable|state, owner_token?|pin?}.
+    """POST /security/ssh {action: check|enable|disable|state|reveal, owner_token?|pin?}.
     THE UNIFY (docs/31, #87): on enable the SSH/root credential is set to the SAME sign-in credential
     the owner just typed at the gate (their device PIN, or the dev token) — sign in with X, SSH with X,
     one credential. No separate random password. The value is captured at gate-time (the login scrypt
@@ -2274,13 +2280,65 @@ def security_ssh(payload):
     only non-secret flags. enable also rate-limits SSH auth (dropbear -T/-I) and warns when the
     credential is a short numeric PIN (weak for remote SSH). check -> owner-gate probe only (no
     mutation), so the gate can be verified live without touching the running service or its password.
-    disable -> stops SSH."""
+    disable -> stops SSH.
+    reveal (#99): one-time credential reveal for the Settings Security pane modal. Two cases:
+      login_credential (the #87 unified path): owner already knows their PIN — return an informational
+        message with no plaintext (no owner gate needed; nothing sensitive is stored).
+      generated (future path): a server-generated random password was stored temporarily for the OOBE
+        reveal window; requires owner proof (PIN or dev token — an AI token is refused because AI tokens
+        are not valid owner proofs); returns the plaintext ONCE then clears can_reveal and wipes the
+        stored plaintext so it can never be revealed again. Plaintext never logged or in diag bundles."""
     p = payload or {}
     action = (p.get("action") or "").lower()
     if action in ("", "state"):
         return security_ssh_state()
+    if action == "reveal":
+        rec = _ssh_cred_load()
+        src = rec.get("source", "login_credential")
+        if src == "login_credential" or src == "login":
+            # login-credential case: the SSH password IS the device PIN/password.
+            # We never stored it in plaintext (the #87 unify), and the owner already knows it.
+            # Return a clear informational message — no owner gate needed, no plaintext in response.
+            LOG.info("security/ssh reveal: login_credential — returning informational message (no plaintext)")
+            return {"ok": True, "credential_source": "login",
+                    "message": "Your remote access password is your device PIN/password — "
+                               "the same credential you use to sign in to GOSE. "
+                               "GOSE never stores a plaintext copy."}
+        if src == "generated":
+            # generated-credential case: a server-generated random password was stored for the
+            # one-time reveal window. Requires owner proof — AI tokens are refused because only
+            # owner_token (the dev token, 0o000-shadowed from the agent mount-ns) and the device
+            # PIN are accepted by _owner_credential; an AI bearer token is neither.
+            ok, _cred, _kind = _owner_credential(p)
+            if not ok:
+                LOG.warning("security/ssh reveal REFUSED — requester is not the owner (generated-cred path)")
+                return {"ok": False, "code": "ERR_NOT_OWNER",
+                        "error": "owner authorization required — reveal is owner-only; "
+                                 "an AI token is never accepted here"}
+            if not rec.get("can_reveal"):
+                LOG.warning("security/ssh reveal REFUSED — already revealed (can_reveal=false)")
+                return {"ok": False, "code": "ERR_ALREADY_REVEALED",
+                        "error": "credential has already been revealed — the one-time window has closed"}
+            plaintext = rec.get("_generated_pw")
+            if not plaintext:
+                LOG.warning("security/ssh reveal: generated source but no stored plaintext (inconsistent state)")
+                return {"ok": False, "code": "ERR_NO_CREDENTIAL",
+                        "error": "no stored credential to reveal (inconsistent state)"}
+            # Clear the reveal flag and wipe the stored plaintext — one reveal only, ever.
+            rec["can_reveal"] = False
+            rec.pop("_generated_pw", None)
+            try:
+                write_json_atomic(SSH_CRED_F, rec)
+            except Exception as e:
+                LOG.warning("ssh cred flag persist after reveal failed: %s", e)
+            # Log that a reveal happened but NEVER log the plaintext.
+            LOG.info("security/ssh reveal: generated credential revealed ONCE by owner — can_reveal cleared")
+            return {"ok": True, "credential_source": "generated", "credential": plaintext}
+        # Unknown source — be safe, return nothing.
+        LOG.warning("security/ssh reveal: unknown credential source %r — refusing", src)
+        return {"ok": False, "error": "cannot reveal credential — source unknown"}
     if action not in ("check", "enable", "disable"):
-        return {"ok": False, "error": "action must be check|enable|disable|state"}
+        return {"ok": False, "error": "action must be check|enable|disable|state|reveal"}
     ok, cred, kind = _owner_credential(p)   # the gate AND (for enable) the credential to set, in one
     if not ok:
         LOG.warning("security/ssh %s REFUSED — requester is not the owner", action)
