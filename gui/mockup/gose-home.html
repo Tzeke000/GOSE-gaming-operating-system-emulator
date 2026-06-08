@@ -255,10 +255,13 @@
   // ---- NOTIFICATIONS (status dock): recent — UNREAD-COUNT BADGE, not a glow ----
   GW.define({ id:"notifs", title:"Notifications", icon:"notifications", size:{w:250}, pos:{x:1650,y:196}, poll:4000,
     empty:"No notifications.",
-    render:()=>{ const a=(window.GOSE?GOSE.notifs():[]).slice(0,5);
-      const items=a.map(n=>({icon:n.icon||"bell",label:n.title,sub:n.body}));
+    onActivate:()=>{ if(window.NC)NC.open(); },        // A on the (empty) widget opens the center
+    render:()=>{ const open=()=>{ if(window.NC)NC.open(); };
+      const a=(window.GOSE?GOSE.notifs():[]).slice(0,5);
+      const items=a.map(n=>({icon:n.icon||"bell",label:n.title,sub:n.body,onActivate:open}));
       const unread=window.GOSE&&GOSE.unread?GOSE.unread():0;
-      return {items, badge: unread?{text:unread+" new",dot:true,muted:false}:null}; } });
+      return {items, footer:{icon:"bell",label:"Open notifications",onActivate:open},
+              badge: unread?{text:unread+" new",dot:true,muted:false}:null}; } });
 
   // ---- SYSTEM (status dock): live laptop telemetry; whole-widget opens Task Manager ----
   GW.define({ id:"system", title:"System", icon:"system", size:{w:250}, pos:{x:1650,y:430}, poll:2000,
@@ -406,27 +409,197 @@
     frame();
   })();
 
-  /* ---------- notification center (bell in the tray) ---------- */
-  (function(){ if(!window.GOSE)return; GOSE.seed&&GOSE.seed();
-    const bell=document.getElementById("t-bell"),badge=document.getElementById("t-badge"),
-          center=document.getElementById("ncenter"),nlist=document.getElementById("nlist");
-    function refresh(){const u=GOSE.unread();badge.textContent=u;badge.classList.toggle("on",u>0);}
-    function renderList(){const a=GOSE.notifs();
-      nlist.innerHTML=a.length?a.map(n=>`<div class="ncard"><div class="ni"><span class="ic" data-i="${n.icon}"></span></div>
-        <div><div class="nt">${n.title}</div><div class="nb">${n.body}</div></div></div>`).join("")
-        :'<div class="empty">No notifications</div>';
-      nlist.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
-    function toggle(){const open=!center.classList.contains("on");center.classList.toggle("on",open);
-      // modal-layer signal (docs/27 §3.10): while the center is open, Escape closes IT —
-      // the shell WM must not treat that B as a window op.
-      if(GOSE.modalPush&&GOSE.modalPop){ if(open)GOSE.modalPush(); else GOSE.modalPop(); }
-      if(open){renderList();GOSE.markAllRead();refresh();}}
+  /* ---------- notification center — SERVER-BACKED, pad-reachable, auto-DND (task #22) ----------
+     History lives server-side (GET/POST /notifications) so other features feed it. The bell (mouse)
+     and the Notifications WIDGET (pad: A on the widget / a card / its footer) both open this center;
+     it lists newest-first, marks-read on open, dismisses per-card or all — all pad-navigable (Up/Down,
+     Enter, B/Esc per docs/27 §3.10: body[data-gose-modal] is set so B closes ONE level, no trap).
+     Auto-DND: while a game runs we suppress the popping TOAST (mirrors assets/sound.js's /game/running
+     duck) but STILL record every notification (the server never drops one); the DND state is shown.
+     Cross-feature API: GOSE.notify({title,body,kind,icon}) routes through the server store. */
+  window.NC = (function(){
+    if(!window.GOSE) window.GOSE={};
+    var center=document.getElementById("ncenter"),
+        nlist=document.getElementById("nlist"),
+        tbadge=document.getElementById("t-badge"),
+        bell=document.getElementById("t-bell"),
+        nh=center?center.querySelector(".nh"):null;
+    var items=[], unread=0, seen=null, fi=0, _game=false;
+
+    /* ---- styles: center focus glow (docs/21 blue), DND chip, toast stack ---- */
+    var stl=document.createElement("style");
+    stl.textContent=
+      ".ncard{position:relative;cursor:pointer}.ncenter .clr{cursor:pointer}"+
+      ".ncard.ncf,.ncenter .clr.ncf{box-shadow:0 0 0 2px var(--accent,#5cd0ff),0 0 18px #5cd0ff99;outline:none}"+
+      ".ncard.unread{padding-left:18px}.ncard .ndot{position:absolute;left:5px;top:50%;width:7px;height:7px;"+
+        "border-radius:50%;background:var(--accent,#5cd0ff);transform:translateY(-50%)}"+
+      ".ncard .nx{margin-left:auto;color:#7f86a6;font-size:13px;align-self:flex-start;padding:0 2px}"+
+      ".nc-time{color:#7f86a6;font-size:11px;margin-top:3px}"+
+      ".nc-dnd{display:none;align-items:center;gap:7px;font-size:11px;color:#ffb74d;margin:-4px 0 12px 2px}"+
+      ".nc-dnd.on{display:flex}.nc-dnd .ic{font-size:14px}"+
+      "#nc-toast{position:fixed;top:54px;right:16px;z-index:40;display:flex;flex-direction:column;gap:8px;"+
+        "pointer-events:none;max-width:340px}"+
+      "#nc-toast .t{background:#0c0c1ef2;border:1px solid #ffffff24;border-left:3px solid var(--accent,#5cd0ff);"+
+        "border-radius:12px;padding:11px 13px;box-shadow:0 12px 34px #0008;pointer-events:auto;cursor:pointer;"+
+        "opacity:0;transform:translateX(14px);transition:opacity .2s,transform .2s;display:flex;gap:10px;align-items:flex-start}"+
+      "#nc-toast .t.on{opacity:1;transform:none}"+
+      "#nc-toast .t .ti{width:26px;height:26px;border-radius:8px;flex:none;display:flex;align-items:center;"+
+        "justify-content:center;background:#6a4dff33;color:#dfe5f5}"+
+      "#nc-toast .t.k-warning .ti,#nc-toast .t.k-error .ti{background:#ff5a6e33}"+
+      "#nc-toast .t.k-success .ti{background:#3fe0a033}"+
+      "#nc-toast .t .tt{font-weight:700;font-size:13px}"+
+      "#nc-toast .t .tb{color:#aeb4d2;font-size:12px;line-height:1.35;margin-top:1px}"+
+      "html[data-motion=\"reduce\"] #nc-toast .t{transition:none}";
+    document.head.appendChild(stl);
+    var toastWrap=document.createElement("div"); toastWrap.id="nc-toast";
+    (document.body||document.documentElement).appendChild(toastWrap);
+    var dndEl=document.createElement("div"); dndEl.className="nc-dnd";
+    dndEl.innerHTML='<span class="ic" data-i="moon"></span><span>Do Not Disturb — a game is running</span>';
+    if(nh&&nh.parentNode){ nh.parentNode.insertBefore(dndEl,nh.nextSibling); }
+
+    function ICON(n){ if(n&&n.icon)return n.icon;
+      return ({success:"check",warning:"triangle-alert",error:"triangle-alert",system:"sparkles"})[n&&n.kind]||"bell"; }
+    function reltime(ts){ if(!ts)return ""; var s=Math.max(0,Date.now()/1000-ts);
+      if(s<45)return "now"; if(s<3600)return Math.round(s/60)+"m ago";
+      if(s<86400)return Math.round(s/3600)+"h ago"; return Math.round(s/86400)+"d ago"; }
+    function paint(el){ if(!el)return; el.querySelectorAll("[data-i]").forEach(function(e){
+      e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)"); }); }
+    paint(dndEl);
+    function isOpen(){ return center&&center.classList.contains("on"); }
+    function dnd(){ return _game; }
+
+    /* ---- badge (tray + widget) + DND indicator ---- */
+    function paintBadge(){ if(tbadge){ tbadge.textContent=unread; tbadge.classList.toggle("on",unread>0); }
+      dndEl.classList.toggle("on",dnd());
+      try{ if(window.GW&&GW.refresh)GW.refresh("notifs"); }catch(e){} }
+
+    /* ---- toast (suppressed under DND; history already recorded server-side) ---- */
+    function toast(n){ if(dnd())return;
+      var t=document.createElement("div"); t.className="t k-"+((n&&n.kind)||"info");
+      t.innerHTML='<span class="ti"><span class="ic" data-i="'+esc(ICON(n))+'"></span></span>'+
+        '<div><div class="tt">'+esc(n.title||"GOSE")+'</div>'+
+        (n.body?'<div class="tb">'+esc(n.body)+'</div>':'')+'</div>';
+      function remove(){ t.classList.remove("on");
+        setTimeout(function(){ if(t.parentNode)t.parentNode.removeChild(t); },220); }
+      t.onclick=function(){ open(); remove(); };
+      toastWrap.appendChild(t); paint(t); void t.offsetWidth; t.classList.add("on");
+      setTimeout(remove,5200); }
+
+    /* ---- server sync (canonical). Reads + writes carry a monotonic seq so a stale in-flight
+         poll can't clobber a fresher result. A GET applies only if STRICTLY newer than the last
+         applied; a WRITE response (dismiss/clear/read) is authoritative — it always applies and
+         raises the seq floor to the latest issued, so a 6s GET that started ~the same time but
+         returns the pre-dismiss list can never "resurrect" a dismissed card. ---- */
+    var _seq=0, _applied=0;
+    function applyList(d){ if(!d||!d.ok)return;
+      items=d.items||[]; unread=d.unread||0;
+      if(seen===null){ seen={}; items.forEach(function(n){seen[n.id]=1;}); }  // first load: no toast for history
+      else { items.filter(function(n){return !seen[n.id];}).reverse().forEach(toast); // DND-gated inside toast()
+        seen={}; items.forEach(function(n){seen[n.id]=1;}); }                 // bounded; rolled-off ids forgotten
+      paintBadge(); if(isOpen())renderList(true); }
+    function applyGet(seq,d){ if(seq<=_applied)return; _applied=seq; applyList(d); }
+    function applyMut(d){ _applied=_seq; applyList(d); }    // a write is authoritative over any in-flight GET
+    function sync(){ var s=++_seq; fetch("/notifications",{cache:"no-store"})
+      .then(function(r){return r.json();}).then(function(d){applyGet(s,d);}).catch(function(){}); }
+
+    /* ---- center list + roving focus. Focus survives a background refresh by IDENTITY
+         (docs/27 §3.9): a notification arriving while open re-renders the list, but the
+         focus stays on the SAME item (by id) — so Enter never dismisses the wrong card. ---- */
+    function focusables(){ return [].slice.call(center.querySelectorAll(".clr,.ncard")); }
+    function focusKey(){ var f=focusables(), el=f[fi];
+      return el ? (el.classList.contains("clr") ? "clr" : (el.dataset.id||null)) : null; }
+    function focusByKey(k){ if(!k)return false; var f=focusables();
+      for(var i=0;i<f.length;i++){ if((k==="clr"&&f[i].classList.contains("clr"))||f[i].dataset.id===k){ fi=i; return true; } }
+      return false; }
+    function focus(silent){ var f=focusables(); if(!f.length)return;
+      if(fi>=f.length)fi=f.length-1; if(fi<0)fi=0;
+      f.forEach(function(e,i){ e.classList.toggle("ncf",i===fi); });
+      if(!silent && f[fi] && f[fi].scrollIntoView)f[fi].scrollIntoView({block:"nearest"}); }
+    function move(d){ var f=focusables(); if(!f.length)return; fi=(fi+d+f.length)%f.length; focus(); }
+    function activate(){ var f=focusables(), el=f[fi]; if(!el)return;
+      if(el.classList.contains("clr")){ clearAll(); return; }
+      if(el.dataset.id){ dismiss(el.dataset.id); } }
+    function renderList(keepFocus){
+      var key = keepFocus ? focusKey() : null;
+      nlist.innerHTML=items.length? items.map(function(n){
+        return '<div class="ncard'+(n.read?"":" unread")+'" data-id="'+esc(n.id)+'">'+
+          (n.read?"":'<span class="ndot"></span>')+
+          '<div class="ni"><span class="ic" data-i="'+esc(ICON(n))+'"></span></div>'+
+          '<div style="flex:1;min-width:0"><div class="nt">'+esc(n.title||"GOSE")+'</div>'+
+          (n.body?'<div class="nb">'+esc(n.body)+'</div>':'')+
+          '<div class="nc-time">'+esc(reltime(n.ts))+'</div></div>'+
+          '<span class="nx" title="Dismiss">✕</span></div>';
+      }).join("") : '<div class="empty">No notifications</div>';
+      paint(nlist);
+      [].slice.call(nlist.querySelectorAll(".ncard")).forEach(function(c){
+        c.addEventListener("click",function(e){
+          if(e.target&&e.target.classList.contains("nx")){ e.stopPropagation(); dismiss(c.dataset.id); }
+          else { fi=focusables().indexOf(c); focus(true); } });
+      });
+      if(keepFocus){ if(!focusByKey(key)){ var f=focusables(); if(fi>=f.length)fi=Math.max(0,f.length-1); } }
+      else { var f2=focusables(); fi=f2.length>1?1:0; }   // fresh open: start on the first card (Clear-all is idx 0)
+      focus(true); }
+
+    /* ---- mutations (all server-canonical) ---- */
+    function srv(path,obj){ ++_seq; return fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(obj||{})}).then(function(r){return r.json();}).then(function(d){applyMut(d);}).catch(function(){}); }
+    function dismiss(id){ srv("/notifications/clear",{id:id}); }
+    function clearAll(){ srv("/notifications/clear",{}); }
+    function markAllRead(){ srv("/notifications/read",{all:true}); }
+    function notifyServer(n){ n=n||{};
+      fetch("/notifications",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({title:n.title,body:n.body,kind:n.kind,icon:n.icon,ts:n.ts})})
+        .then(function(r){return r.json();}).then(function(){ sync(); }).catch(function(){}); }
+
+    /* ---- open / close (modal contract docs/27 §3.10) ---- */
+    function open(){ if(isOpen())return; center.classList.add("on");
+      if(GOSE.modalPush)GOSE.modalPush();
+      renderList(false); markAllRead(); }
+    function close(){ if(!isOpen())return; center.classList.remove("on");
+      if(GOSE.modalPop)GOSE.modalPop(); }
+    function toggle(){ isOpen()?close():open(); }
+
+    /* ---- center pad nav: capture-phase so the desktop widget nav doesn't also move ---- */
+    addEventListener("keydown",function(e){
+      if(!isOpen())return;
+      var k=e.key;
+      if(k==="Escape"||k==="Backspace") close();
+      else if(k==="ArrowDown") move(1);
+      else if(k==="ArrowUp") move(-1);
+      else if(k==="Enter"||k===" ") activate();
+      else if(k==="ArrowLeft"||k==="ArrowRight"||k==="["||k==="]"||k==="Tab"){ /* consume: modal owns the pad */ }
+      else return;
+      e.preventDefault(); e.stopPropagation();
+    },true);
+
+    /* ---- wiring: bell (mouse), Clear-all button, gose-notify badge refresh, hash auto-open ---- */
     if(bell)bell.onclick=toggle;
-    const cl=document.getElementById("n-clear"); if(cl)cl.onclick=()=>{GOSE.clearNotifs();renderList();refresh();};
-    addEventListener("keydown",e=>{if(e.key==="Escape"&&center.classList.contains("on")){toggle();e.preventDefault();}});
-    window.addEventListener("gose-notify",refresh);
-    refresh();
-    if(location.hash.indexOf("notif")>=0)setTimeout(toggle,300);
+    var cl=document.getElementById("n-clear"); if(cl)cl.onclick=function(){ clearAll(); };
+    window.addEventListener("gose-notify",function(){ paintBadge(); });
+
+    /* ---- DND game poll (mirror assets/sound.js's game-duck) ---- */
+    function pollGame(){ fetch("/game/running",{cache:"no-store"})
+      .then(function(r){return r.json();})
+      .then(function(d){ var g=!!(d&&d.running); if(g!==_game){ _game=g; dndEl.classList.toggle("on",g); } })
+      .catch(function(){}); }
+    try{ pollGame(); setInterval(pollGame,2000); }catch(e){}
+
+    /* ---- cross-feature JS API: GOSE.notify routes through the server store (+ DND-gated toast via
+         sync); the bell/widget badge + center are server-backed (overrides notify.js's localStorage
+         store on the desktop). Other surfaces call GOSE.notify({title,body,kind,icon}). ---- */
+    var origNotify=GOSE.notify;
+    GOSE.notify=function(n){ n=n||{};
+      try{ if(origNotify)origNotify(n); }catch(e){}   // keep notify.js's sound + gose-notify event (LS fallback)
+      notifyServer(n);                                 // server-canonical record (+ toast on next sync, DND-gated)
+      return items; };
+    GOSE.notifs=function(){ return items; };
+    GOSE.unread=function(){ return unread; };
+
+    sync(); setInterval(sync,6000);
+    if(location.hash.indexOf("notif")>=0)setTimeout(open,300);
+
+    return { open:open, close:close, toggle:toggle, sync:sync, notify:notifyServer,
+             items:function(){return items;}, unread:function(){return unread;}, isDND:dnd };
   })();
 </script>
 <!-- windowing (docs/23 wave 1, additive): WinBox frame engine + the GOSE web-layer WM.

@@ -2573,6 +2573,92 @@ def privacy_set(payload):
 def _capture_allowed():
     return _privacy_load().get("screen_capture", "always") != "never"
 
+# ===== Notifications center (task #22) ============================================
+# Server-backed notification history that other surfaces feed (achievements #33,
+# copilot #42, low-battery, downloads). Canonical store under the OS-protected prefix;
+# capped + rotated; atomic writes; thread-safe. The desktop GETs this for the bell /
+# center and POSTs new ones. Auto-DND ("no toast while a game runs") is enforced
+# CLIENT-side so the history here ALWAYS records — the store never drops a notification.
+NOTIF_F = "/userdata/system/gose/notifications.json"
+NOTIF_CAP = 200                       # keep the newest N; older entries roll off (no unbounded growth)
+_NOTIF_LOCK = threading.Lock()
+_NOTIF_KINDS = ("info", "success", "warning", "error", "system")
+
+def _notif_load():
+    try:
+        d = json.load(open(NOTIF_F))
+    except Exception:
+        d = None
+    items = d.get("items") if isinstance(d, dict) else None
+    return items if isinstance(items, list) else []
+
+def _notif_save(items):
+    os.makedirs(os.path.dirname(NOTIF_F), exist_ok=True)
+    write_json_atomic(NOTIF_F, {"items": items[:NOTIF_CAP]})     # atomic + capped
+
+def _notif_unread(items):
+    return sum(1 for n in items if isinstance(n, dict) and not n.get("read"))
+
+def notifications_get():
+    with _NOTIF_LOCK:
+        items = _notif_load()
+    return {"ok": True, "items": items, "unread": _notif_unread(items)}
+
+def notifications_post(payload):
+    payload = payload or {}
+    title = ("" if payload.get("title") is None else str(payload.get("title"))).strip()
+    body = ("" if payload.get("body") is None else str(payload.get("body"))).strip()
+    if not title and not body:
+        return {"ok": False, "error": "title or body required"}
+    kind = str(payload.get("kind") or "info").lower()
+    if kind not in _NOTIF_KINDS:
+        kind = "info"
+    icon = payload.get("icon")
+    try:
+        ts = float(payload.get("ts"))
+    except (TypeError, ValueError):
+        ts = time.time()
+    rec = {"id": secrets.token_hex(6), "title": title[:200], "body": body[:1000],
+           "kind": kind, "icon": (str(icon)[:40] if icon else None),
+           "read": False, "ts": ts}
+    with _NOTIF_LOCK:
+        items = _notif_load()
+        items.insert(0, rec)
+        _notif_save(items)
+        unread = _notif_unread(items[:NOTIF_CAP])
+    return {"ok": True, "notification": rec, "unread": unread}
+
+def notifications_read(payload):
+    payload = payload or {}
+    ids = payload.get("ids")
+    if not isinstance(ids, list):
+        ids = [payload["id"]] if payload.get("id") else []
+    ids = set(str(x) for x in ids)
+    do_all = bool(payload.get("all"))
+    with _NOTIF_LOCK:
+        items = _notif_load()
+        for n in items:
+            if isinstance(n, dict) and (do_all or n.get("id") in ids):
+                n["read"] = True
+        _notif_save(items)
+        items = items[:NOTIF_CAP]
+        unread = _notif_unread(items)
+    # return the canonical list so the client can render straight from the mutation response
+    return {"ok": True, "items": items, "unread": unread}
+
+def notifications_clear(payload):
+    payload = payload or {}
+    with _NOTIF_LOCK:
+        if payload.get("id"):
+            keep = [n for n in _notif_load()
+                    if isinstance(n, dict) and n.get("id") != str(payload["id"])]
+        else:
+            keep = []
+        _notif_save(keep)
+        keep = keep[:NOTIF_CAP]
+    # return the canonical list so the client renders straight from the mutation response
+    return {"ok": True, "items": keep, "unread": _notif_unread(keep), "count": len(keep)}
+
 # ---- Screenshot (works anywhere, incl. GL games — frame comes from the host) ----
 def capture_shot(payload):
     import time as _t
@@ -5477,6 +5563,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(ui_prefs_get())
         if route == "/privacy":
             return self._json(privacy_get())
+        if route == "/notifications":
+            return self._json(notifications_get())
         if route == "/widgets/emulators":
             return self._json(widgets_emulators())
         if route == "/widgets/library":
@@ -5806,6 +5894,17 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/sys/vsync":
                 return self._json(sys_vsync(payload.get("on")))
             return self._json(sys_timezone(payload.get("tz")))
+        if route in ("/notifications", "/notifications/read", "/notifications/clear"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/notifications/read":
+                return self._json(notifications_read(payload))
+            if route == "/notifications/clear":
+                return self._json(notifications_clear(payload))
+            return self._json(notifications_post(payload))
         if route in ("/fs/op", "/proc/kill", "/splice/cut", "/launch",
                      "/sys/audio", "/sys/brightness", "/sys/power", "/sys/perf", "/bt"):
             try:
