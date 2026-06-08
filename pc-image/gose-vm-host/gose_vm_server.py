@@ -116,6 +116,7 @@ def _dir_game_rom(system, dirpath):
 def list_games():
     try:
         favset = _fav_set()
+        pt = _playstats()   # per-game playtime for library cards
         systems = []
         for sysname in sorted(os.listdir(ROMS)):
             d = os.path.join(ROMS, sysname)
@@ -137,8 +138,13 @@ def list_games():
                     if os.path.splitext(f)[1].lower() in _SKIPEXT:
                         continue
                     stem = os.path.splitext(f)[0]
+                entry = pt.get(sysname + "/" + stem)
+                total_secs = (entry.get("total_secs", 0) if isinstance(entry, dict)
+                              else int(entry) if isinstance(entry, (int, float)) else 0)
+                last_played = entry.get("last_played") if isinstance(entry, dict) else None
                 games.append({"name": stem, "img": _game_img(sysname, stem),
-                              "fav": (sysname, stem) in favset})
+                              "fav": (sysname, stem) in favset,
+                              "playtime_s": total_secs, "last_played": last_played})
             if games:
                 systems.append({"system": sysname, "name": _SYS.get(sysname, sysname),
                                 "logo": ("/syslogo?system=" + sysname) if system_logo_path(sysname) else None,
@@ -165,6 +171,142 @@ def _game_img(system, game):
     return None
 
 PLAYTIME_F = "/userdata/gose-ui/playtime.json"
+# Richer per-game stats store (total_secs, last_played epoch, sessions count).
+# Paired with PLAYTIME_F (kept for backward compat with all existing consumers).
+PLAYSTATS_F = "/userdata/system/gose/playstats.json"
+_STATS_LOCK = threading.Lock()
+
+# In-flight session: set on launch_game, finalized on game_exit / watcher / next launch.
+_SESSION = {"system": None, "game": None, "t": None}
+_SESSION_LOCK = threading.Lock()
+
+def _playstats():
+    """Load playstats.json; migrate from legacy playtime.json if playstats is empty/absent."""
+    try:
+        d = json.load(open(PLAYSTATS_F))
+        if isinstance(d, dict) and d:
+            return d
+    except Exception:
+        pass
+    # migration: seed from the flat {key: secs} store so existing data isn't lost
+    legacy = {}
+    try:
+        legacy = json.load(open(PLAYTIME_F))
+    except Exception:
+        pass
+    if not isinstance(legacy, dict):
+        legacy = {}
+    migrated = {}
+    for k, secs in legacy.items():
+        if isinstance(secs, (int, float)) and secs > 0:
+            migrated[k] = {"total_secs": int(secs), "last_played": None, "sessions": 1}
+    return migrated
+
+def _record_session(system, game, secs):
+    """Accumulate one session into PLAYSTATS_F (atomic) and keep PLAYTIME_F in sync."""
+    if not system or not game or secs <= 0:
+        return
+    secs = min(int(secs), 86400 * 365)   # cap at 1 year (sane ceiling)
+    key = system + "/" + game
+    try:
+        os.makedirs("/userdata/system/gose", exist_ok=True)
+    except Exception:
+        pass
+    with _STATS_LOCK:
+        try:
+            pt = _playstats()
+            entry = pt.get(key) or {"total_secs": 0, "last_played": None, "sessions": 0}
+            if not isinstance(entry, dict):
+                entry = {"total_secs": int(entry) if isinstance(entry, (int, float)) else 0,
+                         "last_played": None, "sessions": 0}
+            entry["total_secs"] = entry.get("total_secs", 0) + secs
+            entry["last_played"] = int(time.time())
+            entry["sessions"] = entry.get("sessions", 0) + 1
+            pt[key] = entry
+            write_json_atomic(PLAYSTATS_F, pt)
+            # keep legacy playtime.json in sync (total_secs only — existing consumers unchanged)
+            try:
+                flat = json.load(open(PLAYTIME_F))
+                if not isinstance(flat, dict):
+                    flat = {}
+            except Exception:
+                flat = {}
+            flat[key] = entry["total_secs"]
+            write_json_atomic(PLAYTIME_F, flat)
+        except Exception as e:
+            LOG.warning("playstats write failed: %s", e)
+
+def _session_start(system, game):
+    """Mark the start of a new session; finalize any running one first."""
+    with _SESSION_LOCK:
+        _finalize_session_locked()
+        _SESSION["system"] = system
+        _SESSION["game"] = game
+        _SESSION["t"] = time.time()
+
+def _finalize_session_locked():
+    """Finalize the in-flight session (caller must hold _SESSION_LOCK)."""
+    if _SESSION["t"] is None:
+        return
+    elapsed = time.time() - _SESSION["t"]
+    sys_, game_ = _SESSION["system"], _SESSION["game"]
+    _SESSION["system"] = _SESSION["game"] = _SESSION["t"] = None
+    if sys_ and game_ and elapsed >= 1:
+        _record_session(sys_, game_, elapsed)
+
+def _finalize_session():
+    """Finalize the in-flight session (public, acquires lock)."""
+    with _SESSION_LOCK:
+        _finalize_session_locked()
+
+def _game_stats_all():
+    """Return the full playstats dict annotated with human fields."""
+    pt = _playstats()
+    total_secs = sum((v.get("total_secs", 0) if isinstance(v, dict) else 0) for v in pt.values())
+    games = []
+    for key, entry in pt.items():
+        if not isinstance(entry, dict):
+            continue
+        s, _, g = key.partition("/")
+        games.append({
+            "key": key, "system": s, "game": g,
+            "total_secs": entry.get("total_secs", 0),
+            "last_played": entry.get("last_played"),
+            "sessions": entry.get("sessions", 0),
+        })
+    games.sort(key=lambda x: -x["total_secs"])
+    return {"ok": True, "games": games,
+            "total_secs": total_secs,
+            "total_hours": round(total_secs / 3600, 2)}
+
+def _game_stats_one(system, game):
+    """Return playstats for a single game (0 if never played)."""
+    key = system + "/" + game
+    pt = _playstats()
+    entry = pt.get(key)
+    if isinstance(entry, dict):
+        return {"ok": True, "key": key, "system": system, "game": game,
+                "total_secs": entry.get("total_secs", 0),
+                "last_played": entry.get("last_played"),
+                "sessions": entry.get("sessions", 0)}
+    return {"ok": True, "key": key, "system": system, "game": game,
+            "total_secs": 0, "last_played": None, "sessions": 0}
+
+# Background session watcher: polls game_running every 10s; finalizes session when the
+# game is no longer running. Handles SIGKILL (no clean exit path) best-effort.
+def _session_watcher():
+    import time as _time
+    while True:
+        _time.sleep(10)
+        try:
+            with _SESSION_LOCK:
+                if _SESSION["t"] is None:
+                    continue
+            gr = game_running()
+            if not gr.get("running"):
+                _finalize_session()
+        except Exception:
+            pass
 
 def record_recent(system, game):
     # remember launched games (newest first, deduped) + play count, so the Library/home can show
@@ -191,10 +333,15 @@ def _playtime():
 
 def recent_games():
     try:
-        rec = json.load(open(RECENT_F)); pt = _playtime(); favset = _fav_set()
+        rec = json.load(open(RECENT_F)); pt = _playstats(); favset = _fav_set()
         for r in rec:
             sysn, gamen = r.get("system", ""), r.get("game", "")
-            r["secs"] = pt.get(sysn + "/" + gamen, 0)
+            entry = pt.get(sysn + "/" + gamen)
+            r["secs"] = (entry.get("total_secs", 0) if isinstance(entry, dict)
+                         else int(entry) if isinstance(entry, (int, float)) else 0)
+            r["playtime_s"] = r["secs"]   # canonical field; secs kept for compat
+            r["sessions"] = entry.get("sessions", 0) if isinstance(entry, dict) else 0
+            r["last_played"] = entry.get("last_played") if isinstance(entry, dict) else None
             r["fav"] = (sysn, gamen) in favset
             # save-state thumbnail (task 53): the "where you left off" picture for resume
             # cards; additive + null when no state exists, so old consumers are unaffected.
@@ -1504,6 +1651,7 @@ def launch_game(system, game, players=None):
     try:
         _spawn(["emulatorlauncher"] + _virtual_pad_args(order=players) + ["-system", system, "-rom", rom])
         record_recent(system, game)
+        _session_start(system, game)   # playtime tracking: finalize prior, start new
         _TIMECTL["slot"] = 0; _TIMECTL["ff"] = False   # #37 RetroArch launch defaults
         return {"ok": True, "rom": rom}
     except Exception as e:
@@ -3516,6 +3664,7 @@ _RESET_DEFAULTS = [
     (ROOT + "/favorites.json", []),
     (ROOT + "/recent.json", []),
     (ROOT + "/playtime.json", {}),
+    (PLAYSTATS_F, {}),
     (ROOT + "/ai_requests.json", {}),
 ]
 
@@ -3689,6 +3838,7 @@ def fps_set(on):
 def game_exit():
     # exit the running game/app back to the GOSE desktop: kill known launchers, hide the
     # overlay, and raise the kiosk to the front
+    _finalize_session()   # record playtime before killing the process
     killed = []
     for pat in _GAME_PATS:
         try:
@@ -5650,6 +5800,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(list_games())
         if route == "/game/running":
             return self._json(game_running())
+        if route == "/game/stats":
+            q = self._qs()
+            if q.get("system") and q.get("game"):
+                return self._json(_game_stats_one(q["system"], q["game"]))
+            return self._json(_game_stats_all())
         if route == "/game/gallery":
             return self._json(game_gallery())
         if route == "/game/fps":
@@ -6142,6 +6297,7 @@ h = functools.partial(H, directory=ROOT)
 ensure_user_dirs()   # Desktop/Documents/Downloads/Pictures/Music/Videos exist on boot
 threading.Thread(target=_queue_worker, daemon=True).start()   # download queue: one install at a time
 threading.Thread(target=auto_scrape_boot, daemon=True).start()   # auto-fill missing cover art on boot
+threading.Thread(target=_session_watcher, daemon=True).start()  # playtime: finalize session on SIGKILL/unexpected exit
 _PORT = int(os.environ.get("GOSE_UI_PORT") or 8780)   # override = isolated test instances
 print("serving GOSE UI + live /status.json on 127.0.0.1:%d (threaded)" % _PORT)
 # threaded: a slow /fs/sizes (du) or the 4s agent socket no longer blocks page loads

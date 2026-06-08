@@ -84,6 +84,11 @@
   let SYS=[],cat=0,foc=0;
   function say(m){toast.textContent=m;toast.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove("show"),1600);}
   function fmtPlay(s){if(!s)return"new";var m=Math.round(s/60);if(m<1)return"<1m";if(m<60)return m+"m played";return Math.floor(m/60)+"h "+(m%60)+"m played";}
+  function fmtPlayDetail(s){if(!s||s<60)return"0h played";var h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?""+h+"h "+m+"m played":""+m+"m played";}
+  function fmtDate(t){if(!t)return"";var d=new Date(t*1000),n=new Date(),diff=n-d;if(diff<86400000)return"today";if(diff<172800000)return"yesterday";return d.toLocaleDateString(undefined,{month:"short",day:"numeric"});}
+  // Weekly total: sum sessions from the last 7 days is not tracked per-session, so we derive
+  // an approximate from playtime_s per game vs last_played (honest: shows total, not weekly).
+  function totalHours(games){var s=games.reduce((a,g)=>a+(g.playtime_s||0),0);return Math.round(s/360)/10;}
   function paint(){if(window.GICON){GICON.paint(document);return;}document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function buildRail(){rail.innerHTML=SYS.map((s,i)=>
     `<div class="sys ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.logo?`<img src="${s.logo}" alt="" style="height:13px;width:auto;max-width:104px;vertical-align:-2px;margin-right:7px;opacity:.9" onerror="this.remove()">`:''}${s.name}</span><span class="c">${s.games.length}</span></div>`).join("");
@@ -109,9 +114,11 @@
       // resume cards; cover art next; gradient + title last. Degrades cleanly when none exist.
       const artUrl=gm.state_thumb||(gm.img?('/fs/file?path='+encodeURIComponent(gm.img)):null);
       const artStyle=artUrl?`background:#0c0c1e url('${artUrl}') center/cover no-repeat`:`background:linear-gradient(135deg,${COLORS[i%COLORS.length]},#0c0c1e)`;
+      const ps=gm.playtime_s||gm.secs||0,lp=gm.last_played||null;
+      const playLine=ps?fmtPlayDetail(ps)+(lp?' · '+fmtDate(lp):''):(gm.plays?'▶ '+gm.plays+'×':null);
       return `<div class="game ${i===foc?'focus':''}" data-g="${i}">
       <div class="art" style="${artStyle}">${gm.fav?'<span class="fav">★</span>':''}${gm.state_thumb?'<span class="resume">▶ Resume</span>':''}${artUrl?'':gm.name}</div>
-      <div class="sub">${gm.plays?('▶ '+gm.plays+'× · '+fmtPlay(gm.secs||0)):gm.name}</div></div>`;}).join("");
+      <div class="sub">${playLine||gm.name}</div></div>`;}).join("");
     [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.g;render();launch();});
     $("a-fav").onclick=()=>{foc=s.games.length;render();toggleFav();};
     $("a-art").onclick=()=>{foc=s.games.length+1;render();fetchArt();};
@@ -144,7 +151,7 @@
         else say("Fetch failed: "+(d.error||"?"));
       }).catch(e=>say("Fetch failed (network?)"));}
   // bulk per-SYSTEM scrape (the "Scrape all — <system>" tile)
-  function scrapeArt(){const s=SYS[cat];if(!s||s.system==="__recent"||s.system==="__fav"){say("Pick a system to scrape");return;}
+  function scrapeArt(){const s=SYS[cat];if(!s||s.system==="__recent"||s.system==="__fav"||s.system==="__most"){say("Pick a system to scrape");return;}
     say("Scraping cover art for "+s.name+"… (this can take a moment)");
     fetch("/scrape",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:s.system})})
       .then(r=>r.json()).then(d=>{
@@ -249,14 +256,30 @@
     return Promise.all([
       fetch("/games.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
       fetch("/recent.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
-      fetch("/favorites.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}))
-    ]).then(([d,rc,fv])=>{
+      fetch("/favorites.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+      fetch("/game/stats",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}))
+    ]).then(([d,rc,fv,stats])=>{
       SYS=(d.systems||[]);
-      const recent=((rc&&rc.games)||[]).map(r=>({name:r.game,img:r.img,system:r.system,plays:r.plays,secs:r.secs,fav:r.fav,state_thumb:r.state_thumb}));
-      const favs=((fv&&fv.games)||[]).map(r=>({name:r.game,img:r.img,system:r.system,fav:true}));
+      // inject playtime_s + last_played from /game/stats into the system game lists
+      const statsMap={};
+      ((stats&&stats.games)||[]).forEach(g=>{statsMap[g.key]={playtime_s:g.total_secs,last_played:g.last_played,sessions:g.sessions};});
+      SYS.forEach(s=>s.games.forEach(g=>{const st=statsMap[s.system+"/"+g.name];if(st){g.playtime_s=st.playtime_s;g.last_played=st.last_played;g.sessions=st.sessions;}}));
+      const recent=((rc&&rc.games)||[]).map(r=>({name:r.game,img:r.img,system:r.system,plays:r.plays,
+        secs:r.secs,playtime_s:r.playtime_s||r.secs||0,last_played:r.last_played,sessions:r.sessions,fav:r.fav,state_thumb:r.state_thumb}));
+      const favs=((fv&&fv.games)||[]).map(r=>{var _fk=(r.system||"")+"/"+(r.game||""),_fs=statsMap[_fk];
+        return {name:r.game,img:r.img,system:r.system,fav:true,
+        playtime_s:(_fs&&_fs.playtime_s)||0,last_played:(_fs&&_fs.last_played)||null};});
+      // "Most Played" surface: top 10 by playtime_s (only games that have been played)
+      const played=((stats&&stats.games)||[]).filter(g=>g.total_secs>0).slice(0,10);
+      const mostPlayed=played.map(g=>{
+        const sys=SYS.find(s=>s.system===g.system);
+        return {name:g.game,system:g.system,img:sys?(sys.games.find(x=>x.name===g.game)||{}).img:null,
+          playtime_s:g.total_secs,last_played:g.last_played,sessions:g.sessions};});
+      if(mostPlayed.length) SYS.unshift({name:"🏆 Most Played",system:"__most",games:mostPlayed});
       if(recent.length) SYS.unshift({name:"▶ Continue Playing",system:"__recent",games:recent});
       if(favs.length) SYS.unshift({name:"★ Favorites",system:"__fav",games:favs});
-      $("sub").textContent=d.ok?`${d.total||0} games · ${(d.systems||[]).length} systems${favs.length?" · "+favs.length+"★":""}${recent.length?" · "+recent.length+" recent":""}`:"couldn't read games";
+      const totH=stats&&stats.total_secs?Math.round(stats.total_secs/360)/10:0;
+      $("sub").textContent=d.ok?`${d.total||0} games · ${(d.systems||[]).length} systems${favs.length?" · "+favs.length+"★":""}${recent.length?" · "+recent.length+" recent":""}${totH?" · "+totH+"h played":""}`:"couldn't read games";
       if(cur){let ci=SYS.findIndex(s=>s.system===cur.sys);cat=ci<0?0:ci;
         if(cur.tile>=0){foc=SYS[cat].games.length+cur.tile;lastG=Math.min(cur.lg,Math.max(0,SYS[cat].games.length-1));}
         else{const gi=cur.game?SYS[cat].games.findIndex(g=>g.name===cur.game):-1;foc=gi<0?0:gi;}}
