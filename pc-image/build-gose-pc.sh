@@ -91,6 +91,10 @@ run "rsync -a '$LAYER/splash/' '$WORK/mnt/splash/'"
 run "mkdir -p '$WORK/mnt/system/gose'"
 run "rsync -a --exclude tests --exclude '__pycache__' '$REPO/agent' '$WORK/mnt/system/gose/'"
 run "cat '$LAYER/system/batocera.conf.gose' >> '$WORK/mnt/system/batocera.conf'"
+# Shell scripts are committed with CRLF (Windows authoring); /bin/bash + /bin/sh choke
+# on the trailing \r ("word unexpected"), which would silently break the agent autostart
+# and the first-boot provisioner/hardener. Normalize them before setting exec bits.
+run "sed -i 's/\\r\$//' '$WORK/mnt/system/custom.sh' '$WORK/mnt/system/gose/provision-baked-apps.sh' '$WORK/mnt/system/gose/harden-firstboot.sh'"
 run "chmod +x '$WORK/mnt/system/custom.sh'"
 # Baked default app set (docs/25 §4): the manifest + first-boot provisioner ride in
 # via the system/ rsync above; mark the provisioner executable (Windows checkouts
@@ -98,6 +102,48 @@ run "chmod +x '$WORK/mnt/system/custom.sh'"
 run "chmod +x '$WORK/mnt/system/gose/provision-baked-apps.sh'"
 # Security hardener (Task #83) ships alongside the provisioner; same exec-bit fixup.
 run "chmod +x '$WORK/mnt/system/gose/harden-firstboot.sh'"
+
+step "4b/6 Bake the GOSE shell (product UI + server) into /userdata/gose-ui [Task #90]"
+# THE ship-blocker fix: the build previously baked ONLY system/ + agent/, so a clean
+# image booted hardened Batocera with NO GOSE UI and packaging fell back to the dev disk.
+# Bake the shell from its CANONICAL repo sources (build-time COPY, never duplicated into
+# gose-layer, so it can't drift): gui/mockup (the kiosk pages + assets) + pc-image/
+# gose-vm-host (the UI server + shell helpers + vendored python-xlib). Mirrors the live
+# dev VM's /userdata/gose-ui inventory exactly (verified file-for-file, docs/32).
+UI="$WORK/mnt/gose-ui"
+HOST="$REPO/pc-image/gose-vm-host"
+run "mkdir -p '$UI'"
+# (1) kiosk pages + assets + page-render helpers; drop design concepts, caches, backups.
+run "rsync -a --exclude '__pycache__' --exclude '*.pyc' --exclude '*-concept.png' --exclude '*.bak' '$REPO/gui/mockup/' '$UI/'"
+# (2) UI server + shell helpers — the guest-runtime subset of gose-vm-host. Host-only dev
+#     tooling (reload_ui.py / push_*.py / boot-gose-vm.ps1 / host_bridge.py / inject_gose_layer.py
+#     / swap_shell.py / serve_and_kiosk.py / elev*) is intentionally NOT baked into the guest.
+for f in gose_vm_server.py kiosk.py gose-session.sh gose-pad-nav.py overlay_window.py \
+         watchdog.py gose-storage-handler.sh guide_toggle.sh shot.sh start-shell.sh \
+         99-gose-storage.rules gamecontrollerdb.txt; do
+  run "rsync -a '$HOST/$f' '$UI/'"
+done
+# (3) vendored python-xlib (the overlay/cursor code imports it) — whole tree minus caches.
+run "rsync -a --exclude '__pycache__' --exclude '*.pyc' '$HOST/vendor' '$UI/'"
+# Normalize CRLF on the baked shell scripts (python tolerates CRLF; /bin/sh does not) and
+# set the exec bits the Windows checkout drops (guide_toggle.sh / shot.sh run via Openbox).
+run "find '$UI' -maxdepth 1 -name '*.sh' -exec sed -i 's/\\r\$//' {} +"
+run "chmod +x '$UI'/*.sh"
+# The shell writes pad-nav/overlay logs to /userdata/system/logs at S31 — before custom.sh
+# creates it at S99 — so pre-create it or first-boot pad navigation silently fails.
+run "mkdir -p '$WORK/mnt/system/logs'"
+
+run "umount '$WORK/mnt'"
+
+step "4c/6 Install the pre-ES shell autostart hook on the BOOT partition"
+# How the shell AUTOSTARTS: Batocera launches the front-end via /usr/bin/emulationstation-
+# standalone; GOSE swaps that script's ES launch line for `sh /userdata/gose-ui/gose-session.sh`.
+# On the dev disk that edit lived in the Batocera overlay; a clean build has none, so we
+# (re)apply it each boot from /boot/boot-custom.sh, which S00bootcustom runs BEFORE
+# S31emulationstation. Idempotent + self-heals after an OS update. (boot = FAT partition p1.)
+run "mount \${LOOP}p1 '$WORK/mnt'"
+run "rsync -a '$LAYER/boot/boot-custom.sh' '$WORK/mnt/boot-custom.sh'"
+run "sed -i 's/\\r\$//' '$WORK/mnt/boot-custom.sh'"
 run "umount '$WORK/mnt'"
 run "losetup -d \$LOOP"
 

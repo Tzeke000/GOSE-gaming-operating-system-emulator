@@ -19,6 +19,13 @@ boot (fixed 2026-06-07). Regenerate all splash PNGs from the current brand mark
 with `py -3.11 _make_splash.py` (source: `gui/mockup/assets/brand/gose-crystal.png`).
 | `themes/gose/` *(next)* | `/userdata/themes/gose/` | Windows-like EmulationStation theme |
 | *(repo)* `agent/` | `/userdata/system/gose/agent/` | The GOSE agent, copied by the build |
+| *(repo)* `gui/mockup/` + `gose-vm-host/` shell files | `/userdata/gose-ui/` | **The GOSE shell** — UI server, kiosk pages + assets, helper daemons, vendored xlib. Build-time COPY (not duplicated here) so it can't drift. See docs/32 + Task #90. |
+| `boot/boot-custom.sh` | `/boot-custom.sh` (FAT boot partition) | Pre-ES hook (`S00bootcustom`, before `S31emulationstation`): re-applies the `emulationstation-standalone` → `gose-session.sh` patch each boot so the shell autostarts on a clean image. |
+
+**Shell autostart (docs/32):** `boot-custom.sh` redirects the front-end to
+`/userdata/gose-ui/gose-session.sh`, which starts `gose_vm_server.py` and the kiosk. The
+`/userdata/system/services/custom_service` Batocera auto-creates from `custom.sh` only
+starts the **agent**, not the shell — don't confuse the two.
 
 The EmulationStation **theme** (`themes/gose/`) is the next GUI milestone — it ports
 the prototypes in `gui/mockup/` to batocera-emulationstation theme format v7. Until
