@@ -956,6 +956,8 @@
       });
     }
     if(window.GW){ if(GW.paintIcons)GW.paintIcons(dock); if(GW.nav)GW.nav.rebuild(); }
+    // task 48: feed the contextual-tips layer (assets/tips.js) the open-window count — its only hook.
+    try{ window.dispatchEvent(new CustomEvent("gose-windows",{detail:{open:ids.length}})); }catch(e){}
   }
 
   /* ---- postMessage path for pages living inside a window frame ---- */

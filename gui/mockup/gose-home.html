@@ -111,7 +111,8 @@
   /* ---------- page chrome: side menu + dock (navigable as nav zones) ---------- */
   const NAV=[["library","Library","gose-library.html"],["files","Files","gose-files.html"],
              ["terminal-app","Terminal","gose-term.html"],["emulators","Emulators","gose-library.html"],
-             ["ai","AI Players","gose-ai.html"],["settings-app","Settings","gose-settings.html"]];
+             ["ai","AI Players","gose-ai.html"],["settings-app","Settings","gose-settings.html"],
+             ["info","Help","gose-help.html"]];
   document.getElementById("side").innerHTML=NAV.map(([i,l,h],x)=>
     `<div class="nav ${x===0?'on':''}" data-go="${h}"><span class="ic" data-i="${i}"></span><span>${l}</span></div>`).join("");
   document.getElementById("dock").innerHTML=
@@ -437,4 +438,6 @@
      "ROMs found — add to Library?" offer when an SD/USB with ROMs is inserted. -->
 <script src="assets/storage-offer.js"></script>
 <script src="assets/a11y.js"></script>
+<!-- first-session contextual tips (task 48): one-time hints as accent toasts; off via localStorage gose-tips-off -->
+<script src="assets/tips.js"></script>
 </body></html>

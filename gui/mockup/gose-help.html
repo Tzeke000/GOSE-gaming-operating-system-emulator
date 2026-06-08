@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Help</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:16px 36px 4px}
+  .top img{width:30px;height:30px}.top h1{font-size:19px;margin:0}
+  .top .sub{color:var(--muted);font-size:12.5px;margin-left:2px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .top .home .ic{font-size:15px;vertical-align:-.18em}
+  .main{flex:1;display:flex;gap:12px;margin:10px 36px 0;min-height:0}
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;min-height:0}
+  .diag{flex:1.05;display:flex;flex-direction:column;padding:12px 16px;overflow:hidden}
+  .diag svg{flex:1;width:100%;min-height:0}
+  .legend{color:var(--muted);font-size:12px;line-height:1.5;padding:4px 4px 2px}
+  .legend b{color:var(--text);font-weight:600}
+  .side{flex:1.1;display:flex;flex-direction:column;min-width:0}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:auto;min-height:0;flex:1}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:12px 16px 4px}
+  /* a vocabulary row — focus-glow is the standard blue (docs/21 §1.4) */
+  .row{display:flex;align-items:center;gap:13px;padding:11px 14px;margin:0 8px;border:2px solid transparent;
+    border-radius:11px;cursor:pointer;transition:border-color .12s,background .12s}
+  .row.focus{border-color:var(--accent);background:#5cd0ff10;box-shadow:var(--focusglow)}
+  .row .col{flex:1;min-width:0}
+  .row .nm{font-weight:600;font-size:14px}
+  .row .sub{color:var(--muted);font-size:12px;line-height:1.4;margin-top:2px}
+  .row .key{flex:none;background:var(--surface2);border:1px solid var(--line);border-radius:9px;
+    padding:6px 11px;font-weight:700;font-size:12px;letter-spacing:.02em;white-space:nowrap}
+  .row.act{margin-top:6px}
+  .row.act .nm{color:var(--text)}
+  .row.act .key{color:var(--accent);border-color:var(--accent)}
+  /* SVG pad — mirrors gose-padtest.html so the diagram reads identically */
+  .k{fill:#161a24;stroke:#2c3344;stroke-width:2;transition:fill .12s,stroke .12s,filter .12s}
+  .k.lit{fill:var(--accent);stroke:var(--accent);filter:drop-shadow(0 0 7px var(--accent))}
+  .e{fill:#10131b;stroke:#3a4156;stroke-width:1.6;stroke-dasharray:4 3}
+  .e.live{stroke:var(--accent);stroke-dasharray:none;filter:drop-shadow(0 0 6px var(--accent))}
+  .shell{fill:none;stroke:#272d3c;stroke-width:2.5}
+  .svgt{fill:#8d94ab;font-size:11px;font-weight:600;font-family:Inter,system-ui,sans-serif;text-anchor:middle;pointer-events:none}
+  .svgs{fill:#5b637a;font-size:8.5px;font-weight:700;letter-spacing:.5px;text-anchor:middle;pointer-events:none}
+  .foot{margin:10px 36px 14px;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:12px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <h1>How to use GOSE</h1><span class="sub">— your controller, button by button</span>
+    <div class="home"><span class="ic" data-i="gamepad-2"></span> B / Esc — back</div>
+  </div>
+
+  <div class="main">
+    <div class="panel diag">
+      <svg viewBox="0 0 560 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <rect class="shell" x="40" y="60" width="480" height="185" rx="64"></rect>
+        <!-- triggers / shoulders -->
+        <rect id="g-l2" class="e" x="92" y="12" width="80" height="18" rx="9"></rect>
+        <rect id="g-r2" class="e" x="388" y="12" width="80" height="18" rx="9"></rect>
+        <text class="svgs" x="132" y="25">L2 · SNAP</text>
+        <text class="svgs" x="428" y="25">R2</text>
+        <rect id="g-l1" class="k" x="86" y="38" width="92" height="18" rx="9"></rect>
+        <rect id="g-r1" class="k" x="382" y="38" width="92" height="18" rx="9"></rect>
+        <text class="svgs" x="132" y="51">L1 · TAB &#8249;</text>
+        <text class="svgs" x="428" y="51">R1 · TAB &#8250;</text>
+        <!-- d-pad -->
+        <rect id="g-up" class="k" x="131" y="98" width="28" height="34" rx="6"></rect>
+        <rect id="g-down" class="k" x="131" y="148" width="28" height="34" rx="6"></rect>
+        <rect id="g-left" class="k" x="89" y="126" width="34" height="28" rx="6"></rect>
+        <rect id="g-right" class="k" x="167" y="126" width="34" height="28" rx="6"></rect>
+        <text class="svgs" x="145" y="200">D-PAD · MOVE</text>
+        <!-- face -->
+        <circle id="g-y" class="e" cx="415" cy="104" r="17"></circle>
+        <circle id="g-x" class="e" cx="371" cy="140" r="17"></circle>
+        <circle id="g-b" class="k" cx="459" cy="140" r="17"></circle>
+        <circle id="g-a" class="k" cx="415" cy="176" r="17"></circle>
+        <text class="svgt" x="415" y="108">Y</text><text class="svgt" x="371" y="144">X</text>
+        <text class="svgt" x="459" y="144">B</text><text class="svgt" x="415" y="180">A</text>
+        <text class="svgs" x="459" y="166">BACK</text><text class="svgs" x="415" y="202">SELECT</text>
+        <!-- select / start / guide -->
+        <rect id="g-select" class="k" x="236" y="100" width="30" height="14" rx="7"></rect>
+        <rect id="g-start" class="k" x="294" y="100" width="30" height="14" rx="7"></rect>
+        <text class="svgs" x="251" y="125">SELECT</text><text class="svgs" x="309" y="125">START</text>
+        <circle id="g-guide" class="e" cx="280" cy="152" r="15"></circle>
+        <text class="svgs" x="280" y="180">GUIDE · WINDOWS</text>
+        <!-- sticks -->
+        <circle id="g-ls" class="e" cx="207" cy="207" r="24"></circle>
+        <circle cx="207" cy="207" r="12" class="e" style="pointer-events:none"></circle>
+        <circle id="g-rs" class="e" cx="353" cy="207" r="24"></circle>
+        <circle cx="353" cy="207" r="12" class="e" style="pointer-events:none"></circle>
+        <text class="svgs" x="207" y="243">L STICK · POINTER</text>
+        <text class="svgs" x="353" y="243">R STICK</text>
+      </svg>
+      <div class="legend">Focus a control on the right and it <b>lights up here</b> — the same diagram
+        the <b>Controller Test</b> uses. A is also Start, B is also Select.</div>
+    </div>
+    <div class="side">
+      <div class="card">
+        <div class="ph">THE CONTROLS</div>
+        <div id="rows"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot"><span class="ic" data-i="info"></span> Every screen in GOSE uses these same buttons —
+    if you can see it, you can reach it with the D-pad.
+    <span class="h"><b>&#8593;&#8595;&#8592;&#8594;</b> move &middot; <b>A / Enter</b> select &middot; <b>B / Esc</b> back</span></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  var $=function(id){return document.getElementById(id);};
+  function paint(root){(root||document).querySelectorAll("[data-i]").forEach(function(e){e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)");});}
+
+  // The docs/27 §1 vocabulary, in user-facing words. `lit` = the pad element ids this
+  // control maps to (the diagram lights them on focus, mirroring gose-padtest.html).
+  var VOCAB=[
+    {nm:"Move around", key:"D-pad",
+     sub:"Up, down, left and right move the blue highlight between things on screen.",
+     lit:["g-up","g-down","g-left","g-right"]},
+    {nm:"Point and click", key:"Left stick",
+     sub:"Nudge the left stick to move the pointer like a mouse. The harder you push, the faster it goes.",
+     lit:["g-ls"]},
+    {nm:"Select", key:"A",
+     sub:"Press A to choose whatever is highlighted — or, with the pointer out, A clicks where it is.",
+     lit:["g-a","g-start"]},
+    {nm:"Go back", key:"B",
+     sub:"B steps back one layer — close a menu, then a window, then to the desktop. It never gets stuck.",
+     lit:["g-b","g-select"]},
+    {nm:"Switch tabs", key:"L1 / R1",
+     sub:"Flip between the tabs or sections of a screen — Store tabs, Settings categories, library systems.",
+     lit:["g-l1","g-r1"]},
+    {nm:"Switch windows", key:"Guide",
+     sub:"Tap Guide for the window switcher; hold it and let go on the window you want.",
+     lit:["g-guide"]},
+    {nm:"Snap a window", key:"L2 + D-pad",
+     sub:"Hold L2 and press a direction to snap the open window to a half or a corner of the screen.",
+     lit:["g-l2","g-up","g-down","g-left","g-right"]},
+    {nm:"Type", key:"Enter",
+     sub:"Land on any text box and the keyboard opens. Enter jumps to the next box; on the last one it's done.",
+     lit:["g-a","g-start"]}
+  ];
+  // one focusable action at the end + B-to-back. No tabs on this page, so [ ] are ignored (§3.3).
+  var ACTION={nm:"See it live — Controller Test", key:"Open", go:"gose-padtest.html"};
+
+  var foc=0;
+  function items(){return VOCAB.concat([ACTION]);}
+
+  function rowsHTML(){
+    var h=VOCAB.map(function(v,i){
+      return '<div class="row" data-i="'+i+'"><div class="col"><div class="nm">'+v.nm+'</div>'+
+        '<div class="sub">'+v.sub+'</div></div><div class="key">'+v.key+'</div></div>';
+    }).join("");
+    h+='<div class="row act" data-i="'+VOCAB.length+'"><div class="col"><div class="nm">'+ACTION.nm+'</div>'+
+       '<div class="sub">Watch each button light up as you press it.</div></div><div class="key">'+ACTION.key+'</div></div>';
+    return h;
+  }
+  function clearLit(){
+    document.querySelectorAll(".k.lit,.e.live").forEach(function(el){el.classList.remove("lit","live");});
+  }
+  function light(ids){
+    clearLit();
+    (ids||[]).forEach(function(id){var el=$(id); if(!el)return;
+      el.classList.add(el.classList.contains("e")?"live":"lit");});
+  }
+  function render(){
+    var rows=$("rows").querySelectorAll(".row");
+    rows.forEach(function(el,i){el.classList.toggle("focus",i===foc);});
+    var v=VOCAB[foc];
+    light(v?v.lit:null);
+    var fe=$("rows").querySelector(".row.focus"); if(fe&&fe.scrollIntoView)fe.scrollIntoView({block:"nearest"});
+  }
+  function move(d){var n=items().length; foc=(foc+d+n)%n; render();}
+  function goBack(){ if(history.length>1) history.back(); else location.href="gose-home.html"; }
+  function activate(){
+    if(foc===VOCAB.length){ location.href=ACTION.go; return; }   // the action row
+    light(VOCAB[foc].lit);                                        // vocab row: re-pulse its lights
+  }
+
+  // page nav — accept both arrow spellings (WebKitGTK sends Arrow* or bare; docs/27 §3.8)
+  document.addEventListener("keydown",function(e){
+    var k=e.key;
+    if(k==="ArrowDown"||k==="Down"||k==="ArrowRight"||k==="Right")move(1);
+    else if(k==="ArrowUp"||k==="Up"||k==="ArrowLeft"||k==="Left")move(-1);
+    else if(k==="Enter"||k===" ")activate();
+    else if(k==="Escape"||k==="Backspace")goBack();
+    else return;
+    e.preventDefault();
+  });
+  // mouse: click a row to focus it (and the action row navigates)
+  document.addEventListener("click",function(e){
+    var r=e.target.closest&&e.target.closest(".row"); if(!r)return;
+    foc=+r.dataset.i; render(); if(foc===VOCAB.length)activate();
+  });
+  // No getGamepads / gamepad events — the bridge is the single input authority (docs/27 §2.1).
+
+  $("rows").innerHTML=rowsHTML();
+  paint(); render();
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>
