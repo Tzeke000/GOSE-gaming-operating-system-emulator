@@ -81,7 +81,12 @@
     fetch("/storage/import",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({vol_id:VOL,systems:sys})}).then(r=>r.json()).then(j=>{
       if(window.GOSE){ if(j&&j.ok){const m=j.imported+(j.imported===1?" game added":" games added")+(j.skipped?(" · "+j.skipped+" already had"):"")+(j.aborted?" · stopped (card removed)":"");
-        GOSE.notify({title:"Added to Library",body:m,icon:"hard-drive"});}
+        GOSE.notify({title:"Added to Library",body:m,icon:"hard-drive"});
+        // ROM integrity: warn if any files looked damaged at source (bad header / zero / truncated)
+        if(j.suspect&&j.suspect.length>0){
+          const names=(j.suspect.slice(0,3).map(x=>x.file).join(", "))+(j.suspect.length>3?" + "+(j.suspect.length-3)+" more":"");
+          GOSE.notify({title:j.suspect.length+(j.suspect.length===1?" file":" files")+" may be damaged",
+            body:names+" — check the originals on the card",icon:"triangle-alert",kind:"warn"});}}
         else GOSE.notify({title:"Import failed",body:(j&&j.error)||"could not copy ROMs",icon:"triangle-alert"});}
       location.href="gose-home.html";
     }).catch(()=>{ location.href="gose-home.html"; });
