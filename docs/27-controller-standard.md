@@ -28,6 +28,7 @@ turns pad input into these keys; pages handle them in a `keydown` listener.
 | **Tab prev/next**  | L1 (`BTN_TL`) / R1 (`BTN_TR`)   | `bracketleft` / `bracketright` (`[` `]`) | previous / next tab — tab-like structures only (§3.3) |
 | **Window carousel**| Guide (`BTN_MODE`) hold or tap  | *(none — semantic `wm.*` events, §4)* | the controller Alt-Tab (docs/23 §7) |
 | **Snap**           | L2 held + d-pad                 | *(none — semantic `wm.*` events, §4)* | the controller Win+Z snap chooser |
+| **Screenshot**     | Guide **held** + R1 (`BTN_MODE`+`BTN_TR`) | *(none — POST `/capture/shot`, §1.2)* | grab the screen to the gallery, **anywhere** incl. in-game |
 
 Mechanics (single source: the constants at the top of `gose-pad-nav.py`):
 
@@ -91,6 +92,43 @@ emits arrow keysyms. Mechanics (single source: the `CURSOR_*` constants in
 - **Topmost-ness:** the X hardware cursor is composited by the X server above
   all windows by nature — it cannot go "under" a window. (A page-drawn fake
   cursor can; see the `cursor.js` reconciliation note in §2.3.)
+
+### 1.2 The global screenshot chord (adopted 2026-06-08)
+
+**Guide held + R1 takes a screenshot, anywhere.** While the **carousel** is open
+(Guide held — see §4), pressing **R1** (`BTN_TR`) fires a global screenshot
+instead of cycling the carousel. The bridge POSTs the **existing** privacy-gated
+capture route — `POST /capture/shot` on the in-guest server (`:8780`) — on a tiny
+worker thread so the host screencap (a few seconds worst-case) never blocks the
+evdev loop. Mechanics (single source: `gose-pad-nav.py`, `WMLayer`):
+
+- **Works EVERYWHERE, including in-game.** `/capture/shot` grabs the **host**
+  frame, so it captures GL games the guest can't read. The chord is handled in
+  the **WM modal layer (§4 layer 3)**, which sits *above* game pad-suppression —
+  so it deliberately **bypasses the "game owns the pad" silence**, exactly like
+  the Game-Bar path. (Holding Guide already drops `/tmp/gose-wm-open`, which
+  un-suppresses the pad over a running game; the chord rides that same exception.)
+- **Privacy is honoured as a no-op.** The capture route is gated by Settings ›
+  Privacy › *Screen capture*; when set to **Never** it returns `ok:false` and the
+  bridge **does nothing but log it** (`screenshot chord -> no-op (...)`). The gate
+  lives **server-side** (`c43967e`); the bridge never second-guesses it.
+- **One shot per press.** Only the R1 key-**down** fires (kernel autorepeat
+  `value==2` and release `value==0` are ignored), so a held R1 takes exactly one
+  screenshot; a second physical press takes a second.
+- **Carousel interplay — R1 is consumed, no double action.** In the carousel R1
+  is **consumed** (no `wm.next` tab-cycle), and a shot during the hold **cancels
+  the release-select**: the Guide release posts `wm.cancel` (dismiss the switcher)
+  instead of `wm.select` (switch windows) — the user's intent was a screenshot,
+  not a window switch. **Nothing unique is lost:** R1's old `wm.next` was a
+  *redundant* forward-cycle — the **d-pad** (`wm.right`/`wm.left`) and **L1**
+  (`wm.prev`) still cycle the carousel both ways.
+- **Plain Guide is byte-identical when R1 is not pressed.** Tap → sticky modal;
+  hold → release-selects; B → cancel — all unchanged. The `_shot_taken` latch is
+  set only by the chord and cleared on every modal exit, so it can never leak into
+  a plain Guide gesture.
+- **Admin-gated for free.** The carousel is already admin-gated at entry (§4
+  layer 4 / §6), so a non-admin pad can't open it and therefore can't chord —
+  no separate gate needed.
 
 ## 2. The delivery chain — one input authority
 
@@ -267,7 +305,9 @@ Special cases, by design: the WM layer's flag mirrors the Game-Bar exception so
 window ops work over a running game; the gate **fails open** when the registry
 is unreachable (nav must never break because the server hiccuped); pre-OOBE
 (no admin chosen, `.oobe-done` absent) **any** pad drives the first-boot wizard
-(docs/25 §5.2b).
+(docs/25 §5.2b); and the **screenshot chord** (Guide held + R1, §1.2) is handled
+inside layer 3, so it fires over a running game just like a window op — capturing
+the host frame regardless of the game's hold on the pad.
 
 ### 4.1 Native-app discipline (adopted 2026-06-07 — the browser-trap killer)
 

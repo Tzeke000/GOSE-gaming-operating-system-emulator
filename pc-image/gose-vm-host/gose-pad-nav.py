@@ -157,6 +157,14 @@ GAMEBAR_FLAG = "/tmp/gose-gamebar-open"
 # exception so the WM layer keeps working over a native app later (phase 2).
 WM_FLAG = "/tmp/gose-wm-open"
 WM_EVENT_URL = SERVER_URL + "/wm/event"
+# --- global screenshot CHORD (docs/27 §1.2): Guide held (carousel) + R1 -------
+# POSTs the EXISTING privacy-gated capture route on the in-guest server. Works
+# EVERYWHERE — desktop AND in-game — because the server grabs the HOST frame, so
+# it deliberately bypasses the game's pad-suppression exactly like the Game-Bar
+# path. A capture refusal (privacy = "Never") comes back ok:false and is honoured
+# as a logged NO-OP. The POST runs on a tiny worker thread so the host screencap
+# (a few seconds worst case) never blocks the evdev loop.
+CAPTURE_URL = SERVER_URL + "/capture/shot"
 GUIDE_HOLD_S = 0.35      # Guide released after this long = "release selects"
 L2_THRESHOLD = 100       # ABS_Z (0-255) past this counts as L2 held
 # keysym -> semantic event while a WM modal is open (reuses map_event's output)
@@ -357,6 +365,46 @@ def wm_post(ev):
         log("wm post queue full -> dropped %s" % ev)
 
 
+# ---- /capture/shot poster (docs/27 §1.2): the screenshot CHORD fires this. A
+# tiny bounded worker thread so the POST (the host screencap can take a few
+# seconds) NEVER blocks the evdev loop. The privacy gate lives SERVER-side; a
+# refusal returns ok:false and is honoured here as a logged NO-OP. -------------
+_CAP_POST_Q = _queue.Queue(maxsize=8)
+
+def _capture_post_worker():
+    while True:
+        _CAP_POST_Q.get()
+        try:
+            req = urllib.request.Request(
+                CAPTURE_URL, data=b"{}",
+                headers={"Content-Type": "application/json"})
+            raw = urllib.request.urlopen(req, timeout=15).read()
+            d = {}
+            try:
+                d = json.loads(raw.decode() or "{}")
+                if not isinstance(d, dict):
+                    d = {}
+            except Exception:
+                d = {}
+            if d.get("ok"):
+                log("screenshot chord -> saved %s"
+                    % (d.get("name") or d.get("path") or "(file)"))
+            else:
+                # privacy "Never" (or any failure) -> NO-OP, logged honestly
+                log("screenshot chord -> no-op (%s)"
+                    % (d.get("error") or "capture refused/failed"))
+        except Exception as e:
+            log("screenshot chord POST failed: %s" % e)
+
+def capture_post():
+    """Enqueue ONE /capture/shot POST (non-blocking). Used by the WM-layer chord."""
+    try:
+        _CAP_POST_Q.put_nowait(1)
+        log("screenshot chord: Guide+R1 -> POST %s" % CAPTURE_URL)
+    except _queue.Full:
+        log("screenshot chord: capture queue full -> dropped (one already in flight)")
+
+
 class WMLayer:
     """The modal window-management layer (docs/23 §7).
 
@@ -366,6 +414,15 @@ class WMLayer:
                      shorter: STICKY — the modal stays, A/B finish it.
     * In a modal every mapped keysym becomes a semantic event (WM_FROM_KEYSYM);
       Y -> wm.overview, X -> wm.act.  Nothing is synthesized as a key.
+    * SCREENSHOT CHORD (docs/27 §1.2): Guide held (carousel) + R1 (BTN_TR) ->
+      fire the global screenshot (POST /capture/shot via self.capture) and CONSUME
+      the R1 so it does NOT tab-cycle (wm.next).  A shot during the hold sets
+      self._shot_taken, so the Guide RELEASE posts wm.cancel (dismiss) instead of
+      wm.select — the user's intent was a screenshot, not a window switch.  R1 in
+      the carousel was a REDUNDANT forward-cycle (d-pad Right == wm.right does the
+      same; L1 == wm.prev still cycles back), so nothing unique is lost.  key-DOWN
+      only -> one shot per press (autorepeat/release ignored).  When R1 is NOT
+      pressed, every Guide tap/hold/release-select path is byte-identical.
     * L2 held + d-pad (outside a modal) -> enter snap, post wm.snapmode; further
       d-pad posts directions; A places (stays for Snap-Assist); L2 release exits
       the bridge modal (the page may keep its assist UI; keys then drive it).
@@ -374,12 +431,16 @@ class WMLayer:
     the layer still works while a game/native app runs.
     """
 
-    def __init__(self, post=None, flag_path=WM_FLAG, gate=None):
+    def __init__(self, post=None, flag_path=WM_FLAG, gate=None, capture=None):
         self.post = post or wm_post
+        # capture() fires the global screenshot (POST /capture/shot). Injectable
+        # so --selftest can record chord fires without hitting the real server.
+        self.capture = capture or capture_post
         self.flag_path = flag_path
         self.gate = gate or (lambda path, name=None: (True, "no-gate"))
         self.mode = None          # None | "carousel" | "snap"
         self.guide_t = 0.0
+        self._shot_taken = False  # a screenshot chord fired during THIS Guide hold
         self.l2 = {}              # dev_path -> bool (per-device trigger state)
 
     # -- flag lifecycle ------------------------------------------------------
@@ -392,6 +453,7 @@ class WMLayer:
 
     def _exit(self):
         self.mode = None
+        self._shot_taken = False   # leaving the modal always clears the chord latch
         try:
             os.remove(self.flag_path)
         except Exception:
@@ -430,13 +492,35 @@ class WMLayer:
                 if not self._allowed(dev_path, dev_name):
                     return True
                 self.guide_t = time.time()
+                self._shot_taken = False      # fresh hold: no chord yet
                 self._enter("carousel")
                 self.post("wm.carousel")
             elif val == 0 and self.mode == "carousel":
-                if time.time() - self.guide_t >= GUIDE_HOLD_S:
+                if self._shot_taken:
+                    # the screenshot chord fired this hold (docs/27 §1.2): the
+                    # release must NOT select a window — dismiss the carousel
+                    # cleanly instead. _exit() clears _shot_taken.
+                    self.post("wm.cancel")
+                    self._exit()
+                elif time.time() - self.guide_t >= GUIDE_HOLD_S:
                     self.post("wm.select")    # release-selects (the headline gesture)
                     self._exit()
                 # else: quick tap -> sticky modal; A/B finish it
+            return True
+
+        # SCREENSHOT CHORD (docs/27 §1.2): Guide held (carousel) + R1.  Fire the
+        # global screenshot, CONSUME R1 so it does NOT tab-cycle (wm.next), and
+        # latch _shot_taken so the Guide release cancels the select.  key-DOWN
+        # only -> one shot per press (kernel autorepeat val==2 / release val==0
+        # are ignored).  The carousel is already admin-gated at entry, so a denied
+        # pad can't reach this (no carousel -> no chord).
+        if self.mode == "carousel" and et == ecodes.EV_KEY and \
+                ec == ecodes.BTN_TR and val == 1:
+            try:
+                self.capture()
+            except Exception as e:
+                log("screenshot chord: capture call failed: %s" % e)
+            self._shot_taken = True
             return True
 
         # WM-only buttons while a modal is open (Y=overview, X=act-out)
@@ -1632,6 +1716,7 @@ def run():
     except Exception:
         pass
     _threading.Thread(target=_wm_post_worker, daemon=True).start()
+    _threading.Thread(target=_capture_post_worker, daemon=True).start()
     engine = make_engine()              # XTEST (persistent X conn) or xdotool
     gate = AdminGate().allows
     gamewatch = GameWatch().start()     # off-hot-path pgrep (shared instance)
@@ -1818,11 +1903,13 @@ def selftest():
     except Exception:
         pass
     posts = []
+    caps = []     # records each /capture/shot the screenshot chord fires (§1.2)
 
     def wm_pair(gate_fn=None, game=False):
-        posts.clear(); rec.clear()
+        posts.clear(); rec.clear(); caps.clear()
         wm = WMLayer(post=posts.append, flag_path=flagp,
-                     gate=gate_fn or (lambda p, n=None: (True, "ok")))
+                     gate=gate_fn or (lambda p, n=None: (True, "ok")),
+                     capture=lambda: caps.append(1))
         n = hnav(game=game, wm=wm, wm_check=lambda: os.path.exists(flagp))
         return n, wm
 
@@ -1833,9 +1920,10 @@ def selftest():
     check("WM: Guide down -> wm.carousel posted", posts == ["wm.carousel"])
     check("WM: Guide down -> flag file set", os.path.exists(flagp))
     check("WM: Guide down -> no key emitted", rec == [])
-    # while held: R1/L1 cycle as semantic events, not bracket keys
-    n1.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1), DEV)
-    check("WM: R1 in modal -> wm.next (no key)", posts[-1] == "wm.next" and rec == [])
+    # while held: L1 cycles back as a semantic event (not a bracket key). R1 in
+    # the carousel is now the SCREENSHOT CHORD (its own section below) — NOT pressed
+    # here, so this carousel's release-selects path stays uncontaminated by the
+    # _shot_taken latch. Forward-cycle is still covered by the d-pad (wm.right).
     n1.feed(E(ecodes.EV_KEY, ecodes.BTN_TL, 1), DEV)
     check("WM: L1 in modal -> wm.prev", posts[-1] == "wm.prev")
     # d-pad cycles too
@@ -1898,6 +1986,68 @@ def selftest():
     nwm2 = hnav(game=True)
     nwm2.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), DEV)
     check("WM-FLAG: closed during game -> still suppressed", rec == [])
+
+    # ----- GLOBAL SCREENSHOT CHORD (docs/27 §1.2: Guide held + R1) -----------
+    # wm_pair injects capture=lambda: caps.append(1), so a fired chord shows up as
+    # a 1 in caps without touching the real /capture/shot route.
+    # (1) the chord fires the capture ONCE and consumes R1 (no wm.next, no key).
+    c1, cw1 = wm_pair()
+    c1.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)        # Guide held -> carousel
+    check("CHORD: Guide opens the carousel (precondition)", cw1.mode == "carousel")
+    c1.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1), DEV)          # + R1 -> screenshot
+    check("CHORD: Guide+R1 fires the capture once", caps == [1])
+    check("CHORD: R1 is consumed -> NO wm.next tab-cycle, no key emitted",
+          "wm.next" not in posts and rec == [])
+    check("CHORD: a fired shot latches release-cancel", cw1._shot_taken is True)
+    # (2) one shot per press: kernel autorepeat (val 2) + release (val 0) re-fire nothing
+    c1.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 2), DEV)
+    c1.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 0), DEV)
+    check("CHORD: autorepeat + release do NOT re-fire (one shot per press)", caps == [1])
+    c1.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1), DEV)          # a second DISTINCT press
+    check("CHORD: a second R1 press fires a second shot", caps == [1, 1])
+
+    # (3) carousel-select is SUPPRESSED after a chord: Guide release cancels, not selects
+    c2, cw2 = wm_pair()
+    c2.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    c2.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1), DEV)          # shot taken this hold
+    cw2.guide_t = time.time() - 1.0                           # would otherwise be a "hold -> select"
+    c2.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 0), DEV)        # release
+    check("CHORD: release after a shot -> wm.cancel (NOT wm.select)",
+          posts[-1] == "wm.cancel" and "wm.select" not in posts)
+    check("CHORD: release after a shot exits carousel + clears flag + clears latch",
+          cw2.mode is None and not os.path.exists(flagp) and cw2._shot_taken is False)
+
+    # (4) plain Guide flows are BYTE-IDENTICAL when R1 is not pressed
+    c3, cw3 = wm_pair()
+    c3.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    cw3.guide_t = time.time() - 1.0
+    c3.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 0), DEV)
+    check("CHORD: plain Guide HOLD-release still selects (no R1, no capture)",
+          posts[-1] == "wm.select" and cw3.mode is None and caps == [])
+    c4, cw4 = wm_pair()
+    c4.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    c4.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 0), DEV)        # instant release = tap
+    check("CHORD: plain Guide TAP still sticky (no R1, no capture)",
+          posts == ["wm.carousel"] and cw4.mode == "carousel" and caps == [])
+    c5, cw5 = wm_pair()
+    c5.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1), DEV)          # R1 with NO Guide held
+    check("CHORD: R1 with no Guide -> bracketright tab key, no capture",
+          rec == ["bracketright"] and caps == [])
+
+    # (5) the chord fires while a GAME runs (bypasses suppression, like Game Bar)
+    cg, cwg = wm_pair(game=True)
+    cg.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)        # carousel opens over the game
+    check("CHORD: Guide opens the carousel even during a game", cwg.mode == "carousel")
+    cg.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1), DEV)
+    check("CHORD: chord still fires the capture during a game (bypasses suppression)",
+          caps == [1])
+
+    # (6) a gate-denied pad cannot open the carousel -> its chord is ignored
+    cd, cwd = wm_pair(gate_fn=lambda p, n=None: (False, "not OS-admin"))
+    cd.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)        # denied -> no carousel
+    cd.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1), DEV)          # R1 -> no chord
+    check("CHORD: gate-denied pad cannot open the carousel -> chord ignored",
+          cwd.mode is None and caps == [] and "wm.next" not in posts)
 
     # ----- NATIVE-APP DISCIPLINE (docs/27 §4.1: the browser-trap killer) -----
     # classification is pure: the kiosk family is NOT native; everything else is.
