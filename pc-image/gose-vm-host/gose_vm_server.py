@@ -3693,6 +3693,17 @@ def _apply_oobe_privacy(privacy):
 
 def oobe_complete(payload):
     p = payload or {}
+    # AUTH GATE: if OOBE is already complete a re-run replaces the owner record — that is a
+    # destructive privileged action and must require owner proof (PIN or dev token).  First-boot
+    # (no .oobe-done flag yet) is always open: the wizard has not established an owner yet, so
+    # there is nobody to authenticate as.  An AI token is intentionally NOT accepted here (same
+    # reasoning as SSH: the device owner, not a paired AI, runs first-time setup).
+    if os.path.exists(OOBE_DONE_FLAG):
+        ok, _cred, _kind = _owner_credential(p)
+        if not ok:
+            LOG.warning("oobe/complete REFUSED — already completed; owner proof required to re-run")
+            return {"ok": False, "code": "ERR_NOT_OWNER",
+                    "error": "setup already completed — owner PIN or dev token required to re-run it"}
     acct = p.get("account") or {}
     username = (acct.get("username") or "owner").strip()[:32] or "owner"
     display = (acct.get("display") or username).strip()[:48]
@@ -3762,11 +3773,26 @@ def oobe_complete(payload):
 def oobe_reset(payload=None):
     """Reset OOBE state so the wizard re-runs on next boot.
 
+    AUTH GATE: requires owner proof (PIN or dev token).  An unauthenticated reset would let
+    any process on the loopback (including a paired AI or a compromised flatpak) wipe the
+    owner account and force a re-setup — effectively a local privilege escalation.
+
     #111: always wipe AI pairings (ai_grants.json + ai_tokens.json) — an OOBE
     reset is a full device re-setup; leaving paired AIs from the previous run
     intact would let "three Wrens" survive a reset, which is wrong.
     wipe_account=True additionally removes accounts.json (used by factory reset).
+    factory_reset=True skips the auth gate (factory reset has its own auth path).
     """
+    p = payload or {}
+    # Auth gate: owner proof required unless called from factory_reset() (which has already
+    # verified ownership through its own path).  This stops any loopback caller — including
+    # a paired AI or a compromised app — from wiping the owner record unilaterally.
+    if not p.get("_from_factory_reset"):
+        ok, _cred, _kind = _owner_credential(p)
+        if not ok:
+            LOG.warning("oobe/reset REFUSED — owner proof required")
+            return {"ok": False, "code": "ERR_NOT_OWNER",
+                    "error": "owner PIN or dev token required to reset first-time setup"}
     removed = []
     try:
         if os.path.exists(OOBE_DONE_FLAG):
@@ -5171,7 +5197,7 @@ def gose_factory_reset(payload):
     try:
         # oobe_reset now wipes AI grants as part of #111; calling it here covers both the
         # account wipe and the AI wipe in one step, so there is no separate AI-wipe block.
-        reset += oobe_reset({"wipe_account": True}).get("removed", [])   # back to first-boot wizard
+        reset += oobe_reset({"wipe_account": True, "_from_factory_reset": True}).get("removed", [])   # back to first-boot wizard
     except Exception as e:
         LOG.warning("reset oobe failed: %s", e)
     LOG.info("FACTORY RESET reset=%s safety_backup=%s", reset, safety.get("file"))
@@ -8627,6 +8653,19 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             if route == "/ai/grant":
+                # Owner-gate: granting or changing AI tiers is a privileged action — only the
+                # device owner (PIN or dev token) may call this.  An AI token is intentionally
+                # not accepted (an AI must not be able to elevate its own or another AI's tier).
+                # The OOBE AI step calls this with the page in-process on 127.0.0.1 before an
+                # owner has been established; in that window _owner_credential will fail, so we
+                # also allow the pre-OOBE path (no .oobe-done flag + no admin set yet).
+                _oobe_done = os.path.exists(OOBE_DONE_FLAG)
+                if _oobe_done:
+                    ok, _cred, _kind = _owner_credential(payload)
+                    if not ok:
+                        LOG.warning("ai/grant REFUSED — owner proof required (post-OOBE)")
+                        return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                           "error": "owner PIN or dev token required to manage AI grants"})
                 return self._json(ai_grant(payload))
             if route == "/ai/revoke":
                 return self._json(ai_revoke(payload))
