@@ -1049,6 +1049,7 @@ def launch_game(system, game):
     try:
         _spawn(["emulatorlauncher"] + _virtual_pad_args() + ["-system", system, "-rom", rom])
         record_recent(system, game)
+        _TIMECTL["slot"] = 0; _TIMECTL["ff"] = False   # #37 RetroArch launch defaults
         return {"ok": True, "rom": rom}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -2166,6 +2167,12 @@ def guide_toggle():
 _GAME_PATS = ["retroarch", "emulatorlauncher", "ppsspp", "pcsx", "dolphin-emu", "mupen64",
               "duckstation", "flycast", "mednafen", "melonds", "scummvm", "bwrap", "glxgears"]
 
+# #37 time-control mirror: RetroArch NCI is fire-and-forget and reports neither the
+# active save slot nor the fast-forward state back, so the Game Bar (the pad-first
+# driver of these) tracks them here. Reset to RetroArch's launch defaults — slot 0,
+# FF off — in launch_game (a fresh emulatorlauncher starts at slot 0, normal speed).
+_TIMECTL = {"slot": 0, "ff": False}
+
 def _nci(cmd, want_reply=False, timeout=1.0):
     """Send a RetroArch Network Command Interface message over UDP 55355.
     want_reply reads one datagram back (for GET_STATUS); else fire-and-forget."""
@@ -2196,16 +2203,63 @@ def game_state(action):
     if not cmd:
         return {"ok": False, "error": "bad action"}
     _nci(cmd); _resume_game()
-    return {"ok": True, "action": action}
+    if action == "save":
+        # #37 NCI can't report the active slot, but a SAVE writes <game>.state[N] on disk — read
+        # the newest one to SELF-CORRECT the tracked slot. RetroArch's savestate_auto_index moves
+        # the launch slot unpredictably, so disk is the only honest source of truth for "current".
+        try:
+            time.sleep(0.4)
+            sl = game_state_slots("", "").get("slots", [])
+            if sl:
+                _TIMECTL["slot"] = max(sl, key=lambda s: s["mtime"])["slot"]
+        except Exception:
+            pass
+    return {"ok": True, "action": action, "slot": _TIMECTL["slot"]}
 
 def game_slot(direction):
-    # step the active save slot (RetroArch shows the slot # on-screen). NCI has no "set slot N",
-    # so next/prev is the reliable primitive — same as RetroArch's own F6/F7.
+    # #37 step the active save slot (RetroArch shows the slot # on-screen). HONEST FALLBACK:
+    # NCI has no absolute "set slot N" verb and no "get slot" verb — only STATE_SLOT_PLUS/MINUS —
+    # so next/prev stepping is the reliable primitive (same as RetroArch's own F6/F7). The tracked
+    # number is a best-effort estimate that self-corrects on the next save (savestate_auto_index
+    # can shift the real launch slot). Step through 0-9 to pick any slot.
     cmd = {"next": "STATE_SLOT_PLUS", "prev": "STATE_SLOT_MINUS"}.get(direction)
     if not cmd:
         return {"ok": False, "error": "bad direction"}
     _nci(cmd); _resume_game()
-    return {"ok": True, "direction": direction}
+    _TIMECTL["slot"] = max(0, min(9, _TIMECTL["slot"] + (1 if direction == "next" else -1)))
+    return {"ok": True, "direction": direction, "slot": _TIMECTL["slot"]}
+
+def game_ff(on=None):
+    # #37 fast-forward. RetroArch NCI FAST_FORWARD is a TOGGLE (no absolute on/off verb), so we
+    # mirror the resulting state and only send a packet when the target differs from tracked.
+    target = (not _TIMECTL["ff"]) if on is None else (on in (True, 1, "1", "true", "on"))
+    if target != _TIMECTL["ff"]:
+        _nci("FAST_FORWARD"); _resume_game()
+        _TIMECTL["ff"] = target
+    return {"ok": True, "on": _TIMECTL["ff"]}
+
+def game_rewind(on=None, system=None, game=None):
+    # #37 per-game rewind ENABLE flag. configgen maps batocera `<system>["<rom>"].rewind`=1 →
+    # RetroArch rewind_enable=true. Rewind allocates a state buffer at core load, so it CANNOT
+    # hot-swap — HONEST FALLBACK: this applies on next launch. (In-game, hold the core's rewind
+    # hotkey to actually scrub back; NCI REWIND is a held action, not a one-shot bar toggle.)
+    system, game = _cur_game(system, game)
+    if not (system and game):
+        return {"ok": False, "error": "no current game"}
+    k = _gkey(system, game)
+    if on is not None:
+        _bconf_set(k + ".rewind", "1" if (on in (True, 1, "1", "true", "on")) else "0")
+    enabled = (_bconf_get(k + ".rewind") or "0") == "1"
+    return {"ok": True, "system": system, "game": game, "enabled": enabled,
+            "note": "applies on next launch (the rewind buffer is allocated at core load)"}
+
+def game_timectl():
+    # #37 one read for the Game Bar's time controls: current slot, FF state, rewind-enable.
+    rw = game_rewind()
+    return {"ok": True, "slot": _TIMECTL["slot"], "max_slot": 9,
+            "ff": _TIMECTL["ff"], "ff_supported": True,
+            "rewind_enabled": bool(rw.get("enabled")), "rewind_note": rw.get("note", ""),
+            "slot_note": "NCI has no set-slot/get-slot verb — ←→ steps (F6/F7); count self-corrects on save"}
 
 def game_running():
     # GET_STATUS → "GET_STATUS PLAYING <system>,<game>,crc32=<hex>" (or no/empty reply when idle)
@@ -2239,7 +2293,8 @@ def game_state_slots(system, game):
                         "mtime": int(os.path.getmtime(f)), "size": os.path.getsize(f),
                         "thumb_path": png if os.path.isfile(png) else None})
         out.sort(key=lambda x: x["slot"])
-    return {"ok": True, "system": system, "game": game, "slots": out}
+    return {"ok": True, "system": system, "game": game, "slots": out,
+            "current": _TIMECTL["slot"]}   # #37 highlight the active slot
 
 # ===== Game-Bar quick controls (tasks 54/62/70/72) ============================================
 # Surfaced on the Game Bar overlay, pad-driven. All per-game writes go to batocera.conf via the
@@ -4810,6 +4865,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             from urllib.parse import parse_qs
             q = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
             return self._json(game_state_slots((q.get("system") or [""])[0], (q.get("game") or [""])[0]))
+        if route == "/game/timectl":
+            return self._json(game_timectl())
         if route == "/bios/status":
             return self._json(bios_status(self._qs().get("system") or None))
         if route == "/apps/moonlight":
@@ -5136,12 +5193,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/sys/hud":
                 return self._json(hud_set(payload.get("mode")))
             return self._json(net_wifi_toggle(payload.get("on")))
-        if route == "/game/slot":
+        if route in ("/game/slot", "/game/ff", "/game/rewind"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
             except Exception:
                 payload = {}
+            if route == "/game/ff":
+                return self._json(game_ff(payload.get("on")))
+            if route == "/game/rewind":
+                return self._json(game_rewind(payload.get("on")))
             return self._json(game_slot(payload.get("dir") or payload.get("direction")))
         if route in ("/scrape", "/game/options"):
             try:
