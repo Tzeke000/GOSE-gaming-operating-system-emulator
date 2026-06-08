@@ -84,6 +84,21 @@
   </div>
   <div class="hint"><b>↑↓</b> move · <b>←→</b> adjust · <b>A</b> select · <b>5</b>/<b>B</b> to resume</div>
   <div class="toast" id="toast"></div>
+  <!-- #41 AI assist question prompt (modal overlay) -->
+  <div id="assistmodal" style="display:none;position:fixed;inset:0;z-index:10;display:none;align-items:center;justify-content:center">
+    <div class="glass" style="border-radius:18px;padding:22px 24px;width:min(440px,90vw);display:flex;flex-direction:column;gap:14px">
+      <div style="font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px">
+        <span class="ic" style="-webkit-mask:url(assets/icons/cpu.svg) center/contain no-repeat;mask:url(assets/icons/cpu.svg) center/contain no-repeat;background:var(--accent);display:inline-block;width:1.1em;height:1.1em"></span>
+        Ask your AI
+      </div>
+      <div style="font-size:12px;color:#aeb6d4">Type a question, or press <b>A / Enter</b> to send without one (AI sees the screenshot + game)</div>
+      <textarea id="assistq" rows="3" placeholder="e.g. how do I get past this boss?" style="background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);border-radius:10px;color:#eef1f8;font-family:inherit;font-size:13px;padding:9px 11px;resize:none;outline:none;width:100%"></textarea>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button id="assistcancelbtn" class="row" style="padding:8px 16px;font-size:13px;cursor:pointer;border:none;background:rgba(255,255,255,.08);color:#aeb6d4;border-radius:9px;font-family:inherit">Cancel (B)</button>
+        <button id="assistsendbtn" class="row" style="padding:8px 16px;font-size:13px;cursor:pointer;border:none;background:var(--accent);color:#06121a;border-radius:9px;font-weight:700;font-family:inherit">Send (A)</button>
+      </div>
+    </div>
+  </div>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const $=id=>document.getElementById(id);
@@ -96,7 +111,11 @@
          cpu:null,gpu:null,ram:null,temp:null,cputemp:null,gpuName:null,powerMode:false,buffer:false,slots:[],
          slot:0,ff:false,rewindEnabled:false,   // #37 time controls
          hud:"off",hudHas:false,quiet:false,hasWifi:false,
-         shaderset:"none",shaderList:[],bezel:false,cheats:[],cheatNote:"",cheatsExpanded:false};
+         shaderset:"none",shaderList:[],bezel:false,cheats:[],cheatNote:"",cheatsExpanded:false,
+         // #41 AI assist
+         aiPaired:null,   // null=unknown, false=no paired AI, true=at least one paired AI
+         assistState:"idle",  // idle | asking | sent | error
+         assistMsg:""};   // status text shown in the row sub-label
   let foc=0, items=[];
   function say(m){var t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(function(){t.classList.remove("show");},1800);}
   function build(){
@@ -132,6 +151,11 @@
     } else {
       items.push({k:"power",type:"act",ic:"power",lab:"Power",sub:"›",power:true});
     }
+    // #41 AI assist — always present; tier-gate is enforced server-side + reflected in sub-label
+    var assistSub=S.aiPaired===null?"…":S.aiPaired===false?"pair an AI first":
+      (S.assistState==="sent"?"sent — waiting for AI":S.assistState==="asking"?"…":
+       S.assistState==="error"?S.assistMsg||"error":"ask your paired AI");
+    items.push({k:"assist",type:"act",ic:"cpu",lab:"Ask AI",sub:assistSub,assist:true});
     items.push({k:"exit",type:"act",ic:"layout-grid",lab:"Exit to Desktop",exit:true,danger:true});
     if(foc>=items.length)foc=items.length-1;
     render();
@@ -233,6 +257,45 @@
     api("/sys/audio").then(d=>{if(d&&d.ok){S.vol=d.volume==null?S.vol:d.volume;S.mute=!!d.mute;}render();});
     api("/sys/brightness").then(d=>{if(d){S.briHas=d.ok!==false;if(d.ok&&d.level!=null)S.bri=d.level;}render();});
   }
+  // #41 AI assist — load paired state on open, post request, handle modal
+  function loadAiPaired(){
+    api("/ai/grants").then(function(d){
+      if(!d||!d.grants){S.aiPaired=false;build();return;}
+      var now=Date.now()/1000;
+      var paired=Object.values(d.grants).some(function(g){
+        if(g.expires&&now>g.expires)return false;
+        return!!g.tier;});
+      S.aiPaired=paired;build();});
+  }
+  var _assistModalOpen=false;
+  function openAssistModal(){
+    var m=$("assistmodal");if(!m)return;
+    m.style.display="flex";_assistModalOpen=true;
+    document.body.dataset.goseModal="1";   // §3.10 — signal to WM: Escape goes to page first
+    var ta=$("assistq");if(ta){ta.value="";ta.focus();}
+  }
+  function closeAssistModal(){
+    var m=$("assistmodal");if(!m)return;
+    m.style.display="none";_assistModalOpen=false;
+    delete document.body.dataset.goseModal;
+    document.body.focus();   // return key focus to the bar
+  }
+  function sendAssistRequest(){
+    var q=($("assistq")||{}).value||"";
+    closeAssistModal();
+    S.assistState="asking";S.assistMsg="";build();
+    api("/ai/assist/request",{question:q.trim()}).then(function(d){
+      if(d&&d.ok){
+        S.assistState="sent";S.assistMsg="";build();
+        say("Sent — your AI will respond via notifications");
+      } else {
+        S.assistState="error";
+        S.assistMsg=(d&&d.error)||"request failed";build();
+        say(S.assistMsg);
+        setTimeout(function(){S.assistState="idle";build();},4000);}});
+  }
+  $("assistsendbtn")&&$("assistsendbtn").addEventListener("click",sendAssistRequest);
+  $("assistcancelbtn")&&$("assistcancelbtn").addEventListener("click",closeAssistModal);
   function setVol(v){v=Math.max(0,Math.min(100,v));S.vol=v;render();clearTimeout(setVol._t);setVol._t=setTimeout(()=>api("/sys/audio",{volume:v}),110);}
   function setBri(v){if(!S.briHas)return;v=Math.max(0,Math.min(100,v));S.bri=v;render();clearTimeout(setBri._t);setBri._t=setTimeout(()=>api("/sys/brightness",{level:v}),110);}
   function setPerf(d){var m=["battery","balanced","performance"],i=Math.max(0,Math.min(2,m.indexOf(S.perf)+d));S.perf=m[i];render();api("/sys/perf",{mode:S.perf});}
@@ -266,6 +329,11 @@
     if(it.cheatsopen){if(!S.cheats.length){say(S.cheatNote||"No cheats for this game");return;}S.cheatsExpanded=!S.cheatsExpanded;build();return;}
     if(it.type==="cheat"){var c=S.cheats[it.idx];if(!c)return;var con=!c.enable;c.enable=con;render();
       api("/game/cheat",{index:it.idx,enable:con}).then(x=>say((x&&x.ok!==false)?((c.desc||("Cheat "+it.idx))+": "+(con?"On":"Off")+" — next launch"):"Cheat change failed"));return;}
+    if(it.assist){
+      if(S.aiPaired===false){say("Pair an AI first: Settings › AI & Remote");return;}
+      if(S.aiPaired===null){say("Checking AI status…");return;}
+      if(S.assistState==="sent"||S.assistState==="asking"){say("AI assist already in flight — waiting for response");return;}
+      openAssistModal();return;}
     if(it.wifi){if(!S.hasWifi){say("No Wi-Fi radio on this device");return;}say("Toggling Wi-Fi…");
       api("/net/wifi/toggle",{}).then(x=>{say((x&&x.ok)?("Wi-Fi "+(x.powered?"on":"off")):((x&&x.error)||"Wi-Fi toggle failed"));refresh();});return;}
     if(it.quiet){var q=!S.quiet;S.quiet=q;render();api("/ui/prefs",{set:{"gose-snd-quiet":q?"1":"0"}}).then(()=>say(q?"Quiet mode on — all sounds off":"Quiet mode off"));return;}
@@ -278,6 +346,12 @@
     if(it.exit){api("/game/exit",{});return;}
     if(it.k==="vol"){S.mute=!S.mute;api("/sys/audio",{mute:S.mute});render();}}
   addEventListener("keydown",function(e){var k=e.key;
+    // #41 assist modal intercepts pad input while open (§3.10 modal contract)
+    if(_assistModalOpen){
+      if(k==="Escape"||k==="5"){closeAssistModal();e.preventDefault();}
+      else if(k==="Enter"){sendAssistRequest();e.preventDefault();}
+      // let all other keys (typing) pass through to the textarea
+      return;}
     if(k==="ArrowDown")move(1);else if(k==="ArrowUp")move(-1);
     else if(k==="ArrowRight")adjust(1);else if(k==="ArrowLeft")adjust(-1);
     else if(k==="Enter"||k===" ")enter();
@@ -296,6 +370,7 @@
   loadSlots();   // populate the saved-states thumbnails when the Game Bar opens over a game
   loadTime();    // #37 fast-forward + rewind-enable + active slot
   loadExtras();   // HUD/quiet/shader/bezel/cheats state for the game-bar quick controls
+  loadAiPaired();  // #41 check if an AI is paired (tier-gate display)
   try{document.body.tabIndex=-1;window.focus();document.body.focus();}catch(e){}   // make sure keys land here
   (function(){var done=false;function go(){if(done)return;done=true;requestAnimationFrame(function(){document.body.classList.add("ready");});}
     var im=new Image();im.onload=go;im.onerror=go;im.src="_gbg.jpg?"+bgn;setTimeout(go,240);})();   // reveal once the frozen frame is ready (or 240ms cap)

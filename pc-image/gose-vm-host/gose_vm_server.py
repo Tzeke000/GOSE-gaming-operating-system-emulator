@@ -102,6 +102,7 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/netplay/host": (10, 60), "/netplay/join": (10, 60),
            "/splice/cut": (10, 120), "/fs/op": (60, 60), "/scrape": (6, 120), "/game/scrape": (20, 60),
            "/store/uninstall": (15, 60), "/ai/request": (6, 60),
+           "/ai/assist/request": (6, 60), "/ai/assist/answer": (30, 60),
            "/emulators/install": (10, 60), "/emulators/uninstall": (15, 60),
            "/games/install": (12, 60),
            "/game/screenshot": (30, 60), "/game/record/toggle": (12, 60),
@@ -3077,6 +3078,179 @@ def ai_request_clear(payload):
         if existed:
             write_json_atomic(AI_REQUESTS_F, reqs)
     return {"ok": True, "name": name, "cleared": existed}
+
+# ---- AI Assist (#41): game-bar "Ask AI" — request → queue → answer → notify.
+#
+# Flow:
+#   1. User presses "Ask AI" in the game bar → POST /ai/assist/request
+#      (tier-gated: needs at least one paired AI with Observe tier)
+#      → server captures a screenshot + game state + optional question
+#      → appends a request record to AI_ASSIST_F (jsonl, capped to 200 entries)
+#      → fires GOSE.notify "AI assist requested"
+#   2. A paired AI monitors GET /ai/assist/queue, sees the request, processes it,
+#      POSTs /ai/assist/answer {request_id, answer} with X-AI-Token header
+#      → server validates the token (must match a paired AI in ai_tokens.json)
+#      → fires GOSE.notify with the AI's answer text
+#   3. The request record is marked answered=True in the queue file.
+#
+# Honest integration point: the AI-monitoring-the-queue is OUT of scope here.
+# That requires a paired Claude session (or equivalent) polling GET /ai/assist/queue
+# and posting answers. Like RetroAchievements needing an RA account, this needs
+# a paired AI connected — the plumbing is complete, the integration is the next step.
+#
+# Tier gate: the request endpoint checks that at least one AI grant exists with
+# tier >= Observe (i.e. any real grant, since Observe is the minimum). The answer
+# endpoint requires a valid AI token (X-AI-Token header matching ai_tokens.json).
+# No token → 403. Tokens are never echoed in responses or queue entries.
+
+AI_ASSIST_F = "/userdata/system/gose/ai_assist.jsonl"
+AI_ASSIST_CAP = 200         # keep the newest N requests; older entries roll off
+_AI_ASSIST_LOCK = threading.Lock()
+
+def _ai_assist_load():
+    """Load the assist queue (jsonl → list, newest first is the write order)."""
+    entries = []
+    try:
+        with open(AI_ASSIST_F, "rb") as fh:
+            for line in fh.read().decode("utf-8", "replace").splitlines():
+                try:
+                    e = json.loads(line)
+                    if isinstance(e, dict):
+                        entries.append(e)
+                except Exception:
+                    pass
+    except OSError:
+        pass
+    return entries
+
+def _ai_assist_save(entries):
+    """Atomic write of the assist queue (jsonl, capped to AI_ASSIST_CAP)."""
+    entries = entries[-AI_ASSIST_CAP:]   # keep newest — entries are appended, so last = newest
+    os.makedirs(os.path.dirname(AI_ASSIST_F), exist_ok=True)
+    tmp = AI_ASSIST_F + ".tmp"
+    with open(tmp, "w") as fh:
+        for e in entries:
+            fh.write(json.dumps(e) + "\n")
+        fh.flush(); os.fsync(fh.fileno())
+    os.replace(tmp, AI_ASSIST_F)
+
+def _ai_paired_any():
+    """Return True iff at least one AI has a real grant (any tier ≥ observe).
+    'real grant' = an entry in ai_grants.json (not expired). A never-paired
+    AI has no entry, so an empty grants file → False → honest 'pair an AI first'."""
+    grants = _ai_grants_load()
+    if not grants:
+        return False
+    now = time.time()
+    for name, rec in grants.items():
+        exp = rec.get("expires")
+        if exp and now > exp:
+            continue     # expired — doesn't count
+        if rec.get("tier") in AI_TIERS:
+            return True
+    return False
+
+def _ai_token_resolve(tok):
+    """Look up an AI token in ai_tokens.json (the live enforcement map).
+    Returns (name, tier) or (None, None). Reads fresh each call — revoke is immediate."""
+    if not tok:
+        return None, None
+    try:
+        tok_map = json.load(open(AI_TOKENS_F))
+    except Exception:
+        return None, None
+    rec = tok_map.get(tok)
+    if not isinstance(rec, dict):
+        return None, None
+    name = rec.get("name")
+    tier = rec.get("tier")
+    if name and tier in AI_TIERS:
+        return name, tier
+    return None, None
+
+def ai_assist_request(payload):
+    """POST /ai/assist/request — game-bar "Ask AI" button.
+    Requires at least one paired AI (any tier). Captures screenshot + game state.
+    Writes the request to the queue and fires a notification."""
+    if not _ai_paired_any():
+        return {"ok": False, "code": "ERR_NO_AI_PAIRED",
+                "error": "no AI paired — pair one first in Settings › AI & Remote"}
+    question = str(payload.get("question") or "").strip()[:500]
+    # Screenshot (best-effort; privacy gate honoured server-side by capture_shot)
+    shot = capture_shot({})
+    shot_path = shot.get("path") if shot.get("ok") else None
+    # Current game state (system + game from recent.json / NCI)
+    system, game = _cur_game()
+    game_info = {"system": system or None, "game": game or None}
+    # Queue entry — no tokens, no secrets
+    rid = secrets.token_hex(8)
+    entry = {
+        "id": rid,
+        "ts": time.time(),
+        "question": question or None,
+        "screenshot_path": shot_path,
+        "game": game_info,
+        "answered": False,
+        "answer": None,
+        "answered_by": None,
+    }
+    with _AI_ASSIST_LOCK:
+        entries = _ai_assist_load()
+        entries.append(entry)
+        _ai_assist_save(entries)
+    LOG.info("AI assist request %s: game=%s/%s shot=%s", rid, system, game, shot_path)
+    # Notify the user that the request is queued
+    notifications_post({"title": "AI assist requested",
+                        "body": ("Question: “" + question + "” — " if question else "") +
+                                "your paired AI will respond shortly",
+                        "kind": "info", "icon": "cpu"})
+    return {"ok": True, "request_id": rid, "screenshot_path": shot_path, "game": game_info,
+            "note": "a paired AI must monitor GET /ai/assist/queue and POST /ai/assist/answer to respond"}
+
+def ai_assist_queue():
+    """GET /ai/assist/queue — returns pending (unanswered) requests for a paired AI to process.
+    Honest: this is the polling surface; a real integration would use this + POST /ai/assist/answer."""
+    with _AI_ASSIST_LOCK:
+        entries = _ai_assist_load()
+    pending = [e for e in entries if not e.get("answered")]
+    return {"ok": True, "pending": pending, "total": len(entries)}
+
+def ai_assist_answer(payload, ai_token):
+    """POST /ai/assist/answer — a paired AI posts its answer.
+    Requires a valid AI token (X-AI-Token header). The token is validated against
+    ai_tokens.json (the live enforcement map); revoked tokens are rejected immediately."""
+    name, tier = _ai_token_resolve(ai_token)
+    if not name:
+        return {"ok": False, "code": "ERR_AUTH",
+                "error": "invalid or revoked AI token — X-AI-Token required (pair via Settings › AI & Remote)"}
+    rid = str(payload.get("request_id") or "").strip()
+    answer = str(payload.get("answer") or "").strip()[:2000]
+    if not rid:
+        return {"ok": False, "error": "request_id required"}
+    if not answer:
+        return {"ok": False, "error": "answer required"}
+    with _AI_ASSIST_LOCK:
+        entries = _ai_assist_load()
+        matched = False
+        for e in entries:
+            if e.get("id") == rid:
+                if e.get("answered"):
+                    return {"ok": False, "error": "request already answered"}
+                e["answered"] = True
+                e["answer"] = answer
+                e["answered_by"] = name
+                e["answered_ts"] = time.time()
+                matched = True
+                break
+        if not matched:
+            return {"ok": False, "error": "request_id not found"}
+        _ai_assist_save(entries)
+    LOG.info("AI assist answer: request %s answered by %s (%s)", rid, name, tier)
+    # Notify the user with the AI's answer
+    notifications_post({"title": name + " answered",
+                        "body": answer[:300] + ("…" if len(answer) > 300 else ""),
+                        "kind": "success", "icon": "cpu"})
+    return {"ok": True, "request_id": rid, "answered_by": name}
 
 # ---- AI audit: the agent appends one JSON line per guest-AI op (allowed or denied) to
 #      ai_audit.jsonl; this just tails it for the Hub's Activity strip. ----
@@ -7638,6 +7812,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(ai_audit(self._qs().get("limit", 100)))
         if route == "/ai/activity":
             return self._json(ai_activity(self._qs().get("limit", 50)))
+        if route == "/ai/assist/queue":
+            return self._json(ai_assist_queue())
         if route == "/game/options":
             q = self._qs()
             return self._json(game_options(q.get("system", ""), q.get("game", "")))
@@ -8052,6 +8228,21 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/ai/request/clear":
                 return self._json(ai_request_clear(payload))
             return self._json(ai_leave(payload) if route == "/ai/leave" else ai_join(payload))
+        if route in ("/ai/assist/request", "/ai/assist/answer"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/ai/assist/request":
+                if not rate_ok(route, *_LIMITS.get(route, (6, 60))):
+                    return self._json({"ok": False, "error": "rate limit — slow down"})
+                return self._json(ai_assist_request(payload))
+            # /ai/assist/answer — requires a valid AI token (not open to anonymous callers)
+            if not rate_ok(route, *_LIMITS.get(route, (30, 60))):
+                return self._json({"ok": False, "error": "rate limit — slow down"})
+            ai_token = (self.headers.get("X-AI-Token") or "").strip()
+            return self._json(ai_assist_answer(payload, ai_token))
         if route in ("/capture/shot", "/capture/buffer", "/capture/clip"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
