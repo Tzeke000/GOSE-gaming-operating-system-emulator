@@ -1653,6 +1653,22 @@ def launch_game(system, game, players=None):
             rom = p; break
     if not rom:
         return {"ok": False, "error": "rom not found for " + game}
+    # #97 BIOS gate: check before spawning — a missing BIOS = black-screen crash, not a mystery.
+    _missing_bios = _bios_missing_for_system(system)
+    if _missing_bios:
+        _sysname = _SYS.get(system, system)
+        _files = ", ".join(_missing_bios)
+        return {
+            "ok": False,
+            "bios_missing": True,
+            "missing": _missing_bios,
+            "error": (
+                "Can't launch %s: missing BIOS file%s %s — "
+                "drop %s into /userdata/bios (open BIOS Check in Settings to see what's needed)"
+                % (_sysname, "s" if len(_missing_bios) != 1 else "",
+                   _files, "them" if len(_missing_bios) != 1 else "it")
+            ),
+        }
     try:
         _spawn(["emulatorlauncher"] + _virtual_pad_args(order=players) + ["-system", system, "-rom", rom])
         record_recent(system, game)
@@ -3883,6 +3899,34 @@ def _bios_manifest():
         man = {}
     _BIOS_MANIFEST = man
     return man
+
+def _bios_missing_for_system(system):
+    """Return list of missing BIOS filenames for *system*, or [] if all present / none needed.
+
+    Reuses _bios_manifest() — same source as #52 /bios/status.  No false-positives:
+    systems absent from the manifest (nes, genesis, homebrew) return [] unconditionally.
+    Archive entries (.zip) are checked for the zip itself, not individual inner files.
+    """
+    man = _bios_manifest()
+    entry = man.get(system)
+    if not entry:
+        return []   # not in manifest → no BIOS needed
+    biosfiles = entry.get("biosFiles") or []
+    if not biosfiles:
+        return []   # manifest entry exists but lists nothing
+    # dedupe by target file path (same logic as bios_status)
+    seen, missing = set(), []
+    for bf in biosfiles:
+        rel = bf.get("file", "")
+        if not rel or rel in seen:
+            continue
+        seen.add(rel)
+        full = os.path.realpath(os.path.join("/userdata", rel))
+        present = (full == BIOS_ROOT or full.startswith(BIOS_ROOT + os.sep)) and os.path.isfile(full)
+        if not present:
+            missing.append(os.path.basename(rel))
+    return missing
+
 
 def _md5_file(path, cap=96 * 1024 * 1024):
     # md5 only when it's cheap+meaningful: skip files larger than cap (PS3 PUP / CHDs) → unverified.
