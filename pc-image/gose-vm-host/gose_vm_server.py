@@ -3666,6 +3666,206 @@ def favorites_json():
                     "img": _game_img(s, g), "fav": True})
     return {"ok": True, "games": out}
 
+# ---- #44 custom collections (user-created named shelves) ----
+# Schema: collections.json = [{"id": str, "name": str, "created": epoch, "games": [{"system":str,"game":str}, ...]}, ...]
+# Auto-collections are computed at read time (not stored): __recently_added, __recently_played, __most_played.
+COLLECTIONS_F = "/userdata/system/gose/collections.json"
+_COLL_LOCK = threading.Lock()
+
+def _coll_load():
+    try:
+        v = json.load(open(COLLECTIONS_F))
+        return v if isinstance(v, list) else []
+    except Exception:
+        return []
+
+def _coll_save(lst):
+    os.makedirs("/userdata/system/gose", exist_ok=True)
+    write_json_atomic(COLLECTIONS_F, lst)
+
+def collections_list():
+    """GET /collections — user collections + computed auto-collections."""
+    colls = _coll_load()
+    out = [{"id": c["id"], "name": c["name"], "created": c.get("created", 0),
+            "game_count": len(c.get("games", []))} for c in colls]
+    # auto-collections (computed, not stored)
+    pt = _playstats()
+    rec_f = RECENT_F
+    # Recently Added: top-20 ROMs by file mtime, across all systems
+    try:
+        added = []
+        for sysname in os.listdir(ROMS):
+            d = os.path.join(ROMS, sysname)
+            if not os.path.isdir(d):
+                continue
+            for f in os.listdir(d):
+                if f.startswith(".") or f in _SKIPDIRS or "gamelist" in f:
+                    continue
+                if os.path.isdir(os.path.join(d, f)):
+                    continue
+                ext = os.path.splitext(f)[1].lower()
+                if ext in _SKIPEXT:
+                    continue
+                stem = os.path.splitext(f)[0]
+                try:
+                    mt = int(os.path.getmtime(os.path.join(d, f)))
+                except Exception:
+                    mt = 0
+                added.append({"system": sysname, "game": stem, "added": mt})
+        added.sort(key=lambda x: -x["added"])
+        out.append({"id": "__recently_added", "name": "Recently Added", "auto": True,
+                    "game_count": min(20, len(added))})
+    except Exception:
+        pass
+    # Recently Played: from recent.json (newest first, up to 20)
+    try:
+        recent_rows = json.load(open(rec_f)) if os.path.exists(rec_f) else []
+        out.append({"id": "__recently_played", "name": "Recently Played", "auto": True,
+                    "game_count": min(20, len(recent_rows))})
+    except Exception:
+        out.append({"id": "__recently_played", "name": "Recently Played", "auto": True, "game_count": 0})
+    # Most Played: from playstats, already computed by _game_stats_all
+    played_count = sum(1 for v in pt.values() if isinstance(v, dict) and v.get("total_secs", 0) > 0)
+    out.append({"id": "__most_played", "name": "Most Played", "auto": True,
+                "game_count": min(10, played_count)})
+    return {"ok": True, "collections": out}
+
+def collection_get(coll_id):
+    """GET /collections/<id> — full game list for one collection (user or auto)."""
+    if coll_id == "__recently_added":
+        try:
+            added = []
+            for sysname in os.listdir(ROMS):
+                d = os.path.join(ROMS, sysname)
+                if not os.path.isdir(d):
+                    continue
+                for f in os.listdir(d):
+                    if f.startswith(".") or f in _SKIPDIRS or "gamelist" in f:
+                        continue
+                    if os.path.isdir(os.path.join(d, f)):
+                        continue
+                    if os.path.splitext(f)[1].lower() in _SKIPEXT:
+                        continue
+                    stem = os.path.splitext(f)[0]
+                    try:
+                        mt = int(os.path.getmtime(os.path.join(d, f)))
+                    except Exception:
+                        mt = 0
+                    added.append({"name": stem, "system": sysname,
+                                  "img": _game_img(sysname, stem), "added": mt,
+                                  "fav": (sysname, stem) in _fav_set()})
+            added.sort(key=lambda x: -x["added"])
+            games = added[:20]
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        return {"ok": True, "id": coll_id, "name": "Recently Added", "auto": True, "games": games}
+    if coll_id == "__recently_played":
+        try:
+            rec_rows = json.load(open(RECENT_F)) if os.path.exists(RECENT_F) else []
+        except Exception:
+            rec_rows = []
+        favset = _fav_set()
+        games = [{"name": r.get("game", ""), "system": r.get("system", ""),
+                  "img": _game_img(r.get("system", ""), r.get("game", "")),
+                  "last_played": r.get("t"), "fav": (r.get("system", ""), r.get("game", "")) in favset}
+                 for r in rec_rows[:20]]
+        return {"ok": True, "id": coll_id, "name": "Recently Played", "auto": True, "games": games}
+    if coll_id == "__most_played":
+        pt = _playstats(); favset = _fav_set()
+        played = [(k, v) for k, v in pt.items() if isinstance(v, dict) and v.get("total_secs", 0) > 0]
+        played.sort(key=lambda kv: -kv[1].get("total_secs", 0))
+        games = []
+        for key, entry in played[:10]:
+            s, _, g = key.partition("/")
+            games.append({"name": g, "system": s, "img": _game_img(s, g),
+                          "playtime_s": entry.get("total_secs", 0),
+                          "last_played": entry.get("last_played"),
+                          "fav": (s, g) in favset})
+        return {"ok": True, "id": coll_id, "name": "Most Played", "auto": True, "games": games}
+    # user collection
+    with _COLL_LOCK:
+        colls = _coll_load()
+    c = next((x for x in colls if x.get("id") == coll_id), None)
+    if c is None:
+        return {"ok": False, "error": "collection not found"}
+    favset = _fav_set()
+    games = []
+    for entry in c.get("games", []):
+        s, g = entry.get("system", ""), entry.get("game", "")
+        if not s or not g:
+            continue
+        # degrade cleanly if ROM was deleted: include entry with img=null (page can grey it out)
+        games.append({"name": g, "system": s, "img": _game_img(s, g),
+                      "fav": (s, g) in favset})
+    return {"ok": True, "id": coll_id, "name": c["name"], "created": c.get("created", 0),
+            "games": games}
+
+def collection_create(payload):
+    """POST /collections — create a named collection. Returns new collection id."""
+    name = (payload or {}).get("name", "").strip()
+    if not name:
+        return {"ok": False, "error": "name required"}
+    if len(name) > 64:
+        return {"ok": False, "error": "name too long (max 64 chars)"}
+    with _COLL_LOCK:
+        colls = _coll_load()
+        coll_id = "col_" + secrets.token_hex(6)
+        colls.append({"id": coll_id, "name": name, "created": int(time.time()), "games": []})
+        _coll_save(colls)
+    return {"ok": True, "id": coll_id, "name": name}
+
+def collection_delete(coll_id):
+    """POST /collections/<id>/delete — remove a collection (games untouched)."""
+    if not coll_id or coll_id.startswith("__"):
+        return {"ok": False, "error": "cannot delete auto-collections"}
+    with _COLL_LOCK:
+        colls = _coll_load()
+        before = len(colls)
+        colls = [c for c in colls if c.get("id") != coll_id]
+        if len(colls) == before:
+            return {"ok": False, "error": "collection not found"}
+        _coll_save(colls)
+    return {"ok": True}
+
+def collection_add_game(coll_id, payload):
+    """POST /collections/<id>/add — add a game to a collection."""
+    if not coll_id or coll_id.startswith("__"):
+        return {"ok": False, "error": "auto-collections are read-only"}
+    system = (payload or {}).get("system", "")
+    game = (payload or {}).get("game", "")
+    if not system or not game:
+        return {"ok": False, "error": "system+game required"}
+    with _COLL_LOCK:
+        colls = _coll_load()
+        c = next((x for x in colls if x.get("id") == coll_id), None)
+        if c is None:
+            return {"ok": False, "error": "collection not found"}
+        already = any(e.get("system") == system and e.get("game") == game
+                      for e in c.get("games", []))
+        if not already:
+            c.setdefault("games", []).append({"system": system, "game": game})
+            _coll_save(colls)
+    return {"ok": True, "already": already}
+
+def collection_remove_game(coll_id, payload):
+    """POST /collections/<id>/remove — remove a game from a collection (ROM untouched)."""
+    if not coll_id or coll_id.startswith("__"):
+        return {"ok": False, "error": "auto-collections are read-only"}
+    system = (payload or {}).get("system", "")
+    game = (payload or {}).get("game", "")
+    if not system or not game:
+        return {"ok": False, "error": "system+game required"}
+    with _COLL_LOCK:
+        colls = _coll_load()
+        c = next((x for x in colls if x.get("id") == coll_id), None)
+        if c is None:
+            return {"ok": False, "error": "collection not found"}
+        before = len(c.get("games", []))
+        c["games"] = [e for e in c.get("games", [])
+                      if not (e.get("system") == system and e.get("game") == game)]
+        _coll_save(colls)
+    return {"ok": True, "removed": before - len(c["games"])}
+
 # ---- stranger's-hands resilience: boot-success counter + backup / restore / factory reset (gap J1/J2) ----
 # Boot counter: the watchdog INCREMENTS .boot_attempts every time it (re)starts the UI server; this
 # server CLEARS it the moment it serves the home page (proof the UI booted far enough to render).
@@ -3674,7 +3874,8 @@ BOOT_ATTEMPTS_F = ROOT + "/.boot_attempts"
 BACKUP_DIR = "/userdata/backups"
 # What a backup captures (relative to /userdata): the whole GOSE UI/state dir minus caches/logs,
 # plus the AI account tokens + audit. NEVER roms, NEVER saves, NEVER the OS.
-_BACKUP_INCLUDE = ["gose-ui", "system/gose/ai_tokens.json", "system/gose/ai_audit.jsonl"]
+_BACKUP_INCLUDE = ["gose-ui", "system/gose/ai_tokens.json", "system/gose/ai_audit.jsonl",
+                   "system/gose/collections.json"]
 _BACKUP_EXCLUDE = ["gose-ui/*.log", "gose-ui/*.log.*", "gose-ui/__pycache__",
                    "gose-ui/*.tmp", "gose-ui/.boot_attempts", "gose-ui/.safe_mode",
                    "gose-ui/_stream_test.bin", "gose-ui/_render_common.pyc"]
@@ -3686,6 +3887,7 @@ _RESET_DEFAULTS = [
     (ROOT + "/playtime.json", {}),
     (PLAYSTATS_F, {}),
     (ROOT + "/ai_requests.json", {}),
+    (COLLECTIONS_F, []),
 ]
 
 def clear_boot_attempts():
@@ -6130,6 +6332,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(fps_get())
         if route == "/favorites.json":
             return self._json(favorites_json())
+        if route == "/collections":
+            return self._json(collections_list())
+        if route.startswith("/collections/") and not route.endswith("/add") \
+                and not route.endswith("/remove") and not route.endswith("/delete"):
+            coll_id = route[len("/collections/"):]
+            return self._json(collection_get(coll_id))
         if route == "/game/state/slots":
             from urllib.parse import parse_qs
             q = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
@@ -6469,6 +6677,29 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/game/favorite":
                 return self._json(game_favorite(payload))
             return self._json(fps_set(payload.get("on")))
+        if route == "/collections":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            return self._json(collection_create(payload))
+        if route.startswith("/collections/"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            parts = route[len("/collections/"):].rsplit("/", 1)
+            if len(parts) == 2:
+                coll_id, verb = parts
+                if verb == "add":
+                    return self._json(collection_add_game(coll_id, payload))
+                if verb == "remove":
+                    return self._json(collection_remove_game(coll_id, payload))
+                if verb == "delete":
+                    return self._json(collection_delete(coll_id))
+            return self._json({"ok": False, "error": "unknown collection verb"})
         if route == "/game/savestate":
             return self._json(game_state("save"))
         if route == "/game/loadstate":

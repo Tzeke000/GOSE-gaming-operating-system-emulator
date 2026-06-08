@@ -25,9 +25,22 @@
     border-radius:11px;border:2px solid transparent;color:var(--muted);cursor:pointer}
   .sys .n{font-weight:600;font-size:14px}.sys .c{font-size:11px;background:#ffffff12;border-radius:9px;padding:1px 7px}
   .sys.on{background:var(--surface2);color:var(--text)}
+  /* collections section in rail */
+  .rail-sec{font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:10px 14px 4px;text-transform:uppercase}
+  .rail-sec.first{padding-top:4px}
+  .sys.col-auto .c{background:#3fe0a015;color:#3fe0a0}
+  .sys.col-user .c{background:#5cd0ff15;color:#5cd0ff}
   .pane{flex:1;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;
     padding:14px 16px;overflow:auto}
-  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:4px 4px 10px}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:4px 4px 10px;
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  /* sort/filter toolbar */
+  .sortbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .sortbtn{font-size:11px;font-weight:700;padding:4px 10px;border-radius:8px;
+    border:1.5px solid var(--line);background:var(--surface2);color:var(--muted);cursor:pointer}
+  .sortbtn.focus{border-color:var(--accent);box-shadow:var(--focusglow);color:var(--text)}
+  .sortbtn.active{border-color:#5cd0ff55;color:#5cd0ff}
+  .sortbtn.focus.active{border-color:var(--accent)}
   .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
   .game{cursor:pointer}
   .game .art{position:relative;height:120px;border-radius:10px;border:2px solid transparent;display:flex;align-items:flex-end;
@@ -36,11 +49,12 @@
   .game .fav{position:absolute;top:5px;right:8px;color:#ffd23f;font-size:16px;text-shadow:0 1px 3px #000}
   .game .resume{position:absolute;top:6px;left:6px;font-size:10px;font-weight:700;color:#eaf0ff;
     background:#06121acc;border:1px solid #ffffff2a;border-radius:7px;padding:2px 6px}
+  .game .ghost{opacity:.4}  /* deleted ROM still in collection */
   .game .sub{color:var(--muted);font-size:11px;margin-top:5px}
   .empty{color:var(--muted);font-size:14px;padding:30px}
   /* pad-reachable game actions (docs/27 §3.5 — X/Y/letters are keyboard-only): the tiles
      live at the END of the grid's focus space, act on the last-focused game */
-  .acts{display:flex;gap:10px;margin-top:16px}
+  .acts{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
   .acts .ab{display:flex;align-items:center;gap:8px;background:var(--surface2);border:2px solid var(--line);
     border-radius:11px;padding:10px 14px;font-weight:600;font-size:13px;cursor:pointer;max-width:240px}
   .acts .ab .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -52,6 +66,7 @@
   .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--surface2);
     border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
   .toast.show{opacity:1}
+  /* per-game options modal */
   .gopt{position:fixed;inset:0;background:#06060cd8;display:none;align-items:center;justify-content:center;z-index:60;backdrop-filter:blur(6px)}
   .gopt.on{display:flex}
   .gopt .box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;width:480px;max-width:92vw;max-height:84vh;overflow:auto}
@@ -63,6 +78,34 @@
   .gopt .opt .chk{color:#3fe0a0;font-weight:700;font-size:15px}
   .gopt .save{margin-top:14px;text-align:center;font-weight:700;background:var(--accent);color:#06121a;border-radius:10px;padding:10px;border:2px solid transparent}
   .gopt .save.focus{box-shadow:var(--focusglow);border-color:#fff}
+  /* collections picker modal */
+  .cpick{position:fixed;inset:0;background:#06060cd8;display:none;align-items:center;justify-content:center;z-index:60;backdrop-filter:blur(6px)}
+  .cpick.on{display:flex}
+  .cpick .box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px 20px;width:400px;max-width:92vw;max-height:84vh;overflow:auto}
+  .cpick h3{margin:0 0 10px;font-size:17px}
+  .cpick .copt{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;
+    border:2px solid transparent;border-radius:10px;background:#ffffff06;margin-bottom:5px}
+  .cpick .copt.focus{border-color:var(--accent);background:#5cd0ff14}
+  .cpick .copt .nm{font-weight:600;font-size:14px;flex:1}
+  .cpick .copt .st{font-size:12px;color:#3fe0a0;font-weight:700}  /* "Added" badge */
+  .cpick .copt .del{font-size:11px;color:#ff6b6b;font-weight:700}  /* remove from this coll */
+  .cpick .new-coll{margin-top:10px;display:flex;align-items:center;gap:8px;padding:9px 12px;
+    border:2px solid var(--line);border-radius:10px;background:#ffffff06;cursor:pointer}
+  .cpick .new-coll.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .cpick .new-coll .t{color:var(--accent);font-weight:700;font-size:14px}
+  /* name-input modal (create collection) */
+  .ninput{position:fixed;inset:0;background:#06060cd8;display:none;align-items:center;justify-content:center;z-index:70;backdrop-filter:blur(6px)}
+  .ninput.on{display:flex}
+  .ninput .box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 24px;width:360px;max-width:92vw}
+  .ninput h3{margin:0 0 14px;font-size:17px}
+  .ninput input{width:100%;background:var(--surface2);border:1.5px solid var(--line);border-radius:9px;
+    color:var(--text);font-size:15px;padding:9px 12px;font-family:inherit}
+  .ninput input:focus{outline:none;border-color:var(--accent)}
+  .ninput .row{display:flex;gap:8px;margin-top:12px}
+  .ninput .btn{flex:1;padding:9px;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer;border:2px solid var(--line)}
+  .ninput .btn.ok{background:var(--accent);color:#06121a;border-color:transparent}
+  .ninput .btn.cancel{background:var(--surface2);color:var(--muted)}
+  .ninput .btn.focus{box-shadow:var(--focusglow);border-color:#fff}
 </style></head>
 <body>
   <div class="top"><img src="assets/brand/gose-crystal.png" alt="GOSE">
@@ -71,9 +114,22 @@
   </div>
   <div class="wrap"><div class="rail" id="rail"></div><div class="pane" id="pane"></div></div>
   <div class="foot"><span class="ic" data-i="games"></span> GOSE Library
-    <span class="h">D-pad move · <b>A</b> launch/activate · <b>L1/R1</b> system · <b>B</b> home · tiles: Fetch art · kbd: <b>F</b> fav · <b>O</b> options · <b>S</b> scrape all</span></div>
+    <span class="h">D-pad move · <b>A</b> launch/activate · <b>L1/R1</b> system · <b>B</b> home · tiles: Fetch art · kbd: <b>F</b> fav · <b>O</b> options · <b>S</b> scrape all · <b>C</b> collections</span></div>
   <div class="toast" id="toast"></div>
   <div class="gopt" id="gopt"><div class="box" id="gopt-box"></div></div>
+  <!-- collections picker: add a game to a collection -->
+  <div class="cpick" id="cpick"><div class="box" id="cpick-box"></div></div>
+  <!-- new-collection name input -->
+  <div class="ninput" id="ninput">
+    <div class="box">
+      <h3>New collection</h3>
+      <input type="text" id="ninput-val" placeholder="Name…" maxlength="64" autocomplete="off">
+      <div class="row">
+        <div class="btn cancel" id="ninput-cancel">Cancel</div>
+        <div class="btn ok" id="ninput-ok">Create</div>
+      </div>
+    </div>
+  </div>
 <script src="assets/platform.js"></script>
 <script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
@@ -82,50 +138,123 @@
   const COLORS=["#3a5fb0","#7a4ab0","#5a6b3a","#3a86b0","#b0683a","#3ab08a","#b03a6b","#6a4dff"];
   const rail=document.getElementById("rail"),pane=document.getElementById("pane"),toast=document.getElementById("toast"),$=id=>document.getElementById(id);
   let SYS=[],cat=0,foc=0;
+  // sort/filter state
+  let sortMode="default"; // "default" | "playtime" | "name" | "added"
+  let filterSystem="";    // "" = all; else system id (for __col_* views)
   function say(m){toast.textContent=m;toast.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove("show"),1600);}
   function fmtPlay(s){if(!s)return"new";var m=Math.round(s/60);if(m<1)return"<1m";if(m<60)return m+"m played";return Math.floor(m/60)+"h "+(m%60)+"m played";}
   function fmtPlayDetail(s){if(!s||s<60)return"0h played";var h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?""+h+"h "+m+"m played":""+m+"m played";}
   function fmtDate(t){if(!t)return"";var d=new Date(t*1000),n=new Date(),diff=n-d;if(diff<86400000)return"today";if(diff<172800000)return"yesterday";return d.toLocaleDateString(undefined,{month:"short",day:"numeric"});}
-  // Weekly total: sum sessions from the last 7 days is not tracked per-session, so we derive
-  // an approximate from playtime_s per game vs last_played (honest: shows total, not weekly).
   function totalHours(games){var s=games.reduce((a,g)=>a+(g.playtime_s||0),0);return Math.round(s/360)/10;}
   function paint(){if(window.GICON){GICON.paint(document);return;}document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
-  function buildRail(){rail.innerHTML=SYS.map((s,i)=>
-    `<div class="sys ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.logo?`<img src="${s.logo}" alt="" style="height:13px;width:auto;max-width:104px;vertical-align:-2px;margin-right:7px;opacity:.9" onerror="this.remove()">`:''}${s.name}</span><span class="c">${s.games.length}</span></div>`).join("");
-    [...rail.children].forEach(el=>el.onclick=()=>{cat=+el.dataset.i2;foc=0;render();});}
-  // focus space = games 0..N-1 then the action tiles (favorite=N, fetch-art=N+1, options=N+2,
-  // scrape-all=N+3); the tiles act on the LAST-FOCUSED game (named on the tile so it's never ambiguous)
+  function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+  // ---- sort/filter helpers ----
+  function sortedGames(games){
+    const g=[...games];
+    if(sortMode==="playtime") g.sort((a,b)=>(b.playtime_s||0)-(a.playtime_s||0));
+    else if(sortMode==="name") g.sort((a,b)=>a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    else if(sortMode==="added") g.sort((a,b)=>(b.added||b.last_played||0)-(a.added||a.last_played||0));
+    // default: keep server order (already sorted by name for systems, recency for auto-cols)
+    return g;
+  }
+  function filteredGames(games){
+    if(!filterSystem) return games;
+    return games.filter(g=>g.system===filterSystem);
+  }
+
+  function buildRail(){
+    // split SYS into: auto-collections (__recently_*/__most_played), user-collections (__col_*), systems
+    const autoSystems=["__recent","__fav","__most","__recently_added","__recently_played","__most_played"];
+    const colUser=SYS.filter(s=>s.system&&s.system.startsWith("__col_"));
+    const colAuto=SYS.filter(s=>autoSystems.includes(s.system));
+    const realSys=SYS.filter(s=>!autoSystems.includes(s.system)&&!s.system.startsWith("__col_"));
+    let html="";
+    // Auto-collections (Recently Added, Recently Played, Most Played, recents, favs)
+    if(colAuto.length){
+      html+='<div class="rail-sec first">Auto</div>';
+      html+=colAuto.map((s,_)=>{const i=SYS.indexOf(s);return`<div class="sys col-auto ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.name}</span><span class="c">${s.games.length}</span></div>`;}).join("");
+    }
+    // User collections
+    if(colUser.length){
+      html+='<div class="rail-sec">Collections</div>';
+      html+=colUser.map((s,_)=>{const i=SYS.indexOf(s);return`<div class="sys col-user ${i===cat?'on':''}" data-i2="${i}"><span class="n">${esc(s.name)}</span><span class="c">${s.games.length}</span></div>`;}).join("");
+    }
+    // Real systems
+    if(realSys.length){
+      html+='<div class="rail-sec">Systems</div>';
+      html+=realSys.map((s,_)=>{const i=SYS.indexOf(s);return`<div class="sys ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.logo?`<img src="${s.logo}" alt="" style="height:13px;width:auto;max-width:104px;vertical-align:-2px;margin-right:7px;opacity:.9" onerror="this.remove()">`:''}${s.name}</span><span class="c">${s.games.length}</span></div>`;}).join("");
+    }
+    rail.innerHTML=html;
+    [...rail.children].forEach(el=>{if(el.dataset.i2!==undefined)el.onclick=()=>{cat=+el.dataset.i2;foc=0;filterSystem="";render();};});}
+
+  // ---- sort-bar focus (separate from game/action focus) ----
+  // SORT_TILES: before game grid (index < 0 = sort zone)
+  // Focus space layout: sortbar has N_SORT items at indices 0..N_SORT-1 (negative offset from foc):
+  // We use a two-zone model: sortZone (foc < 0) and gameZone (foc >= 0)
+  // Simpler: sortbar items are appended AFTER the action tiles in the focus space.
+  const SORT_MODES=[{k:"default",l:"Default"},{k:"name",l:"A–Z"},{k:"playtime",l:"Most Played"},{k:"added",l:"Recently Added"}];
+  // actions in the game-tile zone: fav=0, art=1, opt=2, scr=3, col=4, each offset from nGames()
+  const ACT_FAV=0,ACT_ART=1,ACT_OPT=2,ACT_SCR=3,ACT_COL=4,N_ACT=5;
+  // sort tiles after actions
+  const ACT_SORT_BASE=N_ACT; // sort tiles start here (relative to nGames())
+
   let lastG=0;
-  function nGames(){const s=SYS[cat];return s?s.games.length:0;}
-  function total(){return nGames()+4;}
-  function tgtGame(){const s=SYS[cat];if(!s)return null;return s.games[Math.min(lastG,s.games.length-1)]||null;}
-  function buildPane(){const s=SYS[cat]; if(!s){pane.innerHTML='<div class="empty">No games found. Drop ROMs into /userdata/roms/&lt;system&gt;.</div>';return;}
-    if(foc<s.games.length)lastG=foc;
+  function nGames(){
+    const s=SYS[cat];if(!s)return 0;
+    return filteredGames(s.games).length;
+  }
+  function total(){return nGames()+N_ACT+SORT_MODES.length;}
+  function tgtGame(){
+    const s=SYS[cat];if(!s)return null;
+    const g=filteredGames(sortedGames(s.games));
+    return g[Math.min(lastG,g.length-1)]||null;
+  }
+
+  function buildPane(){
+    const s=SYS[cat];
+    if(!s){pane.innerHTML='<div class="empty">No games found. Drop ROMs into /userdata/roms/&lt;system&gt;.</div>';return;}
+    const games=filteredGames(sortedGames(s.games));
+    const n=games.length;
+    if(foc<n) lastG=foc;
     const gm0=tgtGame(), nm0=gm0?gm0.name:"";
-    pane.innerHTML=`<div class="ph">${s.logo?`<img src="${s.logo}" alt="${s.name}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode('${s.name.toUpperCase()} '))">`:s.name.toUpperCase()+' '}— ${s.games.length} GAME${s.games.length!=1?'S':''}</div><div class="grid" id="grid"></div>`+
+    const isCol=s.system&&(s.system.startsWith("__col_")||["__recently_added","__recently_played","__most_played"].includes(s.system));
+    // header: show delete-collection button for user collections
+    const delBtn=s.system&&s.system.startsWith("__col_")?`<span style="color:#ff6b6b;font-size:11px;cursor:pointer;font-weight:700;margin-left:auto" id="del-col">Delete collection</span>`:``;
+    pane.innerHTML=`<div class="ph">${s.logo?`<img src="${s.logo}" alt="${s.name}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode('${s.name.toUpperCase()} '))">`:s.name.toUpperCase()+' '}— ${n} GAME${n!=1?'S':''}${delBtn}</div>`+
+      `<div class="sortbar" id="sortbar">`+SORT_MODES.map((m,i)=>`<div class="sortbtn ${foc===(n+N_ACT+i)?'focus':''} ${sortMode===m.k?'active':''}" data-si="${i}">${m.l}</div>`).join("")+`</div>`+
+      `<div class="grid" id="grid"></div>`+
       `<div class="acts">`+
-      `<div class="ab ${foc===s.games.length?'focus':''}" id="a-fav">${gm0&&gm0.fav?'☆':'★'}<span class="t">${gm0&&gm0.fav?'Unfavorite':'Favorite'} — ${esc(nm0)}</span></div>`+
-      `<div class="ab ${foc===s.games.length+1?'focus':''}" id="a-art"><span class="t">Fetch art — ${esc(nm0)}</span></div>`+
-      `<div class="ab ${foc===s.games.length+2?'focus':''}" id="a-opt"><span class="t">Options — ${esc(nm0)}</span></div>`+
-      `<div class="ab ${foc===s.games.length+3?'focus':''}" id="a-scr"><span class="t">Scrape all — ${esc(s.name)}</span></div></div>`;
+      `<div class="ab ${foc===n+ACT_FAV?'focus':''}" id="a-fav">${gm0&&gm0.fav?'☆':'★'}<span class="t">${gm0&&gm0.fav?'Unfavorite':'Favorite'} — ${esc(nm0)}</span></div>`+
+      `<div class="ab ${foc===n+ACT_ART?'focus':''}" id="a-art"><span class="t">Fetch art — ${esc(nm0)}</span></div>`+
+      `<div class="ab ${foc===n+ACT_OPT?'focus':''}" id="a-opt"><span class="t">Options — ${esc(nm0)}</span></div>`+
+      `<div class="ab ${foc===n+ACT_SCR?'focus':''}" id="a-scr"><span class="t">Scrape all — ${esc(s.name)}</span></div>`+
+      `<div class="ab ${foc===n+ACT_COL?'focus':''}" id="a-col"><span class="t">Add to collection — ${esc(nm0)}</span></div></div>`;
     const g=$("grid");
-    g.innerHTML=s.games.map((gm,i)=>{
-      // a save-state thumbnail (the "where you left off" picture, task 53) beats cover art on
-      // resume cards; cover art next; gradient + title last. Degrades cleanly when none exist.
+    g.innerHTML=games.map((gm,i)=>{
       const artUrl=gm.state_thumb||(gm.img?('/fs/file?path='+encodeURIComponent(gm.img)):null);
       const artStyle=artUrl?`background:#0c0c1e url('${artUrl}') center/cover no-repeat`:`background:linear-gradient(135deg,${COLORS[i%COLORS.length]},#0c0c1e)`;
       const ps=gm.playtime_s||gm.secs||0,lp=gm.last_played||null;
       const playLine=ps?fmtPlayDetail(ps)+(lp?' · '+fmtDate(lp):''):(gm.plays?'▶ '+gm.plays+'×':null);
-      return `<div class="game ${i===foc?'focus':''}" data-g="${i}">
+      // ghost class when ROM missing from collection (img null AND in a collection)
+      const ghost=(isCol&&!gm.img&&gm.name)?' ghost':'';
+      return `<div class="game ${i===foc?'focus':''}${ghost}" data-g="${i}">
       <div class="art" style="${artStyle}">${gm.fav?'<span class="fav">★</span>':''}${gm.state_thumb?'<span class="resume">▶ Resume</span>':''}${artUrl?'':gm.name}</div>
       <div class="sub">${playLine||gm.name}</div></div>`;}).join("");
     [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.g;render();launch();});
-    $("a-fav").onclick=()=>{foc=s.games.length;render();toggleFav();};
-    $("a-art").onclick=()=>{foc=s.games.length+1;render();fetchArt();};
-    $("a-opt").onclick=()=>{foc=s.games.length+2;render();openOptions();};
-    $("a-scr").onclick=()=>{foc=s.games.length+3;render();scrapeArt();};}
-  function render(){buildRail();buildPane();paint();const f=pane.querySelector(".game.focus,.ab.focus");if(f)f.scrollIntoView({block:"nearest"});}
-  function launch(){const s=SYS[cat];if(!s||!s.games[foc])return;const gm=s.games[foc];const g=gm.name;
+    // sort buttons
+    [...($("sortbar").children)].forEach(el=>{if(el.dataset.si!==undefined)el.onclick=()=>{const idx=+el.dataset.si;sortMode=SORT_MODES[idx].k;foc=0;render();}});
+    $("a-fav").onclick=()=>{foc=n+ACT_FAV;render();toggleFav();};
+    $("a-art").onclick=()=>{foc=n+ACT_ART;render();fetchArt();};
+    $("a-opt").onclick=()=>{foc=n+ACT_OPT;render();openOptions();};
+    $("a-scr").onclick=()=>{foc=n+ACT_SCR;render();scrapeArt();};
+    $("a-col").onclick=()=>{foc=n+ACT_COL;render();openCollPicker();};
+    const dc=$("del-col");if(dc)dc.onclick=()=>deleteCollection();}
+
+  function render(){buildRail();buildPane();paint();const f=pane.querySelector(".game.focus,.ab.focus,.sortbtn.focus");if(f)f.scrollIntoView({block:"nearest"});}
+
+  // ---- game actions ----
+  function launch(){const s=SYS[cat];if(!s)return;const games=filteredGames(sortedGames(s.games));const gm=games[foc];if(!gm)return;const g=gm.name;
     const sys=gm.system||s.system;
     say("Launching "+g+"…");
     fetch("/launch",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -138,8 +267,6 @@
     fetch("/game/favorite",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({system:sys,game:game,on:on})}).then(r=>r.json())
       .then(d=>{if(d.ok)loadAll(true);else say("Favorite failed");}).catch(()=>say("Favorite failed"));}
-  // per-GAME manual fetch (the "Fetch art — <game>" tile / Enter on it). Honest about every outcome:
-  // found → reload to show it; no match (homebrew) → say so plainly; can't reach server → say try again.
   function fetchArt(){const s=SYS[cat],gm=tgtGame();if(!s||!gm){say("Pick a game first");return;}
     const sys=gm.system||s.system, game=gm.name;
     say("Fetching art for "+game+"…");
@@ -150,8 +277,7 @@
         else if(d.net){say("Couldn't reach the art server — try again");}
         else say("Fetch failed: "+(d.error||"?"));
       }).catch(e=>say("Fetch failed (network?)"));}
-  // bulk per-SYSTEM scrape (the "Scrape all — <system>" tile)
-  function scrapeArt(){const s=SYS[cat];if(!s||s.system==="__recent"||s.system==="__fav"||s.system==="__most"){say("Pick a system to scrape");return;}
+  function scrapeArt(){const s=SYS[cat];if(!s||["__recent","__fav","__most","__recently_added","__recently_played","__most_played"].includes(s.system)||s.system.startsWith("__col_")){say("Pick a system to scrape");return;}
     say("Scraping cover art for "+s.name+"… (this can take a moment)");
     fetch("/scrape",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:s.system})})
       .then(r=>r.json()).then(d=>{
@@ -159,17 +285,14 @@
           if(d.net_errors)msg+=" · "+d.net_errors+" couldn't reach server";
           say(msg); if(d.scraped) setTimeout(()=>location.reload(),900);}
         else say("Scrape: "+(d.error||"failed"));}).catch(e=>say("Scrape failed (network?)"));}
+
   // ---- per-game options modal ----
-  function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
   let GOPT={open:false,foc:0,items:[],sys:"",game:"",data:null,cores:[],default:null,shadersets:["none"],shLabels:{none:"None"}};
   function openOptions(){const s=SYS[cat],gm=tgtGame();if(!s||!gm)return;
     const sys=gm.system||s.system, game=gm.name;
     const qs="system="+encodeURIComponent(sys)+"&game="+encodeURIComponent(game);
     Promise.all([
       fetch("/game/options?"+qs,{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
-      // Shader lives on its OWN endpoint: /game/shader writes the REAL batocera key (.shaderset)
-      // with REAL shaderset ids from available[]. The old library .shaders key + fabricated
-      // ["scanlines","crt","lcd"] values were ignored by configgen entirely (task 79, docs/30).
       fetch("/game/shader?"+qs,{cache:"no-store"}).then(r=>r.json()).catch(()=>({}))
     ]).then(([d,sh])=>{ if(!d.ok||!(d.cores&&d.cores.length)){say("No options for this system");return;}
         const avail=(sh&&sh.ok&&Array.isArray(sh.available)&&sh.available.length)?sh.available:[{id:"none",label:"None"}];
@@ -178,7 +301,7 @@
         GOPT={open:true,foc:0,items:[],sys:sys,game:game,cores:d.cores,default:d.default,
               shadersets:shadersets,shLabels:shLabels,
               data:{core:d.core,ratio:d.ratio,shaderset:cur,rewind:d.rewind}};
-        renderOpt(); if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();   // docs/27 §3.10
+        renderOpt(); if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();
         $("gopt").classList.add("on");
       }).catch(()=>say("Options offline"));}
   const RATIOS=["auto","4/3","16/9","core"];
@@ -205,7 +328,6 @@
     else saveOptions();}
   function goptClose(){if(GOPT.open&&window.GOSE&&GOSE.modalPop)GOSE.modalPop();GOPT.open=false;$("gopt").classList.remove("on");}
   function saveOptions(){
-    // core/ratio/rewind via /game/options; shaderset via /game/shader (the real .shaderset key).
     const optP=fetch("/game/options",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({system:GOPT.sys,game:GOPT.game,core:GOPT.data.core,ratio:GOPT.data.ratio,rewind:GOPT.data.rewind})})
       .then(r=>r.json()).catch(()=>({ok:false}));
@@ -215,50 +337,189 @@
     Promise.all([optP,shP]).then(([o,sh])=>{goptClose();
       say((o.ok&&sh.ok)?("Saved — "+GOPT.data.core+" · applies next launch"):"Save failed");})
       .catch(()=>{goptClose();say("Save failed");});}
-  function moveCat(d){if(!SYS.length)return;cat=(cat+d+SYS.length)%SYS.length;foc=0;lastG=0;render();}
+
+  // ---- collections picker modal ----
+  // CPICK state: list of user collections; per-item: already-in flag + coll id
+  let CPICK={open:false,foc:0,items:[]};
+  // _userColls is populated by loadAll; keyed by id for fast "is game in coll?" lookup
+  let _userColls=[];
+  function openCollPicker(){
+    const gm=tgtGame();if(!gm){say("Pick a game first");return;}
+    const sys=gm.system||(SYS[cat]&&SYS[cat].system)||"";
+    const game=gm.name;
+    // refresh collections list from server
+    fetch("/collections",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      if(!d.ok)return say("Collections unavailable");
+      // only user collections (not auto)
+      const cols=(d.collections||[]).filter(c=>!c.id.startsWith("__"));
+      // for each coll, check if game is in it
+      const items=cols.map(c=>{
+        const inColl=!!(_userColls.find(uc=>uc.id===c.id&&uc.games&&uc.games.some(g=>g.system===sys&&g.game===game)));
+        return {id:c.id,name:c.name,inColl:inColl,sys:sys,game:game};});
+      // "New collection" entry at end
+      items.push({id:"__new",name:"New collection…",sys:sys,game:game});
+      CPICK={open:true,foc:0,items:items};
+      renderCPick();
+      if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();
+      $("cpick").classList.add("on");
+    }).catch(()=>say("Collections unavailable"));}
+
+  function renderCPick(){
+    const gm=tgtGame();
+    let h=`<h3>Add to collection${gm?' — '+esc(gm.name):''}</h3>`;
+    CPICK.items.forEach((it,i)=>{
+      const f=i===CPICK.foc?' focus':'';
+      if(it.id==="__new"){
+        h+=`<div class="new-coll${f}" data-ci="${i}"><span class="t">+ New collection…</span></div>`;
+      } else {
+        const st=it.inColl?`<span class="del">Remove</span>`:`<span class="st">Add</span>`;
+        h+=`<div class="copt${f}" data-ci="${i}"><span class="nm">${esc(it.name)}</span>${st}</div>`;
+      }
+    });
+    $("cpick-box").innerHTML=h;
+    const fe=$("cpick-box").querySelector(".focus");if(fe)fe.scrollIntoView({block:"nearest"});
+    [...($("cpick-box").children)].forEach(el=>{if(el.dataset.ci!==undefined)el.onclick=()=>{CPICK.foc=+el.dataset.ci;renderCPick();cpickEnter();}});
+  }
+  function cpickMove(d){if(!CPICK.items.length)return;CPICK.foc=(CPICK.foc+d+CPICK.items.length)%CPICK.items.length;renderCPick();}
+  function cpickEnter(){
+    const it=CPICK.items[CPICK.foc];if(!it)return;
+    if(it.id==="__new"){cpickClose();openNinput(it.sys,it.game);return;}
+    const verb=it.inColl?"remove":"add";
+    fetch("/collections/"+encodeURIComponent(it.id)+"/"+verb,{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system:it.sys,game:it.game})})
+      .then(r=>r.json()).then(d=>{
+        if(d.ok){
+          it.inColl=!it.inColl;
+          // update _userColls cache so re-open reflects state
+          const uc=_userColls.find(c=>c.id===it.id);
+          if(uc){
+            if(it.inColl) (uc.games=uc.games||[]).push({system:it.sys,game:it.game});
+            else uc.games=(uc.games||[]).filter(g=>!(g.system===it.sys&&g.game===it.game));
+          }
+          say(it.inColl?"Added to "+it.name:"Removed from "+it.name);
+          // refresh rail count
+          const sc=SYS.find(s=>s.system==="__col_"+it.id);
+          if(sc){if(it.inColl)sc.games.push({name:it.game,system:it.sys});else sc.games=sc.games.filter(g=>!(g.name===it.game&&g.system===it.sys));}
+          renderCPick();
+          buildRail();paint();
+        } else say("Failed: "+(d.error||"?"));
+      }).catch(()=>say("Network error"));}
+  function cpickClose(){if(CPICK.open&&window.GOSE&&GOSE.modalPop)GOSE.modalPop();CPICK.open=false;$("cpick").classList.remove("on");}
+
+  // ---- new-collection name input ----
+  let _ninputCtx={sys:"",game:""};
+  function openNinput(sys,game){
+    _ninputCtx={sys:sys,game:game};
+    $("ninput-val").value="";
+    $("ninput").classList.add("on");
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();
+    // OSK will auto-open when input is focused (cursor.js)
+    setTimeout(()=>$("ninput-val").focus(),60);
+  }
+  function ninputClose(){if(window.GOSE&&GOSE.modalPop)GOSE.modalPop();$("ninput").classList.remove("on");}
+  function ninputCreate(){
+    const name=$("ninput-val").value.trim();
+    if(!name)return;
+    fetch("/collections",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name:name})}).then(r=>r.json()).then(d=>{
+        if(d.ok){
+          ninputClose();
+          say("Created: "+name);
+          // add to SYS and _userColls, then add the game
+          const newEntry={name:d.game||_ninputCtx.game,system:_ninputCtx.sys};
+          _userColls.push({id:d.id,name:name,games:[newEntry]});
+          SYS.push({name:name,system:"__col_"+d.id,games:[newEntry]});
+          // add game to the new collection
+          if(_ninputCtx.sys&&_ninputCtx.game){
+            fetch("/collections/"+encodeURIComponent(d.id)+"/add",{method:"POST",
+              headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({system:_ninputCtx.sys,game:_ninputCtx.game})})
+              .then(r=>r.json()).catch(()=>{});
+          }
+          render();
+        } else say("Create failed: "+(d.error||"?"));
+      }).catch(()=>say("Network error"));}
+  $("ninput-ok").onclick=ninputCreate;
+  $("ninput-cancel").onclick=ninputClose;
+
+  // ---- delete collection ----
+  function deleteCollection(){
+    const s=SYS[cat];if(!s||!s.system.startsWith("__col_"))return;
+    const cid=s.system.slice("__col_".length);
+    if(!confirm("Delete collection '"+s.name+"'? Games are not deleted."))return;
+    fetch("/collections/"+encodeURIComponent(cid)+"/delete",{method:"POST"})
+      .then(r=>r.json()).then(d=>{
+        if(d.ok){
+          say("Deleted: "+s.name);
+          SYS=SYS.filter(x=>x.system!==s.system);
+          _userColls=_userColls.filter(c=>c.id!==cid);
+          cat=Math.max(0,cat-1);foc=0;render();
+        } else say("Delete failed: "+(d.error||"?"));
+      }).catch(()=>say("Network error"));}
+
+  // ---- navigation ----
+  function moveCat(d){if(!SYS.length)return;cat=(cat+d+SYS.length)%SYS.length;foc=0;lastG=0;filterSystem="";render();}
   function moveFoc(d){const s=SYS[cat];if(!s)return;const n=total();if(n<=0)return;
-    if(Math.abs(d)>1&&foc<s.games.length){           // row jump from the grid
-      const t=foc+d;
-      if(t>=s.games.length&&d>0){foc=s.games.length;render();return;}   // off the bottom → actions
-      if(t<0&&d<0){foc=s.games.length;render();return;}                  // off the top → actions (wrap)
-    }else if(Math.abs(d)>1){foc=d>0?0:Math.max(0,s.games.length-1);render();return;}  // actions ↑↓ → grid
+    if(Math.abs(d)>1&&foc<nGames()){           // row jump from the grid
+      const t=foc+d;const ng=nGames();
+      if(t>=ng&&d>0){foc=ng;render();return;}   // off the bottom → actions
+      if(t<0&&d<0){foc=ng;render();return;}      // off the top → actions (wrap)
+    }else if(Math.abs(d)>1){foc=d>0?0:Math.max(0,nGames()-1);render();return;}  // actions ↑↓ → grid
     foc=(foc+d+n)%n;render();}
   function activate(){const s=SYS[cat];if(!s)return;
-    if(foc===s.games.length)toggleFav();
-    else if(foc===s.games.length+1)fetchArt();
-    else if(foc===s.games.length+2)openOptions();
-    else if(foc===s.games.length+3)scrapeArt();
+    const n=nGames();
+    if(foc===n+ACT_FAV)toggleFav();
+    else if(foc===n+ACT_ART)fetchArt();
+    else if(foc===n+ACT_OPT)openOptions();
+    else if(foc===n+ACT_SCR)scrapeArt();
+    else if(foc===n+ACT_COL)openCollPicker();
+    else if(foc>=n+N_ACT&&foc<n+N_ACT+SORT_MODES.length){sortMode=SORT_MODES[foc-(n+N_ACT)].k;foc=0;render();}
     else launch();}
+
   addEventListener("keydown",e=>{const k=e.key;
+    // name-input modal (highest priority)
+    if($("ninput").classList.contains("on")){
+      if(k==="Escape"){ninputClose();e.preventDefault();}
+      else if(k==="Enter"){ninputCreate();e.preventDefault();}
+      return;}
+    // collections picker modal
+    if(CPICK.open){
+      if(k==="ArrowDown"||k==="Down")cpickMove(1);
+      else if(k==="ArrowUp"||k==="Up")cpickMove(-1);
+      else if(k==="Enter"||k===" ")cpickEnter();
+      else if(k==="Escape"||k==="Backspace")cpickClose();
+      else return;e.preventDefault();return;}
+    // options modal
     if(GOPT.open){
-      if(k==="ArrowDown")goptMove(1);else if(k==="ArrowUp")goptMove(-1);
-      else if(k==="ArrowRight")goptCycle(1);else if(k==="ArrowLeft")goptCycle(-1);
+      if(k==="ArrowDown"||k==="Down")goptMove(1);else if(k==="ArrowUp"||k==="Up")goptMove(-1);
+      else if(k==="ArrowRight"||k==="Right")goptCycle(1);else if(k==="ArrowLeft"||k==="Left")goptCycle(-1);
       else if(k==="Enter"||k===" ")goptEnter();
       else if(k==="Escape"||k==="Backspace")goptClose();
       else return;e.preventDefault();return;}
-    if(k==="ArrowRight")moveFoc(1);else if(k==="ArrowLeft")moveFoc(-1);
-    else if(k==="ArrowDown")moveFoc(4);else if(k==="ArrowUp")moveFoc(-4);
+    if(k==="ArrowRight"||k==="Right")moveFoc(1);else if(k==="ArrowLeft"||k==="Left")moveFoc(-1);
+    else if(k==="ArrowDown"||k==="Down")moveFoc(4);else if(k==="ArrowUp"||k==="Up")moveFoc(-4);
     else if(k==="]"||k==="PageDown")moveCat(1);else if(k==="["||k==="PageUp")moveCat(-1);
     else if(k==="Enter"||k===" ")activate();
-    else if(k==="s"||k==="S")scrapeArt();          // keyboard conveniences (tiles cover the pad)
+    else if(k==="s"||k==="S")scrapeArt();
     else if(k==="f"||k==="F")toggleFav();
     else if(k==="o"||k==="O")openOptions();
+    else if(k==="c"||k==="C")openCollPicker();
     else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
     else return;e.preventDefault();});
   // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
   // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
   paint();
   function loadAll(keep){
-    // remember the focused system+game (or action tile) so a reload — e.g. after a favorite
-    // toggle fired FROM the tile — keeps your place instead of yanking focus to game 0 (§3.9)
-    const cur=keep&&SYS[cat]?{sys:SYS[cat].system,game:(SYS[cat].games[foc]||{}).name,
-      tile:foc>=SYS[cat].games.length?foc-SYS[cat].games.length:-1,lg:lastG}:null;
+    const cur=keep&&SYS[cat]?{sys:SYS[cat].system,game:(filteredGames(sortedGames(SYS[cat].games))[foc]||{}).name,
+      tile:foc>=nGames()?foc-nGames():-1,lg:lastG}:null;
     return Promise.all([
       fetch("/games.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
       fetch("/recent.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
       fetch("/favorites.json",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
-      fetch("/game/stats",{cache:"no-store"}).then(r=>r.json()).catch(()=>({}))
-    ]).then(([d,rc,fv,stats])=>{
+      fetch("/game/stats",{cache:"no-store"}).then(r=>r.json()).catch(()=>({})),
+      fetch("/collections",{cache:"no-store"}).then(r=>r.json()).catch(()=>({ok:false,collections:[]}))
+    ]).then(([d,rc,fv,stats,colls])=>{
       SYS=(d.systems||[]);
       // inject playtime_s + last_played from /game/stats into the system game lists
       const statsMap={};
@@ -269,7 +530,7 @@
       const favs=((fv&&fv.games)||[]).map(r=>{var _fk=(r.system||"")+"/"+(r.game||""),_fs=statsMap[_fk];
         return {name:r.game,img:r.img,system:r.system,fav:true,
         playtime_s:(_fs&&_fs.playtime_s)||0,last_played:(_fs&&_fs.last_played)||null};});
-      // "Most Played" surface: top 10 by playtime_s (only games that have been played)
+      // "Most Played" surface (existing — preserved)
       const played=((stats&&stats.games)||[]).filter(g=>g.total_secs>0).slice(0,10);
       const mostPlayed=played.map(g=>{
         const sys=SYS.find(s=>s.system===g.system);
@@ -278,12 +539,53 @@
       if(mostPlayed.length) SYS.unshift({name:"🏆 Most Played",system:"__most",games:mostPlayed});
       if(recent.length) SYS.unshift({name:"▶ Continue Playing",system:"__recent",games:recent});
       if(favs.length) SYS.unshift({name:"★ Favorites",system:"__fav",games:favs});
-      const totH=stats&&stats.total_secs?Math.round(stats.total_secs/360)/10:0;
-      $("sub").textContent=d.ok?`${d.total||0} games · ${(d.systems||[]).length} systems${favs.length?" · "+favs.length+"★":""}${recent.length?" · "+recent.length+" recent":""}${totH?" · "+totH+"h played":""}`:"couldn't read games";
-      if(cur){let ci=SYS.findIndex(s=>s.system===cur.sys);cat=ci<0?0:ci;
-        if(cur.tile>=0){foc=SYS[cat].games.length+cur.tile;lastG=Math.min(cur.lg,Math.max(0,SYS[cat].games.length-1));}
-        else{const gi=cur.game?SYS[cat].games.findIndex(g=>g.name===cur.game):-1;foc=gi<0?0:gi;}}
-      render();
+
+      // --- auto-collections (computed at load time, inserted as SYS entries) ---
+      // Recently Added: top 20 by mtime — server returns via /collections/__recently_added
+      // We show them as rail entries and load games lazily via their known structure.
+      // For the rail summary we use the count from /collections; for the game list we use
+      // a synthetic SYS entry populated from the game list (mtime not in /games.json,
+      // so we fetch the auto-collection detail when the user selects it).
+      // Strategy: inject stubs now; populate games on first cat switch to that entry.
+
+      // User collections from /collections endpoint
+      _userColls=[];
+      const userColEntries=(colls.collections||[]).filter(c=>!c.id.startsWith("__"));
+      // We need game lists for each user collection. We do this lazily:
+      // inject a SYS entry with an empty games[] and fetch on demand.
+      // For the sidebar count we use what the server gave us.
+      // Fetch all user collection game lists eagerly (they're small):
+      const collFetches=userColEntries.map(c=>
+        fetch("/collections/"+encodeURIComponent(c.id),{cache:"no-store"}).then(r=>r.json()).catch(()=>({ok:false,games:[]}))
+          .then(data=>{
+            const games=(data.games||[]).map(g=>({name:g.name,system:g.system,img:g.img,
+              fav:g.fav||false,playtime_s:(statsMap[(g.system||"")+"/"+(g.name||"")])?.playtime_s||0,
+              last_played:(statsMap[(g.system||"")+"/"+(g.name||"")])?.last_played||null}));
+            _userColls.push({id:c.id,name:c.name,games:(data.games||[]).map(g=>({system:g.system,game:g.name}))});
+            SYS.push({name:c.name,system:"__col_"+c.id,games:games});
+          }));
+
+      // Auto-collection stubs: Recently Added, Recently Played
+      // Recently Played = same as Continue Playing (reuse __recent) — no separate stub
+      // Recently Added: fetch from server
+      const raFetch=fetch("/collections/__recently_added",{cache:"no-store"}).then(r=>r.json())
+        .catch(()=>({ok:false,games:[]})).then(data=>{
+          if(data.ok&&data.games&&data.games.length){
+            const games=data.games.map(g=>({name:g.name,system:g.system,img:g.img,
+              fav:g.fav||false,added:g.added||0,
+              playtime_s:(statsMap[(g.system||"")+"/"+(g.name||"")])?.playtime_s||0}));
+            SYS.push({name:"✦ Recently Added",system:"__recently_added",games:games});
+          }
+        });
+
+      return Promise.all([...collFetches,raFetch]).then(()=>{
+        const totH=stats&&stats.total_secs?Math.round(stats.total_secs/360)/10:0;
+        $("sub").textContent=d.ok?`${d.total||0} games · ${(d.systems||[]).length} systems${favs.length?" · "+favs.length+"★":""}${recent.length?" · "+recent.length+" recent":""}${totH?" · "+totH+"h played":""}`:"couldn't read games";
+        if(cur){let ci=SYS.findIndex(s=>s.system===cur.sys);cat=ci<0?0:ci;
+          if(cur.tile>=0){foc=nGames()+cur.tile;lastG=Math.min(cur.lg,Math.max(0,nGames()-1));}
+          else{const gi=cur.game?filteredGames(sortedGames(SYS[cat].games)).findIndex(g=>g.name===cur.game):-1;foc=gi<0?0:gi;}}
+        render();
+      });
     }).catch(()=>{$("sub").textContent="library offline";render();});
   }
   loadAll(false);
