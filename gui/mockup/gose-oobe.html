@@ -176,6 +176,10 @@
       if(el.dataset.toggle) return "toggle:"+el.dataset.toggle; }
     return el.id||el.tagName; }
 
+  // #107: tier selected in the AI step (not persisted in S — pure UI state).
+  // Resets to "observe" each time the AI step is rendered (safe default).
+  var aiTier = "observe";
+
   // collected answers
   var S = {
     locale:"en-US", keyboard:"us", net:null,
@@ -355,11 +359,13 @@
         '<div class="field"><label>Username</label>'+
           '<input class="inp focusable" data-field="username" placeholder="e.g. alex — shown on the lock screen" value="'+esc(S.account.username)+'"></div>'+
         '<div class="grid2">'+
-          '<div class="field"><label>Password (optional — 8+ characters)</label>'+
+          '<div class="field"><label>Password (8+ characters)</label>'+
             '<input class="inp focusable" data-field="password" type="password" placeholder="8 or more characters" value="'+esc(S.account.password)+'"></div>'+
-          '<div class="field"><label>Quick PIN (optional — exactly 8 digits)</label>'+
+          '<div class="field"><label>Quick PIN (exactly 8 digits)</label>'+
             '<input class="inp focusable" data-field="pin" inputmode="numeric" placeholder="8 digits" value="'+esc(S.account.pin)+'"></div>'+
         '</div>'+
+        '<div class="hint" id="cred-hint" style="color:var(--muted);font-size:12px;margin-top:-6px">'+
+          'Set at least one — either a PIN or a password (or both).</div>'+
         '<div class="field"><label>Your color</label>'+
           '<div class="swatches">'+ACCENTS.map(function(a){
             return '<span class="sw focusable'+(S.account.accent===a?' sel':'')+'" data-acc="'+a+'" style="background:'+a+'"></span>'; }).join("")+'</div></div>'+
@@ -437,18 +443,31 @@
         '<div class="field"><label>Device name</label>'+
           '<input class="inp focusable" data-field="device_name" placeholder="GOSE" value="'+esc(S.device_name)+'"></div>';
     } else if(s.id==="ai"){
+      // #107: reset tier picker to safe default each time this step renders
+      aiTier = "observe";
+      var TIERS = [
+        {id:"observe", ic:"eye", nm:"Observe", sub:"Read-only — can watch and read state. Safest starting point; upgrade anytime in AI Hub."},
+        {id:"play",    ic:"gamepad-2", nm:"Play",    sub:"Can drive controller input. Use for an AI co-player or co-op partner."},
+        {id:"admin",   ic:"shield",   nm:"Admin",   sub:"Full OS control. Only for a deeply trusted AI you built or control yourself."}
+      ];
       h='<div class="step-eyebrow">Step 9 — AI companions (optional)</div><h1>Pair your AI companions</h1>'+
-        '<p class="sub">GOSE can pair with AI agents that observe and (with your later permission) help '+
-        'out. Name an AI and add it — pairing issues its own token at the safe <b>Observe</b> tier '+
-        '(read-only), then you can add another. You grant more anytime in the <b>AI Hub</b>. '+
-        'This is optional — you can <b>skip</b> and pair later.</p>'+
+        '<p class="sub">Name an AI, pick its starting permission tier, and add it. '+
+        'Each paired AI gets its own token — shown once here. You can add more and adjust tiers anytime in the <b>AI Hub</b>. '+
+        'This is optional — skip and pair later if you prefer.</p>'+
         '<div class="scroll">'+
         '<div class="field"><label>AI name</label>'+
           '<input class="inp focusable" data-field="ai_name" placeholder="e.g. Nova, Aria, Atlas…" value="'+esc(S.ai_name)+'"></div>'+
-        '<div class="opt focusable" data-act="pair"><span class="ic" data-i="sparkles"></span>'+
-          '<div><div class="nm">Add this AI (Observe)</div>'+
-          '<div class="sub2">Pairs it now — its entry + read-only token appear in the AI Hub'+
-          (S.ais.length?'; add another after':'')+'</div></div>'+
+        // Tier picker rows
+        '<div style="margin:6px 0 4px"><label style="font-size:12.5px;color:var(--muted)">Permission tier</label></div>'+
+        TIERS.map(function(t){
+          var sel=(aiTier===t.id);
+          return '<div class="opt focusable'+(sel?' sel':'')+'" data-ai-tier="'+t.id+'">'
+            +ico(t.ic)+'<div><div class="nm">'+t.nm+'</div><div class="sub2">'+t.sub+'</div></div>'
+            +'<span class="val">'+(sel?"Selected ✓":"")+'</span></div>';
+        }).join("")+
+        '<div class="opt focusable" data-act="pair" id="pair-btn" style="margin-top:4px"><span class="ic" data-i="sparkles"></span>'+
+          '<div><div class="nm" id="pair-lbl">Add this AI (Observe)</div>'+
+          '<div class="sub2">Pairs now — token shown once below. You can add another after.</div></div>'+
           '<span class="val">A</span></div>'+
         '<div id="pairout">'+pairBlock()+'</div></div>';
     } else if(s.id==="ready"){
@@ -485,7 +504,8 @@
   // The queued/paired list — each added AI is already a REAL Observe grant; its token is
   // shown here, once, at pairing (the owner reads it to that AI). docs/16: lost = revoke+re-pair.
   function pairBlock(){ return S.ais.map(function(a){
-    return '<div class="pairok">'+ico("check")+esc(a.name)+' — paired (Observe) · in the AI Hub</div>'+
+    var tierLabel=(a.tier||"observe"); tierLabel=tierLabel.charAt(0).toUpperCase()+tierLabel.slice(1);
+    return '<div class="pairok">'+ico("check")+esc(a.name)+' — paired ('+tierLabel+') · in the AI Hub</div>'+
       (a.token?'<div class="token">'+esc(a.name)+' — pairing token: '+esc(a.token)+'</div>':''); }).join(""); }
 
   function buildDots(){
@@ -513,10 +533,22 @@
     if(STEPS[idx].kind==="required"){ var h=card.querySelector(".hint"); if(h) h.textContent=""; }
   }
 
+  // #104: immediate rescan on visibility/focus restore so a replug seen while the
+  // page was backgrounded is reflected the moment it comes back.
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState==="visible" && STEPS[idx].id==="controller"){
+      padSig=""; loadControllers(); }
+  });
+  window.addEventListener("focus", function(){
+    if(STEPS[idx].id==="controller"){ padSig=""; loadControllers(); }
+  });
+
   function wireStep(s){
     if(s.id==="controller"){ loadDbCount(); padFresh=true; loadControllers();
-      // live list: the host hot-plugs new pads in ~1s; poll the registry while this step shows
-      padPoll=setInterval(loadControllers, 2000); }
+      // #104 live detect: 500ms poll catches hot-plug (unplug/replug) promptly.
+      // visibilitychange + focus also rescans immediately when the window regains
+      // attention (e.g. after the kiosk briefly loses focus during replug).
+      padPoll=setInterval(loadControllers, 500); }
     if(s.id==="network"){ netFresh=true; loadNetworks(); }
     if(s.id==="ready") runFinale();
     // live-capture text fields so the required-account gate updates as you type (incl. via the OSK)
@@ -711,12 +743,21 @@
     if(!name){ hint("Enter an AI name first."); return; }
     if(S.ais.some(function(a){ return a.name===name; })){ hint(esc(name)+" is already paired — name the next AI."); return; }
     if(out) out.innerHTML='<div class="sub2" style="margin-top:8px">Pairing '+esc(name)+'…</div>'+pairBlock();
-    api("/ai/grant",{name:name, tier:"observe", pair:true, via:"oobe"}).then(function(d){
+    // #107: use aiTier (the user's tier-picker selection) instead of hardcoded "observe"
+    var tier = aiTier || "observe";
+    api("/ai/grant",{name:name, tier:tier, pair:true, via:"oobe"}).then(function(d){
       if(d&&d.ok&&d.token){
-        S.ais.push({name:d.name||name, token:d.token});
+        S.ais.push({name:d.name||name, token:d.token, tier:tier});
         S.ai_name=""; if(inp) inp.value="";
+        // reset tier picker to safe default for the next AI
+        aiTier="observe";
         if(out) out.innerHTML=pairBlock(); paintIcons();
-        dlog("paired", d.name||name, "total", S.ais.length);
+        dlog("paired", d.name||name, "tier", tier, "total", S.ais.length);
+        // update the "Add" button label + re-wire tier picker for the next round
+        var pl=document.getElementById("pair-lbl"); if(pl) pl.textContent="Add this AI (Observe)";
+        [].slice.call(card.querySelectorAll("[data-ai-tier]")).forEach(function(o){
+          var on=o.dataset.aiTier==="observe"; o.classList.toggle("sel",on);
+          var val=o.querySelector(".val"); if(val) val.textContent=on?"Selected ✓":""; });
         if(inp) setF(inp);   // add-another loop: focus the field for the next name
       }
       else hint("Pairing failed"+(d&&d.error?" — "+esc(d.error):"")+". You can skip and pair later.","#ff8e8e");
@@ -785,6 +826,11 @@
       var pw=String(S.account.password||"");
       if(pw && pw.length<8)
         return "Password must be at least 8 characters.";
+      // #106: require at least one credential — a username with no PIN and no
+      // password leaves the device with no lock and no SSH auth. One of the two
+      // is required; both is also fine. The badge copy already says "required".
+      if(!pin && !pw)
+        return "Set a PIN (8 digits) or a password (8+ characters) — at least one is required.";
     }
     if(s.id==="remoteaccess"){
       // optional step — no entry is fine (they'll skip). But if they typed a password, validate it.
@@ -846,6 +892,19 @@
       else if(a==="ra-key-defer"){ S.remoteaccess.key_deferred=true; S.remoteaccess.mode="key"; skip(); }
       return; }
     // remote access mode tab toggle (password / key)
+    // #107: tier picker for the AI step
+    if(el.dataset.aiTier){
+      aiTier=el.dataset.aiTier;
+      // update sibling selections without a full re-render (keep focus stable)
+      [].slice.call(card.querySelectorAll("[data-ai-tier]")).forEach(function(o){
+        var on=o.dataset.aiTier===aiTier; o.classList.toggle("sel",on);
+        var val=o.querySelector(".val"); if(val) val.textContent=on?"Selected ✓":""; });
+      // update the Add button label to match the selected tier
+      var TIER_LABELS={"observe":"Observe","play":"Play","admin":"Admin"};
+      var pl=document.getElementById("pair-lbl");
+      if(pl) pl.textContent="Add this AI ("+( TIER_LABELS[aiTier]||aiTier)+")";
+      try{ GOSE&&GOSE.sound&&GOSE.sound("select"); }catch(e){}
+      return; }
     if(el.dataset.raMode){
       var rm=el.dataset.raMode;
       S.remoteaccess.mode=rm;

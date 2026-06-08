@@ -431,13 +431,19 @@ class WMLayer:
     the layer still works while a game/native app runs.
     """
 
-    def __init__(self, post=None, flag_path=WM_FLAG, gate=None, capture=None):
+    def __init__(self, post=None, flag_path=WM_FLAG, gate=None, capture=None,
+                 oobe_done_fn=None):
         self.post = post or wm_post
         # capture() fires the global screenshot (POST /capture/shot). Injectable
         # so --selftest can record chord fires without hitting the real server.
         self.capture = capture or capture_post
         self.flag_path = flag_path
         self.gate = gate or (lambda path, name=None: (True, "no-gate"))
+        # #102: oobe_done_fn() returns True when OOBE is complete; False = wizard is
+        # in progress.  Guide (and snap/WM) are suppressed during the wizard so the
+        # game-bar and window-switcher can't escape setup.  None = always-done (safe
+        # default for callers that don't care).
+        self._oobe_done_fn = oobe_done_fn or (lambda: True)
         self.mode = None          # None | "carousel" | "snap"
         self.guide_t = 0.0
         self._shot_taken = False  # a screenshot chord fired during THIS Guide hold
@@ -491,6 +497,16 @@ class WMLayer:
             if val == 1:
                 if not self._allowed(dev_path, dev_name):
                     return True
+                # #102 OOBE modal: block Guide/game-bar while the first-time wizard is
+                # in progress.  oobe_done_fn() is cheap (os.path.exists); fail-open on
+                # exception (True = done = allow) so a broken check never bricks setup.
+                try:
+                    oobe_done = self._oobe_done_fn()
+                except Exception:
+                    oobe_done = True
+                if not oobe_done:
+                    log("wm layer: Guide suppressed — OOBE wizard in progress")
+                    return True          # consume the event; no carousel, no game-bar
                 self.guide_t = time.time()
                 self._shot_taken = False      # fresh hold: no chord yet
                 self._enter("carousel")
@@ -532,6 +548,11 @@ class WMLayer:
         # snap entry: L2 + d-pad/stick direction outside a modal
         if not self.mode and self.l2.get(dev_path) and keysyms and \
                 keysyms[0] in ("Left", "Right", "Up", "Down"):
+            try:
+                if not self._oobe_done_fn():
+                    return True    # #102: snap mode also suppressed during OOBE
+            except Exception:
+                pass
             if not self._allowed(dev_path, dev_name):
                 return True
             self._enter("snap")
@@ -1720,9 +1741,11 @@ def run():
     engine = make_engine()              # XTEST (persistent X conn) or xdotool
     gate = AdminGate().allows
     gamewatch = GameWatch().start()     # off-hot-path pgrep (shared instance)
+    # #102: WMLayer gets an oobe_done_fn so Guide/snap are suppressed during the wizard.
+    _oobe_done = lambda: os.path.exists(OOBE_DONE_FILE)
     nav = PadNav(emit=engine.key, pointer=engine,
                  game_check=gamewatch.is_running,
-                 gate=gate, wm=WMLayer(gate=gate),
+                 gate=gate, wm=WMLayer(gate=gate, oobe_done_fn=_oobe_done),
                  native=make_native_watch(gamewatch.is_running))
     db = ControllerDB()
     norm = Normalizer(db)
@@ -2048,6 +2071,38 @@ def selftest():
     cd.feed(E(ecodes.EV_KEY, ecodes.BTN_TR, 1), DEV)          # R1 -> no chord
     check("CHORD: gate-denied pad cannot open the carousel -> chord ignored",
           cwd.mode is None and caps == [] and "wm.next" not in posts)
+
+    # ----- #102 OOBE MODAL GUARD (Guide/snap suppressed during first-time setup) --------
+    # Clean up any flag left by earlier carousel tests before the OOBE guard tests.
+    try:
+        os.remove(flagp)
+    except Exception:
+        pass
+
+    def wm_pair_oobe(oobe_done_val):
+        posts.clear(); rec.clear()
+        try:
+            os.remove(flagp)          # start with a clean flag state each time
+        except Exception:
+            pass
+        wm = WMLayer(post=posts.append, flag_path=flagp,
+                     gate=lambda p, n=None: (True, "ok"),
+                     capture=lambda: caps.append(1),
+                     oobe_done_fn=lambda: oobe_done_val)
+        n = hnav(wm=wm, wm_check=lambda: os.path.exists(flagp))
+        return n, wm
+
+    # Guide is blocked while OOBE is in progress
+    co1, cwo1 = wm_pair_oobe(False)
+    co1.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    check("#102: Guide suppressed while OOBE in progress -> no carousel, no flag",
+          cwo1.mode is None and posts == [] and not os.path.exists(flagp))
+    # Guide is allowed once OOBE is done
+    co2, cwo2 = wm_pair_oobe(True)
+    co2.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    check("#102: Guide allowed after OOBE done -> carousel opens",
+          cwo2.mode == "carousel" and posts == ["wm.carousel"])
+    cwo2._exit()   # cleanup
 
     # ----- NATIVE-APP DISCIPLINE (docs/27 §4.1: the browser-trap killer) -----
     # classification is pure: the kiosk family is NOT native; everything else is.

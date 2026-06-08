@@ -3760,6 +3760,13 @@ def oobe_complete(payload):
             "ai_paired_names": paired_names}
 
 def oobe_reset(payload=None):
+    """Reset OOBE state so the wizard re-runs on next boot.
+
+    #111: always wipe AI pairings (ai_grants.json + ai_tokens.json) — an OOBE
+    reset is a full device re-setup; leaving paired AIs from the previous run
+    intact would let "three Wrens" survive a reset, which is wrong.
+    wipe_account=True additionally removes accounts.json (used by factory reset).
+    """
     removed = []
     try:
         if os.path.exists(OOBE_DONE_FLAG):
@@ -3772,6 +3779,16 @@ def oobe_reset(payload=None):
                 os.remove(ACCOUNTS_F); removed.append("accounts.json")
         except Exception as e:
             LOG.warning("oobe reset accounts failed: %s", e)
+    # #111: wipe AI pairings — a re-run wizard must start with no pre-paired AIs.
+    # (factory_reset also does this via _sync_ai_tokens before calling us; the
+    # direct /oobe/reset path was previously missing this wipe — that was the bug.)
+    try:
+        with _AI_LOCK:
+            write_json_atomic(AI_GRANTS_F, {})
+            _sync_ai_tokens({})   # clears ai_tokens.json + tells the agent immediately
+        removed += ["ai_grants.json", "ai_tokens.json"]
+    except Exception as e:
+        LOG.warning("oobe reset ai_grants failed: %s", e)
     LOG.info("OOBE reset: removed=%s", removed)
     return {"ok": True, "removed": removed, "note": "next boot will re-run the first-boot wizard"}
 
@@ -5152,13 +5169,8 @@ def gose_factory_reset(payload):
         except Exception as e:
             LOG.warning("reset %s failed: %s", path, e)
     try:
-        with _AI_LOCK:
-            write_json_atomic(AI_GRANTS_F, {})
-            _sync_ai_tokens({})        # empties /userdata/system/gose/ai_tokens.json + tells the agent
-        reset += ["ai_grants.json", "ai_tokens.json"]
-    except Exception as e:
-        LOG.warning("reset grants failed: %s", e)
-    try:
+        # oobe_reset now wipes AI grants as part of #111; calling it here covers both the
+        # account wipe and the AI wipe in one step, so there is no separate AI-wipe block.
         reset += oobe_reset({"wipe_account": True}).get("removed", [])   # back to first-boot wizard
     except Exception as e:
         LOG.warning("reset oobe failed: %s", e)
