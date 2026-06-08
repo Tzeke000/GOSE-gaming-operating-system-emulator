@@ -1,0 +1,57 @@
+{
+  "id": "pong1k2p",
+  "name": "Pong 1K 2P (NES homebrew)",
+  "system": "nes",
+  "core": "fceumm",
+  "crc": "8b5f35d9",
+
+  "_verified": "2026-06-08 — empirically verified by Wren playing the RIGHT paddle against Zeke; all fields cross-checked against the rendered display and a 5Hz RAM log across a full 9-0 match.",
+
+  "launch": {
+    "system": "nes",
+    "game_substr": "pong1k2p",
+    "args": []
+  },
+
+  "seats": {
+    "human_default": 1,
+    "ai_default": 2,
+    "_note": "Seat 2 == js0 (the dev virtual controller, gose_tap path, no explicit seat arg). Seat 1 == the human's physical pad. This assignment was verified live: driving js0 with no seat= moves p2_paddle_y (RIGHT paddle) while the human (Zeke) holds p1_paddle_y static."
+  },
+
+  "controls": {
+    "up":   { "input": "up",   "effect": "move paddle UP — DECREASES paddle_y on the AI's side (verified empirically)" },
+    "down": { "input": "down", "effect": "move paddle DOWN — INCREASES paddle_y" },
+    "start": { "input": "start", "effect": "start a new game / advance past the title screen" },
+    "_note": "L/R inputs have no in-game effect (Pong is 1-axis). 'up' decreasing y is counter-intuitive but verified: held 'up' → p2_paddle_y moved 120→71. Use input.button(button='up'|'down', action='press'|'release') with no seat arg (routes to js0 = AI paddle)."
+  },
+
+  "ram_profile": "pong1k2p",
+  "ram_fields": {
+    "ball_x":          { "address": "0x07", "type": "u8", "note": "ball horizontal position; 0 when idle/between-serves" },
+    "ball_y":          { "address": "0x09", "type": "u8", "note": "ball vertical position; 0 when idle/between-serves" },
+    "p1_paddle_y":     { "address": "0x10", "type": "u8", "note": "LEFT paddle top-edge Y (human seat 1)" },
+    "p2_paddle_y":     { "address": "0x11", "type": "u8", "note": "RIGHT paddle top-edge Y (AI seat 2 / js0). Paddles are 0x20 tall." },
+    "score_left":      { "address": "0x14", "type": "u8", "note": "Score for the left side. Empirically the AI's score ends up here when AI=js0=right-paddle; verify against display if seat changes." },
+    "score_right":     { "address": "0x15", "type": "u8", "note": "Score for the right side. Same caveat as score_left." },
+    "ball_speed":      { "address": "0x16", "type": "u8", "note": "Ball speed / serve param (1-4). NOT a score — early drafts misread this." },
+    "frame_counter":   { "address": "0x00", "type": "u8", "note": "Always-changing RNG/frame counter; useful as a liveness check." }
+  },
+
+  "game_flow": {
+    "serve_detect":  "ball_x != 0 and ball_y != 0 — ball leaves the origin when a serve starts",
+    "game_over":     "score_left >= 9 or score_right >= 9",
+    "new_game":      "after game-over: send NCI RESET (UDP to RetroArch :55355) then tap 'start'; RESET sometimes needs 2-4 sends",
+    "paddle_height": 32,
+    "paddle_center": "paddle_y + 16 (half of height)"
+  },
+
+  "ai_play_notes": [
+    "Drive the RIGHT paddle (js0/default controller) by calling input.button with NO seat arg — exactly what gose_tap does.",
+    "Track ball_y reactively at ~15 Hz, or predict: project ball trajectory to the paddle's x-plane using velocity + wall-fold. See D:\\gose-vm\\wren_pong_p2.py for the verified implementation.",
+    "steer: compute target_y from prediction, then press/hold 'up' or 'down' to close the gap; release when within DEAD-BAND (±5 px).",
+    "score_left/score_right labels may be FLIPPED relative to physical left/right player depending on retroarch config; always cross-check against the display for a new session.",
+    "NCI RESET needs 2-4 UDP sends to reliably trigger a new game after game-over.",
+    "The seat/controller mapping is NOT trustworthy from config labels alone — always verify empirically (nudge the pad, watch which paddle moves) as shown in wren_pong_p2.py's auto-calibration."
+  ]
+}

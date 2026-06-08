@@ -35,6 +35,8 @@ class AgentConfig:
     retroarch_port: int = 55355
     # Per-game RAM-map profiles. Defaults to the packaged profiles/ directory.
     profiles_dir: str = os.path.join(os.path.dirname(__file__), "profiles")
+    # Per-game play-maps (#117). Defaults to the packaged play_maps/ directory.
+    play_maps_dir: str = os.path.join(os.path.dirname(__file__), "play_maps")
 
     force_mock: bool = False             # force mock backends (testing/dev)
 
@@ -59,6 +61,7 @@ class AgentConfig:
         cfg.retroarch_host = os.environ.get("GOSE_AGENT_RA_HOST", cfg.retroarch_host)
         cfg.retroarch_port = int(os.environ.get("GOSE_AGENT_RA_PORT", cfg.retroarch_port))
         cfg.profiles_dir = os.environ.get("GOSE_AGENT_PROFILES_DIR", cfg.profiles_dir)
+        cfg.play_maps_dir = os.environ.get("GOSE_AGENT_PLAY_MAPS_DIR", cfg.play_maps_dir)
         cfg.force_mock = _env_bool("GOSE_AGENT_FORCE_MOCK", cfg.force_mock)
         return cfg
 

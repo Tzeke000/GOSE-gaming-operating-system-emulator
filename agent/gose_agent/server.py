@@ -34,6 +34,8 @@ OP_TIER = {
     "screen.capture": "observe",
     "state.profiles": "observe", "state.attach": "observe", "state.read": "observe",
     "state.status": "observe", "state.read_raw": "observe",
+    # play-map registry (#117) — read-only, observe tier
+    "games.playmaps": "observe", "games.playmap": "observe",
     "input.button": "play", "input.combo": "play", "input.axis": "play", "input.type": "play",
     "input.seats": "observe", "input.seat_open": "play", "input.seat_close": "play",
     # host-pad passthrough (physical-controller event forwarding) — same tier as

@@ -16,6 +16,7 @@ from .capabilities.system import SystemCapability
 from .capabilities.games import GamesCapability
 from .capabilities.screen import ScreenCapability
 from .capabilities.gamestate import GameStateCapability
+from .capabilities.playmap import PlayMapRegistry
 
 
 class Agent:
@@ -36,6 +37,7 @@ class Agent:
         self.state = GameStateCapability(self.config.profiles_dir,
                                          self.config.retroarch_host,
                                          self.config.retroarch_port)
+        self.play_maps = PlayMapRegistry(self.config.play_maps_dir)
         self._ops: Dict[str, Callable[[dict], dict]] = self._build_ops()
 
     # ---- introspection ----
@@ -112,6 +114,10 @@ class Agent:
                 a(ar, "address"), int(ar.get("count", 1)), ar.get("method", "core_memory")),
             "state.write_raw": lambda ar: self.state.write_raw(
                 a(ar, "address"), a(ar, "data"), ar.get("method", "core_memory")),
+            # play-map registry (#117): baked per-game knowledge (controls, RAM semantics,
+            # seat assignment, game-flow) so a memory-less AI can orient without guessing.
+            "games.playmaps": lambda ar: self.play_maps.list_maps(),
+            "games.playmap":  lambda ar: self.play_maps.get_map(a(ar, "id")),
         }
 
 

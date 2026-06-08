@@ -4256,6 +4256,54 @@ def game_running():
     return {"ok": True, "running": True,
             "system": parts[0] if parts else "", "game": parts[1] if len(parts) > 1 else "", "crc32": crc}
 
+# ---- play-map registry (#117): read-only, baked per-game knowledge for AI orientation ----
+_PLAY_MAPS_DIR = os.environ.get(
+    "GOSE_AGENT_PLAY_MAPS_DIR",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 "..", "..", "agent", "gose_agent", "play_maps"))
+
+def _load_play_map(map_id):
+    """Return the parsed play-map dict for *map_id*, or None if not found.
+    map_id must be a plain name (no path separators) — guards against traversal."""
+    if not map_id or "/" in map_id or "\\" in map_id or map_id.startswith("."):
+        return None
+    path = os.path.realpath(os.path.join(_PLAY_MAPS_DIR, map_id + ".json"))
+    real_dir = os.path.realpath(_PLAY_MAPS_DIR)
+    if not path.startswith(real_dir + os.sep) and path != real_dir:
+        return None
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+def game_playmap(map_id):
+    """GET /game/playmap?id=<map_id> — full play-map for one game.
+    GET /game/playmap (no id) — list all available map ids."""
+    if not map_id:
+        # list all
+        ids = []
+        real_dir = os.path.realpath(_PLAY_MAPS_DIR) if os.path.isdir(_PLAY_MAPS_DIR) else None
+        if real_dir:
+            import glob as _glob
+            for p in sorted(_glob.glob(os.path.join(real_dir, "*.json"))):
+                try:
+                    with open(p, "r", encoding="utf-8") as fh:
+                        d = json.load(fh)
+                    ids.append({"id": d.get("id", os.path.splitext(os.path.basename(p))[0]),
+                                "name": d.get("name", ""),
+                                "system": d.get("system", ""),
+                                "crc": d.get("crc", "")})
+                except Exception:
+                    pass
+        return {"ok": True, "play_maps": ids, "count": len(ids)}
+    data = _load_play_map(map_id)
+    if data is None:
+        return {"ok": False, "error": f"no play-map for '{map_id}'"}
+    return {"ok": True, "play_map": data}
+
 def game_state_slots(system, game):
     # list savestate slots on disk for a ROM: /userdata/saves/<system>/<game>.state[N] (+ .png thumb).
     import glob, re
@@ -8116,6 +8164,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(list_games())
         if route == "/game/running":
             return self._json(game_running())
+        if route == "/game/playmap":
+            return self._json(game_playmap(self._qs().get("id", "")))
         if route == "/game/stats":
             q = self._qs()
             if q.get("system") and q.get("game"):
