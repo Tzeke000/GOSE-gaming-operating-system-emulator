@@ -82,10 +82,10 @@ GAMEPAD_BTN_RANGES = (
 BUTTON_KEYMAP = {
     ecodes.BTN_SOUTH:  "Return",        # A
     ecodes.BTN_EAST:   "Escape",        # B
-    ecodes.BTN_TL:     "bracketleft",   # L1  -> prev store tab
-    ecodes.BTN_TR:     "bracketright",  # R1  -> next store tab
+    ecodes.BTN_TL:     "Escape",        # L1  -> back (#109)
+    ecodes.BTN_TR:     "bracketright",  # R1  -> forward / tab-cycle (#109)
     ecodes.BTN_START:  "Return",        # Start (also activates)
-    ecodes.BTN_SELECT: "Escape",        # Select (optional back)
+    ecodes.BTN_SELECT: "Escape",        # Back (same as B; no combo needed, #109)
     # Discrete d-pad buttons (BTN_DPAD_*): only ever reported by pads that expose
     # the d-pad as buttons instead of ABS_HAT0 (some generic/DInput pads, and the
     # target the DB normalizer remaps a button-d-pad to). The virtual pad + every
@@ -1184,6 +1184,12 @@ class AdminGate:
             return True, "ai-admin seat"
         if st["allow_all_virtual"] and entry.get("source") == "virtual":
             return True, "ai-admin (all-virtual fallback)"
+        # #103 PS-Home / Xbox / Switch HOME -> Guide: a physical, passthrough, or
+        # bluetooth pad (not a virtual AI seat) can always open the Guide / WM layer.
+        # On real consoles ANY connected controller can open the home menu; an AI
+        # seat pad that's not admin-tier cannot (it uses a separate virtual device).
+        if entry.get("source") in ("passthrough", "bluetooth", "native"):
+            return True, "physical pad (Guide/Home allowed)"
         return False, "not OS-admin"
 
 
@@ -1413,7 +1419,10 @@ class PadNav:
         # pointer=None disables the cursor entirely (pure key-nav tests).
         self.pointer = pointer
         self.stick = {"x": 0.0, "y": 0.0}   # normalized deflection -1..1 (post-deadzone)
-        self.cursor_last_move = 0.0         # ts of last pointer motion we sent
+        # #108 cursor visible fix: initialize to now so the idle-hide grace period
+        # starts at launch, not at epoch-0. Without this, the first tick fires
+        # "now - 0.0 > CURSOR_HIDE_S" (always true) -> hides immediately on startup.
+        self.cursor_last_move = time.time()  # ts of last pointer motion we sent
         self.cursor_visible = True          # our view of the X cursor's XFixes state
         self._cursor_t = None               # last cursor tick ts (dt anchor)
         self._fx = self._fy = 0.0           # sub-pixel motion accumulators
@@ -1533,6 +1542,28 @@ class PadNav:
         #      are re-checked there, so a game start mid-deflection stops motion).
         if event.type == ecodes.EV_ABS and event.code in CURSOR_AXES:
             self._cursor_feed(event, dev_path, dev_name)
+            return
+        # 0.6) #109 L3/R3 -> left/right click: BTN_THUMBL/R produce no keysym
+        #      (map_event returns []) so they must be handled BEFORE the
+        #      "if not keysyms: return" guard below, with their own gate +
+        #      suppression checks.  L3 = button 1 (left click); R3 = button 3
+        #      (right/context click).  Only key-DOWN; key-UP is ignored.
+        if (self.pointer is not None and event.type == ecodes.EV_KEY
+                and event.code in (ecodes.BTN_THUMBL, ecodes.BTN_THUMBR)
+                and event.value == 1):
+            if not self.is_suppressed():
+                _allowed, _reason = self.gate(dev_path, dev_name)
+                if _allowed:
+                    btn = 1 if event.code == ecodes.BTN_THUMBL else 3
+                    try:
+                        self._cursor_show("L3/R3 click")
+                        self.pointer.click(btn)
+                        self.cursor_last_move = time.time()
+                        log("L3/R3 click button %d" % btn)
+                    except Exception as e:
+                        log("L3/R3 click FAILED: %s" % e)
+                else:
+                    log("L3/R3 ignored: %s %s" % (dev_name or dev_path or "?", _reason))
             return
         if not keysyms:
             return
@@ -1741,8 +1772,7 @@ class PadNav:
         # pointer is FORBIDDEN, it fires hover side-effects)
         if (self.cursor_visible and self.pointer.can_hide
                 and now - self.cursor_last_move > CURSOR_HIDE_S):
-            self._cursor_hide("idle %.1fs" % (now - self.cursor_last_move)
-                              if self.cursor_last_move else "startup, unused")
+            self._cursor_hide("idle %.1fs" % (now - self.cursor_last_move))
 
     def tick(self):
         """Auto-repeat held directions + cursor motion. Call frequently (the
@@ -1773,7 +1803,7 @@ class PadNav:
                 # 60Hz only while motion can actually happen; a deflected stick
                 # during a game (blocked) must not busy-wake the loop
                 t = min(t, CURSOR_TICK_S)
-            elif self.cursor_visible and self.pointer.can_hide and self.cursor_last_move:
+            elif self.cursor_visible and self.pointer.can_hide:
                 t = min(t, max(0.05, (self.cursor_last_move + CURSOR_HIDE_S)
                                - time.time()))
         return t
@@ -1905,10 +1935,14 @@ def selftest():
     nav = hnav()
 
     # button maps
-    check("BTN_TR -> bracketright",
+    check("BTN_TR -> bracketright (R1 forward/tab #109)",
           nav.map_event(E(ecodes.EV_KEY, ecodes.BTN_TR, 1)) == ["bracketright"])
-    check("BTN_TL -> bracketleft",
-          nav.map_event(E(ecodes.EV_KEY, ecodes.BTN_TL, 1)) == ["bracketleft"])
+    check("BTN_TL -> Escape (L1 back #109)",
+          nav.map_event(E(ecodes.EV_KEY, ecodes.BTN_TL, 1)) == ["Escape"])
+    check("BTN_THUMBL -> [] (L3 handled in feed, not map_event)",
+          nav.map_event(E(ecodes.EV_KEY, ecodes.BTN_THUMBL, 1)) == [])
+    check("BTN_THUMBR -> [] (R3 handled in feed, not map_event)",
+          nav.map_event(E(ecodes.EV_KEY, ecodes.BTN_THUMBR, 1)) == [])
     check("BTN_SOUTH -> Return",
           nav.map_event(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1)) == ["Return"])
     check("BTN_EAST -> Escape",
@@ -1998,12 +2032,16 @@ def selftest():
     check("WM: Guide down -> wm.carousel posted", posts == ["wm.carousel"])
     check("WM: Guide down -> flag file set", os.path.exists(flagp))
     check("WM: Guide down -> no key emitted", rec == [])
-    # while held: L1 cycles back as a semantic event (not a bracket key). R1 in
-    # the carousel is now the SCREENSHOT CHORD (its own section below) — NOT pressed
+    # while held: L1 = Escape (#109 back) -> wm.cancel in the modal.
+    # R1 in the carousel is the SCREENSHOT CHORD (its own section below) — NOT pressed
     # here, so this carousel's release-selects path stays uncontaminated by the
     # _shot_taken latch. Forward-cycle is still covered by the d-pad (wm.right).
     n1.feed(E(ecodes.EV_KEY, ecodes.BTN_TL, 1), DEV)
-    check("WM: L1 in modal -> wm.prev", posts[-1] == "wm.prev")
+    check("WM: L1 (now back=Escape) in modal -> wm.cancel + exit", posts[-1] == "wm.cancel" and w1.mode is None)
+    # re-open carousel for the rest of the n1 tests
+    posts.clear(); rec.clear()
+    n1.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
+    check("WM: re-open carousel after L1-cancel", posts == ["wm.carousel"] and w1.mode == "carousel")
     # d-pad cycles too
     n1.feed(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, 1), DEV)
     check("WM: d-pad right in modal -> wm.right", posts[-1] == "wm.right")
@@ -2345,8 +2383,11 @@ def selftest():
 
     g = gate()
     check("GATE: admin pad allowed",        g.allows("/dev/input/event20")[0] is True)
-    check("GATE: non-admin (friend) ignored",
-          g.allows("/dev/input/event22") == (False, "not OS-admin"))
+    # #103: a bluetooth/native/passthrough physical pad can ALWAYS open Guide/Home
+    check("GATE: physical BT friend pad allowed for Guide (#103)",
+          g.allows("/dev/input/event22")[0] is True)
+    check("GATE: physical BT friend pad reason is 'physical pad'",
+          "physical pad" in g.allows("/dev/input/event22")[1])
     check("GATE: dev pad always allowed (even when not admin)",
           g.allows("/dev/input/event5")[0] is True)
     check("GATE: 2nd virtual seat ignored when no admin-AI seat grant",
@@ -2367,8 +2408,8 @@ def selftest():
     gseat = gate(tokens={"tok": {"name": "Agent-B", "tier": "admin", "seat": 2}})
     check("GATE: admin-AI seat 2 -> 2nd virtual pad allowed",
           gseat.allows("/dev/input/event6")[0] is True)
-    check("GATE: admin-AI seat 2 does NOT open the friend's native pad",
-          gseat.allows("/dev/input/event22")[0] is False)
+    check("GATE: admin-AI seat 2 still allows the physical BT friend pad (#103)",
+          gseat.allows("/dev/input/event22")[0] is True)
 
     # admin-tier AI with NO seat -> drives via dev pad; does NOT open other virtuals
     gnoseat = gate(tokens={"tok": {"name": "Agent-A", "tier": "admin"}})
@@ -2379,8 +2420,8 @@ def selftest():
     goob = gate(tokens={"tok": {"name": "Agent-B", "tier": "admin", "seat": 9}})
     check("GATE: unmappable admin-AI seat -> all-virtual fallback (input6 allowed)",
           goob.allows("/dev/input/event6")[0] is True)
-    check("GATE: all-virtual fallback still ignores native friend pad",
-          goob.allows("/dev/input/event22")[0] is False)
+    check("GATE: all-virtual fallback: native friend pad also allowed (#103 physical rule)",
+          goob.allows("/dev/input/event22")[0] is True)
 
     # docs/25 §5.2b: PRE-USER first boot (no admin set + OOBE not done) -> ANY pad drives the wizard
     gpre = gate(admin=None, oobe_done=False)
@@ -2390,22 +2431,26 @@ def selftest():
           "first-boot" in gpre.allows("/dev/input/event22")[1])
     check("GATE: first-boot -> even an unmapped pad drives the wizard",
           gpre.allows("/dev/input/event99")[0] is True)
-    # once setup is DONE, a missing admin no longer opens the OS to a random pad
+    # once setup is DONE: physical pads are still allowed (Guide/Home always works)
     gdone = gate(admin=None, oobe_done=True)
-    check("GATE: setup done + no admin -> friend pad denied (no longer pre-user)",
-          gdone.allows("/dev/input/event22")[0] is False)
-    # admin already chosen -> normal arbitration even before OOBE flag is written
+    check("GATE: setup done + no admin -> friend physical pad still allowed (#103)",
+          gdone.allows("/dev/input/event22")[0] is True)
+    # admin already chosen: physical pad is still allowed for Guide (#103)
     gadmin_pre = gate(admin="input20", oobe_done=False)
-    check("GATE: admin set during OOBE -> non-admin friend still denied",
-          gadmin_pre.allows("/dev/input/event22")[0] is False)
+    check("GATE: admin set during OOBE -> physical friend still allowed for Guide (#103)",
+          gadmin_pre.allows("/dev/input/event22")[0] is True)
     check("GATE: admin set during OOBE -> admin pad allowed",
           gadmin_pre.allows("/dev/input/event20")[0] is True)
 
-    # gate wired into feed(): non-admin pad's button does not emit
+    # gate wired into feed(): a non-admin VIRTUAL pad (not physical) is suppressed;
+    # a physical BT pad is now allowed (#103); the admin pad is always allowed.
     rec.clear()
     fnav = hnav(gate=gate().allows)
+    fnav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), "/dev/input/event6", "AI virtual controller 2")
+    check("GATE: feed() suppresses non-admin VIRTUAL pad", rec == [])
+    rec.clear()
     fnav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), "/dev/input/event22", "8BitDo Pro 2")
-    check("GATE: feed() suppresses non-admin button", rec == [])
+    check("GATE: feed() emits for physical BT pad (#103)", rec == ["Return"])
     rec.clear()
     fnav.feed(E(ecodes.EV_KEY, ecodes.BTN_SOUTH, 1), "/dev/input/event20", "Xbox Wireless Controller")
     check("GATE: feed() emits for admin button", rec == ["Return"])
