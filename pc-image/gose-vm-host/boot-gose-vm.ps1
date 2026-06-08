@@ -16,8 +16,11 @@ $qemu = "$bin\qemu-system-x86_64.exe"
 if (-not (Test-Path $qemu)) { Write-Error "MSYS2 qemu not found at $qemu"; exit 1 }
 $env:PATH = "$bin;$env:PATH"                        # so its DLLs (virgl/epoxy/ANGLE) resolve
 
-# kill any existing qemu + usbredir bridge first (port 8731/2222/14000 forwards conflict)
-Get-Process qemu-system-x86_64 -ErrorAction SilentlyContinue | Stop-Process -Force
+# kill any existing GOSE qemu + usbredir bridge first (port 8731/2222/14000 forwards conflict).
+# Match THIS VM by its "-name GOSE-PC" cmdline flag — a global kill would stop other QEMU VMs.
+Get-CimInstance Win32_Process -Filter "Name='qemu-system-x86_64.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -like '*-name GOSE-PC*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Get-Process usbredirect -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 2
 

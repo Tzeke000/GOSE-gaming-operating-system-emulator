@@ -43,10 +43,14 @@ if (-not $QemuBin -or -not (Test-Path "$QemuBin\qemu-system-x86_64.exe")) {
 }
 
 # --- already running? focus it instead of double-booting ---
-$existing = Get-Process qemu-system-x86_64 -ErrorAction SilentlyContinue
+# Match THIS GOSE VM specifically by the "-name GOSE-PC" flag in its cmdline (set in boot-gose-vm.ps1).
+# A global Get-Process qemu-system-x86_64 check wrongly fires when ANY other QEMU VM is running.
+$existing = Get-CimInstance Win32_Process -Filter "Name='qemu-system-x86_64.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -like '*-name GOSE-PC*' } |
+  Select-Object -First 1
 if ($existing) {
-  Say "GOSE is already running - bringing its window to the front."
-  Focus-Gose $existing[0].Id
+  Say "GOSE is already running (PID $($existing.ProcessId)) - bringing its window to the front."
+  Focus-Gose $existing.ProcessId
   exit 0
 }
 
@@ -84,8 +88,10 @@ for ($i = 0; $i -lt 90; $i++) {
   Start-Sleep -Milliseconds 1000
 }
 
-$qproc = Get-Process qemu-system-x86_64 -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($qproc) { Focus-Gose $qproc.Id }
+$qproc = Get-CimInstance Win32_Process -Filter "Name='qemu-system-x86_64.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.CommandLine -like '*-name GOSE-PC*' } |
+  Select-Object -First 1
+if ($qproc) { Focus-Gose $qproc.ProcessId }
 
 if ($up) { Say "GOSE is up. The VM window is yours - enjoy." }
 else     { Say "GOSE window launched; the agent did not answer in 90s (the OS may still be booting)." }
