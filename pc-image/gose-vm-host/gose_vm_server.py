@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # In-VM server: serves the GOSE UI + /status.json with REAL telemetry from the
 # local agent (127.0.0.1:8731 = loopback in-guest = no token needed).
-import http.server, socketserver, json, socket, functools, os, urllib.request, mimetypes, shutil, subprocess, threading, collections, time, secrets
+import http.server, socketserver, json, socket, functools, os, urllib.request, mimetypes, shutil, subprocess, threading, collections, time, secrets, ipaddress
 import logging, logging.handlers, traceback, re, hashlib, struct, zlib
 ROOT = "/userdata/gose-ui"
 FS_ROOT = "/userdata"   # Files app is rooted here (the data partition)
@@ -5386,12 +5386,62 @@ def _http_url_ok(u, maxlen=400):
         return False
     return p.scheme in ("http", "https") and bool(p.netloc)
 
-def _fetch_capped(url, cap, timeout):
-    # bounded fetch: refuses non-http(s) schemes and anything over the byte cap
+def _is_private_ip(addr_str):
+    """Return True if addr_str resolves to a private/loopback/link-local/reserved address."""
+    try:
+        addr = ipaddress.ip_address(addr_str)
+    except ValueError:
+        return True   # unparseable → treat as unsafe
+    return (addr.is_private or addr.is_loopback or addr.is_link_local
+            or addr.is_reserved or addr.is_multicast
+            or addr.is_unspecified)
+
+def _ssrf_check(url, allow_local=False):
+    """Resolve every IP for url's hostname and refuse if any is private/loopback/reserved.
+    Returns (ok: bool, error_msg: str|None).
+    Defeats basic DNS-rebind by checking at fetch time, not just at add time."""
+    from urllib.parse import urlparse
+    try:
+        host = urlparse(url).hostname
+    except Exception:
+        return False, "couldn't parse manifest URL"
+    if not host:
+        return False, "couldn't parse manifest URL (no host)"
+    try:
+        results = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        return False, "couldn't resolve host '%s': %s" % (host, e)
+    for (_fam, _type, _proto, _cname, sockaddr) in results:
+        ip = sockaddr[0]
+        if _is_private_ip(ip):
+            if allow_local:
+                LOG.warning("STORE SSRF-OPT-IN: %s resolved to private/local %s (allow_local=True)", url, ip)
+                return True, None
+            return False, (
+                "refused: source URL '%s' resolves to a private/local address (%s); "
+                "enable 'local_source' to allow fetching from internal hosts" % (host, ip)
+            )
+    return True, None
+
+def _fetch_capped(url, cap, timeout, allow_local=False):
+    # bounded fetch: refuses non-http(s) schemes, SSRF targets, and anything over the byte cap.
+    # allow_local=True lets the SSRF guard pass for intentional local/dev sources.
     if not _http_url_ok(url):
         raise ValueError("only http(s) URLs are supported")
+    ok, err = _ssrf_check(url, allow_local=allow_local)
+    if not ok:
+        raise ValueError(err)
     req = urllib.request.Request(url, headers={"User-Agent": "GOSE-Store/1"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    # redirects disabled: urllib follows them by default; we re-check the final URL instead.
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            # resolve redirects manually so we can SSRF-check the destination
+            ok2, err2 = _ssrf_check(newurl, allow_local=allow_local)
+            if not ok2:
+                raise ValueError(err2)
+            return super().redirect_request(req, fp, code, msg, headers, newurl)
+    opener = urllib.request.build_opener(_NoRedirect)
+    with opener.open(req, timeout=timeout) as r:
         data = r.read(cap + 1)
     if len(data) > cap:
         raise ValueError("response exceeds the %d MB cap" % max(1, cap // (1024 * 1024)))
@@ -5468,9 +5518,11 @@ def _validate_entry(e, i, seen):
     seen.add(eid)
     return out, None
 
-def _validate_manifest(data, url):
-    """Manifest bytes -> (meta dict with the VALID entries, per-entry errors).
-    meta=None means the whole source is refused (the errors say exactly why)."""
+def _validate_manifest(data, url, allow_local=False):
+    """Manifest bytes -> (meta dict with the VALID entries, per-entry errors/warnings).
+    meta=None means the whole source is refused (the errors say exactly why).
+    Warns (never hard-refuses) when a manifest is served over plain http without sha256."""
+    from urllib.parse import urlparse
     try:
         doc = json.loads(data.decode("utf-8"))
     except Exception as e:
@@ -5497,6 +5549,18 @@ def _validate_manifest(data, url):
             errors.append(err)
     if not valid:
         return None, errors + ["no valid entries — source refused"]
+    # HTTP-without-sha256 warning: a plain-http manifest with hash-less entries is
+    # MITM-swappable. Warn clearly; don't hard-refuse (user may run a LAN dev server
+    # intentionally with allow_local=True).
+    if urlparse(url).scheme == "http":
+        http_no_hash = [e["id"] for e in valid if not e.get("sha256")]
+        if http_no_hash:
+            errors.append(
+                "WARNING: manifest served over plain http (not https) and %d "
+                "entr%s lack a sha256 hash — these downloads can be replaced by "
+                "a network attacker. Use https and add sha256 for each entry."
+                % (len(http_no_hash), "y" if len(http_no_hash) == 1 else "ies")
+            )
     homepage = doc.get("homepage")
     meta = {"id": _src_sid(url), "url": url, "name": name,
             "description": _str_field(doc, "description", 300),
@@ -5550,13 +5614,14 @@ def store_sources():
 def source_preview(payload):
     # fetch + validate WITHOUT storing — the preview step before the terms screen
     url = ((payload or {}).get("url") or "").strip()
+    allow_local = bool((payload or {}).get("local_source"))
     if not _http_url_ok(url):
         return {"ok": False, "error": "a full http(s) manifest URL is required"}
     try:
-        data = _fetch_capped(url, _SRC_MAX_MANIFEST, _SRC_FETCH_T)
+        data = _fetch_capped(url, _SRC_MAX_MANIFEST, _SRC_FETCH_T, allow_local=allow_local)
     except Exception as e:
         return {"ok": False, "error": "couldn't fetch the manifest: %s" % e}
-    meta, errors = _validate_manifest(data, url)
+    meta, errors = _validate_manifest(data, url, allow_local=allow_local)
     if not meta:
         return {"ok": False, "error": "manifest refused", "errors": errors}
     with _SRC_LOCK:
@@ -5570,6 +5635,7 @@ def source_preview(payload):
 
 def source_add(payload):
     url = ((payload or {}).get("url") or "").strip()
+    allow_local = bool((payload or {}).get("local_source"))
     if not _http_url_ok(url):
         return {"ok": False, "error": "a full http(s) manifest URL is required"}
     if (payload or {}).get("accept_terms") is not True:
@@ -5577,10 +5643,10 @@ def source_add(payload):
         return {"ok": False, "error": "terms not accepted — adding a third-party source requires "
                 "explicitly accepting that its content is the maintainer's and your responsibility"}
     try:
-        data = _fetch_capped(url, _SRC_MAX_MANIFEST, _SRC_FETCH_T)
+        data = _fetch_capped(url, _SRC_MAX_MANIFEST, _SRC_FETCH_T, allow_local=allow_local)
     except Exception as e:
         return {"ok": False, "error": "couldn't fetch the manifest: %s" % e}
-    meta, errors = _validate_manifest(data, url)
+    meta, errors = _validate_manifest(data, url, allow_local=allow_local)
     if not meta:
         return {"ok": False, "error": "manifest refused", "errors": errors}
     now = int(time.time())
@@ -5591,7 +5657,8 @@ def source_add(payload):
         rec.update(errors=errors, refreshed=now,
                    added=(old or {}).get("added", now),
                    accepted_terms=(old or {}).get("accepted_terms", now),
-                   installs=(old or {}).get("installs", {}))
+                   installs=(old or {}).get("installs", {}),
+                   local_source=allow_local or bool((old or {}).get("local_source")))
         d["sources"] = [s for s in d["sources"] if s["id"] != meta["id"]] + [rec]
         write_json_atomic(SOURCES_F, d)
     LOG.info("STORE SOURCE %s %s '%s' (%d entries, %d entry errors; terms accepted @%d)",
@@ -5608,13 +5675,14 @@ def source_refresh(payload):
         rec = next((s for s in _sources_load()["sources"] if s["id"] == sid), None)
     if not rec:
         return {"ok": False, "error": "unknown source id"}
+    allow_local = bool(rec.get("local_source"))
     try:
-        data = _fetch_capped(rec["url"], _SRC_MAX_MANIFEST, _SRC_FETCH_T)
+        data = _fetch_capped(rec["url"], _SRC_MAX_MANIFEST, _SRC_FETCH_T, allow_local=allow_local)
     except Exception as e:
         # a down manifest URL must not nuke a working source
         return {"ok": False, "error": "refresh failed (%s) — keeping the previous entry list" % e,
                 "kept": len(rec["entries"])}
-    meta, errors = _validate_manifest(data, rec["url"])
+    meta, errors = _validate_manifest(data, rec["url"], allow_local=allow_local)
     if not meta:
         return {"ok": False, "error": "refreshed manifest refused — keeping the previous entry list",
                 "errors": errors, "kept": len(rec["entries"])}
