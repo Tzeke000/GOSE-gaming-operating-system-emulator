@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Exhibition Spectate</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 4px}
+  .top img{width:32px;height:32px}.top h1{font-size:20px;margin:0}
+  .top .sub{color:var(--muted);font-size:12.5px;margin-left:2px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  .body{flex:1;overflow:auto;padding:14px 36px 4px;display:flex;flex-direction:column;gap:14px}
+
+  /* ---- state panels ---- */
+  .panel{background:var(--surface);border:2px solid var(--line);border-radius:16px;padding:18px 20px}
+
+  /* honest banners */
+  .banner{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:11px;
+    padding:10px 14px;font-size:12.5px;color:var(--muted);line-height:1.5;background:var(--surface)}
+  .banner.warn{border-color:#ffd47944;background:#ffd47908;color:#ffd479}
+  .banner .ic{flex:none;margin-top:1px}
+  .banner b{color:var(--text)}
+
+  /* ---- game selector ---- */
+  .sect{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin:0 0 7px}
+  .games-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+  .game-card{background:var(--surface2);border:2px solid var(--line);border-radius:12px;
+    padding:12px 14px;cursor:pointer;transition:border-color .1s}
+  .game-card.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .game-card.sel{border-color:var(--accent);background:#5cd0ff12}
+  .game-card .gnm{font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .game-card .gst{color:var(--muted);font-size:11.5px;margin-top:3px}
+  .game-card .gtag{display:inline-block;font-size:9.5px;font-weight:700;border-radius:7px;
+    padding:2px 7px;border:1px solid #3fe0a055;color:#3fe0a0;margin-top:5px}
+  .none-msg{color:var(--muted);font-size:13px;font-style:italic;padding:8px 0}
+
+  /* ---- AI picker ---- */
+  .ai-row{display:grid;grid-template-columns:1fr 40px 1fr;gap:10px;align-items:center}
+  .vs{color:var(--muted);font-weight:700;font-size:16px;text-align:center}
+  .ai-slot{border:2px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;background:var(--surface2)}
+  .ai-slot.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .ai-slot.sel{border-color:var(--accent);background:#b18cff12}
+  .ai-slot .seat-lbl{font-size:9.5px;font-weight:700;letter-spacing:.5px;color:var(--muted)}
+  .ai-slot .ai-nm{font-weight:700;font-size:15px;margin:3px 0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ai-slot .ai-tier{display:inline-block;font-size:10.5px;font-weight:700;border-radius:8px;
+    padding:2px 8px;border:1px solid currentColor}
+  .ai-slot .ai-tier.play{color:#5cd0ff}.ai-slot .ai-tier.admin{color:#ffb74d}
+  .ai-slot .ai-tier.observe{color:#9aa3b8}
+  .ai-slot .empty{color:var(--muted);font-size:13px}
+
+  /* ---- start button ---- */
+  .startrow{display:flex;gap:12px;align-items:center}
+  .start-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;
+    background:var(--accent);color:#06121a;border:2px solid transparent;border-radius:13px;
+    padding:14px;font-weight:700;font-size:16px;cursor:pointer}
+  .start-btn.focus{border-color:#fff;box-shadow:var(--focusglow)}
+  .start-btn.disabled{background:var(--surface2);color:var(--muted);cursor:not-allowed}
+  .stop-btn{display:flex;align-items:center;justify-content:center;gap:8px;
+    background:#ff6b6b20;color:#ff8a8a;border:2px solid #ff6b6b55;border-radius:13px;
+    padding:14px 18px;font-weight:700;font-size:15px;cursor:pointer}
+  .stop-btn.focus{border-color:#ff8a8a;box-shadow:0 0 0 3px #ff6b6b30}
+
+  /* ---- live scoreboard ---- */
+  .scoreboard{display:flex;align-items:stretch;gap:2px;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+  .score-half{flex:1;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:4px;padding:16px;background:var(--surface2)}
+  .score-half .snm{font-size:12px;font-weight:700;color:#b18cff}
+  .score-half .snum{font-size:40px;font-weight:700;line-height:1;color:var(--text)}
+  .score-half .seat-tag{font-size:10px;color:var(--muted)}
+  .score-div{width:2px;background:var(--line);display:flex;align-items:center;justify-content:center;
+    font-size:18px;font-weight:700;color:var(--muted)}
+  .live-row{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px}
+  .live-dot{width:8px;height:8px;border-radius:50%;background:#3fe0a0;flex:none;
+    animation:pulse 1.2s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .elapsed{font-size:12px;color:var(--muted)}
+
+  /* ---- status strip ---- */
+  .status-strip{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:9px 14px}
+  .status-strip b{color:var(--text)}
+
+  .foot{padding:8px 36px 14px;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:12.5px;
+    background:var(--surface);border-top:1px solid var(--line);flex-shrink:0}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+
+  .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;
+    transition:opacity .2s;pointer-events:none;max-width:80%;text-align:center;z-index:99}
+  .toast.show{opacity:1}
+
+  /* assign modal */
+  .modal{position:fixed;inset:0;background:#06060cd8;display:none;align-items:center;justify-content:center;
+    z-index:60;backdrop-filter:blur(6px)}
+  .modal.on{display:flex}
+  .modal .box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px;
+    width:420px;max-width:92vw;max-height:84vh;overflow:auto}
+  .modal h3{margin:0 0 2px;font-size:17px}.modal .ms{color:var(--muted);font-size:12px;margin-bottom:8px}
+  .opt{display:flex;align-items:center;gap:11px;padding:10px 12px;border:2px solid transparent;
+    border-radius:11px;background:#ffffff06;margin-bottom:7px;cursor:pointer}
+  .opt.focus{border-color:var(--accent);background:#5cd0ff14}
+  .opt .col{flex:1;min-width:0}
+  .opt .nm{font-weight:600;font-size:14px}
+  .opt .sub{color:var(--muted);font-size:11.5px;margin-top:1px}
+  .opt .chk{color:#3fe0a0;font-weight:700;font-size:16px}
+  .opt .dis{color:#ff8a8a;font-size:11px;margin-top:1px}
+</style>
+</head>
+<body>
+  <div class="top">
+    <img src="assets/brand/gose-crystal.png" alt="GOSE">
+    <div>
+      <h1>Exhibition Spectate</h1>
+      <span class="sub">Two AIs play — you watch</span>
+    </div>
+    <div class="home"><span class="ic" data-i="eye"></span> B / Esc — back</div>
+  </div>
+
+  <div class="body" id="body">
+    <!-- dynamic content rendered by JS -->
+    <div class="banner"><span class="ic" data-i="loader-circle"></span>
+      <span>Loading…</span></div>
+  </div>
+
+  <div class="foot">
+    <span class="ic" data-i="gamepad-2"></span> AI vs AI
+    <span class="h"><b>↑↓</b> move · <b>A</b> select · <b>B</b> back</span>
+  </div>
+  <div class="toast" id="toast"></div>
+  <div class="modal" id="modal"><div class="box" id="modal-box"></div></div>
+
+<script src="assets/icons.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+// =====================================================================
+// DATA
+// =====================================================================
+// AI-playable games: list the (system, game_substr) pairs that have a
+// verified RAM profile, so we can filter /games.json.
+// Mirrors _AI_PLAYABLE_PROFILES in gose_vm_server.py — keep in sync.
+const AI_PLAYABLE = [
+  {system:"nes", substr:"pong1k2p", profile:"pong1k2p",
+   label:"Pong 1K 2P", note:"NES homebrew · RAM-verified score ($14/$15)"}
+];
+
+let _grants = {};      // name -> {tier, seat, ...}
+let _allGames = [];    // from /games.json
+let _aiGames = [];     // filtered to AI-playable ones
+
+let selGame  = null;   // selected game object {system,game,...}
+let selAiA   = null;   // selected AI-A name (seat 1)
+let selAiB   = null;   // selected AI-B name (seat 2)
+
+let _running = false;  // spectate session live
+let _pollTimer = null;
+let _focusItems = [];  // flat focusable list
+let _focusIdx = 0;
+let _modalItems = [];
+let _modalIdx = 0;
+let _modalOpen = false;
+let _modalFor = null;  // "a" | "b"
+
+// =====================================================================
+// FETCH HELPERS
+// =====================================================================
+async function api(method, path, body) {
+  const opts = {method, headers:{"Content-Type":"application/json"}};
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  return r.json();
+}
+function GET(p){return api("GET",p,null)}
+function POST(p,b){return api("POST",p,b)}
+
+// =====================================================================
+// TOAST
+// =====================================================================
+let _toastTimer = null;
+function toast(msg, ms=3000){
+  const el=document.getElementById("toast");
+  el.textContent=msg; el.classList.add("show");
+  clearTimeout(_toastTimer);
+  _toastTimer=setTimeout(()=>el.classList.remove("show"), ms);
+}
+
+// =====================================================================
+// LOAD
+// =====================================================================
+async function load() {
+  try {
+    const [gj, ag] = await Promise.all([GET("/games.json"), GET("/ai/grants")]);
+    _grants = ag.grants || {};
+    _allGames = gj || [];
+    // filter to AI-playable
+    _aiGames = [];
+    for (const ap of AI_PLAYABLE) {
+      const matches = _allGames.filter(g =>
+        g.system === ap.system &&
+        (g.game || "").toLowerCase().includes(ap.substr)
+      );
+      for (const m of matches) {
+        _aiGames.push({...m, profile: ap.profile, profileLabel: ap.label, profileNote: ap.note});
+      }
+      if (!matches.length) {
+        // No ROM present — still show the slot as "no ROM"
+        _aiGames.push({system:ap.system, game:null, noRom:true, profile:ap.profile,
+                       profileLabel:ap.label, profileNote:ap.note});
+      }
+    }
+    // Check if a session is already running
+    const st = await GET("/spectate/status");
+    if (st.running) {
+      _running = true;
+      selGame = {system: st.system, game: st.game, profileLabel: st.game};
+      selAiA = st.seat_a?.ai;
+      selAiB = st.seat_b?.ai;
+      renderRunning(st);
+      startPoll();
+    } else {
+      renderSetup();
+    }
+  } catch(e) {
+    document.getElementById("body").innerHTML =
+      `<div class="banner warn"><span class="ic" data-i="alert-triangle"></span>
+       <span>Failed to load: ${e.message}</span></div>`;
+  }
+}
+
+// =====================================================================
+// SETUP VIEW — game picker + AI picker + start button
+// =====================================================================
+function playAIs() {
+  return Object.entries(_grants)
+    .filter(([,r]) => r.tier === "play" || r.tier === "admin")
+    .map(([name, r]) => ({name, tier: r.tier}));
+}
+
+function renderSetup() {
+  _running = false;
+  stopPoll();
+  const body = document.getElementById("body");
+  const pas = playAIs();
+
+  let html = "";
+
+  // Honest: <2 AIs paired with Play tier
+  if (pas.length < 2) {
+    html += `<div class="banner warn">
+      <span class="ic" data-i="alert-triangle"></span>
+      <div><b>Need at least 2 AIs with Play tier</b><br>
+      You have ${pas.length} Play-or-Admin AI${pas.length===1?"":"s"} paired.
+      Grant Play access in <b>Settings › AI & Remote › AI access & players</b>,
+      then return here.</div></div>`;
+  }
+
+  // Honest: no AI-playable games
+  if (_aiGames.length === 0 || _aiGames.every(g => g.noRom)) {
+    html += `<div class="banner warn">
+      <span class="ic" data-i="alert-triangle"></span>
+      <div><b>No AI-playable game found</b><br>
+      Spectate requires a game with a verified RAM profile.
+      Currently proven: <b>Pong 1K 2P (NES)</b> — add the ROM to the library first.</div></div>`;
+  }
+
+  // Game selector
+  html += `<div class="panel">
+    <div class="sect">GAME — AI-playable only</div>
+    <div class="games-grid" id="games-grid">`;
+  for (const g of _aiGames) {
+    const id = `game-${g.system}-${encodeURIComponent(g.game||"norom")}`;
+    const sel = selGame && selGame.game===g.game && selGame.system===g.system ? " sel" : "";
+    if (g.noRom) {
+      html += `<div class="game-card${sel}" data-sel="game" data-obj='${JSON.stringify(g).replace(/'/g,"&#39;")}' id="${id}">
+        <div class="gnm">${g.profileLabel}</div>
+        <div class="gst">${g.system.toUpperCase()} — no ROM</div>
+        <div class="gtag" style="border-color:#ff6b6b55;color:#ff8a8a">ROM missing</div>
+      </div>`;
+    } else {
+      const gname = (g.game||"").split("/").pop().replace(/\.[^.]+$/,"");
+      html += `<div class="game-card${sel}" data-sel="game" data-obj='${JSON.stringify(g).replace(/'/g,"&#39;")}' id="${id}">
+        <div class="gnm">${gname}</div>
+        <div class="gst">${g.system.toUpperCase()}</div>
+        <div class="gtag">RAM-verified</div>
+      </div>`;
+    }
+  }
+  if (_aiGames.length === 0) {
+    html += `<div class="none-msg">No AI-playable games available.</div>`;
+  }
+  html += `</div></div>`;
+
+  // AI picker
+  const slotA = selAiA
+    ? `<div class="seat-lbl">SEAT 1 · AI-A</div>
+       <div class="ai-nm">${selAiA}</div>
+       <span class="ai-tier ${_grants[selAiA]?.tier||'observe'}">${(_grants[selAiA]?.tier||'?').toUpperCase()}</span>`
+    : `<div class="seat-lbl">SEAT 1 · AI-A</div><div class="empty">— choose an AI</div>`;
+  const slotB = selAiB
+    ? `<div class="seat-lbl">SEAT 2 · AI-B</div>
+       <div class="ai-nm">${selAiB}</div>
+       <span class="ai-tier ${_grants[selAiB]?.tier||'observe'}">${(_grants[selAiB]?.tier||'?').toUpperCase()}</span>`
+    : `<div class="seat-lbl">SEAT 2 · AI-B</div><div class="empty">— choose an AI</div>`;
+
+  html += `<div class="panel">
+    <div class="sect">PLAYERS — both must have Play or Admin tier</div>
+    <div class="ai-row">
+      <div class="ai-slot" id="slot-a" data-sel="slot-a">${slotA}</div>
+      <div class="vs">VS</div>
+      <div class="ai-slot" id="slot-b" data-sel="slot-b">${slotB}</div>
+    </div>`;
+
+  // Tier-gate warning
+  const badA = selAiA && !(_grants[selAiA]?.tier === "play" || _grants[selAiA]?.tier === "admin");
+  const badB = selAiB && !(_grants[selAiB]?.tier === "play" || _grants[selAiB]?.tier === "admin");
+  if (badA || badB) {
+    html += `<div class="banner warn" style="margin-top:10px">
+      <span class="ic" data-i="shield"></span>
+      <span>${badA?selAiA:""}${badA&&badB?" &amp; ":""}${badB?selAiB:""}
+      ${badA&&badB?"do not have":"does not have"} Play tier —
+      grant Play in Settings › AI & Remote before starting.</span></div>`;
+  }
+  html += `</div>`;
+
+  // Start button
+  const canStart = selGame && !selGame.noRom && selAiA && selAiB
+    && selAiA !== selAiB
+    && !badA && !badB
+    && pas.length >= 2;
+  html += `<div class="startrow">
+    <div class="start-btn${canStart?"":" disabled"}" id="start-btn">
+      <span class="ic" data-i="play"></span> Start exhibition
+    </div>
+  </div>`;
+
+  // Honest notes
+  html += `<div class="banner">
+    <span class="ic" data-i="info"></span>
+    <div>
+      <b>What is verified:</b> Pong 1K 2P two-AI match was proven live (9-8 me-vs-me, 2026-06-06).
+      Score is read from RAM ($14/$15 verified vs the rendered display).
+      The match is driven by real RAM-reading play loops — not random input.<br>
+      <b>What is inferred headless:</b> the score may change; display confirmation needs Zeke's eyes
+      (PrintWindow cannot see RetroArch's GL window content reliably without a live screencap).
+    </div>
+  </div>`;
+
+  body.innerHTML = html;
+  wireClicks();
+  rebuildFocus();
+}
+
+// =====================================================================
+// RUNNING VIEW — live scoreboard + stop button
+// =====================================================================
+function renderRunning(st) {
+  _running = true;
+  const body = document.getElementById("body");
+  const elapsed = st.elapsed_s ? fmtElapsed(st.elapsed_s) : "—";
+  const scoreA = st.score_a != null ? st.score_a : "—";
+  const scoreB = st.score_b != null ? st.score_b : "—";
+  const ai_a = st.seat_a?.ai || selAiA || "AI-A";
+  const ai_b = st.seat_b?.ai || selAiB || "AI-B";
+  const gameName = (st.game || "").split("/").pop().replace(/\.[^.]+$/,"");
+
+  let html = `
+  <div class="banner" style="border-color:#3fe0a055;background:#3fe0a008;color:#3fe0a0">
+    <span class="ic" data-i="play"></span>
+    <div><b>Exhibition in progress</b> — ${gameName}
+    <br>${ai_a} (seat 1) vs ${ai_b} (seat 2) · ${elapsed} elapsed</div>
+  </div>
+
+  <div class="scoreboard">
+    <div class="score-half">
+      <div class="snm">${ai_a}</div>
+      <div class="snum" id="score-a">${scoreA}</div>
+      <div class="seat-tag">SEAT 1 · LEFT PADDLE</div>
+    </div>
+    <div class="score-div">:</div>
+    <div class="score-half">
+      <div class="snm">${ai_b}</div>
+      <div class="snum" id="score-b">${scoreB}</div>
+      <div class="seat-tag">SEAT 2 · RIGHT PADDLE</div>
+    </div>
+  </div>
+
+  <div class="live-row">
+    <div class="live-dot"></div>
+    <span>Live — polling score every 2s from RAM ($14/$15 · pong1k2p verified)</span>
+  </div>`;
+
+  if (st.score_a == null) {
+    html += `<div class="banner">
+      <span class="ic" data-i="info"></span>
+      <span>Score read unavailable right now — NCI may not be ready yet. Will retry.</span></div>`;
+  }
+
+  html += `
+  <div class="startrow">
+    <div class="stop-btn" id="stop-btn">
+      <span class="ic" data-i="square"></span> Stop exhibition
+    </div>
+  </div>
+
+  <div class="banner">
+    <span class="ic" data-i="info"></span>
+    <div>Both AI play loops are running as real seat-pinned agents (seat 1 sharp 20Hz, seat 2 sleepy 3Hz).
+    Stop kills both loops and exits the game — no orphan processes.</div>
+  </div>`;
+
+  body.innerHTML = html;
+  document.getElementById("stop-btn").addEventListener("click", doStop);
+  document.getElementById("stop-btn").addEventListener("keydown", e=>{
+    if(e.key==="Enter") doStop();
+    if(e.key==="Escape"||e.key==="b"||e.key==="B") history.back();
+  });
+  rebuildFocus();
+}
+
+function updateScore(st) {
+  const a = document.getElementById("score-a");
+  const b = document.getElementById("score-b");
+  if (a && st.score_a != null) a.textContent = st.score_a;
+  if (b && st.score_b != null) b.textContent = st.score_b;
+}
+
+function fmtElapsed(s) {
+  const m = Math.floor(s/60); const ss = s%60;
+  return m>0 ? `${m}m ${ss}s` : `${ss}s`;
+}
+
+// =====================================================================
+// MODAL — AI picker
+// =====================================================================
+function openAiModal(forSlot) {
+  _modalFor = forSlot;
+  const pas = playAIs().filter(a =>
+    forSlot === "a" ? a.name !== selAiB : a.name !== selAiA
+  );
+  const box = document.getElementById("modal-box");
+  let html = `<h3>Choose AI-${forSlot==="a"?"A":"B"} (Seat ${forSlot==="a"?1:2})</h3>
+    <div class="ms">Only Play/Admin tier AIs can drive a seat</div>`;
+  if (!pas.length) {
+    html += `<div style="color:var(--muted);font-size:13px;padding:8px 0">
+      No eligible AIs — pair a Play-tier AI in Settings › AI & Remote.</div>`;
+  }
+  for (const a of pas) {
+    const cur = (forSlot==="a" && selAiA===a.name) || (forSlot==="b" && selAiB===a.name);
+    html += `<div class="opt${cur?" sel":""}" data-ai="${a.name}">
+      <div class="col">
+        <div class="nm">${a.name}</div>
+        <div class="sub">Tier: <b>${a.tier.toUpperCase()}</b></div>
+      </div>
+      ${cur?'<span class="chk">✓</span>':""}
+    </div>`;
+  }
+  // Cancel option
+  if (forSlot==="a" && selAiA) {
+    html += `<div class="opt" data-ai="__clear__"><div class="col"><div class="nm" style="color:var(--muted)">Clear selection</div></div></div>`;
+  } else if (forSlot==="b" && selAiB) {
+    html += `<div class="opt" data-ai="__clear__"><div class="col"><div class="nm" style="color:var(--muted)">Clear selection</div></div></div>`;
+  }
+  box.innerHTML = html;
+
+  const opts = box.querySelectorAll(".opt");
+  opts.forEach((opt, i) => {
+    opt.addEventListener("click", () => pickAi(opt.dataset.ai));
+  });
+  _modalItems = Array.from(opts);
+  _modalIdx = 0;
+  _modalOpen = true;
+  document.getElementById("modal").classList.add("on");
+  document.body.dataset.goseModal = "1";
+  if (_modalItems[0]) _modalItems[0].classList.add("focus");
+}
+
+function closeModal() {
+  document.getElementById("modal").classList.remove("on");
+  delete document.body.dataset.goseModal;
+  _modalOpen = false;
+  _modalItems = [];
+}
+
+function pickAi(name) {
+  closeModal();
+  if (_modalFor === "a") selAiA = name === "__clear__" ? null : name;
+  else                   selAiB = name === "__clear__" ? null : name;
+  renderSetup();
+}
+
+// =====================================================================
+// ACTIONS
+// =====================================================================
+async function doStart() {
+  if (!selGame || selGame.noRom || !selAiA || !selAiB || selAiA===selAiB) return;
+  const btn = document.getElementById("start-btn");
+  if (btn) { btn.textContent = "Starting…"; btn.classList.add("disabled"); }
+  try {
+    const r = await POST("/spectate/start", {
+      system: selGame.system, game: selGame.game,
+      ai_a: selAiA, ai_b: selAiB
+    });
+    if (r.ok) {
+      toast("Exhibition started!");
+      const st = await GET("/spectate/status");
+      renderRunning(st);
+      startPoll();
+    } else {
+      toast("Error: " + r.error);
+      renderSetup();
+    }
+  } catch(e) {
+    toast("Error: " + e.message);
+    renderSetup();
+  }
+}
+
+async function doStop() {
+  const btn = document.getElementById("stop-btn");
+  if (btn) { btn.textContent = "Stopping…"; }
+  try {
+    const r = await POST("/spectate/stop", {});
+    if (r.ok) {
+      toast("Exhibition stopped.");
+    } else {
+      toast("Stop error: " + r.error);
+    }
+  } catch(e) {
+    toast("Stop error: " + e.message);
+  }
+  stopPoll();
+  _running = false;
+  // Reload data and go back to setup
+  await load();
+}
+
+// =====================================================================
+// POLL
+// =====================================================================
+function startPoll() {
+  stopPoll();
+  _pollTimer = setInterval(async () => {
+    try {
+      const st = await GET("/spectate/status");
+      if (!st.running) {
+        stopPoll();
+        _running = false;
+        toast("Exhibition ended.");
+        await load();
+        return;
+      }
+      updateScore(st);
+    } catch(e) {}
+  }, 2000);
+}
+
+function stopPoll() {
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+}
+
+// =====================================================================
+// WIRE CLICKS
+// =====================================================================
+function wireClicks() {
+  // Game cards
+  document.querySelectorAll("[data-sel='game']").forEach(el => {
+    el.addEventListener("click", () => {
+      const g = JSON.parse(el.dataset.obj);
+      if (g.noRom) { toast("No ROM for this game — add it to the library first."); return; }
+      selGame = g;
+      renderSetup();
+    });
+  });
+  // AI slots
+  const sa = document.getElementById("slot-a");
+  const sb = document.getElementById("slot-b");
+  if (sa) sa.addEventListener("click", () => openAiModal("a"));
+  if (sb) sb.addEventListener("click", () => openAiModal("b"));
+  // Start
+  const startBtn = document.getElementById("start-btn");
+  if (startBtn && !startBtn.classList.contains("disabled")) {
+    startBtn.addEventListener("click", doStart);
+  }
+}
+
+// =====================================================================
+// FOCUS / PAD NAVIGATION (docs/27 §1 vocabulary)
+// =====================================================================
+function rebuildFocus() {
+  _focusItems = Array.from(document.querySelectorAll(
+    "[data-sel], #start-btn:not(.disabled), #stop-btn"
+  ));
+  _focusIdx = 0;
+  _focusItems.forEach((el,i) => {
+    el.classList.toggle("focus", i===0);
+    el.setAttribute("tabindex","0");
+  });
+}
+
+function moveFocus(d) {
+  if (_modalOpen) {
+    const prev = _modalItems[_modalIdx];
+    if (prev) prev.classList.remove("focus");
+    _modalIdx = (_modalIdx + d + _modalItems.length) % Math.max(1, _modalItems.length);
+    const next = _modalItems[_modalIdx];
+    if (next) { next.classList.add("focus"); next.scrollIntoView({block:"nearest"}); }
+    return;
+  }
+  if (!_focusItems.length) return;
+  _focusItems[_focusIdx].classList.remove("focus");
+  _focusIdx = (_focusIdx + d + _focusItems.length) % _focusItems.length;
+  _focusItems[_focusIdx].classList.add("focus");
+  _focusItems[_focusIdx].scrollIntoView({block:"nearest"});
+}
+
+function activateFocus() {
+  if (_modalOpen) {
+    const el = _modalItems[_modalIdx];
+    if (el) el.click();
+    return;
+  }
+  if (!_focusItems.length) return;
+  _focusItems[_focusIdx].click();
+}
+
+document.addEventListener("keydown", e => {
+  const key = e.key;
+  if (key==="ArrowDown"||key==="Down")  { moveFocus(1);  e.preventDefault(); return; }
+  if (key==="ArrowUp"||key==="Up")      { moveFocus(-1); e.preventDefault(); return; }
+  if (key==="ArrowRight"||key==="Right"){ moveFocus(1);  e.preventDefault(); return; }
+  if (key==="ArrowLeft"||key==="Left")  { moveFocus(-1); e.preventDefault(); return; }
+  if (key==="Enter"||key==="Return")    { activateFocus(); e.preventDefault(); return; }
+  if (key==="Escape") {
+    if (_modalOpen) { closeModal(); rebuildFocus(); return; }
+    history.back();
+  }
+});
+
+// =====================================================================
+// BOOT
+// =====================================================================
+load();
+</script>
+</body>
+</html>

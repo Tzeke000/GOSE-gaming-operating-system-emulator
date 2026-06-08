@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # In-VM server: serves the GOSE UI + /status.json with REAL telemetry from the
 # local agent (127.0.0.1:8731 = loopback in-guest = no token needed).
-import http.server, socketserver, json, socket, functools, os, urllib.request, mimetypes, shutil, subprocess, threading, collections, time, secrets, ipaddress
+import http.server, socketserver, json, socket, functools, os, urllib.request, mimetypes, shutil, subprocess, threading, collections, time, secrets, ipaddress, sys, signal
 import logging, logging.handlers, traceback, re, hashlib, struct, zlib
 ROOT = "/userdata/gose-ui"
 FS_ROOT = "/userdata"   # Files app is rooted here (the data partition)
@@ -3296,6 +3296,349 @@ def ai_activity(limit=50):
     scrubbed = [{k: e[k] for k in _ACTIVITY_SAFE_KEYS if k in e} for e in entries]
     scrubbed.reverse()                                # newest first
     return {"ok": True, "entries": scrubbed}
+
+# ---- Spectate mode (#59): two AI seats play a 2P game, the owner watches -----------
+#
+# A spectate session:
+#   1. Tier-gates: both AIs must have at least 'play' tier (Observe-only AIs refused).
+#   2. Launches the game (reusing launch_game / /launch).
+#   3. Pins the two AI tokens to seats 1 and 2 via the grants store (_sync_ai_tokens).
+#   4. Spawns gose_spectate_runner.py on the HOST as a subprocess — that script runs
+#      the REAL proven play loops (same policy as wren_vs_wren.py: sharp seat-1 @ 20Hz,
+#      sleepy seat-2 @ 3Hz) so the match is driven by genuine RAM-reading AI, not random.
+#   5. Exposes /spectate/status (GET) → {running, game, seat_a, seat_b, score if RAM-mapped}.
+#   6. POST /spectate/stop → kills the subprocess + the game cleanly.
+#
+# Score: read from the NCI via game_running() + a RAM read if a profile is attached.
+#        HONEST: score is verified-mapped for pong1k2p (pong1k2p.json, addresses $14/$15
+#        confirmed vs display 2026-06-06). For other games the score field is omitted
+#        (null) until a profile is verified and added. No fabricated guesses.
+#
+# Runner path: pc-image/gose-vm-host/gose_spectate_runner.py (host-side Python script,
+# no SSH into the VM — it connects to the agent directly on 127.0.0.1:8731 just like
+# wren_plays_pong.py and wren_vs_wren.py).
+#
+# Cleanup: stop kills the runner by PID (from the pidfile), then calls game_exit() so
+# the game process and RetroArch are torn down — no orphans.
+
+_SPECTATE_LOCK = threading.Lock()
+_SPECTATE_STATE = {
+    "running": False,
+    "session_id": None,
+    "game": None,
+    "system": None,
+    "profile": None,
+    "ai_a": None,
+    "ai_b": None,
+    "token_a": None,
+    "token_b": None,
+    "started_at": None,
+    "runner_pid": None,
+    "pidfile": None,
+}
+
+_SPECTATE_PIDFILE = "/tmp/gose_spectate.pid"
+_SPECTATE_RUNNER = os.path.join(os.path.dirname(__file__), "gose_spectate_runner.py")
+
+# AI-playable games: profiles that have RAM-mapped scores + been verified vs the display.
+# Key = (system, game_substr), value = profile name.
+# The GUI filters /games.json to these entries; anything not listed is "no AI-playable profile yet".
+_AI_PLAYABLE_PROFILES = {
+    ("nes", "pong1k2p"): "pong1k2p",
+}
+
+def _spectate_profile(system: str, game: str):
+    """Return the RAM profile name for this game, or None if not AI-playable."""
+    key = (system, game)
+    if key in _AI_PLAYABLE_PROFILES:
+        return _AI_PLAYABLE_PROFILES[key]
+    # Substring match (game may be a full path)
+    stem = os.path.splitext(os.path.basename(game))[0].lower()
+    for (sys_, sub), prof in _AI_PLAYABLE_PROFILES.items():
+        if sys_ == system and sub in stem:
+            return prof
+    return None
+
+def _spectate_runner_pid():
+    """Read the runner PID from the pidfile; return None if not running."""
+    pf = _SPECTATE_PIDFILE
+    try:
+        pid = int(open(pf).read().strip())
+        # Verify the process is still alive
+        os.kill(pid, 0)
+        return pid
+    except (OSError, ValueError, ProcessLookupError):
+        return None
+
+def _spectate_score():
+    """Best-effort score read for pong1k2p: returns {score_a, score_b} or {} if unavailable.
+    HONEST: only returns a score for profiles where the address map is verified vs the display.
+    For all other games (or if NCI is unreachable) returns {}."""
+    st = _SPECTATE_STATE
+    if not st.get("profile") or not st.get("running"):
+        return {}
+    # Only pong1k2p has a verified score map
+    if st["profile"] != "pong1k2p":
+        return {}
+    try:
+        # Use the NCI UDP socket directly for a fast read (same as game_running / gose_state_read)
+        # This mirrors what wren_plays_pong.py does via state.read — read $14 and $15
+        import socket as _sock_mod
+        NCI_HOST, NCI_PORT = "127.0.0.1", 55355
+        # score_left=$14, score_right=$15 — NCI uses HEX addresses (same as agent's address:x format)
+        READ_CMD = b"READ_CORE_RAM 14 2\n"  # hex 0x14=score_left, 0x15=score_right
+        s = _sock_mod.socket(_sock_mod.AF_INET, _sock_mod.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.sendto(READ_CMD, (NCI_HOST, NCI_PORT))
+        resp = s.recvfrom(256)[0].decode("utf-8", "replace").strip()
+        s.close()
+        # Response format: "READ_CORE_RAM <addr> <byte1> <byte2>" (4 parts for 2 bytes)
+        # Note: the count is NOT echoed back; parts are [verb, addr, byte1, byte2, ...]
+        parts = resp.split()
+        if len(parts) >= 4 and parts[0] == "READ_CORE_RAM":
+            left = int(parts[2], 16)   # score_left ($14)
+            right = int(parts[3], 16)  # score_right ($15)
+            return {"score_a": left, "score_b": right}
+    except Exception:
+        pass
+    return {}
+
+def spectate_start(payload):
+    """POST /spectate/start {game, system, ai_a, ai_b} → start a 2-AI exhibition match."""
+    game = (payload.get("game") or "").strip()
+    system = (payload.get("system") or "").strip()
+    ai_a_name = (payload.get("ai_a") or "").strip()
+    ai_b_name = (payload.get("ai_b") or "").strip()
+
+    if not game or not system:
+        return {"ok": False, "error": "game and system required"}
+    if not ai_a_name or not ai_b_name:
+        return {"ok": False, "error": "ai_a and ai_b required"}
+    if ai_a_name == ai_b_name:
+        return {"ok": False, "error": "ai_a and ai_b must be different agents"}
+
+    with _SPECTATE_LOCK:
+        if _SPECTATE_STATE["running"]:
+            return {"ok": False, "error": "a spectate session is already running — stop it first"}
+
+        # Tier gate: both AIs need at least 'play'
+        g = _ai_grants_load()
+        for label, name in (("AI-A", ai_a_name), ("AI-B", ai_b_name)):
+            rec = g.get(name)
+            if not rec:
+                return {"ok": False,
+                        "error": f"{label} '{name}' is not paired — pair it first in Settings › AI & Remote"}
+            tier = ai_tier(name)
+            if tier not in ("play", "admin"):
+                return {"ok": False,
+                        "error": f"{label} '{name}' has tier '{tier}' — spectate requires at least 'play' tier "
+                                 f"(grant Play in Settings › AI & Remote)"}
+            if not rec.get("token"):
+                return {"ok": False, "error": f"{label} '{name}' has no token — re-pair it"}
+
+        token_a = g[ai_a_name]["token"]
+        token_b = g[ai_b_name]["token"]
+
+        # Check for an AI-playable RAM profile
+        profile = _spectate_profile(system, game)
+        if not profile:
+            return {"ok": False,
+                    "error": f"no AI-playable RAM profile for {system}/{game} — "
+                             f"spectate requires a verified RAM map (pong1k2p is proven; "
+                             f"other games need a profile added to _AI_PLAYABLE_PROFILES)"}
+
+        # Pin seat assignments: AI-A → seat 1, AI-B → seat 2
+        # We write the seat into the grants store so _sync_ai_tokens propagates to the agent.
+        with _AI_LOCK:
+            g2 = _ai_grants_load()
+            for name, seat in ((ai_a_name, 1), (ai_b_name, 2)):
+                if name in g2:
+                    g2[name]["seat"] = seat
+            write_json_atomic(AI_GRANTS_F, g2)
+            _sync_ai_tokens(g2)
+
+        # Launch the game with AI virtual controllers in player-1 and player-2 slots.
+        # Reason: if a physical pad (e.g. DualSense passthrough) is present, the default
+        # _player_devices() order puts it first (player 1), bumping AI VC 1 to player 2
+        # and AI VC 2 to player 3 (unmapped in a 2P game). For spectate we need
+        # AI VC 1 = player 1, AI VC 2 = player 2 — so build an explicit order from the
+        # virtual-only devices, sorted by js index.
+        _all_js, _devs = _player_devices()
+        _ai_devs = [d for d in _devs if d.get("source") == "virtual"]
+        _ai_devs.sort(key=lambda d: d["js"])
+        _ai_paths = [d["path"] for d in _ai_devs[:2]]  # up to 2 AI pads
+        _launch_order = _ai_paths if len(_ai_paths) >= 2 else None
+        launch_result = launch_game(system, game, players=_launch_order)
+        if not launch_result.get("ok"):
+            return {"ok": False, "error": "game launch failed: " + str(launch_result.get("error", ""))}
+
+        # Give RetroArch a moment to start
+        time.sleep(2.0)
+
+        # Spawn the runner subprocess on the host
+        session_id = secrets.token_hex(8)
+        pidfile = _SPECTATE_PIDFILE
+        runner_py = _SPECTATE_RUNNER
+        if not os.path.isfile(runner_py):
+            return {"ok": False, "error": f"spectate runner not found at {runner_py}"}
+
+        cmd = [
+            sys.executable, runner_py,
+            "--system", system,
+            "--game", game,
+            "--profile", profile,
+            "--token-a", token_a,
+            "--token-b", token_b,
+            "--agent-host", "127.0.0.1",
+            "--agent-port", "8731",
+            "--pidfile", pidfile,
+            "--session-id", session_id,
+        ]
+        try:
+            proc = subprocess.Popen(cmd,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                             start_new_session=True)
+        except Exception as e:
+            return {"ok": False, "error": f"failed to spawn spectate runner: {e}"}
+
+        _SPECTATE_STATE.update({
+            "running": True,
+            "session_id": session_id,
+            "game": game,
+            "system": system,
+            "profile": profile,
+            "ai_a": ai_a_name,
+            "ai_b": ai_b_name,
+            "token_a": token_a,
+            "token_b": token_b,
+            "started_at": time.time(),
+            "runner_pid": proc.pid,
+            "pidfile": pidfile,
+        })
+
+    LOG.info("spectate started: session=%s game=%s/%s AI-A=%s AI-B=%s pid=%d",
+             session_id, system, game, ai_a_name, ai_b_name, proc.pid)
+    notifications_post({"title": "Exhibition match started",
+                        "body": f"{ai_a_name} vs {ai_b_name} — {game}",
+                        "kind": "info", "icon": "cpu"})
+    return {"ok": True, "session_id": session_id, "game": game, "system": system,
+            "ai_a": ai_a_name, "ai_b": ai_b_name, "profile": profile,
+            "note": "both AI play loops running; watch the screen or poll GET /spectate/status"}
+
+def spectate_status():
+    """GET /spectate/status → current session state including live score if available."""
+    with _SPECTATE_LOCK:
+        st = dict(_SPECTATE_STATE)
+
+    if not st.get("running"):
+        # Also check if runner died since last status check
+        return {"ok": True, "running": False, "session_id": None}
+
+    # Check if the runner is still alive
+    pid = _spectate_runner_pid()
+    if pid is None:
+        # Runner exited (game over or error) — clean up state
+        with _SPECTATE_LOCK:
+            _SPECTATE_STATE.update({"running": False, "runner_pid": None})
+        # Clear seat pins
+        _spectate_clear_pins(st.get("ai_a"), st.get("ai_b"))
+        return {"ok": True, "running": False,
+                "session_id": st.get("session_id"),
+                "game": st.get("game"), "system": st.get("system"),
+                "ai_a": st.get("ai_a"), "ai_b": st.get("ai_b"),
+                "note": "session ended (game over or runner exited)"}
+
+    score = _spectate_score()
+    elapsed = int(time.time() - (st.get("started_at") or time.time()))
+    return {
+        "ok": True, "running": True,
+        "session_id": st.get("session_id"),
+        "game": st.get("game"), "system": st.get("system"),
+        "profile": st.get("profile"),
+        "seat_a": {"ai": st.get("ai_a"), "seat": 1},
+        "seat_b": {"ai": st.get("ai_b"), "seat": 2},
+        "score_a": score.get("score_a"),   # None = not available (not verified for this game)
+        "score_b": score.get("score_b"),
+        "score_note": ("verified RAM map ($14/$15) — pong1k2p" if score else
+                       ("pong1k2p — NCI unavailable or game in attract mode" if st.get("profile") == "pong1k2p"
+                        else "score not available (no verified RAM profile for this game)")),
+        "elapsed_s": elapsed,
+        "runner_pid": st.get("runner_pid"),
+    }
+
+def _spectate_clear_pins(ai_a: str, ai_b: str):
+    """Remove the temporary seat pins we added for the spectate session."""
+    try:
+        with _AI_LOCK:
+            g = _ai_grants_load()
+            changed = False
+            for name in (ai_a, ai_b):
+                if name and name in g and g[name].get("seat") in (1, 2):
+                    g[name]["seat"] = None
+                    changed = True
+            if changed:
+                write_json_atomic(AI_GRANTS_F, g)
+                _sync_ai_tokens(g)
+    except Exception as e:
+        LOG.warning("spectate: failed to clear seat pins: %s", e)
+
+def spectate_stop():
+    """POST /spectate/stop → kill the runner + exit the game, clear state."""
+    with _SPECTATE_LOCK:
+        st = dict(_SPECTATE_STATE)
+        was_running = st.get("running", False)
+        _SPECTATE_STATE.update({"running": False, "runner_pid": None})
+
+    ai_a = st.get("ai_a")
+    ai_b = st.get("ai_b")
+
+    # Kill the runner by PID
+    runner_pid = st.get("runner_pid")
+    killed_runner = False
+    if runner_pid:
+        try:
+            os.kill(runner_pid, signal.SIGTERM)
+            killed_runner = True
+            # Give it 2s to clean up, then SIGKILL
+            for _ in range(20):
+                time.sleep(0.1)
+                try:
+                    os.kill(runner_pid, 0)
+                except ProcessLookupError:
+                    break
+            else:
+                try:
+                    os.kill(runner_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        except ProcessLookupError:
+            killed_runner = True   # already gone
+        except Exception as e:
+            LOG.warning("spectate: kill runner pid %d failed: %s", runner_pid, e)
+
+    # Also kill by pidfile (in case state was stale)
+    pid_from_file = _spectate_runner_pid()
+    if pid_from_file:
+        try:
+            os.kill(pid_from_file, signal.SIGKILL)
+        except Exception:
+            pass
+
+    # Exit the game
+    try:
+        game_exit()
+    except Exception as e:
+        LOG.warning("spectate: game_exit failed: %s", e)
+
+    # Clear seat pins
+    _spectate_clear_pins(ai_a, ai_b)
+
+    LOG.info("spectate stopped: session=%s", st.get("session_id"))
+    notifications_post({"title": "Exhibition match stopped",
+                        "body": f"{ai_a} vs {ai_b}",
+                        "kind": "info", "icon": "cpu"})
+    return {"ok": True, "stopped": True, "was_running": was_running,
+            "killed_runner": killed_runner, "session_id": st.get("session_id")}
 
 # ---- First-boot / OOBE (docs/25) -------------------------------------------------------
 # A flag file decides whether the kiosk lands on the first-boot wizard or the desktop.
@@ -7918,6 +8261,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(controllers_list())
         if route == "/controllers/admin":
             return self._json(controllers_admin_get())
+        if route == "/spectate/status":
+            return self._json(spectate_status())
         if route == "/lobby/state":
             return self._json(lobby_state())
         if route == "/net/scan":
@@ -8342,6 +8687,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/notifications/clear":
                 return self._json(notifications_clear(payload))
             return self._json(notifications_post(payload))
+        if route in ("/spectate/start", "/spectate/stop"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/spectate/start":
+                return self._json(spectate_start(payload))
+            return self._json(spectate_stop())
         if route in ("/fs/op", "/proc/kill", "/splice/cut", "/launch",
                      "/sys/audio", "/sys/brightness", "/sys/power", "/sys/perf", "/bt"):
             try:
