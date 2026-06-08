@@ -181,6 +181,10 @@
     locale:"en-US", keyboard:"us", net:null,
     license:false,
     account:{username:"", name:"", password:"", pin:"", accent:"#5cd0ff", has_password:false, has_pin:false},
+    // remote access credential set in OOBE (step: remoteaccess).
+    // mode: null (skipped) | "password" | "key"
+    // credential: the password or public-key text (never persisted in JS beyond the commit call)
+    remoteaccess:{mode:null, credential:"", key_deferred:false},
     privacy:{boxart_scrape:false, telemetry:false, online:false},
     theme: localStorage.getItem("gose-theme")||"onyx",
     device_name:"GOSE",
@@ -199,6 +203,7 @@
     {id:"network", name:"Network", kind:"optional", skip:true, skipLabel:"Skip for now", recommended:true},
     {id:"license", name:"License", kind:"required"},
     {id:"account", name:"Account", kind:"required"},
+    {id:"remoteaccess", name:"Remote Access", kind:"optional", skip:true, skipLabel:"Skip — set later"},
     {id:"privacy", name:"Privacy", kind:"optional", skip:true},
     {id:"customize", name:"Personalize", kind:"optional", skip:true},
     {id:"ai", name:"AI companion", kind:"optional", skip:true},
@@ -358,6 +363,58 @@
         '<div class="field"><label>Your color</label>'+
           '<div class="swatches">'+ACCENTS.map(function(a){
             return '<span class="sw focusable'+(S.account.accent===a?' sel':'')+'" data-acc="'+a+'" style="background:'+a+'"></span>'; }).join("")+'</div></div>'+
+        '</div>';
+    } else if(s.id==="remoteaccess"){
+      // Remote access credential OOBE step (#93).
+      // Optional — most users skip this. If they set a password it gets sent in /oobe/complete so
+      // the server can store it as the SSH credential; if they paste a key we send it the same way.
+      // SSH key entry over the OSK is impractical (keys are ~400 chars); we're honest about that
+      // and offer "add a key later in Settings" as the clean fallback.
+      // Validation: password = 8+ chars (mirrors #98 policy); key = must start with "ssh-" or "ecdsa-".
+      // Mode tabs are toggled via the two opt rows (password / key); only one is active at a time.
+      var raMode = S.remoteaccess.mode || "password";
+      var raPwVal = (raMode==="password" && S.remoteaccess.credential) ? S.remoteaccess.credential : "";
+      var raKeyVal = (raMode==="key" && S.remoteaccess.credential) ? S.remoteaccess.credential : "";
+      h='<div class="step-eyebrow">Step 7 — remote access (optional)</div>'+
+        '<h1>Set up remote access</h1>'+
+        '<p class="sub">Only needed if you want to connect from another computer via SSH — e.g. to transfer '+
+        'files or troubleshoot. You can <b>skip this now</b> and set it later in Settings → Security. '+
+        'When you do turn SSH on, the credential you set here is what you\'ll log in with.</p>'+
+        '<div class="scroll">'+
+        // mode tabs: password or SSH key
+        '<div class="grid2">'+
+          '<div class="opt focusable'+(raMode==="password"?" sel":"")+'" data-ra-mode="password">'+
+            ico("lock")+'<div><div class="nm">Password</div>'+
+            '<div class="sub2">Set a strong password (8+ chars)</div></div>'+
+            '<span class="val">'+(raMode==="password"?"Selected ✓":"")+'</span></div>'+
+          '<div class="opt focusable'+(raMode==="key"?" sel":"")+'" data-ra-mode="key">'+
+            ico("shield")+'<div><div class="nm">SSH public key</div>'+
+            '<div class="sub2">Strongest — no password needed</div></div>'+
+            '<span class="val">'+(raMode==="key"?"Selected ✓":"")+'</span></div>'+
+        '</div>'+
+        // password path
+        '<div id="ra-pw-block" style="'+(raMode==="password"?"":"display:none")+'">'+
+          '<div class="field" style="margin-top:14px"><label>Remote access password (8+ characters)</label>'+
+            '<input class="inp focusable" data-field="ra_password" type="password" '+
+              'placeholder="8 or more characters — different from your lock-screen PIN" '+
+              'value="'+esc(raPwVal)+'"></div>'+
+          '<div class="hint" id="ra-pw-hint" style="margin-top:4px"></div>'+
+        '</div>'+
+        // key path
+        '<div id="ra-key-block" style="'+(raMode==="key"?"":"display:none")+'">'+
+          '<div style="margin-top:14px;padding:12px 14px;background:var(--surface2);border:1px solid var(--line);'+
+            'border-radius:11px;font-size:13px;color:var(--muted);line-height:1.6">'+
+            ico("shield")+' <b style="color:var(--text)">SSH keys are long (~400 characters)</b> — pasting one '+
+            'over the on-screen keyboard is impractical on a controller. The easiest path:<br>'+
+            '1. Skip this step now.<br>'+
+            '2. SSH in once with a password (set one above, or use your device PIN after enabling SSH).<br>'+
+            '3. Then paste your key in <b>Settings → Security → Remote Access</b> from a real keyboard.'+
+          '</div>'+
+          '<div class="opt focusable" data-act="ra-key-defer" style="margin-top:10px">'+
+            ico("check")+'<div><div class="nm">I\'ll add a key later in Settings</div>'+
+            '<div class="sub2">Skip the key entry now — set a password above for first login, or enable SSH from Settings</div></div>'+
+            '<span class="val">A</span></div>'+
+        '</div>'+
         '</div>';
     } else if(s.id==="privacy"){
       var P=[["boxart_scrape","image","Download missing cover art","Looks up box art online (sends game names to thumbnails.libretro.com). Off by default."],
@@ -680,9 +737,20 @@
     // account semantics (owner 2026-06-07): username = the displayed identity (lock/login show
     // it); the person's actual name travels in the legacy "display" key so the server-side
     // accounts.json shape is unchanged (older readers keep working).
+    var ra=S.remoteaccess;
+    // remote_access payload: only sent if the user actually set something.
+    // The server stores the credential for SSH use; never echo it back.
+    // key_deferred=true means they want a key but will paste it later from Settings.
+    var raPayload = null;
+    if(ra.mode==="password" && String(ra.credential||"").length>=8){
+      raPayload={mode:"password", credential:ra.credential};
+    } else if(ra.mode==="key" && ra.key_deferred){
+      raPayload={mode:"key_deferred"};  // server notes: user intends an SSH key, will set later
+    }
     var payload={
       account:{username:(S.account.username||"owner"), display:S.account.name,
                has_password:!!S.account.password, has_pin:!!S.account.pin, accent:S.account.accent},
+      remote_access: raPayload,   // null = skipped (SSH credential stays as-is)
       privacy:S.privacy, locale:S.locale, keyboard:S.keyboard, timezone:null,
       theme:S.theme, device_name:(String(S.device_name||"").trim()||"GOSE"),
       // every agent added in the AI step (already paired live; completion re-issues
@@ -717,6 +785,17 @@
       var pw=String(S.account.password||"");
       if(pw && pw.length<8)
         return "Password must be at least 8 characters.";
+    }
+    if(s.id==="remoteaccess"){
+      // optional step — no entry is fine (they'll skip). But if they typed a password, validate it.
+      var mode=S.remoteaccess.mode||"password";
+      if(mode==="password"){
+        captureInputs();   // make sure the field value is captured before checking
+        var rap=String(S.remoteaccess.credential||"");
+        if(rap && rap.length<8)
+          return "Remote access password must be at least 8 characters.";
+      }
+      // key mode: no inline validation (key entry deferred to Settings)
     }
     return null;
   }
@@ -754,6 +833,7 @@
       else if(f==="pin") S.account.pin=v;
       else if(f==="device_name") S.device_name=v;
       else if(f==="ai_name") S.ai_name=v;
+      else if(f==="ra_password"){ S.remoteaccess.credential=v; S.remoteaccess.mode="password"; }
     });
   }
 
@@ -763,6 +843,19 @@
     if(el.dataset.act){ var a=el.dataset.act;
       if(a==="continue") next(); else if(a==="back") back(); else if(a==="skip") skip();
       else if(a==="pair"){ captureInputs(); doPair(); }
+      else if(a==="ra-key-defer"){ S.remoteaccess.key_deferred=true; S.remoteaccess.mode="key"; skip(); }
+      return; }
+    // remote access mode tab toggle (password / key)
+    if(el.dataset.raMode){
+      var rm=el.dataset.raMode;
+      S.remoteaccess.mode=rm;
+      // switch visibility without full re-render so focus stays stable
+      var pwb=document.getElementById("ra-pw-block"), kb=document.getElementById("ra-key-block");
+      if(pwb&&kb){ pwb.style.display=(rm==="password")?"":"none"; kb.style.display=(rm==="key")?"":"none"; }
+      [].slice.call(card.querySelectorAll("[data-ra-mode]")).forEach(function(o){
+        var on=o.dataset.raMode===rm; o.classList.toggle("sel",on);
+        var val=o.querySelector(".val"); if(val) val.textContent=on?"Selected ✓":""; });
+      try{ GOSE&&GOSE.sound&&GOSE.sound("select"); }catch(e){}
       return; }
     if(el.dataset.opt){ var grp=el.dataset.opt, v=el.dataset.v;
       S[grp]=v;

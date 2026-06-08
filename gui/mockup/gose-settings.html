@@ -224,6 +224,10 @@
       // the server gates them on an owner secret, not an AI tier (docs/16 + docs/31 SB-1).
       {ic:"shield", nm:"Owner-only controls", sub:"These switches change who can reach your device. Only you can flip them — an AI never can (docs/16/31).", t:"info", val:"Owner-gated"},
       {ic:"usb", nm:"SSH (remote console)", sub:"Off by default. Remote root console + file push over the network. You sign in with your device PIN/password — one credential, rate-limited.", t:"ssh2"},
+      // Credential row (#93): surfaces the remote-access credential so it's never only hidden in
+      // Batocera's kiosk-obscured menus. Shows source (PIN / OOBE password / SSH key / not set).
+      // "reveal once" only available if the server flagged oobe_password_set (the one-time window).
+      {ic:"lock", nm:"Remote access credential", sub:"What you use to log in via SSH. Set during setup or here — GOSE never stores a plaintext copy beyond the one-time reveal.", t:"ssh-cred", val:"Loading…"},
       {ic:"hard-drive", nm:"Network File Share (SMB)", sub:"Off by default. Share your ROMs/saves folder over Wi-Fi so your PC can browse and add games. Exposes /userdata to your local network — trusted networks only.", t:"link", go:"gose-share.html", live:"smb"},
       {ic:"activity", nm:"Network Activity Monitor", sub:"See what this device is talking to — active connections, listening ports, and exposure verdict. Visibility only (not a firewall).", t:"link", go:"gose-netmon.html"},
     ]},
@@ -299,6 +303,14 @@
     if(r.t==="ssh2"){const on=r.enabled===true, kn=r.enabled==null;
       return `<span class="val"><span class="${on?'':'off'}">${kn?'—':(on?'Enabled':'Disabled')}</span>`+
         ` <span class="ic" data-i="chevron-right"></span></span>`;}
+    if(r.t==="ssh-cred"){
+      // cred_source values: "pin" | "oobe_password" | "key" | "key_deferred" | "none"
+      const src=r.cred_source, can_reveal=!!r.can_reveal;
+      if(!src||src==="none"){
+        return `<span class="val"><span class="off">Not set</span> <span class="ic" data-i="chevron-right"></span></span>`;}
+      const label={pin:"Device PIN",oobe_password:"OOBE password",key:"SSH public key",key_deferred:"Key (add later)"}[src]||src;
+      return `<span class="val"><span>${label}</span>`+(can_reveal?` <span style="color:#ffce5c;font-size:12px;font-weight:700">REVEAL</span>`:``)
+        +` <span class="ic" data-i="chevron-right"></span></span>`;}
     const i=r.i||0, cur=r.v[i];
     const isOff=/^(off|disabled)$/i.test(cur);
     const dot=(r.apply==="accent"&&ACCENTS[i][1])?`<span class="sw" style="background:${ACCENTS[i][1]}"></span>`:"";
@@ -366,6 +378,7 @@
     }
     else if(r.t==="core"){openCorePicker(r);}
     else if(r.t==="ssh2"){openSshModal(r);}
+    else if(r.t==="ssh-cred"){openCredModal(r);}
     else if(r.t==="link"){location.href=r.go;}
     else if(r.t==="agents"){location.href="gose-ai.html";}
     else if(r.t==="dis"){showToast(r.why||r.tag);}   // honest: say WHY it can't apply yet
@@ -594,8 +607,25 @@
   // one-shot loads: real backend state into the rows that mirror it
   (async function initBackend(){
     try{const s=await(await fetch("/security/ssh",{cache:"no-store"})).json();
-      let r=null; for(const c of CATS)for(const rr of c.rows)if(rr.t==="ssh2"){r=rr;break;}
-      if(r&&s&&s.ok){r.enabled=!!s.enabled; rerowIf("security");}}catch(e){}
+      let r=null, rc=null;
+      for(const c of CATS)for(const rr of c.rows){
+        if(rr.t==="ssh2")r=rr; if(rr.t==="ssh-cred")rc=rr; }
+      if(s&&s.ok){
+        if(r)r.enabled=!!s.enabled;
+        if(rc){
+          // cred_source: the server tells us what kind of credential is recorded.
+          // Server field is credential_source (or cred_source as fallback).
+          // Possible values: "pin"|"login"|"oobe_password"|"key"|"key_deferred"|"none"|undefined.
+          // "login" is the legacy server value (credential = the system login password).
+          const cs=s.cred_source||s.credential_source||(s.enabled?"login":"none")||"none";
+          // normalize "login" -> "pin" for display (both mean "the device sign-in credential")
+          rc.cred_source=(cs==="login")?"pin":cs;
+          rc.can_reveal=!!s.can_reveal;   // one-time reveal window (only set during/after OOBE)
+          rc.val=({pin:"Device PIN",oobe_password:"Password set at setup",key:"SSH public key",
+                   key_deferred:"Key deferred — add in Settings",none:"Not set"}[rc.cred_source])||"Unknown";
+        }
+        rerowIf("security");}
+    }catch(e){}
     try{const v=await(await fetch("/sys/vsync",{cache:"no-store"})).json();
       const r=findRow("vsync","apply"); if(r&&v&&v.ok){r.i=v.on?0:1; rerowIf("display");}}catch(e){}
     try{const d=await(await fetch("/sys/display",{cache:"no-store"})).json();
@@ -654,7 +684,7 @@
   // tab shows). A opens a pad-drivable picker; pick -> POST /emulators/default; row reflects.
   // Only systems with >1 core get a picker (a single-core system has nothing to choose).
   const scrim=document.getElementById("scrim");
-  scrim.onclick=(e)=>{if(e.target===scrim){if(SSH.open)closeSshModal();else closeCorePicker();}};   // click the backdrop to dismiss
+  scrim.onclick=(e)=>{if(e.target===scrim){if(CRED.open)closeCredModal();else if(SSH.open)closeSshModal();else closeCorePicker();}};   // click the backdrop to dismiss
   const PICK={open:false,row:null,foc:0};
   async function loadCores(){
     try{const d=await(await fetch("/emulators",{cache:"no-store"})).json();
@@ -840,11 +870,142 @@
       await sshSubmit(SSH._pending||"enable",pin);
     }
   }
+  // ===== Remote Access Credential modal (#93) =====
+  // Shows what credential SSH will use. If can_reveal=true (one-time window from the server,
+  // set during OOBE or at the time the credential was first recorded), offers "Reveal once."
+  // After reveal the server marks the credential as seen — the plaintext is never stored beyond that.
+  // Pad-drivable; layered-Escape per docs/27 §3.10 (the main SSH modal also uses the scrim).
+  const CRED={open:false,row:null,foc:0,items:[],revealed:null,busy:false};
+  async function openCredModal(r){
+    if(SSH.open||PICK.open)return;   // only one modal at a time
+    CRED.open=true; CRED.row=r; CRED.foc=0; CRED.revealed=null; CRED.busy=false;
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush(); else document.body.dataset.goseModal="1";
+    // re-fetch credential state so it's always fresh
+    try{const s=await(await fetch("/security/ssh",{cache:"no-store"})).json();
+      if(s&&s.ok){const cs=s.cred_source||s.credential_source||null; r.cred_source=cs==="login"?"pin":cs; r.can_reveal=!!s.can_reveal;
+        // also sync ssh enabled state
+        let sr=null; for(const c of CATS)for(const rr of c.rows)if(rr.t==="ssh2"){sr=rr;break;}
+        if(sr)sr.enabled=!!s.enabled;
+      }
+    }catch(e){}
+    credRender(); scrim.classList.add("show");
+  }
+  function closeCredModal(){
+    if(!CRED.open)return; CRED.open=false; CRED.revealed=null; scrim.classList.remove("show");
+    if(window.GOSE&&GOSE.modalPop)GOSE.modalPop(); else delete document.body.dataset.goseModal;
+    buildPane(); paintIcons();
+  }
+  function credItems(){
+    const src=CRED.row&&CRED.row.cred_source;
+    const can=CRED.row&&CRED.row.can_reveal;
+    if(CRED.revealed) return [{label:"Done",act:"close"}];
+    if(!src||src==="none") return [
+      {label:"Set a remote access password…",act:"set-pw",kind:"primary"},
+      {label:"Cancel",act:"close"}];
+    const items=[];
+    if(can) items.push({label:"Reveal once",act:"reveal",kind:"warn"});
+    items.push({label:"Change credential…",act:"set-pw"});
+    items.push({label:"Done",act:"close"});
+    return items;
+  }
+  function credRender(){
+    const src=CRED.row&&CRED.row.cred_source;
+    const can=CRED.row&&CRED.row.can_reveal;
+    const srcLabel={pin:"Your device PIN/password",oobe_password:"Password you set during setup",
+      key:"SSH public key",key_deferred:"SSH public key (add from Settings — not set yet)","none":"Not set — SSH will use the device PIN if enabled"}[src]||("Unknown ("+src+")");
+    CRED.items=credItems();
+    if(CRED.foc>=CRED.items.length)CRED.foc=0;
+    const warnBox=(msg)=>`<div style="margin:10px 8px;padding:11px 13px;border:1px solid #ffce5c;`+
+      `border-radius:10px;background:var(--surface2);font-size:13px;line-height:1.5">⚠ ${msg}</div>`;
+    let head="SSH credential", body="";
+    if(CRED.revealed){
+      head="Credential (one-time view)";
+      body=`<div class="mh">This is shown once — GOSE won't display it again after you close. Write it down or copy it now.</div>`+
+        `<div style="font-family:ui-monospace,Consolas,monospace;background:#0c0f1c;border:1px solid var(--line);`+
+          `border-radius:10px;padding:12px 14px;color:#7cffb0;font-size:13px;word-break:break-all;margin:10px 8px">`+
+          `${String(CRED.revealed||"").replace(/</g,"&lt;")}` +
+        `</div>`;
+    } else if(CRED.state==="set-pw"){
+      head="Set remote access password";
+      body=`<div class="mh">This password is what you'll use to log in via SSH (as root). Must be 8+ characters. `+
+        `Different from your lock-screen PIN is recommended.</div>`+
+        `<input id="credpw" type="password" autocomplete="off" data-osk-primary `+
+        `placeholder="8 or more characters" `+
+        `style="width:calc(100% - 16px);margin:8px;padding:11px 12px;border-radius:10px;`+
+        `border:2px solid var(--line);background:var(--surface2);color:var(--text);font-size:16px">`+
+        `<div id="cred-pw-err" style="color:#ff8e8e;font-size:12.5px;margin:0 8px 4px;min-height:16px"></div>`;
+    } else {
+      body=`<div class="mh">SSH login method: <b>${srcLabel}</b></div>`+
+        (src==="pin"?warnBox("Your device PIN is short and numeric — weak for remote SSH. Consider setting a longer password here or an SSH key."):"");
+      if(can) body+=`<div class="mh" style="margin-top:6px">A one-time reveal is available — view it now before it expires.</div>`;
+      body+=`<div class="mh" style="margin-top:6px;opacity:.7">GOSE never stores a plaintext copy of your credential. Turn SSH off in Settings → Security when you're done.</div>`;
+    }
+    scrim.innerHTML=`<div class="modal" role="dialog" aria-modal="true"><h2>${head}</h2>${body}`+
+      `<div class="body" id="credbody"></div>`+
+      `<div class="mf">Owner-only (docs/16/31) — ↑↓ choose · A select · B / Esc back</div></div>`;
+    const b=scrim.querySelector("#credbody");
+    CRED.items.forEach((it,i)=>{const el=document.createElement("div");
+      el.className="pick"+(i===CRED.foc?" focus":"");
+      el.innerHTML=`<span class="nm">${it.label}</span>`+(it.kind==="warn"?`<span class="meta"><span class="badge rev">once only</span></span>`:``)+
+        (it.kind==="primary"?`<span class="meta"><span class="badge ok">set up</span></span>`:``);
+      el.onclick=()=>{CRED.foc=i;credActivate();}; b.appendChild(el);});
+    paintIcons();
+    if(CRED.state==="set-pw"){const pw=scrim.querySelector("#credpw");
+      if(pw){pw.onkeydown=(ev)=>{if(ev.key==="Enter"){ev.preventDefault();credDo("confirm-pw");}};
+        try{pw.focus();}catch(e){}}}
+  }
+  function credMove(d){const n=CRED.items.length; if(!n)return; CRED.foc=(CRED.foc+d+n)%n; credRender();}
+  function credActivate(){const it=CRED.items[CRED.foc]; if(it)credDo(it.act);}
+  async function credDo(act){
+    if(CRED.busy)return;
+    if(act==="close"){closeCredModal();return;}
+    if(act==="set-pw"){CRED.state="set-pw";CRED.foc=0;CRED.items=[{label:"Confirm",act:"confirm-pw",kind:"primary"},{label:"Cancel",act:"cancel-pw"}];credRender();return;}
+    if(act==="cancel-pw"){CRED.state=null;CRED.foc=0;credRender();return;}
+    if(act==="confirm-pw"){
+      const pw=(scrim.querySelector("#credpw")||{}).value||"";
+      const errEl=scrim.querySelector("#cred-pw-err");
+      if(pw.length<8){if(errEl)errEl.textContent="Password must be at least 8 characters.";return;}
+      CRED.busy=true;
+      // Use /auth/pin/set to store the new remote-access password (owner-gated by the server).
+      // The server treats this as the SSH credential when SSH is enabled.
+      const x=await postJSON("/auth/pin/set",{password:pw, context:"remote_access"});
+      CRED.busy=false;
+      if(x&&x.ok){CRED.row.cred_source="oobe_password";CRED.row.can_reveal=false;
+        CRED.state=null;CRED.foc=0;showToast("Remote access password set");
+        credRender();}
+      else{if(errEl)errEl.textContent="Couldn't set password: "+((x&&x.error)||"failed");}
+      return;}
+    if(act==="reveal"){
+      CRED.busy=true;
+      // POST to /security/ssh with action:"reveal" — server returns the credential once and
+      // marks can_reveal=false; after this the plaintext is never shown again.
+      const x=await postJSON("/security/ssh",{action:"reveal"});
+      CRED.busy=false;
+      if(x&&x.ok&&x.credential){
+        CRED.revealed=x.credential; CRED.row.can_reveal=false;
+        CRED.foc=0; credRender();}
+      else showToast("Reveal failed: "+((x&&x.error)||"server didn't return the credential"));
+      return;}
+  }
+  // NOTE: /security/ssh with action:"reveal" is a NEW sub-action on an existing endpoint.
+  // If the server doesn't handle it yet (returns ok:false), the reveal button shows an honest
+  // error. No new endpoint is added — this is one more action param on /security/ssh.
+
   // Pad nav per docs/27: L1/R1 own section switching; ←/→ change the focused value
   // (← NEVER jumps to the rail — the rail double-drove tab switching, owner walkthrough
   // 2026-06-07); B/Esc backs out one level (pane → rail → desktop) and never traps.
   addEventListener("keydown",e=>{
     let k=e.key; if(/^(Up|Down|Left|Right)$/.test(k))k="Arrow"+k;   // accept both spellings (docs/27 §3.8)
+    if(CRED.open){   // credential modal owns the pad while open (docs/27 §3.10)
+      const onPw=document.activeElement&&document.activeElement.id==="credpw";
+      if(k==="Escape"||k==="Backspace"){if(CRED.state==="set-pw"){CRED.state=null;CRED.foc=0;credRender();}else closeCredModal();}
+      else if(onPw){return;}   // typing the password — let the field/OSK have the keys
+      else if(k==="ArrowDown")credMove(1);
+      else if(k==="ArrowUp")credMove(-1);
+      else if(k==="Enter"||k===" "||k==="ArrowRight")credActivate();
+      else return;
+      e.preventDefault();e.stopPropagation();return;
+    }
     if(SSH.open){   // SSH modal owns the pad while open (docs/27 §3.10)
       const onPin=document.activeElement&&document.activeElement.id==="sshpin";
       if(k==="Escape"||k==="Backspace"){closeSshModal();}
