@@ -520,6 +520,31 @@ uploadBtn.addEventListener('click', async () => {
 """
 
 
+def _origin_is_local(origin: str) -> bool:
+    """True if the Origin is the companion server itself (same LAN IP / localhost).
+
+    This gates CORS preflight: we allow cross-origin GET/POST only from the
+    companion's own address, not from arbitrary websites the user visits.
+    Prevents CSRF against /api/upload_rom from third-party pages.
+    """
+    if not origin:
+        return False
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(origin)
+        host = parsed.hostname or ""
+        # Accept localhost variants and the companion's own LAN IP
+        if host in ("localhost", "127.0.0.1", "::1"):
+            return True
+        # Accept any private RFC-1918 / link-local address (the companion binds 0.0.0.0
+        # so the phone's browser sends the LAN IP as Origin)
+        import ipaddress
+        addr = ipaddress.ip_address(host)
+        return addr.is_private or addr.is_loopback or addr.is_link_local
+    except Exception:
+        return False
+
+
 class _MobileHandler(http.server.BaseHTTPRequestHandler):
     """Tiny HTTP server — serves the mobile web UI + proxies key VM endpoints."""
 
@@ -539,10 +564,16 @@ class _MobileHandler(http.server.BaseHTTPRequestHandler):
         self._send(code, "application/json", json.dumps(obj).encode())
 
     def do_OPTIONS(self):
+        # Preflight: reflect Origin only if it matches the companion's own address.
+        # Wildcard ACAO on OPTIONS would let any website on LAN issue cross-origin
+        # POST /api/upload_rom (CSRF) via the browser's CORS preflight path.
+        origin = self.headers.get("Origin", "")
+        allowed = origin if _origin_is_local(origin) else ""
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        if allowed:
+            self.send_header("Access-Control-Allow-Origin", allowed)
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
     def do_GET(self):
@@ -603,6 +634,11 @@ class _MobileHandler(http.server.BaseHTTPRequestHandler):
         """Parse multipart/form-data ROM upload, SFTP it to the VM."""
         ctype = self.headers.get("Content-Type", "")
         cl = int(self.headers.get("Content-Length", 0))
+        # Guard against memory exhaustion from huge uploads (512 MB max — generous for ROMs)
+        MAX_UPLOAD = 512 * 1024 * 1024
+        if cl > MAX_UPLOAD:
+            self._json({"ok": False, "error": f"file too large (max {MAX_UPLOAD // 1024 // 1024} MB)"}, 413)
+            return
         raw = self.rfile.read(cl)
 
         # Extract boundary
@@ -648,6 +684,17 @@ class _MobileHandler(http.server.BaseHTTPRequestHandler):
             # last-resort guess from filename extension
             cands = guess_system(filename)
             system = cands[0] if cands else "ports"
+
+        # Sanitize system id: only alphanumeric, underscore, hyphen.
+        # Prevents path traversal like system='../../root/.ssh' which would let
+        # the SFTP upload overwrite arbitrary files in the VM guest as root.
+        if not re.fullmatch(r"[A-Za-z0-9_\-]{1,64}", system):
+            self._json({"ok": False, "error": "invalid system id"}, 400)
+            return
+
+        # Strip any path components from the filename to prevent the local temp
+        # write from escaping tmp_dir via sequences like '../evil.exe'.
+        filename = os.path.basename(filename) or "rom.bin"
 
         # Write to a temp file, then SFTP upload
         import tempfile
