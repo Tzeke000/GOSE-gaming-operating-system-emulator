@@ -107,6 +107,8 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/games/install": (12, 60),
            "/game/screenshot": (30, 60), "/game/record/toggle": (12, 60),
            "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300),
+           "/saves/backup": (6, 120), "/saves/export": (12, 60), "/saves/import": (8, 60),
+           "/saves/cloud/sync": (4, 120),
            "/sys/perf": (60, 60), "/widgets/store": (30, 60), "/widgets/steam": (30, 60),
            "/storage/import": (12, 60), "/storage/detected": (30, 60),
            "/rom/check": (60, 60),
@@ -5393,6 +5395,345 @@ def bios_status(system_filter=None):
     return {"ok": True, "bios_dir": BIOS_ROOT, "manifest_ok": bool(man),
             "systems": out, "count": len(out)}
 
+
+# ---- Save-data management: #20 auto-backup/export, #51 cloud-save scaffold ----
+SAVES_BACKUP_DIR = "/userdata/saves-backups"
+SAVES_SCHEDULE_F = ROOT + "/saves_schedule.json"
+# Save-data extensions: savestates + SRAM + memory card variants
+_SAVE_EXTS = {".srm", ".sav", ".state", ".state0", ".state1", ".state2", ".state3",
+              ".state4", ".state5", ".state6", ".state7", ".state8", ".state9",
+              ".mcr", ".memcard", ".eep", ".fla", ".mpk", ".rtc"}
+_SAVES_LOCK = threading.Lock()
+_saves_sched = {"on": False, "freq": "daily", "keep": 7, "dest": SAVES_BACKUP_DIR}
+
+def _load_saves_schedule():
+    global _saves_sched
+    try:
+        d = json.load(open(SAVES_SCHEDULE_F))
+        _saves_sched.update(d)
+    except Exception:
+        pass
+
+def _write_saves_schedule():
+    try:
+        os.makedirs(os.path.dirname(SAVES_SCHEDULE_F), exist_ok=True)
+        write_json_atomic(SAVES_SCHEDULE_F, _saves_sched)
+    except Exception as e:
+        LOG.warning("saves schedule write failed: %s", e)
+
+_load_saves_schedule()
+
+def saves_list():
+    """List all save files grouped by system/game."""
+    import glob as _glob, re as _re
+    if not os.path.isdir(SAVES_ROOT):
+        return {"ok": True, "systems": [], "total_files": 0, "total_bytes": 0}
+    total_files, total_bytes = 0, 0
+    systems = []
+    try:
+        for sys_name in sorted(os.listdir(SAVES_ROOT)):
+            sys_dir = os.path.join(SAVES_ROOT, sys_name)
+            if not os.path.isdir(sys_dir):
+                continue
+            games = {}
+            for fname in os.listdir(sys_dir):
+                fpath = os.path.join(sys_dir, fname)
+                if not os.path.isfile(fpath):
+                    continue
+                base, ext = os.path.splitext(fname)
+                if ext.lower() not in _SAVE_EXTS:
+                    continue
+                stem = _re.sub(r"\\.state\\d*$", "", base) if ".state" in ext else base
+                st = os.stat(fpath)
+                entry = games.setdefault(stem, {"game": stem, "files": [], "total_bytes": 0})
+                entry["files"].append({"name": fname, "size": st.st_size,
+                                       "mtime": int(st.st_mtime), "ext": ext.lower()})
+                entry["total_bytes"] += st.st_size
+                total_files += 1; total_bytes += st.st_size
+            if games:
+                sys_bytes = sum(g["total_bytes"] for g in games.values())
+                systems.append({"system": sys_name, "sysname": _SYS.get(sys_name, sys_name),
+                                "games": sorted(games.values(), key=lambda g: g["game"]),
+                                "total_bytes": sys_bytes})
+        return {"ok": True, "systems": systems,
+                "total_files": total_files, "total_bytes": total_bytes}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def saves_backup_all():
+    """Tar.gz ALL /userdata/saves to the configured backup dir. Path-safe."""
+    try:
+        if not os.path.isdir(SAVES_ROOT):
+            return {"ok": False, "error": "no saves directory"}
+        dest_dir = str(_saves_sched.get("dest") or SAVES_BACKUP_DIR)
+        real_dest = os.path.realpath(dest_dir)
+        if not real_dest.startswith(os.path.realpath("/userdata")):
+            return {"ok": False, "error": "dest outside /userdata"}
+        os.makedirs(real_dest, exist_ok=True)
+        name = "saves-" + time.strftime("%Y%m%d-%H%M%S") + ".tar.gz"
+        final = os.path.join(real_dest, name)
+        tmp = os.path.join(real_dest, ".tmp-" + name)
+        r = subprocess.run(["tar", "-czf", tmp, "-C", "/userdata", "saves"],
+                           capture_output=True, text=True, timeout=300)
+        if not os.path.exists(tmp) or r.returncode > 1:
+            try: os.remove(tmp)
+            except Exception: pass
+            return {"ok": False, "error": "tar failed: " + (r.stderr or "")[:200]}
+        os.replace(tmp, final)
+        size = os.path.getsize(final)
+        LOG.info("SAVES BACKUP %s (%d bytes)", name, size)
+        _saves_prune(real_dest)
+        return {"ok": True, "file": name, "path": final, "size": size}
+    except Exception as e:
+        LOG.error("saves backup failed: %s", e)
+        return {"ok": False, "error": str(e)}
+
+def saves_export_game(system, game, dest_path):
+    """Export one game\'s saves as tar.gz to dest_path (must be inside /userdata)."""
+    import glob as _glob
+    if not system or not game:
+        return {"ok": False, "error": "system and game required"}
+    if "/" in system or ".." in system or "/" in game or ".." in game:
+        return {"ok": False, "error": "invalid system or game name"}
+    sys_dir = os.path.join(SAVES_ROOT, system)
+    if not os.path.isdir(sys_dir):
+        return {"ok": False, "error": "system saves not found"}
+    dest_dir = os.path.realpath(dest_path) if dest_path else SAVES_BACKUP_DIR
+    if not dest_dir.startswith(os.path.realpath("/userdata")):
+        return {"ok": False, "error": "dest outside /userdata"}
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        files = [os.path.basename(f) for f in _glob.glob(os.path.join(sys_dir, game + ".*"))
+                 if os.path.splitext(f)[1].lower() in _SAVE_EXTS | {".png"}]
+        if not files:
+            return {"ok": False, "error": "no save files found for that game"}
+        safe_game = re.sub(r"[^A-Za-z0-9_\\-]", "_", game)[:64]
+        name = "save-{}-{}-{}.tar.gz".format(system, safe_game, time.strftime("%Y%m%d-%H%M%S"))
+        final = os.path.join(dest_dir, name)
+        tmp = os.path.join(dest_dir, ".tmp-" + name)
+        cmd = ["tar", "-czf", tmp, "-C", sys_dir] + files
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if not os.path.exists(tmp) or r.returncode > 1:
+            try: os.remove(tmp)
+            except Exception: pass
+            return {"ok": False, "error": "tar failed: " + (r.stderr or "")[:200]}
+        os.replace(tmp, final)
+        return {"ok": True, "file": name, "path": final, "size": os.path.getsize(final),
+                "files": len(files), "system": system, "game": game}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def saves_import_game(system, archive_path):
+    """Restore single-game save archive into saves/<system>/. Members validated."""
+    if not system or not archive_path:
+        return {"ok": False, "error": "system and archive_path required"}
+    if "/" in system or ".." in system:
+        return {"ok": False, "error": "invalid system name"}
+    real_ap = os.path.realpath(archive_path)
+    if not real_ap.startswith(os.path.realpath("/userdata")) or not os.path.isfile(real_ap):
+        return {"ok": False, "error": "archive not found or outside /userdata"}
+    if not real_ap.endswith(".tar.gz"):
+        return {"ok": False, "error": "must be a .tar.gz"}
+    try:
+        lst = subprocess.run(["tar", "-tzf", real_ap], capture_output=True, text=True, timeout=60)
+        if lst.returncode != 0:
+            return {"ok": False, "error": "cannot read archive"}
+        members = [m.strip() for m in lst.stdout.splitlines() if m.strip()]
+        for m in members:
+            mm = m.lstrip("./")
+            if "/" in mm or ".." in mm:
+                return {"ok": False, "error": "archive contains subdirs"}
+            ext = os.path.splitext(mm)[1].lower()
+            if mm and ext not in _SAVE_EXTS | {".png", ""}:
+                return {"ok": False, "error": "unexpected file type: " + mm}
+        dest_dir = os.path.join(SAVES_ROOT, system)
+        os.makedirs(dest_dir, exist_ok=True)
+        ex = subprocess.run(["tar", "-xzf", real_ap, "-C", dest_dir],
+                            capture_output=True, text=True, timeout=120)
+        if ex.returncode > 1:
+            return {"ok": False, "error": "extract failed: " + (ex.stderr or "")[:200]}
+        return {"ok": True, "system": system, "members": len(members), "dest": dest_dir}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def saves_import_full(archive_path):
+    """Restore a full saves backup (saves/<system>/<file> structure) into /userdata."""
+    if not archive_path:
+        return {"ok": False, "error": "archive_path required"}
+    real_ap = os.path.realpath(archive_path)
+    if not real_ap.startswith(os.path.realpath("/userdata")) or not os.path.isfile(real_ap):
+        return {"ok": False, "error": "archive not found or outside /userdata"}
+    if not real_ap.endswith(".tar.gz"):
+        return {"ok": False, "error": "must be a .tar.gz"}
+    try:
+        lst = subprocess.run(["tar", "-tzf", real_ap], capture_output=True, text=True, timeout=60)
+        if lst.returncode != 0:
+            return {"ok": False, "error": "cannot read archive"}
+        members = [m.strip() for m in lst.stdout.splitlines() if m.strip()]
+        for m in members:
+            mm = m.lstrip("./")
+            if ".." in mm.split("/"):
+                return {"ok": False, "error": "unsafe path: " + m}
+            if mm and not mm.startswith("saves/") and not mm == "saves":
+                return {"ok": False, "error": "archive escapes saves root: " + m}
+            if mm.startswith("saves/") and not mm.endswith("/"):
+                parts = mm.split("/")
+                if len(parts) == 3:
+                    ext = os.path.splitext(parts[2])[1].lower()
+                    if ext not in _SAVE_EXTS | {".png", ""}:
+                        return {"ok": False, "error": "unexpected type: " + mm}
+        ex = subprocess.run(["tar", "-xzf", real_ap, "-C", "/userdata"],
+                            capture_output=True, text=True, timeout=300)
+        if ex.returncode > 1:
+            return {"ok": False, "error": "extract failed: " + (ex.stderr or "")[:200]}
+        LOG.info("SAVES FULL IMPORT from %s (%d members)", os.path.basename(real_ap), len(members))
+        return {"ok": True, "file": os.path.basename(real_ap), "members": len(members)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def saves_backups_list():
+    """List save backup archives."""
+    dest = str(_saves_sched.get("dest") or SAVES_BACKUP_DIR)
+    out = []
+    try:
+        if os.path.isdir(dest):
+            for f in sorted(os.listdir(dest), reverse=True):
+                if not f.endswith(".tar.gz") or f.startswith(".tmp-"):
+                    continue
+                p = os.path.join(dest, f)
+                try:
+                    st = os.stat(p)
+                    out.append({"file": f, "path": p, "size": st.st_size, "mtime": int(st.st_mtime)})
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return {"ok": True, "backups": out, "dir": dest}
+
+def _saves_prune(dest_dir):
+    keep = int(_saves_sched.get("keep") or 7)
+    try:
+        archives = sorted(
+            [f for f in os.listdir(dest_dir) if f.endswith(".tar.gz") and not f.startswith(".tmp-")],
+            reverse=True)
+        for old in archives[keep:]:
+            try:
+                os.remove(os.path.join(dest_dir, old))
+                LOG.info("saves prune: removed %s", old)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def saves_schedule_get():
+    return {"ok": True, "schedule": dict(_saves_sched)}
+
+def saves_schedule_set(payload):
+    if not payload:
+        return {"ok": False, "error": "payload required"}
+    with _SAVES_LOCK:
+        if "on" in payload:
+            _saves_sched["on"] = bool(payload["on"])
+        if "freq" in payload and payload["freq"] in ("daily", "weekly"):
+            _saves_sched["freq"] = payload["freq"]
+        if "keep" in payload:
+            _saves_sched["keep"] = max(1, min(30, int(payload["keep"])))
+        if "dest" in payload:
+            d = os.path.realpath(str(payload["dest"]))
+            if d.startswith(os.path.realpath("/userdata")):
+                _saves_sched["dest"] = d
+            else:
+                return {"ok": False, "error": "dest must be inside /userdata"}
+        _write_saves_schedule()
+    return {"ok": True, "schedule": dict(_saves_sched)}
+
+# Cloud-save sync scaffold (#51): local/exportable only; real cloud provider parked
+# for Zeke's backend/account decision. Interface defined so a provider wires in later.
+_CLOUD_PROVIDERS = [
+    {"id": "none", "name": "None (local only)", "configured": True, "stub": False},
+    {"id": "gdrive", "name": "Google Drive", "configured": False, "stub": True,
+     "note": "Provider not configured — backend not yet wired"},
+    {"id": "s3", "name": "S3 / Backblaze B2", "configured": False, "stub": True,
+     "note": "Provider not configured"},
+    {"id": "syncthing", "name": "Syncthing (LAN/self-hosted)", "configured": False, "stub": True,
+     "note": "Syncthing not installed"},
+]
+_CLOUD_CFG_F = ROOT + "/cloud_sync.json"
+_cloud_cfg = {"provider": "none", "auto_sync": False, "sync_on_exit": False}
+
+def _load_cloud_cfg():
+    global _cloud_cfg
+    try:
+        _cloud_cfg.update(json.load(open(_CLOUD_CFG_F)))
+    except Exception:
+        pass
+
+_load_cloud_cfg()
+
+def cloud_status():
+    prov_id = _cloud_cfg.get("provider", "none")
+    prov = next((p for p in _CLOUD_PROVIDERS if p["id"] == prov_id), _CLOUD_PROVIDERS[0])
+    return {"ok": True, "providers": _CLOUD_PROVIDERS, "active": prov,
+            "config": dict(_cloud_cfg),
+            "note": "Cloud backends are stubs — wire a provider to enable real sync"}
+
+def cloud_set(payload):
+    if not payload:
+        return {"ok": False, "error": "payload required"}
+    prov_id = payload.get("provider")
+    if prov_id and prov_id not in {p["id"] for p in _CLOUD_PROVIDERS}:
+        return {"ok": False, "error": "unknown provider"}
+    if prov_id:
+        _cloud_cfg["provider"] = prov_id
+    if "auto_sync" in payload:
+        _cloud_cfg["auto_sync"] = bool(payload["auto_sync"])
+    if "sync_on_exit" in payload:
+        _cloud_cfg["sync_on_exit"] = bool(payload["sync_on_exit"])
+    try:
+        write_json_atomic(_CLOUD_CFG_F, _cloud_cfg)
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+    prov = next((p for p in _CLOUD_PROVIDERS if p["id"] == _cloud_cfg["provider"]), _CLOUD_PROVIDERS[0])
+    if prov.get("stub"):
+        return {"ok": True, "config": dict(_cloud_cfg),
+                "note": "Provider selected but not wired — sync is local-only until configured"}
+    return {"ok": True, "config": dict(_cloud_cfg)}
+
+def cloud_sync_now():
+    """Trigger cloud sync. Stubs run a local backup as stand-in."""
+    prov_id = _cloud_cfg.get("provider", "none")
+    prov = next((p for p in _CLOUD_PROVIDERS if p["id"] == prov_id), _CLOUD_PROVIDERS[0])
+    if prov.get("stub", True) and prov_id != "none":
+        r = saves_backup_all()
+        r["note"] = "Cloud provider '{}' is not wired — local backup created".format(prov_id)
+        return r
+    return saves_backup_all()
+
+# Auto-backup scheduler daemon
+def _saves_scheduler():
+    import datetime as _dt
+    last_day = None
+    while True:
+        try:
+            time.sleep(300)
+            if not _saves_sched.get("on"):
+                continue
+            now = _dt.datetime.now(); today = now.date()
+            if last_day == today:
+                continue
+            freq = _saves_sched.get("freq", "daily")
+            fire = (freq == "daily") or (freq == "weekly" and today.weekday() == 6)
+            if fire:
+                last_day = today
+                LOG.info("saves scheduler: auto-backup starting (freq=%s)", freq)
+                r = saves_backup_all()
+                LOG.info("saves scheduler: backup done -> %s", r.get("file") or r.get("error"))
+        except Exception as e:
+            LOG.warning("saves scheduler error: %s", e)
+
+threading.Thread(target=_saves_scheduler, daemon=True).start()
+
+
 # ---- Screenshots / recording / gallery (player-facing capture via RetroArch NCI) ----
 SHOTS_DIR = "/userdata/screenshots"
 GALLERY_DIRS = (SHOTS_DIR, "/userdata/home/Pictures", "/userdata/home/Videos")
@@ -9165,6 +9506,14 @@ class H(http.server.SimpleHTTPRequestHandler):
                 and not route.endswith("/remove") and not route.endswith("/delete"):
             coll_id = route[len("/collections/"):]
             return self._json(collection_get(coll_id))
+        if route == "/saves/list":
+            return self._json(saves_list())
+        if route == "/saves/backups":
+            return self._json(saves_backups_list())
+        if route == "/saves/schedule":
+            return self._json(saves_schedule_get())
+        if route == "/saves/cloud":
+            return self._json(cloud_status())
         if route == "/game/state/slots":
             from urllib.parse import parse_qs
             q = parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
@@ -9478,6 +9827,30 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json(term_exec(payload.get("cmd")))
             except Exception as e:
                 return self._json({"ok": False, "out": str(e)})
+        if route in ("/saves/backup", "/saves/export", "/saves/import",
+                     "/saves/schedule", "/saves/cloud", "/saves/cloud/sync"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/saves/backup":
+                return self._json(saves_backup_all())
+            if route == "/saves/export":
+                return self._json(saves_export_game(
+                    payload.get("system", ""), payload.get("game", ""),
+                    payload.get("dest")))
+            if route == "/saves/import":
+                system = payload.get("system")
+                ap = payload.get("archive_path") or payload.get("path")
+                if system:
+                    return self._json(saves_import_game(system, ap))
+                return self._json(saves_import_full(ap))
+            if route == "/saves/schedule":
+                return self._json(saves_schedule_set(payload))
+            if route == "/saves/cloud":
+                return self._json(cloud_set(payload))
+            return self._json(cloud_sync_now())
         if route in ("/system/backup", "/system/restore", "/system/factory_reset"):
             try:
                 n = int(self.headers.get("Content-Length", 0))

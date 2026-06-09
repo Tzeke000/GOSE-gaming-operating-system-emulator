@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Save Data</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  /* header */
+  .top{display:flex;align-items:center;gap:14px;padding:20px 40px 8px}
+  .top img{width:38px;height:38px;object-fit:contain;filter:drop-shadow(0 0 8px #9a5bff55)}
+  .top h1{font-size:21px;margin:0}.top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--surface);
+    border:1px solid var(--line);border-radius:11px;padding:8px 14px;font-size:13px;color:var(--muted);cursor:pointer}
+  /* tab bar */
+  .tabs{display:flex;gap:6px;padding:0 40px 0;border-bottom:1px solid var(--line);margin-bottom:0}
+  .tab{display:flex;align-items:center;gap:8px;padding:10px 18px;font-size:14px;font-weight:600;
+    color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.on{color:var(--text);border-color:var(--accent)}
+  .tab .ic{font-size:18px}
+  /* main content area (scrollable per-tab) */
+  .wrap{flex:1;min-height:0;overflow:auto;padding:12px 40px 0}
+  /* section headers */
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:14px 0 6px}
+  /* save-game list */
+  .sys-block{margin-bottom:18px}
+  .sys-hdr{display:flex;align-items:center;gap:12px;padding:8px 14px;background:var(--surface2);
+    border-radius:10px;margin-bottom:4px;cursor:pointer}
+  .sys-hdr .sysname{font-weight:700;font-size:14px}
+  .sys-hdr .meta{margin-left:auto;color:var(--muted);font-size:12px;display:flex;gap:12px}
+  .sys-hdr .ic{font-size:18px;color:var(--accent);transition:transform .15s}
+  .sys-hdr.collapsed .ic.chv{transform:rotate(-90deg)}
+  .game-list{padding:0 0 0 0;display:flex;flex-direction:column;gap:4px}
+  .game-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;
+    border:2px solid transparent;cursor:pointer}
+  .game-row.focus{border-color:var(--accent);background:#5cd0ff14;box-shadow:var(--focusglow)}
+  .game-row .nm{font-weight:600;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .game-row .sub{color:var(--muted);font-size:12px}
+  .game-row .sz{color:var(--muted);font-size:12px;white-space:nowrap}
+  .game-row .acts-row{display:flex;gap:6px;margin-left:auto}
+  .abtn{display:flex;align-items:center;gap:6px;background:var(--surface2);border:1px solid var(--line);
+    border-radius:9px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text)}
+  .abtn:hover,.abtn.focus{border-color:var(--accent);color:var(--accent)}
+  .abtn.danger:hover,.abtn.danger.focus{border-color:#ff5a6e;color:#ff5a6e}
+  /* backup list */
+  .bk-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;
+    border:2px solid transparent;cursor:pointer}
+  .bk-row.focus{border-color:var(--accent);background:#5cd0ff14;box-shadow:var(--focusglow)}
+  .bk-row .nm{font-weight:600;font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bk-row .sub{color:var(--muted);font-size:12px}
+  /* settings rows (schedule + cloud) */
+  .set{display:flex;align-items:center;gap:14px;min-height:54px;padding:8px 14px;border-radius:11px;
+    border:2px solid transparent;cursor:pointer}
+  .set.focus{border-color:var(--accent);background:#5cd0ff14;box-shadow:var(--focusglow)}
+  .set.focus .ic,.set.focus .nm{color:var(--accent)}
+  .set .ic{font-size:20px;color:#b8becc;flex:none}
+  .set .lbl{min-width:0;flex:1}.set .nm{font-weight:600}.set .sub{color:var(--muted);font-size:12px}
+  .set .val{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--accent);
+    font-weight:600;font-size:14px;white-space:nowrap}
+  .set .val .cy{color:var(--muted);font-size:13px}
+  .set .off{color:var(--muted)}
+  .set .dis{color:var(--muted);font-size:12px}
+  .badge{font-size:11px;font-weight:700;border-radius:8px;padding:2px 8px;border:1px solid;white-space:nowrap}
+  .badge.ok{color:#37d39b;border-color:#37d39b44}
+  .badge.warn{color:#ffce5c;border-color:#ffce5c44}
+  .badge.stub{color:#8b90a6;border-color:#8b90a644}
+  .badge.prov{color:var(--accent);border-color:var(--accent)}
+  /* action strip */
+  .actstrip{display:flex;gap:10px;margin:14px 0 6px}
+  .btn{display:flex;align-items:center;gap:8px;background:var(--surface2);border:2px solid var(--line);
+    border-radius:11px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer}
+  .btn.primary{border-color:var(--accent);color:var(--accent)}
+  .btn.focus,.btn:hover{border-color:var(--accent);color:var(--accent)}
+  .btn.danger{border-color:transparent}
+  .btn.danger.focus,.btn.danger:hover{border-color:#ff5a6e;color:#ff5a6e}
+  /* empty state */
+  .empty{color:var(--muted);font-size:14px;padding:40px 20px;text-align:center}
+  /* footer */
+  .foot{margin:10px 40px 16px;display:flex;align-items:center;gap:10px;color:var(--muted);
+    font-size:13px;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  /* toast */
+  .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 18px;font-size:13px;opacity:0;
+    transition:opacity .25s;pointer-events:none;z-index:70}
+  .toast.show{opacity:1}.toast.err{border-color:#ff5a6e}
+  /* confirm modal */
+  .scrim{position:fixed;inset:0;background:#05050acc;display:none;align-items:center;justify-content:center;z-index:80}
+  .scrim.show{display:flex}
+  .modal{width:min(480px,92vw);background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    box-shadow:0 24px 80px #000a;padding:28px;display:flex;flex-direction:column;gap:14px}
+  .modal h2{margin:0;font-size:16px}
+  .modal p{margin:0;color:var(--muted);font-size:13px;line-height:1.55}
+  .modal .mf{display:flex;gap:10px;justify-content:flex-end;margin-top:4px}
+  .modal .mf .btn{font-size:13px}
+</style></head>
+<body>
+  <div class="top">
+    <img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <div><h1>Save Data</h1><div class="s" id="hdr-sub">loading…</div></div>
+    <div class="home" onclick="goHome()"><span class="ic" data-i="layout-grid"></span><span>B / Esc — back</span></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab on" data-tab="saves" onclick="switchTab('saves')">
+      <span class="ic" data-i="hard-drive"></span>Saves
+    </div>
+    <div class="tab" data-tab="backups" onclick="switchTab('backups')">
+      <span class="ic" data-i="archive"></span>Backups
+    </div>
+    <div class="tab" data-tab="auto" onclick="switchTab('auto')">
+      <span class="ic" data-i="clock"></span>Auto-Backup
+    </div>
+    <div class="tab" data-tab="cloud" onclick="switchTab('cloud')">
+      <span class="ic" data-i="cloud"></span>Cloud Sync
+    </div>
+  </div>
+
+  <div class="wrap" id="wrap">
+    <div class="empty">Loading…</div>
+  </div>
+
+  <div class="foot">
+    <span class="ic" data-i="hard-drive"></span> Save Data
+    <span class="h"><b>↑↓</b> navigate · <b>A / Enter</b> action · <b>L1/R1</b> tabs · <b>B / Esc</b> back</span>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <div class="scrim" id="scrim">
+    <div class="modal" id="modal">
+      <h2 id="modal-title">Confirm</h2>
+      <p id="modal-body"></p>
+      <div class="mf">
+        <div class="btn focus" id="modal-cancel" onclick="closeModal()">Cancel</div>
+        <div class="btn primary" id="modal-ok" onclick="confirmModal()">OK</div>
+      </div>
+    </div>
+  </div>
+
+<script src="assets/platform.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/sound.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
+
+// ---- State ----
+let _tab = "saves";
+let _savesData = null, _backupsData = null, _schedData = null, _cloudData = null;
+let _foc = 0;   // flat focusable index in current tab
+let _focItems = [];  // flat list of focusable elements
+let _modalCb = null;
+
+const FREQ_LABELS = {daily:"Daily", weekly:"Weekly (Sunday)"};
+const CLOUD_LABELS = {none:"None (local only)", gdrive:"Google Drive", s3:"S3 / Backblaze B2", syncthing:"Syncthing (LAN)"};
+
+function fmt(bytes){
+  if(bytes==null) return "—";
+  if(bytes<1024) return bytes+"B";
+  if(bytes<1048576) return (bytes/1024).toFixed(1)+"KB";
+  if(bytes<1073741824) return (bytes/1048576).toFixed(1)+"MB";
+  return (bytes/1073741824).toFixed(2)+"GB";
+}
+function fmtDate(ts){
+  if(!ts) return "—";
+  const d=new Date(ts*1000);
+  return d.toLocaleDateString()+" "+d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"});
+}
+function goHome(){history.back();}
+
+// ---- Toast ----
+let _toastT;
+function toast(msg, err){
+  const el=document.getElementById("toast");
+  el.textContent=msg; el.classList.toggle("err",!!err);
+  el.classList.add("show"); clearTimeout(_toastT);
+  _toastT=setTimeout(()=>el.classList.remove("show"),3000);
+}
+
+// ---- Modal ----
+function showModal(title, body, cb){
+  document.getElementById("modal-title").textContent=title;
+  document.getElementById("modal-body").textContent=body;
+  document.getElementById("scrim").classList.add("show");
+  _modalCb=cb;
+}
+function closeModal(){
+  document.getElementById("scrim").classList.remove("show");
+  _modalCb=null;
+}
+function confirmModal(){
+  const cb=_modalCb; closeModal();
+  if(cb) cb();
+}
+
+// ---- API calls ----
+async function api(method, url, body){
+  try{
+    const opts={method, headers:{"Content-Type":"application/json"}};
+    if(body) opts.body=JSON.stringify(body);
+    const r=await fetch(url,opts);
+    return await r.json();
+  }catch(e){return {ok:false,error:String(e)};}
+}
+
+// ---- Tab switching ----
+function switchTab(id){
+  _tab=id;
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on",t.dataset.tab===id));
+  render();
+}
+
+// ---- Render ----
+async function render(){
+  const wrap=document.getElementById("wrap");
+  wrap.innerHTML='<div class="empty">Loading…</div>';
+  if(_tab==="saves") await renderSaves();
+  else if(_tab==="backups") await renderBackups();
+  else if(_tab==="auto") await renderAuto();
+  else if(_tab==="cloud") await renderCloud();
+  refreshFocus();
+}
+
+// ---- SAVES TAB ----
+async function renderSaves(){
+  const d = _savesData = await api("GET","/saves/list");
+  const wrap=document.getElementById("wrap");
+  if(!d.ok){wrap.innerHTML=`<div class="empty">Could not load saves: ${d.error}</div>`;return;}
+  document.getElementById("hdr-sub").textContent=
+    `${d.total_files} file${d.total_files!==1?"s":""} · ${fmt(d.total_bytes)} total`;
+  if(!d.systems||!d.systems.length){
+    wrap.innerHTML='<div class="empty">No save files yet — play a game to create saves.</div>';return;
+  }
+  let html='<div class="actstrip">'
+    +'<div class="btn primary" data-act="backup-all" tabindex="0"><span class="ic" data-i="archive"></span>Back Up All Saves</div>'
+    +'</div>';
+  for(const sys of d.systems){
+    html+=`<div class="sys-block"><div class="sys-hdr" data-sys="${sys.system}">`
+      +`<span class="ic" data-i="cpu" style="font-size:18px;color:var(--accent)"></span>`
+      +`<span class="sysname">${escH(sys.sysname)}</span>`
+      +`<span class="meta"><span>${sys.games.length} game${sys.games.length!==1?"s":""}</span><span>${fmt(sys.total_bytes)}</span></span>`
+      +`<span class="ic chv" data-i="chevron-down"></span>`
+      +'</div><div class="game-list">';
+    for(const g of sys.games){
+      const slots=g.files.filter(f=>f.ext.startsWith(".state")).length;
+      const sram=g.files.filter(f=>!f.ext.startsWith(".state")).length;
+      const sub=(slots?`${slots} state${slots!==1?"s":""}`:"")+
+                (slots&&sram?" · ":"")+
+                (sram?`${sram} SRAM`:"");
+      html+=`<div class="game-row" data-sys="${escA(sys.system)}" data-game="${escA(g.game)}" tabindex="0">`
+        +`<span class="ic" data-i="gamepad-2" style="font-size:18px;color:#b8becc"></span>`
+        +`<div class="lbl"><div class="nm">${escH(g.game)}</div><div class="sub">${escH(sub)}</div></div>`
+        +`<span class="sz">${fmt(g.total_bytes)}</span>`
+        +`<div class="acts-row">`
+        +`<div class="abtn" data-act="export" data-sys="${escA(sys.system)}" data-game="${escA(g.game)}">`
+        +`<span class="ic" data-i="download"></span>Export</div>`
+        +'</div></div>';
+    }
+    html+='</div></div>';
+  }
+  wrap.innerHTML=html;
+  // system header collapse toggle
+  wrap.querySelectorAll(".sys-hdr").forEach(h=>{
+    h.addEventListener("click",e=>{
+      if(e.target.closest(".abtn")) return;
+      h.classList.toggle("collapsed");
+      const list=h.nextElementSibling;
+      list.style.display=h.classList.contains("collapsed")?"none":"";
+    });
+  });
+  // action handlers
+  wrap.addEventListener("click",e=>{
+    const act=e.target.closest("[data-act]");
+    if(!act) return;
+    const a=act.dataset.act, sys=act.dataset.sys, game=act.dataset.game;
+    if(a==="backup-all") doBackupAll();
+    else if(a==="export") doExport(sys,game);
+  });
+  wrapIcons(wrap);
+}
+
+function doBackupAll(){
+  showModal("Back Up All Saves",
+    "Create a backup of all your save files to /userdata/saves-backups. This may take a moment.",
+    async()=>{
+      toast("Backing up saves…");
+      const r=await api("POST","/saves/backup");
+      if(r.ok) toast("Backup saved: "+r.file);
+      else toast("Backup failed: "+r.error, true);
+      _backupsData=null;
+    });
+}
+
+function doExport(system, game){
+  showModal("Export Save — "+game,
+    `Export save files for "${game}" (${system}) to /userdata/saves-backups as a .tar.gz you can copy to USB or another location.`,
+    async()=>{
+      toast("Exporting…");
+      const r=await api("POST","/saves/export",{system,game,dest:"/userdata/saves-backups"});
+      if(r.ok) toast(`Exported ${r.files} file${r.files!==1?"s":""}: ${r.file}`);
+      else toast("Export failed: "+r.error,true);
+    });
+}
+
+// ---- BACKUPS TAB ----
+async function renderBackups(){
+  const d = _backupsData = await api("GET","/saves/backups");
+  const wrap=document.getElementById("wrap");
+  document.getElementById("hdr-sub").textContent="save backup archives";
+  if(!d.ok){wrap.innerHTML=`<div class="empty">Could not load backups: ${d.error}</div>`;return;}
+  let html='<div class="actstrip">'
+    +'<div class="btn primary" data-act="backup-all" tabindex="0"><span class="ic" data-i="archive"></span>Back Up Now</div>'
+    +'</div>';
+  if(!d.backups||!d.backups.length){
+    html+='<div class="empty">No backups yet. Use Back Up Now to create the first one.</div>';
+  } else {
+    html+='<div class="ph">BACKUP ARCHIVES</div>';
+    for(const b of d.backups){
+      html+=`<div class="bk-row" tabindex="0">`
+        +`<span class="ic" data-i="file-archive" style="font-size:20px;color:#b8becc"></span>`
+        +`<div class="lbl"><div class="nm">${escH(b.file)}</div>`
+        +`<div class="sub">${fmtDate(b.mtime)} · ${fmt(b.size)}</div></div>`
+        +`<div class="acts-row">`
+        +`<div class="abtn" data-act="restore-saves" data-path="${escA(b.path)}" data-file="${escA(b.file)}">`
+        +`<span class="ic" data-i="rotate-ccw"></span>Restore</div>`
+        +'</div></div>';
+    }
+    html+=`<div class="ph" style="margin-top:8px">Stored in: <span style="color:var(--text)">${escH(d.dir)}</span></div>`;
+  }
+  wrap.innerHTML=html;
+  wrap.addEventListener("click",e=>{
+    const act=e.target.closest("[data-act]");
+    if(!act) return;
+    const a=act.dataset.act;
+    if(a==="backup-all") doBackupAll();
+    else if(a==="restore-saves") doRestoreSaves(act.dataset.path, act.dataset.file);
+  });
+  wrapIcons(wrap);
+}
+
+function doRestoreSaves(path, file){
+  showModal("Restore Saves — "+file,
+    `Restore all saves from "${file}"? This will overwrite matching save files. Games not in the archive are untouched.`,
+    async()=>{
+      toast("Restoring…");
+      const r=await api("POST","/saves/import",{archive_path:path});
+      if(r.ok) toast(`Restored ${r.members} member${r.members!==1?"s":""} from ${r.file}`);
+      else toast("Restore failed: "+r.error,true);
+    });
+}
+
+// ---- AUTO-BACKUP TAB ----
+async function renderAuto(){
+  const d = _schedData = await api("GET","/saves/schedule");
+  const wrap=document.getElementById("wrap");
+  document.getElementById("hdr-sub").textContent="scheduled auto-backup";
+  if(!d.ok){wrap.innerHTML=`<div class="empty">Could not load schedule: ${d.error}</div>`;return;}
+  const s=d.schedule;
+  const freqCycle=["daily","weekly"];
+  const keepCycle=[3,5,7,14,30];
+  let html='<div class="ph">AUTO-BACKUP</div>';
+  html+=`<div class="set focus" id="set-on" data-set="on" tabindex="0">`
+    +`<span class="ic" data-i="clock"></span>`
+    +`<div class="lbl"><div class="nm">Auto-backup saves</div>`
+    +`<div class="sub">Automatically back up all save files on a schedule</div></div>`
+    +`<span class="val">${s.on?`<span style="color:#37d39b">On</span>`:`<span class="off">Off</span>`}</span>`
+    +'</div>';
+  html+=`<div class="set${!s.on?' dim':''}" id="set-freq" data-set="freq" tabindex="0">`
+    +`<span class="ic" data-i="calendar"></span>`
+    +`<div class="lbl"><div class="nm">Frequency</div>`
+    +`<div class="sub">How often to create a backup</div></div>`
+    +`<span class="val">${FREQ_LABELS[s.freq]||s.freq} <span class="cy">← →</span></span>`
+    +'</div>';
+  html+=`<div class="set${!s.on?' dim':''}" id="set-keep" data-set="keep" tabindex="0">`
+    +`<span class="ic" data-i="layers"></span>`
+    +`<div class="lbl"><div class="nm">Keep</div>`
+    +`<div class="sub">How many backup archives to keep before pruning old ones</div></div>`
+    +`<span class="val">${s.keep} backups <span class="cy">← →</span></span>`
+    +'</div>';
+  const dest=s.dest||"/userdata/saves-backups";
+  html+=`<div class="set${!s.on?' dim':''}" id="set-dest" data-set="dest" tabindex="0">`
+    +`<span class="ic" data-i="folder"></span>`
+    +`<div class="lbl"><div class="nm">Backup destination</div>`
+    +`<div class="sub">Where backup archives are saved (must be inside /userdata)</div></div>`
+    +`<span class="val" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(dest)}</span>`
+    +'</div>';
+  html+='<div class="ph" style="margin-top:12px">LAST BACKUP</div>';
+  // show most recent from backups list
+  const bkd=await api("GET","/saves/backups");
+  if(bkd.ok && bkd.backups && bkd.backups.length){
+    const lb=bkd.backups[0];
+    html+=`<div class="set" tabindex="0">`
+      +`<span class="ic" data-i="check-circle" style="color:#37d39b"></span>`
+      +`<div class="lbl"><div class="nm">${escH(lb.file)}</div>`
+      +`<div class="sub">${fmtDate(lb.mtime)} · ${fmt(lb.size)}</div></div>`
+      +'</div>';
+  } else {
+    html+=`<div class="set"><span class="ic" data-i="clock"></span>`
+      +`<div class="lbl"><div class="nm">No backups yet</div>`
+      +`<div class="sub">Back Up Now will create the first one</div></div></div>`;
+  }
+  wrap.innerHTML=html;
+  // keyboard handlers for cycle rows
+  wrap.querySelectorAll(".set").forEach(el=>{
+    el.addEventListener("click",()=>onSetClick(el));
+    el.addEventListener("keydown",e=>{
+      if(e.key==="ArrowLeft"||e.key==="ArrowRight") onSetArrow(el,e.key);
+      if(e.key===" "||e.key==="Enter") onSetClick(el);
+    });
+  });
+  wrapIcons(wrap);
+}
+
+const _FREQ_CYCLE=["daily","weekly"];
+const _KEEP_CYCLE=[3,5,7,14,30];
+async function onSetClick(el){
+  const s=_schedData.schedule;
+  if(el.dataset.set==="on"){
+    await saveSchedule({on:!s.on});
+    _schedData=null; renderAuto();
+  } else if(el.dataset.set==="freq"){
+    const i=_FREQ_CYCLE.indexOf(s.freq);
+    const nv=_FREQ_CYCLE[(i+1)%_FREQ_CYCLE.length];
+    await saveSchedule({freq:nv}); _schedData=null; renderAuto();
+  } else if(el.dataset.set==="keep"){
+    const i=_KEEP_CYCLE.indexOf(s.keep);
+    const nv=_KEEP_CYCLE[(i+1)%_KEEP_CYCLE.length];
+    await saveSchedule({keep:nv}); _schedData=null; renderAuto();
+  }
+}
+async function onSetArrow(el, key){
+  const s=_schedData.schedule;
+  const dir=key==="ArrowRight"?1:-1;
+  if(el.dataset.set==="freq"){
+    const i=_FREQ_CYCLE.indexOf(s.freq);
+    const nv=_FREQ_CYCLE[(i+dir+_FREQ_CYCLE.length)%_FREQ_CYCLE.length];
+    await saveSchedule({freq:nv}); _schedData=null; renderAuto();
+  } else if(el.dataset.set==="keep"){
+    const i=_KEEP_CYCLE.indexOf(s.keep);
+    const nv=_KEEP_CYCLE[(i+dir+_KEEP_CYCLE.length)%_KEEP_CYCLE.length];
+    await saveSchedule({keep:nv}); _schedData=null; renderAuto();
+  }
+}
+async function saveSchedule(patch){
+  const r=await api("POST","/saves/schedule",patch);
+  if(r.ok){ toast("Saved"); if(_schedData) Object.assign(_schedData.schedule, r.schedule); }
+  else toast("Error: "+r.error, true);
+}
+
+// ---- CLOUD TAB ----
+async function renderCloud(){
+  const d = _cloudData = await api("GET","/saves/cloud");
+  const wrap=document.getElementById("wrap");
+  document.getElementById("hdr-sub").textContent="cloud save sync";
+  if(!d.ok){wrap.innerHTML=`<div class="empty">Could not load cloud status: ${d.error}</div>`;return;}
+  const cfg=d.config; const active=d.active||{};
+  let html='<div class="ph">CLOUD SYNC</div>';
+  // Provider selector
+  html+=`<div class="set focus" id="set-prov" data-set="prov" tabindex="0">`
+    +`<span class="ic" data-i="cloud"></span>`
+    +`<div class="lbl"><div class="nm">Provider</div>`
+    +`<div class="sub">Where your saves are synced to</div></div>`
+    +`<span class="val">${escH(active.name||cfg.provider)} <span class="cy">← →</span>`
+    +(active.stub?`<span class="badge stub" style="margin-left:8px">Stub</span>`:`<span class="badge ok" style="margin-left:8px">Ready</span>`)
+    +'</span></div>';
+  // Auto-sync toggle
+  const canSync=!active.stub;
+  html+=`<div class="set${!canSync?' dim':''}" id="set-async" data-set="async" tabindex="0">`
+    +`<span class="ic" data-i="refresh-cw"></span>`
+    +`<div class="lbl"><div class="nm">Auto-sync on game exit</div>`
+    +`<div class="sub">Upload save changes when you close a game</div></div>`
+    +`<span class="val">${cfg.sync_on_exit&&canSync?`<span style="color:#37d39b">On</span>`:`<span class="off">Off</span>`}</span>`
+    +'</div>';
+  html+=`<div class="set${!canSync?' dim':''}" id="set-autosync" data-set="autosync" tabindex="0">`
+    +`<span class="ic" data-i="clock"></span>`
+    +`<div class="lbl"><div class="nm">Background auto-sync</div>`
+    +`<div class="sub">Sync saves periodically in the background</div></div>`
+    +`<span class="val">${cfg.auto_sync&&canSync?`<span style="color:#37d39b">On</span>`:`<span class="off">Off</span>`}</span>`
+    +'</div>';
+  // Sync now
+  html+=`<div class="actstrip">`
+    +`<div class="btn${canSync?' primary':''}" id="btn-sync" data-act="sync-now" tabindex="0">`
+    +`<span class="ic" data-i="${canSync?'upload-cloud':'archive'}"></span>`
+    +(canSync?"Sync Now":"Back Up Locally (no cloud)")
+    +'</div></div>';
+  // Stub notice
+  if(active.stub){
+    html+=`<div class="set" style="background:var(--surface2);margin-top:8px">`
+      +`<span class="ic" data-i="info" style="color:#ffce5c"></span>`
+      +`<div class="lbl"><div class="nm">Provider not configured</div>`
+      +`<div class="sub">${escH(active.note||"Cloud backend needs to be wired up — parked for now. Local backup works fine in the meantime.")}</div></div>`
+      +'</div>';
+  }
+  // Available providers
+  html+='<div class="ph" style="margin-top:14px">AVAILABLE PROVIDERS</div>';
+  for(const p of d.providers){
+    html+=`<div class="set${p.id===cfg.provider?' on':''}" style="${p.id===cfg.provider?'background:var(--surface2)':''}">`
+      +`<span class="ic" data-i="${p.stub?'cloud-off':'cloud-check'}" style="color:${p.stub?'var(--muted)':'var(--accent)'}"></span>`
+      +`<div class="lbl"><div class="nm">${escH(p.name)}</div>`
+      +`<div class="sub">${p.stub?`Stub — backend not yet wired`:`Ready`}</div></div>`
+      +(p.id===cfg.provider?`<span class="badge prov">Active</span>`:`<span class="badge stub">Available</span>`)
+      +'</div>';
+  }
+  wrap.innerHTML=html;
+  // handlers
+  wrap.querySelectorAll("[data-set]").forEach(el=>{
+    el.addEventListener("click",()=>onCloudSetClick(el));
+    el.addEventListener("keydown",e=>{
+      if(e.key==="ArrowLeft"||e.key==="ArrowRight") onCloudArrow(el,e.key);
+      if(e.key===" "||e.key==="Enter") onCloudSetClick(el);
+    });
+  });
+  wrap.addEventListener("click",e=>{
+    const act=e.target.closest("[data-act]");
+    if(act&&act.dataset.act==="sync-now") doSyncNow();
+  });
+  wrapIcons(wrap);
+}
+
+const _PROV_CYCLE=["none","gdrive","s3","syncthing"];
+async function onCloudSetClick(el){
+  const cfg=_cloudData.config;
+  if(el.dataset.set==="prov"){
+    const i=_PROV_CYCLE.indexOf(cfg.provider);
+    const nv=_PROV_CYCLE[(i+1)%_PROV_CYCLE.length];
+    await saveCloud({provider:nv}); _cloudData=null; renderCloud();
+  } else if(el.dataset.set==="async"){
+    await saveCloud({sync_on_exit:!cfg.sync_on_exit}); _cloudData=null; renderCloud();
+  } else if(el.dataset.set==="autosync"){
+    await saveCloud({auto_sync:!cfg.auto_sync}); _cloudData=null; renderCloud();
+  }
+}
+async function onCloudArrow(el, key){
+  const cfg=_cloudData.config; const dir=key==="ArrowRight"?1:-1;
+  if(el.dataset.set==="prov"){
+    const i=_PROV_CYCLE.indexOf(cfg.provider);
+    const nv=_PROV_CYCLE[(i+dir+_PROV_CYCLE.length)%_PROV_CYCLE.length];
+    await saveCloud({provider:nv}); _cloudData=null; renderCloud();
+  }
+}
+async function saveCloud(patch){
+  const r=await api("POST","/saves/cloud",patch);
+  if(r.ok){
+    toast(r.note||"Saved");
+    if(_cloudData) Object.assign(_cloudData.config,r.config);
+  } else toast("Error: "+r.error,true);
+}
+async function doSyncNow(){
+  toast("Syncing…");
+  const r=await api("POST","/saves/cloud/sync");
+  if(r.ok) toast(r.note||(r.file?"Backup: "+r.file:"Synced"));
+  else toast("Sync failed: "+r.error,true);
+}
+
+// ---- Focus management (basic pad nav) ----
+function refreshFocus(){
+  _focItems=Array.from(document.getElementById("wrap").querySelectorAll("[tabindex='0']"));
+  if(_foc>=_focItems.length) _foc=0;
+  _focItems.forEach((el,i)=>el.classList.toggle("focus",i===_foc));
+}
+function moveFocus(d){
+  if(!_focItems.length) return;
+  _focItems[_foc]&&_focItems[_foc].classList.remove("focus");
+  _foc=(_foc+d+_focItems.length)%_focItems.length;
+  _focItems[_foc].classList.add("focus");
+  _focItems[_foc].scrollIntoView({block:"nearest"});
+}
+function activateFocus(){
+  if(_focItems[_foc]) _focItems[_foc].click();
+}
+
+document.addEventListener("keydown",e=>{
+  const sc=document.getElementById("scrim");
+  if(sc.classList.contains("show")){
+    if(e.key==="Escape"||e.key==="b"||e.key==="B") closeModal();
+    return;
+  }
+  if(e.key==="ArrowDown"||e.key==="s"){ e.preventDefault(); moveFocus(1);}
+  else if(e.key==="ArrowUp"||e.key==="w"){ e.preventDefault(); moveFocus(-1);}
+  else if(e.key==="Enter"||e.key===" "){ e.preventDefault(); activateFocus(); }
+  else if(e.key==="Escape"||e.key==="b"||e.key==="B") goHome();
+  else if(e.key===","||e.key==="q"){
+    // L1: prev tab
+    const tabs=["saves","backups","auto","cloud"];
+    const i=tabs.indexOf(_tab);
+    if(i>0){ switchTab(tabs[i-1]); }
+  } else if(e.key==="."||e.key==="e"){
+    // R1: next tab
+    const tabs=["saves","backups","auto","cloud"];
+    const i=tabs.indexOf(_tab);
+    if(i<tabs.length-1){ switchTab(tabs[i+1]); }
+  }
+});
+
+// ---- Helpers ----
+function escH(s){ const d=document.createElement("div"); d.textContent=String(s||""); return d.innerHTML; }
+function escA(s){ return String(s||"").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+function wrapIcons(root){
+  if(typeof window.GOSE_ICONS==="object"&&window.GOSE_ICONS){
+    root.querySelectorAll(".ic[data-i]").forEach(el=>{
+      const k=el.dataset.i;
+      if(window.GOSE_ICONS[k]) el.style.setProperty("--u","url('"+window.GOSE_ICONS[k]+"')");
+    });
+  }
+}
+
+// ---- Init ----
+render();
+</script>
+</body>
+</html>
