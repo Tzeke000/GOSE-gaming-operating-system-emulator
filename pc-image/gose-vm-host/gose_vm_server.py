@@ -10642,6 +10642,9 @@ class H(http.server.SimpleHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
             except Exception:
                 payload = {}
+            if not _owner_ok(payload):
+                return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                   "error": "owner PIN or dev token required to run stress test"})
             if route == "/stress/start":
                 return self._json(stress_start(payload))
             return self._json(stress_stop())
