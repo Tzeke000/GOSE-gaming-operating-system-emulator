@@ -15,10 +15,18 @@
     background-attachment:fixed;display:flex;flex-direction:column}
   .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
     -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
-  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 6px}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 4px}
   .top img{width:34px;height:34px}.top h1{font-size:20px;margin:0}
   .top .s{color:var(--muted);font-size:12px}
   .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  /* search bar */
+  .sbar{display:flex;align-items:center;gap:10px;margin:6px 36px 0;background:var(--surface);
+    border:1px solid var(--line);border-radius:12px;padding:9px 14px;transition:border-color .15s}
+  .sbar:focus-within{border-color:var(--accent)}
+  .sbar input{flex:1;background:transparent;border:0;outline:none;color:var(--text);font-size:14px;font-family:inherit}
+  .sbar input::placeholder{color:var(--muted)}
+  .sbar .clr{color:var(--muted);cursor:pointer;font-size:15px;font-weight:700;padding:0 2px;display:none}
+  .sbar.has-q .clr{display:block}
   .wrap{flex:1;display:flex;gap:16px;padding:6px 36px 0;min-height:0}
   .rail{width:210px;flex:none;overflow:auto;padding-top:4px}
   .sys{display:flex;align-items:center;justify-content:space-between;gap:8px;height:42px;padding:0 14px;
@@ -36,6 +44,11 @@
     display:flex;align-items:center;gap:10px;flex-wrap:wrap}
   /* sort/filter toolbar */
   .sortbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  /* system grouping header inside "All Systems" pane */
+  .syshdr{font-size:10px;font-weight:700;letter-spacing:.6px;color:var(--muted);
+    text-transform:uppercase;padding:12px 4px 6px;display:flex;align-items:center;gap:10px}
+  .syshdr:first-child{padding-top:4px}
+  .syshdr img{height:13px;width:auto;max-width:100px;opacity:.7;vertical-align:-1px}
   .sortbtn{font-size:11px;font-weight:700;padding:4px 10px;border-radius:8px;
     border:1.5px solid var(--line);background:var(--surface2);color:var(--muted);cursor:pointer}
   .sortbtn.focus{border-color:var(--accent);box-shadow:var(--focusglow);color:var(--text)}
@@ -112,9 +125,14 @@
     <div><h1>Library</h1><div class="s" id="sub">scanning your games…</div></div>
     <div class="home"><span class="ic" data-i="library"></span> B / Esc — home</div>
   </div>
+  <div class="sbar" id="sbar">
+    <span class="ic" data-i="search"></span>
+    <input type="text" id="q" placeholder="Search games…" autocomplete="off" spellcheck="false">
+    <span class="clr" id="qclr" title="Clear">✕</span>
+  </div>
   <div class="wrap"><div class="rail" id="rail"></div><div class="pane" id="pane"></div></div>
   <div class="foot"><span class="ic" data-i="games"></span> GOSE Library
-    <span class="h">D-pad move · <b>A</b> launch/activate · <b>L1/R1</b> system · <b>B</b> home · tiles: Fetch art · kbd: <b>F</b> fav · <b>O</b> options · <b>S</b> scrape all · <b>C</b> collections</span></div>
+    <span class="h">D-pad move · <b>A</b> launch/activate · <b>L1/R1</b> system · <b>B</b> home · <b>/</b> search · tiles: Fetch art · kbd: <b>F</b> fav · <b>O</b> options · <b>S</b> scrape all · <b>C</b> collections</span></div>
   <div class="toast" id="toast"></div>
   <div class="gopt" id="gopt"><div class="box" id="gopt-box"></div></div>
   <!-- collections picker: add a game to a collection -->
@@ -138,9 +156,11 @@
   const COLORS=["#3a5fb0","#7a4ab0","#5a6b3a","#3a86b0","#b0683a","#3ab08a","#b03a6b","#6a4dff"];
   const rail=document.getElementById("rail"),pane=document.getElementById("pane"),toast=document.getElementById("toast"),$=id=>document.getElementById(id);
   let SYS=[],cat=0,foc=0;
-  // sort/filter state
+  // sort/filter/search state
   let sortMode="default"; // "default" | "playtime" | "name" | "added"
   let filterSystem="";    // "" = all; else system id (for __col_* views)
+  let searchQ="";         // live search query (normalized lowercase)
+  const ALL_SYS_ID="__all"; // sentinel: "All Systems" virtual entry
   function say(m){toast.textContent=m;toast.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove("show"),1600);}
   function fmtPlay(s){if(!s)return"new";var m=Math.round(s/60);if(m<1)return"<1m";if(m<60)return m+"m played";return Math.floor(m/60)+"h "+(m%60)+"m played";}
   function fmtPlayDetail(s){if(!s||s<60)return"0h played";var h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return h?""+h+"h "+m+"m played":""+m+"m played";}
@@ -159,20 +179,35 @@
     return g;
   }
   function filteredGames(games){
-    if(!filterSystem) return games;
-    return games.filter(g=>g.system===filterSystem);
+    let g=games;
+    if(filterSystem) g=g.filter(x=>x.system===filterSystem);
+    if(searchQ) g=g.filter(x=>(x.name||"").toLowerCase().includes(searchQ)||
+      (x.system||"").toLowerCase().includes(searchQ)||
+      (_SYS_NAMES[x.system]||"").toLowerCase().includes(searchQ));
+    return g;
   }
+  // system-name lookup for search (populated at loadAll)
+  let _SYS_NAMES={};
 
   function buildRail(){
     // split SYS into: auto-collections (__recently_*/__most_played), user-collections (__col_*), systems
     const autoSystems=["__recent","__fav","__most","__recently_added","__recently_played","__most_played"];
     const colUser=SYS.filter(s=>s.system&&s.system.startsWith("__col_"));
     const colAuto=SYS.filter(s=>autoSystems.includes(s.system));
-    const realSys=SYS.filter(s=>!autoSystems.includes(s.system)&&!s.system.startsWith("__col_"));
+    const realSys=SYS.filter(s=>!autoSystems.includes(s.system)&&!s.system.startsWith("__col_")&&s.system!==ALL_SYS_ID);
+    // find "All Systems" entry index
+    const allIdx=SYS.findIndex(s=>s.system===ALL_SYS_ID);
     let html="";
+    // "All Systems" always at the very top
+    if(allIdx>=0){
+      const s=SYS[allIdx];
+      const qLabel=searchQ?` <span style="color:var(--accent);font-size:10px;font-weight:700">"${esc(searchQ)}"</span>`:"";
+      html+=`<div class="rail-sec first">Catalog</div>`;
+      html+=`<div class="sys ${allIdx===cat?'on':''}" data-i2="${allIdx}"><span class="n">${s.name}${qLabel}</span><span class="c">${filteredGames(s.games).length}</span></div>`;
+    }
     // Auto-collections (Recently Added, Recently Played, Most Played, recents, favs)
     if(colAuto.length){
-      html+='<div class="rail-sec first">Auto</div>';
+      html+='<div class="rail-sec">Auto</div>';
       html+=colAuto.map((s,_)=>{const i=SYS.indexOf(s);return`<div class="sys col-auto ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.name}</span><span class="c">${s.games.length}</span></div>`;}).join("");
     }
     // User collections
@@ -200,48 +235,85 @@
   const ACT_SORT_BASE=N_ACT; // sort tiles start here (relative to nGames())
 
   let lastG=0;
+  function _allGamesFlat(){
+    // for All Systems view (ungrouped, for actions + foc) — same order as buildPane grouped sections
+    if(!SYS[cat]||SYS[cat].system!==ALL_SYS_ID||searchQ) return null;
+    const realSys=SYS.filter(x=>!["__recent","__fav","__most","__recently_added","__recently_played","__most_played",ALL_SYS_ID].includes(x.system)&&!x.system.startsWith("__col_"));
+    return realSys.flatMap(s=>sortedGames(s.games));
+  }
   function nGames(){
     const s=SYS[cat];if(!s)return 0;
+    const flat=_allGamesFlat();
+    if(flat)return flat.length;
     return filteredGames(s.games).length;
   }
   function total(){return nGames()+N_ACT+SORT_MODES.length;}
   function tgtGame(){
     const s=SYS[cat];if(!s)return null;
+    const flat=_allGamesFlat();
+    if(flat)return flat[Math.min(lastG,flat.length-1)]||null;
     const g=filteredGames(sortedGames(s.games));
     return g[Math.min(lastG,g.length-1)]||null;
+  }
+
+  // build a grid HTML string for a flat list of games; returns html
+  function _gameCards(games,focOffset){
+    const isCol=(SYS[cat]&&SYS[cat].system)&&(SYS[cat].system.startsWith("__col_")||["__recently_added","__recently_played","__most_played"].includes(SYS[cat].system));
+    return games.map((gm,i)=>{
+      const artUrl=gm.state_thumb||(gm.img?('/fs/file?path='+encodeURIComponent(gm.img)):null);
+      const artStyle=artUrl?`background:#0c0c1e url('${artUrl}') center/cover no-repeat`:`background:linear-gradient(135deg,${COLORS[(i+focOffset)%COLORS.length]},#0c0c1e)`;
+      const ps=gm.playtime_s||gm.secs||0,lp=gm.last_played||null;
+      const playLine=ps?fmtPlayDetail(ps)+(lp?' · '+fmtDate(lp):''):(gm.plays?'▶ '+gm.plays+'×':null);
+      const ghost=(isCol&&!gm.img&&gm.name)?' ghost':'';
+      return `<div class="game ${i===foc-focOffset?'focus':''}${ghost}" data-g="${i+focOffset}">
+      <div class="art" style="${artStyle}">${gm.fav?'<span class="fav">★</span>':''}${gm.state_thumb?'<span class="resume">▶ Resume</span>':''}${artUrl?'':esc(gm.name)}</div>
+      <div class="sub">${playLine||esc(gm.name)}</div></div>`;}).join("");
   }
 
   function buildPane(){
     const s=SYS[cat];
     if(!s){pane.innerHTML='<div class="empty">No games found. Drop ROMs into /userdata/roms/&lt;system&gt;.</div>';return;}
+    const isAll=(s.system===ALL_SYS_ID);
     const games=filteredGames(sortedGames(s.games));
     const n=games.length;
     if(foc<n) lastG=foc;
     const gm0=tgtGame(), nm0=gm0?gm0.name:"";
     const isCol=s.system&&(s.system.startsWith("__col_")||["__recently_added","__recently_played","__most_played"].includes(s.system));
-    // header: show delete-collection button for user collections
+    // header
+    const qBadge=searchQ?` <span style="font-size:11px;color:var(--accent);font-weight:700">"${esc(searchQ)}"</span>`:"";
     const delBtn=s.system&&s.system.startsWith("__col_")?`<span style="color:#ff6b6b;font-size:11px;cursor:pointer;font-weight:700;margin-left:auto" id="del-col">Delete collection</span>`:``;
-    pane.innerHTML=`<div class="ph">${s.logo?`<img src="${s.logo}" alt="${s.name}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode('${s.name.toUpperCase()} '))">`:s.name.toUpperCase()+' '}— ${n} GAME${n!=1?'S':''}${delBtn}</div>`+
+    const headerLabel=isAll?(searchQ?'SEARCH RESULTS':'ALL SYSTEMS'):(s.logo?`<img src="${s.logo}" alt="${esc(s.name)}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode(''))">`:s.name.toUpperCase()+' ');
+    pane.innerHTML=`<div class="ph">${headerLabel}${qBadge} — ${n} GAME${n!=1?'S':''}${delBtn}</div>`+
       `<div class="sortbar" id="sortbar">`+SORT_MODES.map((m,i)=>`<div class="sortbtn ${foc===(n+N_ACT+i)?'focus':''} ${sortMode===m.k?'active':''}" data-si="${i}">${m.l}</div>`).join("")+`</div>`+
-      `<div class="grid" id="grid"></div>`+
+      `<div id="gamearea"></div>`+
       `<div class="acts">`+
       `<div class="ab ${foc===n+ACT_FAV?'focus':''}" id="a-fav">${gm0&&gm0.fav?'☆':'★'}<span class="t">${gm0&&gm0.fav?'Unfavorite':'Favorite'} — ${esc(nm0)}</span></div>`+
       `<div class="ab ${foc===n+ACT_ART?'focus':''}" id="a-art"><span class="t">Fetch art — ${esc(nm0)}</span></div>`+
       `<div class="ab ${foc===n+ACT_OPT?'focus':''}" id="a-opt"><span class="t">Options — ${esc(nm0)}</span></div>`+
-      `<div class="ab ${foc===n+ACT_SCR?'focus':''}" id="a-scr"><span class="t">Scrape all — ${esc(s.name)}</span></div>`+
+      `<div class="ab ${foc===n+ACT_SCR?'focus':''}" id="a-scr" style="${isAll?'opacity:.35;pointer-events:none':''}"><span class="t">Scrape all — ${isAll?'pick a system first':esc(s.name)}</span></div>`+
       `<div class="ab ${foc===n+ACT_COL?'focus':''}" id="a-col"><span class="t">Add to collection — ${esc(nm0)}</span></div></div>`;
-    const g=$("grid");
-    g.innerHTML=games.map((gm,i)=>{
-      const artUrl=gm.state_thumb||(gm.img?('/fs/file?path='+encodeURIComponent(gm.img)):null);
-      const artStyle=artUrl?`background:#0c0c1e url('${artUrl}') center/cover no-repeat`:`background:linear-gradient(135deg,${COLORS[i%COLORS.length]},#0c0c1e)`;
-      const ps=gm.playtime_s||gm.secs||0,lp=gm.last_played||null;
-      const playLine=ps?fmtPlayDetail(ps)+(lp?' · '+fmtDate(lp):''):(gm.plays?'▶ '+gm.plays+'×':null);
-      // ghost class when ROM missing from collection (img null AND in a collection)
-      const ghost=(isCol&&!gm.img&&gm.name)?' ghost':'';
-      return `<div class="game ${i===foc?'focus':''}${ghost}" data-g="${i}">
-      <div class="art" style="${artStyle}">${gm.fav?'<span class="fav">★</span>':''}${gm.state_thumb?'<span class="resume">▶ Resume</span>':''}${artUrl?'':gm.name}</div>
-      <div class="sub">${playLine||gm.name}</div></div>`;}).join("");
-    [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.g;render();launch();});
+    const area=$("gamearea");
+    if(isAll&&!searchQ){
+      // grouped by system — show a section header before each system's games
+      const realSys=SYS.filter(x=>!["__recent","__fav","__most","__recently_added","__recently_played","__most_played",ALL_SYS_ID].includes(x.system)&&!x.system.startsWith("__col_"));
+      let html="",gi=0;
+      realSys.forEach(sys=>{
+        const sg=sortedGames(sys.games);
+        if(!sg.length)return;
+        const logoTag=sys.logo?`<img src="${sys.logo}" alt="${esc(sys.name)}" onerror="this.style.display='none'">`:"";
+        html+=`<div class="syshdr">${logoTag}${esc(sys.name)} <span style="opacity:.5">${sg.length}</span></div><div class="grid" data-sgi="${gi}">`;
+        html+=_gameCards(sg,gi);
+        html+=`</div>`;
+        gi+=sg.length;
+      });
+      area.innerHTML=html||`<div class="empty">No games found. Drop ROMs into /userdata/roms/&lt;system&gt;.</div>`;
+    } else {
+      // flat grid (single system, collection, or search results)
+      const flatHtml=games.length?_gameCards(games,0):`<div class="empty">No games match "${esc(searchQ||"")}".</div>`;
+      area.innerHTML=`<div class="grid" id="grid">${flatHtml}</div>`;
+    }
+    // wire game clicks
+    area.querySelectorAll(".game").forEach(el=>el.onclick=()=>{foc=+el.dataset.g;render();launch();});
     // sort buttons
     [...($("sortbar").children)].forEach(el=>{if(el.dataset.si!==undefined)el.onclick=()=>{const idx=+el.dataset.si;sortMode=SORT_MODES[idx].k;foc=0;render();}});
     $("a-fav").onclick=()=>{foc=n+ACT_FAV;render();toggleFav();};
@@ -251,15 +323,25 @@
     $("a-col").onclick=()=>{foc=n+ACT_COL;render();openCollPicker();};
     const dc=$("del-col");if(dc)dc.onclick=()=>deleteCollection();}
 
-  function render(){buildRail();buildPane();paint();const f=pane.querySelector(".game.focus,.ab.focus,.sortbtn.focus");if(f)f.scrollIntoView({block:"nearest"});}
+  function render(){buildRail();buildPane();paint();
+    // sync search bar display state
+    $("sbar").classList.toggle("has-q",searchQ.length>0);
+    const f=pane.querySelector(".game.focus,.ab.focus,.sortbtn.focus");if(f)f.scrollIntoView({block:"nearest"});}
 
   // ---- game actions ----
-  function launch(){const s=SYS[cat];if(!s)return;const games=filteredGames(sortedGames(s.games));const gm=games[foc];if(!gm)return;const g=gm.name;
+  // resolve the currently focused game (handles All Systems flat-index + search results)
+  function focusedGame(){
+    const s=SYS[cat];if(!s||foc>=nGames())return null;
+    const flat=_allGamesFlat();
+    if(flat)return flat[foc]||null;
+    return filteredGames(sortedGames(s.games))[foc]||null;
+  }
+  function launch(){const s=SYS[cat];if(!s)return;const gm=focusedGame();if(!gm)return;const g=gm.name;
     const sys=gm.system||s.system;
     say("Launching "+g+"…");
     fetch("/launch",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({system:sys,game:g})}).then(r=>r.json())
-      .then(d=>say(d.ok?("Launching "+g+" — "+s.name):("Couldn't launch: "+(d.error||"?"))))
+      .then(d=>say(d.ok?("Launching "+g+" — "+(gm.system?(_SYS_NAMES[gm.system]||gm.system):s.name)):("Couldn't launch: "+(d.error||"?"))))
       .catch(e=>say("Launch failed"));}
   function toggleFav(){const s=SYS[cat],gm=tgtGame();if(!s||!gm)return;
     const sys=gm.system||s.system, game=gm.name, on=!gm.fav;
@@ -277,7 +359,7 @@
         else if(d.net){say("Couldn't reach the art server — try again");}
         else say("Fetch failed: "+(d.error||"?"));
       }).catch(e=>say("Fetch failed (network?)"));}
-  function scrapeArt(){const s=SYS[cat];if(!s||["__recent","__fav","__most","__recently_added","__recently_played","__most_played"].includes(s.system)||s.system.startsWith("__col_")){say("Pick a system to scrape");return;}
+  function scrapeArt(){const s=SYS[cat];if(!s||[ALL_SYS_ID,"__recent","__fav","__most","__recently_added","__recently_played","__most_played"].includes(s.system)||s.system.startsWith("__col_")){say("Pick a system first to scrape");return;}
     say("Scraping cover art for "+s.name+"… (this can take a moment)");
     fetch("/scrape",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:s.system})})
       .then(r=>r.json()).then(d=>{
@@ -477,7 +559,27 @@
     else if(foc>=n+N_ACT&&foc<n+N_ACT+SORT_MODES.length){sortMode=SORT_MODES[foc-(n+N_ACT)].k;foc=0;render();}
     else launch();}
 
+  // ---- search wiring ----
+  function applySearch(q){
+    searchQ=q.toLowerCase().trim();
+    $("sbar").classList.toggle("has-q",searchQ.length>0);
+    // if there's a query and we're not on All Systems, jump there
+    if(searchQ){
+      const allIdx=SYS.findIndex(s=>s.system===ALL_SYS_ID);
+      if(allIdx>=0&&SYS[cat].system!==ALL_SYS_ID){cat=allIdx;foc=0;}
+    }
+    foc=0;lastG=0;render();
+  }
+  $("q").addEventListener("input",()=>applySearch($("q").value));
+  $("qclr").addEventListener("click",()=>{$("q").value="";applySearch("");$("q").blur();});
+  $("q").addEventListener("keydown",e=>{
+    if(e.key==="Escape"){$("q").value="";applySearch("");$("q").blur();e.preventDefault();}
+    else if(e.key==="Enter"){$("q").blur();e.preventDefault();}  // commit: return focus to grid
+  });
+
   addEventListener("keydown",e=>{const k=e.key;
+    // if search box is focused, let it handle its own input (don't intercept letters)
+    if(document.activeElement===$("q")) return;
     // name-input modal (highest priority)
     if($("ninput").classList.contains("on")){
       if(k==="Escape"){ninputClose();e.preventDefault();}
@@ -497,6 +599,8 @@
       else if(k==="Enter"||k===" ")goptEnter();
       else if(k==="Escape"||k==="Backspace")goptClose();
       else return;e.preventDefault();return;}
+    // "/" or pad-search hotkey: focus the search bar
+    if(k==="/"||k==="Find"){$("q").focus();$("q").select();e.preventDefault();return;}
     if(k==="ArrowRight"||k==="Right")moveFoc(1);else if(k==="ArrowLeft"||k==="Left")moveFoc(-1);
     else if(k==="ArrowDown"||k==="Down")moveFoc(4);else if(k==="ArrowUp"||k==="Up")moveFoc(-4);
     else if(k==="]"||k==="PageDown")moveCat(1);else if(k==="["||k==="PageUp")moveCat(-1);
@@ -505,7 +609,9 @@
     else if(k==="f"||k==="F")toggleFav();
     else if(k==="o"||k==="O")openOptions();
     else if(k==="c"||k==="C")openCollPicker();
-    else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
+    else if(k==="Escape"||k==="Backspace"){
+      if(searchQ){$("q").value="";applySearch("");}
+      else location.href="gose-home.html";}
     else return;e.preventDefault();});
   // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
   // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
@@ -521,10 +627,19 @@
       fetch("/collections",{cache:"no-store"}).then(r=>r.json()).catch(()=>({ok:false,collections:[]}))
     ]).then(([d,rc,fv,stats,colls])=>{
       SYS=(d.systems||[]);
+      // build _SYS_NAMES lookup for search (system-id → friendly name)
+      _SYS_NAMES={};
+      SYS.forEach(s=>{_SYS_NAMES[s.system]=s.name;});
+      // tag every game with its system id so cross-system views can launch correctly
+      SYS.forEach(s=>s.games.forEach(g=>{if(!g.system)g.system=s.system;}));
       // inject playtime_s + last_played from /game/stats into the system game lists
       const statsMap={};
       ((stats&&stats.games)||[]).forEach(g=>{statsMap[g.key]={playtime_s:g.total_secs,last_played:g.last_played,sessions:g.sessions};});
       SYS.forEach(s=>s.games.forEach(g=>{const st=statsMap[s.system+"/"+g.name];if(st){g.playtime_s=st.playtime_s;g.last_played=st.last_played;g.sessions=st.sessions;}}));
+      // build "All Systems" virtual entry — flat list of all real games (search target)
+      const allGames=SYS.flatMap(s=>s.games.map(g=>({...g,system:s.system})));
+      // insert at position 0 (buildRail renders it separately under "Catalog" header)
+      SYS.unshift({name:"All Systems",system:ALL_SYS_ID,games:allGames});
       const recent=((rc&&rc.games)||[]).map(r=>({name:r.game,img:r.img,system:r.system,plays:r.plays,
         secs:r.secs,playtime_s:r.playtime_s||r.secs||0,last_played:r.last_played,sessions:r.sessions,fav:r.fav,state_thumb:r.state_thumb}));
       const favs=((fv&&fv.games)||[]).map(r=>{var _fk=(r.system||"")+"/"+(r.game||""),_fs=statsMap[_fk];
@@ -533,7 +648,7 @@
       // "Most Played" surface (existing — preserved)
       const played=((stats&&stats.games)||[]).filter(g=>g.total_secs>0).slice(0,10);
       const mostPlayed=played.map(g=>{
-        const sys=SYS.find(s=>s.system===g.system);
+        const sys=SYS.find(s=>s.system===g.system&&s.system!==ALL_SYS_ID);
         return {name:g.game,system:g.system,img:sys?(sys.games.find(x=>x.name===g.game)||{}).img:null,
           playtime_s:g.total_secs,last_played:g.last_played,sessions:g.sessions};});
       if(mostPlayed.length) SYS.unshift({name:"🏆 Most Played",system:"__most",games:mostPlayed});
@@ -580,10 +695,15 @@
 
       return Promise.all([...collFetches,raFetch]).then(()=>{
         const totH=stats&&stats.total_secs?Math.round(stats.total_secs/360)/10:0;
-        $("sub").textContent=d.ok?`${d.total||0} games · ${(d.systems||[]).length} systems${favs.length?" · "+favs.length+"★":""}${recent.length?" · "+recent.length+" recent":""}${totH?" · "+totH+"h played":""}`:"couldn't read games";
+        $("sub").textContent=d.ok?`${d.total||0} games · ${(d.systems||[]).filter(s=>!s.system.startsWith("__")).length} systems${favs.length?" · "+favs.length+"★":""}${recent.length?" · "+recent.length+" recent":""}${totH?" · "+totH+"h played":""}`:"couldn't read games";
         if(cur){let ci=SYS.findIndex(s=>s.system===cur.sys);cat=ci<0?0:ci;
           if(cur.tile>=0){foc=nGames()+cur.tile;lastG=Math.min(cur.lg,Math.max(0,nGames()-1));}
           else{const gi=cur.game?filteredGames(sortedGames(SYS[cat].games)).findIndex(g=>g.name===cur.game):-1;foc=gi<0?0:gi;}}
+        else {
+          // default: start on "All Systems" so the full catalog is immediately visible
+          const allIdx=SYS.findIndex(s=>s.system===ALL_SYS_ID);
+          if(allIdx>=0)cat=allIdx;
+        }
         render();
       });
     }).catch(()=>{$("sub").textContent="library offline";render();});
