@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Friends &amp; Devices</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    display:flex;flex-direction:column;align-items:center}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  /* bar */
+  .bar{width:100%;max-width:640px;display:flex;align-items:center;gap:10px;padding:24px 0 8px;flex:none}
+  .bar .back{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:13.5px;
+    font-weight:600;cursor:pointer;padding:6px 10px 6px 4px;border-radius:9px;border:2px solid transparent}
+  .bar .back.focus{border-color:var(--accent);color:var(--accent);box-shadow:var(--focusglow)}
+  .bar h1{font-size:22px;margin:0;flex:1}
+  .bar .scan-btn{background:var(--surface2);border:2px solid var(--line);border-radius:10px;
+    padding:7px 15px;font-size:13px;font-weight:700;color:var(--text);cursor:pointer;
+    display:flex;align-items:center;gap:6px;flex:none}
+  .bar .scan-btn.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .bar .scan-btn.scanning{opacity:.6;cursor:default}
+  /* scroll */
+  .scroll{width:100%;max-width:640px;overflow:auto;flex:1;padding:4px 0 100px;
+    display:flex;flex-direction:column;gap:10px}
+  /* offline banner */
+  .banner{background:var(--surface);border:2px solid var(--line);border-radius:14px;
+    padding:20px 20px;text-align:center;color:var(--muted)}
+  .banner .ttl{font-size:15px;font-weight:600;margin-bottom:6px;color:var(--text)}
+  .banner .sub{font-size:13px;line-height:1.6}
+  .banner .sub a{color:var(--accent);text-decoration:none;cursor:pointer}
+  /* section */
+  .sec{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;
+    color:var(--muted);padding:4px 2px 2px;display:flex;align-items:center;gap:8px}
+  .sec .cnt{font-size:11px;font-weight:600;color:var(--muted);background:var(--surface2);
+    padding:1px 8px;border-radius:999px}
+  /* device card */
+  .card{background:var(--surface);border:2px solid var(--line);border-radius:16px;
+    padding:14px 16px;display:flex;align-items:center;gap:14px;cursor:pointer;
+    transition:border-color .12s,box-shadow .12s}
+  .card.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .card.gose{border-color:#5cd0ff22}
+  .card.gose.focus{border-color:var(--accent)}
+  /* avatar dot */
+  .av{width:46px;height:46px;border-radius:14px;flex:none;display:flex;align-items:center;
+    justify-content:center;font-size:22px;background:var(--surface2);position:relative}
+  .av .dot{position:absolute;bottom:-2px;right:-2px;width:12px;height:12px;border-radius:50%;
+    border:2px solid var(--bg)}
+  .av .dot.on{background:#37d39b}
+  .av .dot.off{background:var(--muted)}
+  /* info */
+  .info{flex:1;min-width:0}
+  .nm{font-weight:600;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta{color:var(--muted);font-size:12.5px;margin-top:2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .activity{color:var(--accent);font-size:12.5px;margin-top:2px;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  /* badge */
+  .badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;
+    letter-spacing:.5px;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:1px solid}
+  .badge.gose{color:#5cd0ff;border-color:#5cd0ff44;background:#5cd0ff0f}
+  .badge.other{color:var(--muted);border-color:var(--line)}
+  /* save chip */
+  .save-chip{font-size:11.5px;font-weight:600;color:var(--accent);border:1px solid var(--accent);
+    padding:2px 9px;border-radius:999px;cursor:pointer;background:transparent;margin-left:auto}
+  /* add-device row */
+  .add-row{background:var(--surface);border:2px dashed var(--line);border-radius:14px;
+    padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;color:var(--muted)}
+  .add-row.focus{border-color:var(--accent);color:var(--accent)}
+  /* add-device modal */
+  .modal-bg{position:fixed;inset:0;background:#06060cc8;display:none;align-items:center;
+    justify-content:center;z-index:50}
+  .modal-bg.on{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    padding:24px 28px;width:480px;max-width:92vw;max-height:88vh;overflow:auto}
+  .modal h2{margin:0 0 6px;font-size:17px}
+  .modal .sub{color:var(--muted);font-size:13px;margin-bottom:16px;line-height:1.5}
+  .field{margin:10px 0}
+  .field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px}
+  .inp{width:100%;background:var(--surface2);border:2px solid var(--line);border-radius:11px;
+    padding:10px 13px;font-size:14.5px;color:var(--text);font-family:inherit;outline:none}
+  .inp:focus,.inp.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .modal-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+  .btn{background:var(--accent);color:#06121a;border-radius:11px;padding:10px 22px;
+    font-weight:700;font-size:14px;border:2px solid var(--accent);cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--text);border-color:var(--line)}
+  .btn.focus{box-shadow:var(--focusglow)}
+  .btn.ghost.focus{border-color:var(--accent)}
+  /* toast */
+  .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);
+    background:#1a1d2e;border:1px solid var(--line);border-radius:12px;padding:10px 20px;
+    font-size:13.5px;z-index:100;transition:transform .25s,opacity .25s;opacity:0;
+    white-space:nowrap;max-width:90vw;text-align:center}
+  .toast.on{transform:translateX(-50%) translateY(0);opacity:1}
+  .toast.ok{border-color:#37d39b55;color:#37d39b}
+  .toast.err{border-color:#ff8e8e55;color:#ff8e8e}
+  /* foot */
+  .foot{position:fixed;bottom:0;left:0;right:0;display:flex;align-items:center;
+    justify-content:center;padding:10px 40px;color:var(--muted);font-size:12px;
+    gap:16px;pointer-events:none}
+  /* spinner */
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);
+    border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+</style></head>
+<body>
+
+<div class="bar">
+  <div class="back focusable" id="back" tabindex="0">
+    <span style="font-size:18px">&#8249;</span>
+    <h1>Friends &amp; Devices</h1>
+  </div>
+  <button class="scan-btn focusable" id="scan-btn" tabindex="0">
+    <span id="scan-ic">&#128247;</span> Scan
+  </button>
+</div>
+
+<div class="scroll" id="scroll">
+  <div id="main-content">
+    <div class="banner" id="loading-banner">
+      <div class="ttl">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Device modal -->
+<div class="modal-bg" id="add-modal">
+  <div class="modal">
+    <h2>Save Device</h2>
+    <div class="sub">Add a known GOSE device to your list by its Tailscale IP address (100.x.x.x).</div>
+    <div class="field">
+      <label>Device Name</label>
+      <input class="inp focusable" id="add-name" type="text" placeholder="e.g. Odin 2" maxlength="48">
+    </div>
+    <div class="field">
+      <label>Tailscale IP</label>
+      <input class="inp focusable" id="add-ip" type="text" placeholder="100.x.x.x" maxlength="48">
+    </div>
+    <div class="modal-btns">
+      <button class="btn ghost focusable" id="add-cancel">Cancel</button>
+      <button class="btn focusable" id="add-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="foot"><span><b>Y</b> scan &nbsp; <b>X</b> add device &nbsp; <b>B</b> back</span></div>
+
+<script src="assets/cursor.js"></script>
+<script>
+let presenceEnabled = false;
+let scanning = false;
+let lastPeers = [];
+let addModalOpen = false;
+
+async function checkEnabled(){
+  try{
+    const r = await fetch("/privacy",{cache:"no-store"});
+    const d = await r.json();
+    presenceEnabled = d.ok && d.privacy && d.privacy.friends_presence;
+  }catch(e){presenceEnabled=false;}
+}
+
+async function scan(){
+  if(scanning) return;
+  scanning = true;
+  const btn = document.getElementById("scan-btn");
+  const ic = document.getElementById("scan-ic");
+  btn.classList.add("scanning");
+  ic.innerHTML = '<span class="spin"></span>';
+  try{
+    const r = await fetch("/friends/scan",{cache:"no-store"});
+    const d = await r.json();
+    if(d.ok){
+      lastPeers = d.peers||[];
+      render(d);
+    } else {
+      renderError(d.error||"Scan failed");
+    }
+  }catch(e){renderError("Could not reach the GOSE server.");}
+  scanning = false;
+  btn.classList.remove("scanning");
+  ic.textContent = "&#128247;";
+}
+
+function render(d){
+  const el = document.getElementById("main-content");
+  if(!d.enabled){
+    el.innerHTML = `
+      <div class="banner">
+        <div class="ttl">Device Presence is off</div>
+        <div class="sub">Enable it in
+          <a onclick="location.href='gose-settings.html#privacy'">Settings &gt; Privacy &amp; Security</a>
+          to discover other GOSE devices on your Tailscale network.</div>
+      </div>`;
+    // still show saved devices
+    loadSaved(el);
+    return;
+  }
+  const peers = d.peers||[];
+  const online = peers.filter(p=>p.online);
+  const offline = peers.filter(p=>!p.online);
+  const note = d.note ? `<div class="banner" style="padding:10px 16px;margin-bottom:2px">
+    <div style="font-size:13px;color:var(--muted)">${esc(d.note)}</div></div>` : "";
+  let html = note;
+  if(online.length){
+    html += `<div class="sec">Online <span class="cnt">${online.length}</span></div>`;
+    html += online.map(peerCard).join("");
+  }
+  if(offline.length){
+    html += `<div class="sec" style="margin-top:6px">Offline <span class="cnt">${offline.length}</span></div>`;
+    html += offline.map(peerCard).join("");
+  }
+  if(!peers.length){
+    html += `<div class="banner"><div class="ttl">No devices found</div>
+      <div class="sub">Make sure other GOSE devices are on your Tailscale network and have GOSE running.</div></div>`;
+  }
+  html += addRow();
+  el.innerHTML = html;
+  attachCardHandlers();
+}
+
+function peerCard(p){
+  const display = esc(p.display||p.name||p.ip);
+  const ip = esc(p.ip||"");
+  const isGose = p.gose;
+  const act = p.activity && p.activity.game ? p.activity.game : "";
+  const actSys = p.activity && p.activity.system ? p.activity.system+"/" : "";
+  return `<div class="card${isGose?" gose":""} focusable" tabindex="0" data-ip="${ip}" data-name="${display}">
+    <div class="av">
+      ${isGose?"&#127918;":"&#128187;"}
+      <div class="dot ${p.online?"on":"off"}"></div>
+    </div>
+    <div class="info">
+      <div class="nm">${display}</div>
+      <div class="meta">
+        <span class="badge ${isGose?"gose":"other"}">${isGose?"GOSE":"Other"}</span>
+        <span>${ip}</span>
+        ${p.os?`<span style="opacity:.6">${esc(p.os)}</span>`:""}
+      </div>
+      ${act?`<div class="activity">&#9654; ${esc(actSys)}${esc(act)}</div>`:""}
+    </div>
+    ${p.online&&isGose?`<button class="save-chip" data-save-ip="${ip}" data-save-name="${display}">Save</button>`:""}
+  </div>`;
+}
+
+function addRow(){
+  return `<div class="add-row focusable" id="add-row" tabindex="0">
+    <span style="font-size:20px">+</span>
+    <span style="font-size:14px;font-weight:600">Add device manually</span>
+  </div>`;
+}
+
+function attachCardHandlers(){
+  document.querySelectorAll(".save-chip").forEach(btn=>{
+    btn.addEventListener("click",e=>{
+      e.stopPropagation();
+      openAdd(btn.dataset.saveName, btn.dataset.saveIp);
+    });
+  });
+  const ar = document.getElementById("add-row");
+  if(ar){
+    ar.addEventListener("click",()=>openAdd());
+    ar.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" ")openAdd();});
+  }
+}
+
+async function loadSaved(container){
+  try{
+    const r = await fetch("/friends",{cache:"no-store"});
+    const d = await r.json();
+    if(d.ok && d.devices && d.devices.length){
+      const extras = d.devices.map(dev=>({
+        name:dev.name, ip:dev.ts_ip||"", display:dev.display_name||dev.name,
+        online:false, gose:false, activity:{}
+      }));
+      let html = `<div class="sec" style="margin-top:6px">Saved Devices <span class="cnt">${extras.length}</span></div>`;
+      html += extras.map(peerCard).join("");
+      html += addRow();
+      container.insertAdjacentHTML("beforeend", html);
+      attachCardHandlers();
+    } else {
+      container.insertAdjacentHTML("beforeend", addRow());
+      attachCardHandlers();
+    }
+  }catch(e){}
+}
+
+// ---- add modal ----
+function openAdd(name="",ip=""){
+  document.getElementById("add-name").value = name;
+  document.getElementById("add-ip").value = ip;
+  document.getElementById("add-modal").classList.add("on");
+  addModalOpen = true;
+  setTimeout(()=>document.getElementById("add-name").focus(),50);
+}
+function closeAdd(){
+  document.getElementById("add-modal").classList.remove("on");
+  addModalOpen = false;
+}
+document.getElementById("add-cancel").addEventListener("click",closeAdd);
+document.getElementById("add-save").addEventListener("click", async()=>{
+  const name = document.getElementById("add-name").value.trim();
+  const ip = document.getElementById("add-ip").value.trim();
+  if(!name||!ip){showToast("Name and IP required","err");return;}
+  try{
+    const r = await fetch("/friends",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name,ts_ip:ip})});
+    const d = await r.json();
+    if(d.ok){showToast("Device saved","ok");closeAdd();}
+    else showToast(d.error||"Save failed","err");
+  }catch(e){showToast("Could not reach server","err");}
+});
+
+// ---- scan button ----
+document.getElementById("scan-btn").addEventListener("click",()=>{if(!scanning)scan();});
+
+// ---- back ----
+document.getElementById("back").addEventListener("click",()=>history.back());
+document.getElementById("back").addEventListener("keydown",e=>{if(e.key==="Enter")history.back();});
+
+// ---- pad nav ----
+window.addEventListener("keydown",e=>{
+  if(addModalOpen){if(e.key==="Escape")closeAdd();return;}
+  if(e.key==="Escape"||e.key==="b") history.back();
+  if(e.key==="y"||e.key==="Y") scan();
+  if(e.key==="x"||e.key==="X") openAdd();
+});
+
+// ---- helpers ----
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+
+let _toastT;
+function showToast(msg,cls=""){
+  const t=document.getElementById("toast");
+  t.textContent=msg;t.className="toast on"+(cls?" "+cls:"");
+  clearTimeout(_toastT);_toastT=setTimeout(()=>{t.className="toast";},3200);
+}
+
+function renderError(msg){
+  document.getElementById("main-content").innerHTML=
+    `<div class="banner"><div class="ttl">Error</div><div class="sub">${esc(msg)}</div></div>`+addRow();
+  attachCardHandlers();
+}
+
+// ---- init ----
+(async()=>{
+  await checkEnabled();
+  await scan();
+})();
+</script>
+</body></html>

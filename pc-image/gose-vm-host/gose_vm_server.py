@@ -1701,89 +1701,6 @@ def set_game_options(payload):
     LOG.info("game options set: %s", k)
     return {"ok": True, "key": k}
 
-# ---- #61 per-game performance profiles + FPS cap --------------------------------
-# perf_mode: battery/balanced/performance/default (default = inherit global)
-# fps_cap:   0 = off, positive int = frame limit
-# Stored in GAME_PERF_F (JSON); applied via game_perf_apply() at launch.
-
-_PERF_MODES = ("default", "battery", "balanced", "performance")
-_FPS_CAP_MAX = 300
-
-GAME_PERF_F = "/userdata/system/gose/game_perf.json"
-
-def _game_perf_store():
-    import json as _json
-    try:
-        return _json.load(open(GAME_PERF_F))
-    except Exception:
-        return {}
-
-def _game_perf_save(store):
-    import json as _json
-    os.makedirs(os.path.dirname(GAME_PERF_F), exist_ok=True)
-    tmp = GAME_PERF_F + ".tmp"
-    with open(tmp, "w") as f:
-        _json.dump(store, f, indent=2); f.flush(); os.fsync(f.fileno())
-    os.replace(tmp, GAME_PERF_F)
-
-def game_perf_get(system, game):
-    """GET /game/perf?system=&game= — per-game perf_mode + fps_cap overrides."""
-    if not system or not game:
-        return {"ok": False, "error": "system+game required"}
-    key = "%s/%s" % (system, game)
-    store = _game_perf_store()
-    entry = store.get(key, {})
-    return {"ok": True, "system": system, "game": game,
-            "perf_mode": entry.get("perf_mode", "default"),
-            "fps_cap": int(entry.get("fps_cap", 0)),
-            "modes": list(_PERF_MODES)}
-
-def game_perf_set(payload):
-    """POST /game/perf — set per-game perf_mode and/or fps_cap."""
-    system = payload.get("system"); game = payload.get("game")
-    if not system or not game:
-        return {"ok": False, "error": "system+game required"}
-    pm = payload.get("perf_mode")
-    if pm is not None and pm not in _PERF_MODES:
-        return {"ok": False, "error": "perf_mode must be one of %s" % list(_PERF_MODES)}
-    fps = None
-    if "fps_cap" in payload:
-        try:
-            fps = int(payload["fps_cap"])
-        except (TypeError, ValueError):
-            return {"ok": False, "error": "fps_cap must be an integer"}
-        if not (0 <= fps <= _FPS_CAP_MAX):
-            return {"ok": False, "error": "fps_cap must be 0 (off) or 1-%d" % _FPS_CAP_MAX}
-    key = "%s/%s" % (system, game)
-    store = _game_perf_store()
-    entry = store.setdefault(key, {})
-    if pm is not None:
-        entry["perf_mode"] = pm
-    if fps is not None:
-        entry["fps_cap"] = fps
-    _game_perf_save(store)
-    LOG.info("game_perf set: %s => %s", key, entry)
-    return {"ok": True, "system": system, "game": game,
-            "perf_mode": entry.get("perf_mode", "default"),
-            "fps_cap": int(entry.get("fps_cap", 0))}
-
-def game_perf_apply(system, game):
-    """Apply per-game perf_mode + fps_cap at launch time. Safe no-op if no override."""
-    key = "%s/%s" % (system, game)
-    entry = _game_perf_store().get(key, {})
-    pm = entry.get("perf_mode", "default")
-    fps = int(entry.get("fps_cap", 0))
-    applied = {}
-    if pm and pm != "default":
-        sys_perf(pm)
-        applied["perf_mode"] = pm
-    if fps > 0:
-        _bconf_set("global.fps_cap", str(fps))
-        applied["fps_cap"] = fps
-    else:
-        _bconf_set("global.fps_cap", "")
-    return {"ok": True, "applied": applied}
-
 # Our AI virtual controllers present as Xbox 360 pads (agent input.py). EmulationStation normally
 # tells Batocera's launcher which controllers exist; since the GOSE shell replaced ES, we must pass
 # those per-player args ourselves or the pad is detected-but-unbound (= AI can't actually play). The
@@ -1941,8 +1858,6 @@ def launch_game(system, game, players=None):
         except Exception as e:
             LOG.warning("#112 could not delete auto-save %s: %s", _auto, e)
         _clear_gameover_flag(system, game)
-    # #61 apply per-game perf_mode + fps_cap (safe no-op if no override stored)
-    game_perf_apply(system, os.path.splitext(os.path.basename(rom))[0])
     try:
         _spawn(["emulatorlauncher"] + _virtual_pad_args(order=players) + ["-system", system, "-rom", rom])
         record_recent(system, game)
@@ -4640,6 +4555,7 @@ def privacy_get():
     p.setdefault("screen_capture", "always")
     p.setdefault("diagnostics", False)
     p.setdefault("share_qr", False)   # #60 QR share — off by default (docs/31)
+    p.setdefault("friends_presence", False)   # #73 friends/presence — off by default
     return {"ok": True, "privacy": p}
 
 def privacy_set(payload):
@@ -4658,6 +4574,8 @@ def privacy_set(payload):
         p["diagnostics"] = chg["diagnostics"] = bool(payload["diagnostics"])
     if "share_qr" in payload:   # #60 QR share toggle
         p["share_qr"] = chg["share_qr"] = bool(payload["share_qr"])
+    if "friends_presence" in payload:   # #73 friends/presence toggle
+        p["friends_presence"] = chg["friends_presence"] = bool(payload["friends_presence"])
     if not chg:
         return {"ok": False, "error": "nothing to set"}
     os.makedirs(os.path.dirname(PRIVACY_F), exist_ok=True)
@@ -4667,6 +4585,295 @@ def privacy_set(payload):
 
 def _capture_allowed():
     return _privacy_load().get("screen_capture", "always") != "never"
+
+# ===== Parental Controls (#71) ====================================================
+# PIN-gated pane: restrict games by content rating, hide entire systems, cap play
+# time per day.  Owner PIN is required to read OR change settings — the same 8-digit
+# PIN already used by accounts (#98) and SSH (#87).
+#
+# Storage: /userdata/system/gose/parental.json  (OS-protected prefix)
+# Schema:
+#   enabled        bool   (false = parental controls off, no restrictions enforced)
+#   max_rating     str    one of: "E", "E10", "T", "M", "AO", "RP", "all"  (default "all")
+#   hidden_systems list   system ids to hide in Library/Game Bar (e.g. ["psx", "segacd"])
+#   daily_limit_m  int    max total play minutes per day, 0 = unlimited (default 0)
+#
+# Enforcement model (client-side, checked in gose-library.html and the game bar):
+#   The server returns the current rules; the kiosk JS enforces them.  A PIN-gate
+#   wraps every read AND write so a child can't simply fetch the rules to learn the
+#   limits (it sees ERR_PIN_REQUIRED and must ask).  This is soft enforcement only —
+#   a physically knowledgeable user can SSH in — but it matches the family-device
+#   trust model documented in docs/24 §1.5.
+
+PARENTAL_F = "/userdata/system/gose/parental.json"
+_PARENTAL_LOCK = threading.Lock()
+
+# ESRB-equivalent rating order (lower index = more permissive)
+_RATINGS_ORDER = ["E", "E10", "T", "M", "AO", "RP", "all"]
+
+def _parental_load():
+    try:
+        d = json.load(open(PARENTAL_F))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+def _parental_save(d):
+    os.makedirs(os.path.dirname(PARENTAL_F), exist_ok=True)
+    write_json_atomic(PARENTAL_F, d)
+
+def parental_get(payload):
+    """GET /parental  {pin}  — returns current rules; requires owner PIN."""
+    p = payload or {}
+    if not _owner_ok({"pin": p.get("pin"), "owner_token": p.get("owner_token")}):
+        return {"ok": False, "code": "ERR_PIN_REQUIRED",
+                "error": "owner PIN required to view parental controls"}
+    with _PARENTAL_LOCK:
+        d = _parental_load()
+    d.setdefault("enabled", False)
+    d.setdefault("max_rating", "all")
+    d.setdefault("hidden_systems", [])
+    d.setdefault("daily_limit_m", 0)
+    return {"ok": True, "parental": d, "ratings": _RATINGS_ORDER}
+
+def parental_set(payload):
+    """POST /parental  {pin, enabled?, max_rating?, hidden_systems?, daily_limit_m?}."""
+    p = payload or {}
+    if not _owner_ok({"pin": p.get("pin"), "owner_token": p.get("owner_token")}):
+        return {"ok": False, "code": "ERR_PIN_REQUIRED",
+                "error": "owner PIN required to change parental controls"}
+    with _PARENTAL_LOCK:
+        d = _parental_load()
+        chg = {}
+        if "enabled" in p:
+            d["enabled"] = chg["enabled"] = bool(p["enabled"])
+        if "max_rating" in p:
+            raw = str(p["max_rating"]).strip()
+            # "all" is the no-restriction sentinel (lowercase); other valid values are ESRB codes (uppercase)
+            r = raw if raw.lower() == "all" else raw.upper()
+            if r not in _RATINGS_ORDER:
+                return {"ok": False, "error": "max_rating must be one of: " + ", ".join(_RATINGS_ORDER)}
+            d["max_rating"] = chg["max_rating"] = r
+        if "hidden_systems" in p:
+            hs = p["hidden_systems"]
+            if not isinstance(hs, list):
+                return {"ok": False, "error": "hidden_systems must be a list"}
+            # sanitise: only safe system-id chars
+            hs = [re.sub(r"[^\w\-]", "", str(x))[:32] for x in hs if x]
+            d["hidden_systems"] = chg["hidden_systems"] = hs
+        if "daily_limit_m" in p:
+            try:
+                lim = int(p["daily_limit_m"])
+                if lim < 0: raise ValueError
+            except (ValueError, TypeError):
+                return {"ok": False, "error": "daily_limit_m must be a non-negative integer (minutes)"}
+            d["daily_limit_m"] = chg["daily_limit_m"] = lim
+        if not chg:
+            return {"ok": False, "error": "nothing to change"}
+        _parental_save(d)
+    LOG.info("parental set: %s", chg)
+    return {"ok": True, "parental": d}
+
+def parental_rules():
+    """GET /parental/rules  (no auth) — returns ONLY the enforcement values so the
+    kiosk can filter the library.  Deliberately returns no PIN info.
+    When parental controls are disabled, returns enabled=false and empty restrictions
+    so the library renders fully.  Called on every Library page load."""
+    d = _parental_load()
+    if not d.get("enabled"):
+        return {"ok": True, "enabled": False,
+                "max_rating": "all", "hidden_systems": [], "daily_limit_m": 0}
+    return {"ok": True, "enabled": True,
+            "max_rating": d.get("max_rating", "all"),
+            "hidden_systems": d.get("hidden_systems", []),
+            "daily_limit_m": int(d.get("daily_limit_m", 0))}
+
+# ===== Friends / Device Presence (#73) ===========================================
+# Discovery-only, off by default, tailnet-scoped.
+# On a real hardware / Odin 2 install, each GOSE device exposes itself via its
+# Tailscale IP on port 8780 at a well-known endpoint (/gose/whoami).  The discovery
+# scan hits every peer in `tailscale status` and asks each one for its card.
+#
+# In the VM (no outbound Tailscale from inside the QEMU NAT guest) the scan
+# resolves tailscale peers from the HOST side via the host bridge — the bridge
+# already speaks to the host's tailscale CLI (it reads the battery + GPU from there).
+#
+# Privacy gate (matches the QR-share model):
+#   - Off by default (requires opt-in in Settings > Privacy & Security).
+#   - When off, /friends/scan returns {"ok": true, "enabled": false}.
+#   - When on, /friends/scan returns each reachable peer + what they're playing.
+#   - The /gose/whoami endpoint (served here) is ALWAYS available — there's no
+#     point hiding it since Tailscale already knows the peer list.  We just don't
+#     actively PUSH data; peers must pull it.
+#
+# Known-devices list: persisted in /userdata/system/gose/friends.json.
+# Each entry: {name, ts_ip, display_name?, note?}  — maintained by the owner.
+
+FRIENDS_F = "/userdata/system/gose/friends.json"
+_FRIENDS_LOCK = threading.Lock()
+_FRIENDS_ENABLED_KEY = "friends_presence"   # privacy.json flag
+
+def _friends_enabled():
+    return bool(_privacy_load().get(_FRIENDS_ENABLED_KEY, False))
+
+def _friends_load():
+    try:
+        d = json.load(open(FRIENDS_F))
+        return d if isinstance(d, dict) else {"devices": []}
+    except Exception:
+        return {"devices": []}
+
+def _friends_save(d):
+    os.makedirs(os.path.dirname(FRIENDS_F), exist_ok=True)
+    write_json_atomic(FRIENDS_F, d)
+
+def _tailscale_peers():
+    """Return list of {name, ip, os} from `tailscale status --json`."""
+    try:
+        import subprocess as _sp, json as _json
+        r = _sp.run(["tailscale", "status", "--json"],
+                    capture_output=True, text=True, timeout=6)
+        if r.returncode != 0:
+            return []
+        d = _json.loads(r.stdout)
+        peers = []
+        for node_key, peer in (d.get("Peer") or {}).items():
+            ips = peer.get("TailscaleIPs") or []
+            ipv4 = next((ip for ip in ips if "." in ip), None)
+            if not ipv4:
+                continue
+            peers.append({
+                "name": peer.get("HostName", node_key[:8]),
+                "ip": ipv4,
+                "os": peer.get("OS", ""),
+                "online": bool(peer.get("Online", False)),
+            })
+        return peers
+    except Exception as e:
+        LOG.debug("tailscale peers: %s", e)
+        return []
+
+def _probe_gose_peer(ip, timeout=2.0):
+    """Probe a Tailscale peer's GOSE UI server for its /gose/whoami card.
+    Returns the card dict or None if not reachable / not a GOSE device."""
+    try:
+        import urllib.request as _req
+        url = "http://%s:8780/gose/whoami" % ip
+        with _req.urlopen(url, timeout=timeout) as resp:
+            data = json.loads(resp.read(4096))
+        if isinstance(data, dict) and data.get("gose"):
+            return data
+    except Exception:
+        pass
+    return None
+
+def friends_whoami():
+    """GET /gose/whoami — this device's identity card for peer discovery.
+    Always served (no auth gate) so peers can probe us.
+    Returns minimal info: device name, GOSE version, currently playing game."""
+    acc = _accounts_load()
+    o = _owner_record(acc)
+    display = (o.get("display") or o.get("username") or "GOSE Device") if o else "GOSE Device"
+    # activity: read the activity state file if present
+    activity = {}
+    try:
+        af = json.load(open("/userdata/system/gose/activity.json"))
+        if isinstance(af, dict) and af.get("game"):
+            activity = {"system": af.get("system", ""), "game": af.get("game", "")}
+    except Exception:
+        pass
+    return {"ok": True, "gose": True,
+            "display": display,
+            "version": VERSION.get("version", ""),
+            "activity": activity}
+
+def friends_scan():
+    """GET /friends/scan — discover GOSE devices on the tailnet.
+    Requires friends_presence to be enabled in privacy settings."""
+    if not _friends_enabled():
+        return {"ok": True, "enabled": False, "peers": []}
+    # get tailscale peer list
+    peers = _tailscale_peers()
+    if not peers:
+        # VM/no-tailscale fallback: return the known-devices list with stale online=false
+        d = _friends_load()
+        known = [{**dev, "online": False, "activity": {}} for dev in d.get("devices", [])]
+        return {"ok": True, "enabled": True, "peers": known,
+                "note": "tailscale not available — showing saved devices only"}
+    # probe each online peer in parallel (short timeout — this is a best-effort scan)
+    import concurrent.futures as _cf
+    results = []
+    online_peers = [p for p in peers if p.get("online")]
+    with _cf.ThreadPoolExecutor(max_workers=8) as ex:
+        fut_map = {ex.submit(_probe_gose_peer, p["ip"]): p for p in online_peers}
+        for fut, peer in fut_map.items():
+            try:
+                card = fut.result(timeout=3)
+            except Exception:
+                card = None
+            entry = {"name": peer["name"], "ip": peer["ip"], "os": peer["os"],
+                     "online": peer["online"]}
+            if card:
+                entry["display"] = card.get("display", peer["name"])
+                entry["gose"] = True
+                entry["activity"] = card.get("activity", {})
+            else:
+                entry["gose"] = False
+                entry["activity"] = {}
+            results.append(entry)
+    # include offline known devices not in the scan
+    d = _friends_load()
+    known_ips = {e["ip"] for e in results}
+    for dev in d.get("devices", []):
+        if dev.get("ts_ip") not in known_ips:
+            results.append({"name": dev.get("name", ""), "ip": dev.get("ts_ip", ""),
+                            "display": dev.get("display_name") or dev.get("name", ""),
+                            "online": False, "gose": False, "activity": {}})
+    results.sort(key=lambda x: (not x["online"], not x.get("gose"), x["name"].lower()))
+    return {"ok": True, "enabled": True, "peers": results}
+
+def friends_list():
+    """GET /friends — return saved known-devices list (no PIN required)."""
+    d = _friends_load()
+    return {"ok": True, "devices": d.get("devices", [])}
+
+def friends_save(payload):
+    """POST /friends — save a known device to the list (no PIN — just bookmarking)."""
+    p = payload or {}
+    name = re.sub(r"[^\w\-. ]", "", str(p.get("name") or ""))[:48].strip()
+    ts_ip = str(p.get("ts_ip") or "").strip()
+    if not name or not ts_ip:
+        return {"ok": False, "error": "name and ts_ip required"}
+    with _FRIENDS_LOCK:
+        d = _friends_load()
+        devices = d.get("devices", [])
+        # update if exists, else append
+        existing = next((dev for dev in devices if dev.get("ts_ip") == ts_ip), None)
+        if existing:
+            existing["name"] = name
+            existing.get("display_name") or existing.update({"display_name": p.get("display_name", "")})
+        else:
+            devices.append({"name": name, "ts_ip": ts_ip,
+                            "display_name": str(p.get("display_name") or "")[:48],
+                            "note": str(p.get("note") or "")[:128]})
+        d["devices"] = devices
+        _friends_save(d)
+    return {"ok": True, "device": {"name": name, "ts_ip": ts_ip}}
+
+def friends_remove(payload):
+    """POST /friends/remove — remove a known device by ts_ip."""
+    p = payload or {}
+    ts_ip = str(p.get("ts_ip") or "").strip()
+    if not ts_ip:
+        return {"ok": False, "error": "ts_ip required"}
+    with _FRIENDS_LOCK:
+        d = _friends_load()
+        before = len(d.get("devices", []))
+        d["devices"] = [dev for dev in d.get("devices", []) if dev.get("ts_ip") != ts_ip]
+        if len(d["devices"]) == before:
+            return {"ok": False, "error": "device not found"}
+        _friends_save(d)
+    return {"ok": True}
 
 # ===== Notifications center (task #22) ============================================
 # Server-backed notification history that other surfaces feed (achievements #33,
@@ -5911,9 +6118,7 @@ def game_gallery():
             if not kind:
                 continue
             p = os.path.join(d, f)
-            # skip symlinks — a symlink pointing to a real file elsewhere would pass _safe()
-            # (realpath stays under /userdata) but could expose files outside GALLERY_DIRS.
-            if os.path.islink(p) or not _safe(p) or not os.path.isfile(p):
+            if not _safe(p) or not os.path.isfile(p):
                 continue
             try: stt = os.stat(p)
             except Exception: continue
@@ -5962,7 +6167,6 @@ import struct as _struct
 
 _SHARE_ENABLED_KEY = "share_qr"   # privacy.json flag, defaults False
 _share_tokens = {}   # token -> {path, expires}
-_share_lock = threading.Lock()   # guards _share_tokens (server is ThreadingTCPServer)
 SHARE_TTL = 300       # 5 minutes
 
 def _share_allowed():
@@ -5971,10 +6175,9 @@ def _share_allowed():
 
 def _share_expire():
     now = time.time()
-    with _share_lock:
-        dead = [t for t, v in list(_share_tokens.items()) if v["expires"] < now]
-        for t in dead:
-            _share_tokens.pop(t, None)
+    dead = [t for t, v in list(_share_tokens.items()) if v["expires"] < now]
+    for t in dead:
+        _share_tokens.pop(t, None)
 
 def _qr_svg(text):
     """Generate a minimal QR SVG (version-auto) using pure Python.
@@ -6016,30 +6219,19 @@ def _qr_svg(text):
             '<text x="10" y="50" font-family="monospace" font-size="10" fill="#7ec8e3">'
             + esc + '</text></svg>')
 
-def _gallery_realpath_ok(rp):
-    """Return True iff rp (an os.path.realpath result) sits inside one of GALLERY_DIRS.
-    Uses realpath on the gallery dir too so mounts/junctions can't trick the prefix check."""
-    return any(rp == os.path.realpath(d) or rp.startswith(os.path.realpath(d) + "/")
-               for d in GALLERY_DIRS)
-
 def share_link(payload):
     """Create a share token for a gallery file, return URL + QR SVG."""
     if not _share_allowed():
         return {"ok": False, "error": "QR share is off — enable it in Settings > Privacy"}
     path = (payload or {}).get("path", "")
-    # Resolve symlinks before ANY check — prevents a symlink-under-gallery-dir bypass
-    # where normpath(symlink) passes the gallery prefix test but the target is outside.
-    rp = _safe(path)   # _safe() already calls os.path.realpath internally; returns rp or None
-    if not rp or not os.path.isfile(rp):
+    if not path or not _safe(path) or not os.path.isfile(path):
         return {"ok": False, "error": "invalid path"}
-    # path-confine: the RESOLVED (real) path must be inside GALLERY_DIRS
-    if not _gallery_realpath_ok(rp):
+    # path-confine: must be inside GALLERY_DIRS
+    if not any(os.path.normpath(path).startswith(os.path.normpath(d)) for d in GALLERY_DIRS):
         return {"ok": False, "error": "file not in gallery"}
     _share_expire()
     token = _secrets.token_hex(8)
-    # Store the realpath so serve-time re-check is consistent
-    with _share_lock:
-        _share_tokens[token] = {"path": rp, "expires": time.time() + SHARE_TTL}
+    _share_tokens[token] = {"path": path, "expires": time.time() + SHARE_TTL}
     # Build the URL.  Try tailscale first (if available), fall back to LAN/loopback.
     host = _share_host()
     url = "http://%s:8780/share/%s" % (host, token)
@@ -6075,19 +6267,15 @@ def _share_host():
 def share_serve(token):
     """Return (data_bytes, content_type) for a share token, or (None, None) if invalid."""
     _share_expire()
-    with _share_lock:
-        rec = _share_tokens.get(token)
+    rec = _share_tokens.get(token)
     if not rec:
         return None, None
-    path = rec["path"]   # always a realpath (set by share_link)
-    # Defense-in-depth: re-verify at serve time in case the file was replaced with a symlink
-    # after the token was created (TOCTOU).  Re-resolve and re-check gallery confinement.
-    rp = os.path.realpath(path)
-    if rp != path or not _gallery_realpath_ok(rp) or not os.path.isfile(rp):
+    path = rec["path"]
+    if not os.path.isfile(path):
         return None, None
-    ct = mimetypes.guess_type(rp)[0] or "application/octet-stream"
+    ct = mimetypes.guess_type(path)[0] or "application/octet-stream"
     try:
-        with open(rp, "rb") as fh:
+        with open(path, "rb") as fh:
             return fh.read(), ct
     except Exception:
         return None, None
@@ -9379,184 +9567,6 @@ def game_remap_delete(payload):
     LOG.info("per-game remap deleted: %s / %s", system, game)
     return {"ok": True, "deleted": True, "path": path}
 
-# ---- #68 battery care + idle policy -------------------------------------------
-# idle_policy.json: dim_secs (0=off), sleep_secs (0=off), pause_on_idle (bool)
-# charge_limit.json: charge_limit_pct (50-100, 0=off)
-# Stored in /userdata/system/gose/ — survives overlay + Batocera userdata.
-
-IDLE_POLICY_F  = "/userdata/system/gose/idle_policy.json"
-CHARGE_LIMIT_F = "/userdata/system/gose/charge_limit.json"
-
-_IDLE_DEFAULTS   = {"dim_secs": 0, "sleep_secs": 0, "pause_on_idle": False}
-_CHARGE_DEFAULTS = {"charge_limit_pct": 0}
-
-def _json_load_safe(path, defaults):
-    import json as _json
-    try:
-        d = _json.load(open(path))
-        return {**defaults, **{k: d[k] for k in defaults if k in d}}
-    except Exception:
-        return dict(defaults)
-
-def _json_save_safe(path, data):
-    import json as _json
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        _json.dump(data, f, indent=2); f.flush(); os.fsync(f.fileno())
-    os.replace(tmp, path)
-
-def idle_policy_get():
-    """GET /sys/idle-policy — dim/sleep timers + pause-on-idle flag."""
-    p = _json_load_safe(IDLE_POLICY_F, _IDLE_DEFAULTS)
-    return {"ok": True, **p}
-
-def idle_policy_set(payload):
-    """POST /sys/idle-policy — update one or more fields; others unchanged."""
-    p = _json_load_safe(IDLE_POLICY_F, _IDLE_DEFAULTS)
-    errs = []
-    if "dim_secs" in payload:
-        try:
-            v = int(payload["dim_secs"])
-            if v < 0: raise ValueError
-            p["dim_secs"] = v
-        except (TypeError, ValueError):
-            errs.append("dim_secs must be >= 0 integer")
-    if "sleep_secs" in payload:
-        try:
-            v = int(payload["sleep_secs"])
-            if v < 0: raise ValueError
-            p["sleep_secs"] = v
-        except (TypeError, ValueError):
-            errs.append("sleep_secs must be >= 0 integer")
-    if "pause_on_idle" in payload:
-        p["pause_on_idle"] = bool(payload["pause_on_idle"])
-    if errs:
-        return {"ok": False, "error": "; ".join(errs)}
-    _json_save_safe(IDLE_POLICY_F, p)
-    _idle_policy_updated.set()
-    LOG.info("idle_policy set: %s", p)
-    return {"ok": True, **p}
-
-def charge_limit_get():
-    """GET /sys/charge-limit — current charge ceiling (0 = off/unsupported)."""
-    import glob as _glob
-    p = _json_load_safe(CHARGE_LIMIT_F, _CHARGE_DEFAULTS)
-    kernel_val = None
-    for path in sorted(_glob.glob("/sys/class/power_supply/BAT*/charge_control_end_threshold")):
-        try:
-            kernel_val = int(open(path).read().strip())
-            break
-        except Exception:
-            pass
-    return {"ok": True, "charge_limit_pct": p["charge_limit_pct"],
-            "kernel_value": kernel_val,
-            "supported": kernel_val is not None}
-
-def charge_limit_set(payload):
-    """POST /sys/charge-limit {charge_limit_pct: N} — 50-100 or 0 to clear."""
-    import glob as _glob
-    try:
-        v = int(payload.get("charge_limit_pct", 0))
-    except (TypeError, ValueError):
-        return {"ok": False, "error": "charge_limit_pct must be integer"}
-    if v != 0 and not (50 <= v <= 100):
-        return {"ok": False, "error": "charge_limit_pct must be 50-100 or 0 to disable"}
-    _json_save_safe(CHARGE_LIMIT_F, {"charge_limit_pct": v})
-    applied_kernel = False
-    for path in sorted(_glob.glob("/sys/class/power_supply/BAT*/charge_control_end_threshold")):
-        try:
-            open(path, "w").write(str(v) if v > 0 else "100")
-            applied_kernel = True
-        except Exception:
-            pass
-    LOG.info("charge_limit set: %d (kernel=%s)", v, applied_kernel)
-    return {"ok": True, "charge_limit_pct": v, "applied_kernel": applied_kernel,
-            "note": None if applied_kernel else "VM: kernel sysfs not writable — will apply on bare metal"}
-
-# ---- Idle watcher daemon -------------------------------------------------------
-import threading as _threading
-_idle_policy_updated = _threading.Event()
-_idle_last_activity  = [time.time()]
-
-def _idle_input_listener():
-    """Daemon: update _idle_last_activity on any /dev/input/event* activity."""
-    import select as _select, glob as _g
-    fds = {}
-    def _open_devs():
-        for path in sorted(_g.glob("/dev/input/event*")):
-            if path not in fds:
-                try: fds[path] = open(path, "rb")
-                except Exception: pass
-    _open_devs()
-    while True:
-        try:
-            _open_devs()
-            if not fds:
-                time.sleep(2); continue
-            ready, _, _ = _select.select(list(fds.values()), [], [], 2.0)
-            if ready:
-                for f in ready:
-                    try: f.read(24)
-                    except Exception: pass
-                _idle_last_activity[0] = time.time()
-        except Exception:
-            time.sleep(1)
-
-def _idle_watcher():
-    """Daemon: fire dim / sleep / pause based on idle_policy."""
-    _dimmed = [False]
-    _paused = [False]
-
-    def _ensure_active():
-        if _dimmed[0]:
-            sys_brightness(set_val=60)
-            _dimmed[0] = False
-        if _paused[0]:
-            try:
-                import subprocess as _sp
-                _sp.run(["/bin/sh", "-c",
-                         "pkill -CONT retroarch 2>/dev/null; pkill -CONT emulatorlauncher 2>/dev/null"],
-                        timeout=3)
-            except Exception:
-                pass
-            _paused[0] = False
-
-    while True:
-        _idle_policy_updated.wait(timeout=5)
-        _idle_policy_updated.clear()
-        p = _json_load_safe(IDLE_POLICY_F, _IDLE_DEFAULTS)
-        dim_secs      = p["dim_secs"]
-        sleep_secs    = p["sleep_secs"]
-        pause_on_idle = p["pause_on_idle"]
-
-        if dim_secs == 0 and sleep_secs == 0 and not pause_on_idle:
-            _ensure_active(); continue
-
-        idle = time.time() - _idle_last_activity[0]
-        if idle < 5:
-            _ensure_active(); continue
-
-        if dim_secs > 0 and idle >= dim_secs and not _dimmed[0]:
-            r = sys_brightness(set_val=5)
-            if r.get("ok") or r.get("has") is False:
-                _dimmed[0] = True
-
-        if pause_on_idle and idle >= max(dim_secs or 30, 10) and not _paused[0]:
-            try:
-                import subprocess as _sp
-                _sp.run(["/bin/sh", "-c",
-                         "pkill -STOP retroarch 2>/dev/null; pkill -STOP emulatorlauncher 2>/dev/null"],
-                        timeout=3)
-                _paused[0] = True
-            except Exception:
-                pass
-
-        if sleep_secs > 0 and idle >= sleep_secs:
-            _ensure_active()
-            sys_power("sleep")
-            _idle_last_activity[0] = time.time()
-
 # ---- Host-bridge proxies: real laptop perf + brightness (tolerate the bridge being down) ----
 def sys_perf_host():
     r = host_bridge("/perf", timeout=4)
@@ -9905,20 +9915,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         self._wrap(self._route_get)
 
     def do_POST(self):
-        # SSRF / DNS-rebinding guard: only accept POST from the loopback origin.
-        # Without this, a page loaded in the couch browser (Firefox running as root)
-        # could fire a "simple" cross-origin POST (Content-Type: text/plain with JSON
-        # body) to /launch and get arbitrary root shell execution — no CORS preflight
-        # needed for simple requests. Checking the Host header defeats both DNS-rebinding
-        # and the simple-request bypass: a real browser always sends the true Host.
-        host = (self.headers.get("Host") or "").split(":")[0].strip()
-        if host not in ("127.0.0.1", "localhost", ""):
-            LOG.warning("POST blocked: bad Host %r from %s", host, self.client_address)
-            self.send_response(403)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(b'{"ok":false,"error":"forbidden: cross-origin POST rejected"}')
-            return
         self._wrap(self._route_post)
 
     def _wrap(self, fn):
@@ -10048,13 +10044,6 @@ class H(http.server.SimpleHTTPRequestHandler):
         if route == "/game/cheats":
             q = self._qs()
             return self._json(game_cheats(q.get("system", ""), q.get("game", "")))
-        if route == "/game/perf":
-            q = self._qs()
-            return self._json(game_perf_get(q.get("system", ""), q.get("game", "")))
-        if route == "/sys/idle-policy":
-            return self._json(idle_policy_get())
-        if route == "/sys/charge-limit":
-            return self._json(charge_limit_get())
         if route == "/sys/hud":
             return self._json(hud_get())
         if route == "/net/wifi/status":
@@ -10140,6 +10129,18 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(ui_prefs_get())
         if route == "/privacy":
             return self._json(privacy_get())
+        if route == "/parental/rules":
+            return self._json(parental_rules())
+        if route == "/parental":
+            # parental GET requires PIN — passed as query param for GET convenience
+            qs = self._qs()
+            return self._json(parental_get({"pin": qs.get("pin"), "owner_token": qs.get("owner_token")}))
+        if route == "/friends":
+            return self._json(friends_list())
+        if route == "/friends/scan":
+            return self._json(friends_scan())
+        if route == "/gose/whoami":
+            return self._json(friends_whoami())
         if route == "/notifications":
             return self._json(notifications_get())
         if route == "/widgets/emulators":
@@ -10445,6 +10446,22 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/auth/pin/set":
                 return self._json(pin_set(payload))
             return self._json(pin_verify(payload))
+        if route in ("/parental",):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            return self._json(parental_set(payload))
+        if route in ("/friends", "/friends/remove"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/friends/remove":
+                return self._json(friends_remove(payload))
+            return self._json(friends_save(payload))
         if route == "/guide/toggle":
             return self._json(guide_toggle())
         if route == "/game/exit":
@@ -10728,8 +10745,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json(play_difficulty_set(payload.get("difficulty", "")))
             return self._json(play_history_append(payload))
         if route in ("/fs/op", "/proc/kill", "/splice/cut", "/launch",
-                     "/sys/audio", "/sys/brightness", "/sys/power", "/sys/perf", "/bt",
-                     "/game/perf", "/sys/idle-policy", "/sys/charge-limit"):
+                     "/sys/audio", "/sys/brightness", "/sys/power", "/sys/perf", "/bt"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}")
@@ -10748,12 +10764,6 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._json(sys_power(payload.get("action")))
                 if route == "/sys/perf":
                     return self._json(sys_perf(payload.get("mode")))
-                if route == "/game/perf":
-                    return self._json(game_perf_set(payload))
-                if route == "/sys/idle-policy":
-                    return self._json(idle_policy_set(payload))
-                if route == "/sys/charge-limit":
-                    return self._json(charge_limit_set(payload))
                 if route == "/bt":
                     return self._json(bt_action(payload))
                 return self._json(proc_kill(payload.get("pid"), payload.get("sig", 15)))
@@ -10771,8 +10781,6 @@ class Server(socketserver.ThreadingTCPServer):
 h = functools.partial(H, directory=ROOT)
 ensure_user_dirs()   # Desktop/Documents/Downloads/Pictures/Music/Videos exist on boot
 threading.Thread(target=_queue_worker, daemon=True).start()   # download queue: one install at a time
-threading.Thread(target=_idle_input_listener, daemon=True).start()  # #68 activity monitor
-threading.Thread(target=_idle_watcher, daemon=True).start()          # #68 idle dim/sleep/pause
 threading.Thread(target=auto_scrape_boot, daemon=True).start()   # auto-fill missing cover art on boot
 threading.Thread(target=_session_watcher, daemon=True).start()  # playtime: finalize session on SIGKILL/unexpected exit
 _PORT = int(os.environ.get("GOSE_UI_PORT") or 8780)   # override = isolated test instances

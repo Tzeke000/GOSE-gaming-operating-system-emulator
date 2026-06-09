@@ -222,6 +222,7 @@
       {ic:"image", nm:"Download missing cover art", sub:"Sends game names to thumbnails.libretro.com when on (opt-in, docs/24)", t:"cycle", v:["Off","On"], apply:"boxart"},
       {ic:"sparkles", nm:"Usage diagnostics", sub:"Records your choice — GOSE sends nothing today", t:"cycle", v:["Off","On"], apply:"diag"},
       {ic:"share-2", nm:"QR share (#60)", sub:"Allow sharing gallery files to a nearby phone via LAN URL + QR code (off by default, docs/31)", t:"cycle", v:["Off","On"], apply:"share_qr", i:0},
+      {ic:"users", nm:"Friends & device presence (#73)", sub:"Show which GOSE devices on your Tailscale network are online and what they're playing — off by default, discovery only", t:"cycle", v:["Off","On"], apply:"friends_presence", i:0},
       {ic:"hard-drive", nm:"Clear UI data", sub:"Reset theme, accent, sounds & UI prefs to defaults (press twice) — games & saves untouched", t:"action", val:"clear", clear:true, confirm:true},
     ]},
     {id:"security", ic:"shield", nm:"Security", rows:[
@@ -240,6 +241,8 @@
       {ic:"user", nm:"You", sub:"Primary account on this device", t:"info", val:"—", live:"owner"},
       {ic:"sparkles", nm:"AI players", sub:"Paired agents & their access tier — manage in the AI Hub", t:"agents"},
       {ic:"users", nm:"Profiles", sub:"Switch between profiles or add one — up to 4 people on one device", t:"link", go:"gose-profiles.html"},
+      {ic:"shield", nm:"Parental Controls (#71)", sub:"PIN-gated: restrict by content rating, hide systems, cap daily play time", t:"link", go:"gose-parental.html"},
+      {ic:"users", nm:"Friends & Devices (#73)", sub:"See which GOSE devices on your Tailscale network are online and what they're playing", t:"link", go:"gose-friends.html"},
       {ic:"lock", nm:"Sign-in", sub:"What the lock screen asks for — real credential auth lands with docs/24 §1.5", t:"cycle", v:["None","PIN","Password"], apply:"signin"},
     ]},
     {id:"ai", ic:"sparkles", nm:"AI & Remote", rows:[
@@ -554,6 +557,9 @@
     // #60 QR share privacy toggle
     else if(r.apply==="share_qr"){(async()=>{const x=await postJSON("/privacy",{share_qr:r.i===1});
       showToast((x&&x.ok)?("QR share: "+r.v[r.i]+(r.i===0?" — links won't be created":"")):"QR share: failed");})();}
+    // #73 friends/presence toggle
+    else if(r.apply==="friends_presence"){(async()=>{const x=await postJSON("/privacy",{friends_presence:r.i===1});
+      showToast((x&&x.ok)?("Device presence: "+r.v[r.i]+(r.i===0?" — devices won't be discovered":"")):"Device presence: failed");})();}
     // #57 sound pack picker — applies live, server-syncs the key so it persists across devices
     else if(r.apply==="snd_pack"){
       const name=r._packs?r._packs[r.i||0]:"default";
@@ -683,6 +689,8 @@
         const g=findRow("diag","apply"); if(g)g.i=p.privacy.diagnostics?1:0;
         // #60 QR share toggle
         const sq=findRow("share_qr","apply"); if(sq)sq.i=p.privacy.share_qr?1:0;
+        // #73 friends/presence toggle
+        const fp=findRow("friends_presence","apply"); if(fp)fp.i=p.privacy.friends_presence?1:0;
         rerowIf("privacy");}}catch(e){}
     // #57 sound pack picker — load available packs from server, seed with current selection
     try{const sp=await(await fetch("/sound/packs",{cache:"no-store"})).json();

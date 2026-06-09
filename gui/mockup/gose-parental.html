@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Parental Controls</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    display:flex;flex-direction:column;align-items:center}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  /* top bar */
+  .bar{width:100%;max-width:620px;display:flex;align-items:center;gap:10px;padding:24px 0 8px;flex:none}
+  .bar .back{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:13.5px;
+    font-weight:600;cursor:pointer;padding:6px 10px 6px 4px;border-radius:9px;border:2px solid transparent}
+  .bar .back.focus{border-color:var(--accent);color:var(--accent);box-shadow:var(--focusglow)}
+  .bar h1{font-size:22px;margin:0;flex:1}
+  /* content */
+  .scroll{width:100%;max-width:620px;overflow:auto;flex:1;padding:4px 0 100px;display:flex;flex-direction:column;gap:12px}
+  /* PIN gate card */
+  .gate{background:var(--surface);border:2px solid var(--line);border-radius:16px;
+    padding:28px 24px;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center}
+  .gate .ttl{font-size:17px;font-weight:700}
+  .gate .sub{color:var(--muted);font-size:13px;line-height:1.6;max-width:340px}
+  /* pane (visible after unlock) */
+  .pane{display:none;flex-direction:column;gap:10px}
+  .pane.on{display:flex}
+  /* section header */
+  .sec{font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;
+    color:var(--muted);padding:4px 2px 2px}
+  /* setting row */
+  .row{background:var(--surface);border:2px solid var(--line);border-radius:14px;
+    padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;
+    transition:border-color .12s,box-shadow .12s;position:relative}
+  .row.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .row.danger{border-color:#ff8e8e33}
+  .row .ic{font-size:20px;flex:none;opacity:.7}
+  .row-info{flex:1;min-width:0}
+  .row-nm{font-weight:600;font-size:14.5px}
+  .row-sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+  /* toggle */
+  .tog{width:42px;height:24px;border-radius:999px;border:2px solid var(--line);
+    background:var(--surface2);position:relative;flex:none;transition:background .15s,border-color .15s}
+  .tog.on{background:var(--accent);border-color:var(--accent)}
+  .tog::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+    border-radius:50%;background:#fff;transition:left .15s}
+  .tog.on::after{left:20px}
+  /* rating pills */
+  .rating-row{display:flex;gap:7px;flex-wrap:wrap;padding:4px 0}
+  .rp{padding:6px 14px;border-radius:999px;border:2px solid var(--line);font-size:13px;
+    font-weight:700;cursor:pointer;background:var(--surface2);transition:all .12s}
+  .rp.sel{background:var(--accent);border-color:var(--accent);color:#06121a}
+  .rp.focus{box-shadow:var(--focusglow);border-color:var(--accent)}
+  /* hidden systems */
+  .sys-grid{display:flex;flex-wrap:wrap;gap:8px;padding:4px 0}
+  .sc{padding:5px 12px;border-radius:10px;border:2px solid var(--line);font-size:12.5px;
+    font-weight:600;cursor:pointer;background:var(--surface2);transition:all .12s}
+  .sc.hid{background:#ff8e8e18;border-color:#ff8e8e55;color:#ff8e8e}
+  .sc.focus{box-shadow:var(--focusglow);border-color:var(--accent)}
+  /* time limit input */
+  .lim-row{display:flex;gap:10px;align-items:center}
+  .lim-inp{background:var(--surface2);border:2px solid var(--line);border-radius:11px;
+    padding:10px 13px;font-size:17px;font-weight:700;color:var(--text);width:90px;
+    font-family:inherit;text-align:center;outline:none}
+  .lim-inp:focus,.lim-inp.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .lim-unit{color:var(--muted);font-size:13.5px}
+  /* status badge */
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;
+    letter-spacing:.5px;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid}
+  .badge.on{color:#37d39b;border-color:#37d39b55;background:#37d39b12}
+  .badge.off{color:var(--muted);border-color:var(--line);background:#ffffff08}
+  /* PIN pad (reuse from gose-profiles) */
+  .pin-wrap{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .pin-dots{display:flex;gap:11px;margin:4px 0}
+  .pin-dots .d{width:13px;height:13px;border-radius:50%;border:2px solid #ffffff55}
+  .pin-dots .d.on{background:var(--accent);border-color:var(--accent)}
+  .pin-pad{display:grid;grid-template-columns:repeat(3,72px);gap:8px}
+  .pin-pad .k{height:52px;border-radius:12px;background:#161826cc;border:2px solid #ffffff1e;
+    display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:600;
+    cursor:pointer;user-select:none}
+  .pin-pad .k.focus{border-color:var(--accent);box-shadow:var(--focusglow);background:#1d2238}
+  .pin-pad .k.fn{font-size:14px;color:var(--muted)}
+  .pin-err{color:#ff8e8e;font-size:13px;min-height:1.2em;text-align:center}
+  /* save button */
+  .btn{background:var(--accent);color:#06121a;border-radius:11px;padding:11px 28px;
+    font-weight:700;font-size:14px;border:2px solid var(--accent);cursor:pointer;align-self:flex-end}
+  .btn.focus{box-shadow:var(--focusglow)}
+  .btn[disabled]{opacity:.45}
+  /* toast */
+  .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);
+    background:#1a1d2e;border:1px solid var(--line);border-radius:12px;padding:10px 20px;
+    font-size:13.5px;z-index:100;transition:transform .25s,opacity .25s;opacity:0;
+    white-space:nowrap;max-width:90vw;text-align:center}
+  .toast.on{transform:translateX(-50%) translateY(0);opacity:1}
+  .toast.ok{border-color:#37d39b55;color:#37d39b}
+  .toast.err{border-color:#ff8e8e55;color:#ff8e8e}
+  /* foot */
+  .foot{position:fixed;bottom:0;left:0;right:0;display:flex;align-items:center;
+    justify-content:center;padding:10px 40px;color:var(--muted);font-size:12px;
+    gap:16px;pointer-events:none}
+</style></head>
+<body data-osk-auto>
+
+<div class="bar">
+  <div class="back focusable" id="back" data-act="back" tabindex="0">
+    <span style="font-size:18px">&#8249;</span>
+    <h1>Parental Controls</h1>
+  </div>
+</div>
+
+<div class="scroll" id="scroll">
+
+  <!-- PIN gate (shown until unlocked) -->
+  <div class="gate" id="gate">
+    <div class="ttl">Owner PIN required</div>
+    <div class="sub">Parental controls are protected by your device sign-in PIN. Enter it below to view or change settings.</div>
+    <div class="pin-wrap">
+      <div class="pin-dots" id="pdots"></div>
+      <div class="pin-pad" id="ppad"></div>
+      <div class="pin-err" id="perr"></div>
+    </div>
+  </div>
+
+  <!-- Settings pane (visible after unlock) -->
+  <div class="pane" id="pane">
+
+    <!-- master toggle -->
+    <div class="sec">Parental Controls</div>
+    <div class="row focusable" id="r-enabled" tabindex="0" data-action="toggle-enabled">
+      <span style="font-size:22px">&#128274;</span>
+      <div class="row-info">
+        <div class="row-nm">Parental Controls <span class="badge off" id="enabled-badge">Off</span></div>
+        <div class="row-sub">When on, the settings below are enforced in the Library and Game Bar</div>
+      </div>
+      <div class="tog" id="tog-enabled"></div>
+    </div>
+
+    <!-- content rating -->
+    <div class="sec">Content Rating</div>
+    <div class="row" style="flex-direction:column;align-items:flex-start;gap:10px;cursor:default">
+      <div class="row-info" style="width:100%">
+        <div class="row-nm">Maximum allowed rating</div>
+        <div class="row-sub">Games above this rating are hidden. "All" = no restriction.</div>
+      </div>
+      <div class="rating-row" id="rating-row"></div>
+    </div>
+
+    <!-- hidden systems -->
+    <div class="sec">Hidden Systems</div>
+    <div class="row" style="flex-direction:column;align-items:flex-start;gap:10px;cursor:default">
+      <div class="row-info" style="width:100%">
+        <div class="row-nm">Hide game systems</div>
+        <div class="row-sub">Highlighted systems are hidden from the Library. Tap to toggle.</div>
+      </div>
+      <div class="sys-grid" id="sys-grid"></div>
+    </div>
+
+    <!-- daily time limit -->
+    <div class="sec">Play Time</div>
+    <div class="row" style="flex-direction:column;align-items:flex-start;gap:10px;cursor:default">
+      <div class="row-info" style="width:100%">
+        <div class="row-nm">Daily play time limit</div>
+        <div class="row-sub">Warns and blocks launching new games after this many minutes. 0 = no limit.</div>
+      </div>
+      <div class="lim-row">
+        <input class="lim-inp focusable" id="lim-inp" type="number" min="0" max="1440" placeholder="0">
+        <span class="lim-unit">minutes / day</span>
+        <span class="lim-unit" id="lim-hint" style="color:var(--accent)"></span>
+      </div>
+    </div>
+
+    <button class="btn focusable" id="save-btn" tabindex="0">Save Changes</button>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="foot"><span><b>A</b> confirm &nbsp; <b>B</b> back &nbsp; <b>X</b> unlock</span></div>
+
+<script src="assets/cursor.js"></script>
+<script>
+const RATINGS = ["E","E10","T","M","AO","RP","all"];
+const RATING_LABELS = {E:"E",E10:"E10+",T:"T",M:"M",AO:"AO","RP":"RP",all:"All"};
+const RATING_DESC = {E:"Everyone",E10:"Everyone 10+",T:"Teen",M:"Mature 17+",AO:"Adults Only",RP:"Rating Pending",all:"No restriction"};
+
+let state = {enabled:false, max_rating:"all", hidden_systems:[], daily_limit_m:0};
+let systems = [];
+let unlocked = false;
+let pinBuf = "";
+let pendingPin = "";
+
+// ---- PIN pad ----
+function renderDots(){
+  const d = document.getElementById("pdots");
+  d.innerHTML = Array.from({length:8},(_,i)=>`<div class="d${i<pinBuf.length?' on':''}"></div>`).join("");
+}
+function buildPad(){
+  const p = document.getElementById("ppad");
+  const keys = ["1","2","3","4","5","6","7","8","9","","0","⌫"];
+  p.innerHTML = keys.map((k,i)=>{
+    if(k==="") return `<div></div>`;
+    return `<div class="k focusable${k==="⌫"?" fn":""}" tabindex="0" data-k="${k}">${k}</div>`;
+  }).join("");
+  p.querySelectorAll(".k").forEach(el=>{
+    el.addEventListener("click",()=>pinKey(el.dataset.k));
+    el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" ")pinKey(el.dataset.k);});
+  });
+}
+function pinKey(k){
+  const err = document.getElementById("perr");
+  if(k==="⌫"){pinBuf=pinBuf.slice(0,-1);}
+  else if(pinBuf.length<8){pinBuf+=k;}
+  renderDots();
+  err.textContent="";
+  if(pinBuf.length===8) setTimeout(tryUnlock,120);
+}
+async function tryUnlock(){
+  const err = document.getElementById("perr");
+  try{
+    const r = await fetch("/parental?pin="+encodeURIComponent(pinBuf),{cache:"no-store"});
+    const d = await r.json();
+    if(d.ok){
+      pendingPin = pinBuf;
+      pinBuf = "";
+      renderDots();
+      applyState(d.parental);
+      unlocked = true;
+      document.getElementById("gate").style.display="none";
+      document.getElementById("pane").classList.add("on");
+      loadSystems();
+    } else {
+      err.textContent = d.error || "Incorrect PIN";
+      if(d.locked_for) err.textContent="Locked — try again in "+Math.ceil(d.locked_for)+"s";
+      pinBuf=""; renderDots();
+    }
+  }catch(e){err.textContent="Could not reach the GOSE server.";pinBuf="";renderDots();}
+}
+
+// ---- state rendering ----
+function applyState(p){
+  state = {...state, ...p};
+  // toggle
+  const tog = document.getElementById("tog-enabled");
+  const badge = document.getElementById("enabled-badge");
+  tog.classList.toggle("on", state.enabled);
+  badge.className = "badge "+(state.enabled?"on":"off");
+  badge.textContent = state.enabled?"On":"Off";
+  // ratings
+  renderRatings();
+  // systems
+  renderSystems();
+  // time limit
+  const inp = document.getElementById("lim-inp");
+  inp.value = state.daily_limit_m || "";
+  updateLimHint();
+}
+
+function renderRatings(){
+  const row = document.getElementById("rating-row");
+  row.innerHTML = RATINGS.map(r=>`
+    <div class="rp focusable${r===state.max_rating?" sel":""}" tabindex="0"
+      data-r="${r}" title="${RATING_DESC[r]}">${RATING_LABELS[r]}</div>`).join("");
+  row.querySelectorAll(".rp").forEach(el=>{
+    el.addEventListener("click",()=>{state.max_rating=el.dataset.r;renderRatings();});
+    el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){state.max_rating=el.dataset.r;renderRatings();}});
+  });
+}
+
+function renderSystems(){
+  const g = document.getElementById("sys-grid");
+  if(!systems.length){g.innerHTML='<span style="color:var(--muted);font-size:13px">Loading systems...</span>';return;}
+  g.innerHTML = systems.map(s=>{
+    const hidden = state.hidden_systems.includes(s.id);
+    return `<div class="sc focusable${hidden?" hid":""}" tabindex="0" data-sid="${s.id}">${s.name||s.id}</div>`;
+  }).join("");
+  g.querySelectorAll(".sc").forEach(el=>{
+    el.addEventListener("click",()=>toggleSystem(el.dataset.sid));
+    el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" ")toggleSystem(el.dataset.sid);});
+  });
+}
+
+function toggleSystem(sid){
+  if(state.hidden_systems.includes(sid))
+    state.hidden_systems = state.hidden_systems.filter(x=>x!==sid);
+  else
+    state.hidden_systems = [...state.hidden_systems, sid];
+  renderSystems();
+}
+
+function updateLimHint(){
+  const v = parseInt(document.getElementById("lim-inp").value)||0;
+  const h = document.getElementById("lim-hint");
+  h.textContent = v>0 ? (v>=60?Math.floor(v/60)+"h "+(v%60?""+v%60+"m":""):"") : "";
+}
+
+// ---- load available systems ----
+async function loadSystems(){
+  try{
+    const r = await fetch("/games.json",{cache:"no-store"});
+    const d = await r.json();
+    systems = (d.systems||[]).map(s=>({id:s.system,name:s.name||s.system}));
+  }catch(e){systems=[];}
+  renderSystems();
+}
+
+// ---- toggle enabled ----
+document.getElementById("r-enabled").addEventListener("click",()=>{
+  if(!unlocked)return;
+  state.enabled=!state.enabled;
+  applyState(state);
+});
+document.getElementById("r-enabled").addEventListener("keydown",e=>{
+  if(e.key==="Enter"||e.key===" "){if(!unlocked)return;state.enabled=!state.enabled;applyState(state);}
+});
+
+// ---- time limit input ----
+document.getElementById("lim-inp").addEventListener("input",updateLimHint);
+
+// ---- save ----
+document.getElementById("save-btn").addEventListener("click", save);
+document.getElementById("save-btn").addEventListener("keydown",e=>{if(e.key==="Enter")save();});
+
+async function save(){
+  if(!unlocked)return;
+  const lim = parseInt(document.getElementById("lim-inp").value)||0;
+  state.daily_limit_m = lim;
+  try{
+    const r = await fetch("/parental",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({pin:pendingPin,enabled:state.enabled,
+        max_rating:state.max_rating,hidden_systems:state.hidden_systems,daily_limit_m:lim})});
+    const d = await r.json();
+    if(d.ok) showToast("Parental controls saved","ok");
+    else showToast(d.error||"Save failed","err");
+  }catch(e){showToast("Could not reach server","err");}
+}
+
+// ---- toast ----
+let _toastT;
+function showToast(msg,cls=""){
+  const t=document.getElementById("toast");
+  t.textContent=msg;t.className="toast on"+(cls?" "+cls:"");
+  clearTimeout(_toastT);_toastT=setTimeout(()=>{t.className="toast";},3200);
+}
+
+// ---- back ----
+document.getElementById("back").addEventListener("click",()=>history.back());
+document.getElementById("back").addEventListener("keydown",e=>{if(e.key==="Enter")history.back();});
+
+// ---- pad nav ----
+window.addEventListener("keydown",e=>{
+  if(!unlocked && ["0","1","2","3","4","5","6","7","8","9"].includes(e.key)){
+    pinKey(e.key); return;
+  }
+  if(!unlocked && e.key==="Backspace") {pinKey("⌫"); return;}
+  if(e.key==="Escape"||e.key==="b"){history.back();}
+});
+
+// ---- init ----
+buildPad();
+renderDots();
+// if owner_token is passed via URL (AI context), auto-unlock
+const qs = new URLSearchParams(location.search);
+const ot = qs.get("owner_token");
+if(ot){
+  (async()=>{
+    try{
+      const r=await fetch("/parental?owner_token="+encodeURIComponent(ot),{cache:"no-store"});
+      const d=await r.json();
+      if(d.ok){pendingPin="";unlocked=true;
+        document.getElementById("gate").style.display="none";
+        document.getElementById("pane").classList.add("on");
+        applyState(d.parental);loadSystems();}
+    }catch(e){}
+  })();
+}
+</script>
+</body></html>
