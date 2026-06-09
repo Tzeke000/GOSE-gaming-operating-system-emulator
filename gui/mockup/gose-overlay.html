@@ -112,6 +112,7 @@
          slot:0,ff:false,rewindEnabled:false,   // #37 time controls
          hud:"off",hudHas:false,quiet:false,hasWifi:false,
          shaderset:"none",shaderList:[],bezel:false,cheats:[],cheatNote:"",cheatsExpanded:false,
+         gamePerf:"default",gameFpsCap:0,gamePerfModes:["default","battery","balanced","performance"],
          // #115 current-activity (game name in header)
          curGame:null,curSystem:null,curRom:null,   // null = desktop; populated by loadActivity
          // #41 AI assist
@@ -143,6 +144,9 @@
       items.push({k:"load",type:"act",ic:"rotate-ccw",lab:"Load state",savestate:"load",card:"saves"});
       items.push({k:"ff",type:"act",ic:"play",lab:"Fast-forward",ff:true,card:"saves"});
       items.push({k:"rewind",type:"act",ic:"clock",lab:"Rewind",rewind:true,card:"saves"});
+      // #61 per-game perf override + FPS cap
+      items.push({k:"gperf",type:"gperfcyc",card:"perf"});
+      items.push({k:"gfps",type:"gfpscyc",card:"perf"});
     }
     items.push({k:"wifi",type:"act",ic:"wifi",lab:"Wi-Fi",wifi:true});       // #54 quick-settings
     items.push({k:"quiet",type:"act",ic:"moon",lab:"Quiet mode",quiet:true});
@@ -199,7 +203,7 @@
     var modes=[["battery","Battery"],["balanced","Balanced"],["performance","Perf"]];
     sys+='<div class="row '+(foc===si?"focus":"")+'"><div class="lab">'+ico("cpu")+'Performance mode</div><div class="seg">'+
       modes.map(m=>'<span class="'+(S.perf===m[0]?"sel":"")+'">'+m[1]+'</span>').join("")+'</div></div>';
-    var cap="", saves="", gfx="";
+    var cap="", saves="", gfx="", gperf_html="";
     // Video & Cheats card (IN_GAME only): shader cycle + bezel toggle (#70), then the loop adds
     // the Cheats row (#72) and, when expanded, each cheat toggle.
     if(IN_GAME){
@@ -210,6 +214,16 @@
       if(bzi>=0)gfx+='<div class="row '+(foc===bzi?"focus":"")+'"><div class="lab">'+ico("monitor")+'Bezel<span class="v">'+(S.bezel?"On":"Off")+'</span></div></div>';
     }
     items.forEach(function(it,i){
+      if(it.type==="gperfcyc"){
+        var pmLabels={"default":"Default","battery":"Batt","balanced":"Balanced","performance":"Perf"};
+        gperf_html+='<div class="row '+(foc===i?"focus":"")+'"><div class="lab">'+ico("zap")+'Perf mode</div><div class="seg">'+
+          S.gamePerfModes.map(function(m){return'<span class="'+(S.gamePerf===m?"sel":"")+'">'+pmLabels[m]+'</span>';}).join("")+'</div></div>';
+        return;}
+      if(it.type==="gfpscyc"){
+        var fOpts=[0,30,60,90,120];var fLabs=["No cap","30","60","90","120"];
+        gperf_html+='<div class="row '+(foc===i?"focus":"")+'"><div class="lab">'+ico("film")+'FPS cap</div><div class="seg">'+
+          fOpts.map(function(v,idx){return'<span class="'+(S.gameFpsCap===v?"sel":"")+'">'+fLabs[idx]+'</span>';}).join("")+'</div></div>';
+        return;}
       if(it.type==="cheat"){var c=S.cheats[it.idx]||{};
         gfx+='<div class="row '+(foc===i?"focus":"")+'" style="margin-left:14px"><div class="lab">'+ico("sparkles")+(c.desc||("Cheat "+it.idx))+'<span class="v">'+(c.enable?"On":"Off")+'</span></div></div>';return;}
       if(it.type!=="act")return;
@@ -223,6 +237,8 @@
         (sub?'<span class="v">'+sub+'</span>':"")+'</div></div>';
       if(it.card==="cap") cap+=html; else if(it.card==="saves") saves+=html;
       else if(it.card==="gfx") gfx+=html; else sys+=html;});
+    // #61 per-game perf/fps rows appended to Performance card (below live telemetry + HUD)
+    if(IN_GAME && gperf_html){var gpc=$("perf");if(gpc)gpc.innerHTML+=gperf_html;}
     $("sys").innerHTML=sys; $("cap").innerHTML=cap;
     var gc=$("gfxcard"); if(gc) gc.style.display=(IN_GAME?"":"none");
     if($("gfx")) $("gfx").innerHTML=gfx;
@@ -243,6 +259,13 @@
     api("/game/state/slots").then(function(d){ if(d&&d.slots){S.slots=d.slots;if(d.current!=null)S.slot=d.current;render();} }); }
   function loadTime(){ if(!IN_GAME)return;   // #37 fast-forward + rewind-enable + active slot
     api("/game/timectl").then(function(d){ if(d&&d.ok){S.slot=d.slot||0;S.ff=!!d.ff;S.rewindEnabled=!!d.rewind_enabled;render();} }); }
+  function loadGamePerf(){   // #61 per-game perf mode + fps cap
+    if(!IN_GAME||!S.curSystem||!S.curRom)return;
+    fetch("/game/perf?system="+encodeURIComponent(S.curSystem)+"&game="+encodeURIComponent(S.curRom),{cache:"no-store"})
+      .then(function(r){return r.json();}).then(function(d){
+        if(d&&d.ok){S.gamePerf=d.perf_mode||"default";S.gameFpsCap=d.fps_cap||0;render();}
+      });
+  }
   function loadExtras(){   // #62 HUD state, #54 quiet, #70 shader/bezel, #72 cheats (per-game)
     api("/sys/hud").then(d=>{if(d){S.hudHas=!!d.available;if(d.mode)S.hud=d.mode;build();}});
     api("/ui/prefs").then(d=>{if(d&&d.prefs){S.quiet=(d.prefs["gose-snd-quiet"]==="1");render();}});
@@ -324,6 +347,22 @@
     api("/game/slot",{dir:d>0?"next":"prev"}).then(function(r){if(r&&r.slot!=null)S.slot=r.slot;render();setTimeout(loadSlots,300);});}
   function setHud(d){var m=["off","fps","full"],i=Math.max(0,Math.min(2,m.indexOf(S.hud)+d));if(m[i]===S.hud)return;S.hud=m[i];render();
     api("/sys/hud",{mode:S.hud}).then(x=>{if(x&&x.ok===false)say(x.error||"HUD unavailable");else say("HUD: "+S.hud+" — next launch");});}
+  function cycGamePerf(d){
+    var m=S.gamePerfModes,i=(m.indexOf(S.gamePerf)+d+m.length)%m.length;
+    S.gamePerf=m[i];render();
+    if(!S.curSystem||!S.curRom)return;
+    fetch("/game/perf",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system:S.curSystem,game:S.curRom,perf_mode:S.gamePerf})})
+      .then(function(r){return r.json();}).then(function(x){
+        say("Perf: "+S.gamePerf+(S.gamePerf==="default"?" (global)":"")+" — next launch");});}
+  function cycGameFps(d){
+    var opts=[0,30,60,90,120],i=(opts.indexOf(S.gameFpsCap)+d+opts.length)%opts.length;
+    S.gameFpsCap=opts[i];render();
+    if(!S.curSystem||!S.curRom)return;
+    fetch("/game/perf",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({system:S.curSystem,game:S.curRom,fps_cap:S.gameFpsCap})})
+      .then(function(r){return r.json();}).then(function(x){
+        say("FPS cap: "+(S.gameFpsCap===0?"Off":S.gameFpsCap)+" — next launch");});}
   function cycShader(d){if(!S.shaderList.length)return;var ids=S.shaderList.map(x=>x.id),i=(ids.indexOf(S.shaderset)+d+ids.length)%ids.length;S.shaderset=ids[i];render();
     api("/game/shader",{shaderset:S.shaderset}).then(x=>say((x&&x.ok!==false)?("Shader: "+((S.shaderList.find(y=>y.id===S.shaderset)||{}).label||S.shaderset)+" — next launch"):"Shader change failed"));}
   function focusVisible(){var el=document.querySelector(".row.focus");if(el&&el.scrollIntoView)el.scrollIntoView({block:"nearest",inline:"nearest"});}
@@ -335,7 +374,7 @@
     var ci=order.indexOf(secOf(items[foc])),ns=order[(ci+d+order.length)%order.length];
     var ni=items.findIndex(function(it){return secOf(it)===ns;});
     if(ni>=0){foc=ni;render();focusVisible();}}
-  function adjust(d){var it=items[foc];if(!it)return;if(it.k==="vol")setVol(S.vol+d*5);else if(it.k==="bri")setBri((S.bri||0)+d*5);else if(it.k==="hud")setHud(d);else if(it.k==="shader")cycShader(d);else if(it.k==="slot")setSlot(d);else if(it.type==="seg")setPerf(d);}
+  function adjust(d){var it=items[foc];if(!it)return;if(it.k==="vol")setVol(S.vol+d*5);else if(it.k==="bri")setBri((S.bri||0)+d*5);else if(it.k==="hud")setHud(d);else if(it.k==="shader")cycShader(d);else if(it.k==="slot")setSlot(d);else if(it.k==="gperf")cycGamePerf(d);else if(it.k==="gfps")cycGameFps(d);else if(it.type==="seg")setPerf(d);}
   function enter(){var it=items[foc];if(!it)return;
     if(it.savestate){say(it.savestate==="save"?"Saving state…":"Loading state…");
       api("/game/"+(it.savestate==="save"?"savestate":"loadstate"),{}).then(function(){
@@ -395,6 +434,7 @@
   api("/capture/buffer").then(d=>{if(d){S.buffer=!!d.running;build();}});   // reflect replay-buffer state on open
   loadSlots();   // populate the saved-states thumbnails when the Game Bar opens over a game
   loadTime();    // #37 fast-forward + rewind-enable + active slot
+  loadGamePerf();  // #61 per-game perf mode + fps cap
   loadGamePerf();  // #61 per-game perf mode + fps cap
   loadExtras();   // HUD/quiet/shader/bezel/cheats state for the game-bar quick controls
   loadAiPaired();  // #41 check if an AI is paired (tier-gate display)
