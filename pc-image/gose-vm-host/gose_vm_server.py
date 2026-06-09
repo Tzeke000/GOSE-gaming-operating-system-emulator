@@ -3102,9 +3102,13 @@ def _sync_ai_tokens(g):
         LOG.warning("ai_tokens sync failed: %s", e)
 
 def ai_grants():
+    # Tokens are NEVER returned in the roster view — they are issued once at grant/pair time
+    # and only the device owner sees them (on the Hub screen at that moment).
+    # Leaking them here would let any loopback caller (including an Observe-tier AI that can
+    # reach the UI server) steal higher-tier tokens. See breaker finding 2026-06-09.
     g = _ai_grants_load()
     return {"ok": True, "grants": {n: {"tier": ai_tier(n), "granted_at": g[n].get("granted_at"),
-                                       "expires": g[n].get("expires"), "token": g[n].get("token"),
+                                       "expires": g[n].get("expires"),
                                        "seat": g[n].get("seat")} for n in g}}
 
 def ai_grant(payload):
@@ -9184,6 +9188,15 @@ class H(http.server.SimpleHTTPRequestHandler):
         if route == "/ai/activity":
             return self._json(ai_activity(self._qs().get("limit", 50)))
         if route == "/ai/assist/queue":
+            # Requires a valid AI token — queue entries contain screenshot paths that could
+            # be fetched via /fs/file; unauthenticated access would expose those paths to any
+            # loopback caller.  Any tier (Observe+) is sufficient — the AI just needs to be
+            # paired.  See breaker finding 2026-06-09.
+            _q_token = (self.headers.get("X-AI-Token") or "").strip()
+            _q_name, _q_tier = _ai_token_resolve(_q_token)
+            if not _q_name:
+                return self._json({"ok": False, "code": "ERR_AUTH",
+                                   "error": "X-AI-Token required to poll the assist queue"})
             return self._json(ai_assist_queue())
         if route == "/ai/copilot":
             return self._json(ai_copilot_status())
@@ -9649,6 +9662,18 @@ class H(http.server.SimpleHTTPRequestHandler):
                                            "error": "owner PIN or dev token required to manage AI grants"})
                 return self._json(ai_grant(payload))
             if route == "/ai/revoke":
+                # Owner-gate: revoking an AI removes its access permanently — only the device
+                # owner may do this.  An unguarded revoke would let any loopback caller (e.g.
+                # a malicious page in the kiosk WebKit) nuke all AI grants as a DoS.
+                # Same pre-OOBE carve-out as ai/grant: before first-boot owner is established
+                # the flag is absent, so we allow it (the wizard wipes AIs on reset #111).
+                _oobe_done = os.path.exists(OOBE_DONE_FLAG)
+                if _oobe_done:
+                    ok, _cred, _kind = _owner_credential(payload)
+                    if not ok:
+                        LOG.warning("ai/revoke REFUSED — owner proof required (post-OOBE)")
+                        return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                           "error": "owner PIN or dev token required to revoke AI access"})
                 return self._json(ai_revoke(payload))
             if route == "/ai/request":
                 return self._json(ai_request(payload))
