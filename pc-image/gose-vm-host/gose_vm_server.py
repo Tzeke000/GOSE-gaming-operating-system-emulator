@@ -2056,6 +2056,34 @@ def launch_moonlight():
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+# ---- Couch Browser (task #43): which browser flatpak is available? ----------
+# Preference order: Firefox (Gecko, no --no-sandbox quirks on root) then Chromium
+# then Chrome. Each is a flatpak; Electron flatpaks need --no-sandbox when run as
+# root (wrapped by _wrap_flatpak_run), but Firefox/Gecko doesn't.
+BROWSER_CANDIDATES = [
+    ("org.mozilla.firefox",  "Firefox",  "flatpak run org.mozilla.firefox"),
+    ("org.chromium.Chromium","Chromium",  None),   # Electron → cmd built below
+    ("com.google.Chrome",    "Chrome",    None),   # Electron → cmd built below
+]
+
+def browser_status():
+    """Return the best available browser flatpak for the Couch Browser page."""
+    try:
+        r = subprocess.run(["flatpak", "list", "--app", "--columns=application"],
+                           capture_output=True, text=True, timeout=10)
+        installed = set(r.stdout.split())
+    except Exception:
+        installed = set()
+    for appid, name, cmd in BROWSER_CANDIDATES:
+        if appid in installed:
+            # Electron/Chromium apps need --no-sandbox + dbus-run-session as root
+            if cmd is None:
+                cmd = _wrap_flatpak_run("flatpak run " + appid)
+            return {"ok": True, "browser": name, "appid": appid, "cmd": cmd}
+    return {"ok": False, "browser": None, "appid": None, "cmd": None,
+            "note": "No browser installed. Open the Store and install Firefox."}
+
+
 def net_info():
     # real network state via connman (Batocera's manager) — works on the Odin 2 too
     try:
@@ -9970,6 +9998,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(bios_status(self._qs().get("system") or None))
         if route == "/apps/moonlight":
             return self._json(moonlight_status())
+        if route == "/browser/status":
+            return self._json(browser_status())
         if route == "/recent.json":
             return self._json(recent_games())
         if route == "/ai/players":
