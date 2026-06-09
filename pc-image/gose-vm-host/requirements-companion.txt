@@ -1,0 +1,6 @@
+# GOSE Companion dependencies
+# Install with: pip install -r requirements-companion.txt
+pystray>=0.19       # system tray icon (Windows/macOS/Linux)
+Pillow>=10.0        # tray icon rendering (pystray dep)
+paramiko>=3.0       # SSH/SFTP for ROM upload
+# tkinter is stdlib on CPython Windows — no install needed

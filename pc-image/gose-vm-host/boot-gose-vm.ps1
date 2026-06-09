@@ -9,7 +9,10 @@ param(
   [string]$Display = "sdl,gl=on",   # sdl,gl=on confirmed working; gtk,gl=on also worth trying
   [int]$Mem = 6,
   [int]$Cpus = 4,
-  [string]$QemuBin = $(if ($env:GOSE_QEMU_BIN) { $env:GOSE_QEMU_BIN } else { "D:\gose-build\msys64\mingw64\bin" })
+  [string]$QemuBin = $(if ($env:GOSE_QEMU_BIN) { $env:GOSE_QEMU_BIN } else { "D:\gose-build\msys64\mingw64\bin" }),
+  # Companion tray (#25 + #74): pass -Companion or set GOSE_COMPANION=1 to auto-start.
+  # Requires: pip install pystray Pillow paramiko  (see requirements-companion.txt)
+  [switch]$Companion = ($env:GOSE_COMPANION -eq '1')
 )
 $bin = $QemuBin                                    # MSYS2 qemu (virgl-enabled); overridable for the portable bundle
 $qemu = "$bin\qemu-system-x86_64.exe"
@@ -116,4 +119,18 @@ if ($redirReady) {
   Write-Host "Bluetooth bridge started (usbredirect $btVidPid -> usb-redir:14000). Guest gets hci0 once it enumerates."
 } else {
   Write-Warning "usbredir socket (14000) never came up - Bluetooth NOT bridged. Check QEMU launched."
+}
+
+# GOSE Companion tray (#25 + #74): system tray app + optional mobile web server.
+# Pass -Companion (or set GOSE_COMPANION=1) when booting to auto-start the tray.
+$companionScript = $(if ($env:GOSE_COMPANION_SCRIPT) { $env:GOSE_COMPANION_SCRIPT } `
+  else { Join-Path $PSScriptRoot 'gose_companion.py' })
+if ($Companion -and (Test-Path $companionScript)) {
+  Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='py.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like "*gose_companion.py*" } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+  Start-Process py -ArgumentList '-3.11', $companionScript -WindowStyle Normal
+  Write-Host "GOSE Companion tray started. (pystray + Pillow + paramiko required)"
+} elseif ($Companion) {
+  Write-Warning "Companion not started: $companionScript not found."
 }
