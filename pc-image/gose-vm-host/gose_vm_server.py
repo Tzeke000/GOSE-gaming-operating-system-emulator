@@ -6801,6 +6801,7 @@ def gose_restore(payload):
                 return {"ok": False, "error": "unsafe path in archive: " + m}
             if not (mm == "gose-ui" or mm.startswith("gose-ui/") or
                     mm in ("system/gose/ai_tokens.json", "system/gose/ai_audit.jsonl",
+                           "system/gose/collections.json",
                            "system/gose", "system/gose/")):
                 return {"ok": False, "error": "archive escapes GOSE state: " + m}
         ex = subprocess.run(["tar", "-xzf", path, "-C", "/userdata"],
@@ -10715,6 +10716,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             if route == "/system/backup":
+                if not _owner_ok(payload):
+                    return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                       "error": "owner PIN or dev token required to create a backup"})
                 return self._json(gose_backup("manual"))
             if route == "/system/restore":
                 return self._json(gose_restore(payload))
