@@ -79,6 +79,7 @@
       <div class="card glass"><h3><span class="ic" data-i="cpu"></span>Performance</h3><div id="perf"></div></div>
       <div class="card glass"><h3><span class="ic" data-i="volume-2"></span>Audio &amp; Display</h3><div id="av"></div></div>
       <div class="card glass"><h3><span class="ic" data-i="image"></span>Capture</h3><div id="cap"></div></div>
+      <div class="card glass" id="aicard"><h3><span class="ic" data-i="cpu"></span>AI</h3><div id="aistatus"></div><div id="ai"></div></div>
       <div class="card glass"><h3><span class="ic" data-i="settings"></span>System</h3><div id="sys"></div></div>
     </div>
   </div>
@@ -157,15 +158,15 @@
     } else {
       items.push({k:"power",type:"act",ic:"power",lab:"Power",sub:"›",power:true});
     }
-    // AI Players hub — quick access to the paired-AI manager from the guide
+    // AI card — AI Players hub + AI assist (dedicated card, not nested in System)
     items.push({k:"aihub",type:"act",ic:"sparkles",lab:"AI Players",
-      sub:S.aiPaired?(S.aiName?S.aiName+" paired":"manage your AI"):"pair an AI",aihub:true});
+      sub:S.aiPaired?(S.aiName?S.aiName+" paired":"manage your AI"):"pair an AI",aihub:true,card:"ai"});
     // #41 AI assist — always present; tier-gate is enforced server-side + reflected in sub-label
     var aiN=S.aiName||"your AI";
     var assistSub=S.aiPaired===null?"…":S.aiPaired===false?"pair an AI first":
       (S.assistState==="sent"?"sent — waiting for "+aiN:S.assistState==="asking"?"…":
        S.assistState==="error"?S.assistMsg||"error":"ask "+aiN);
-    items.push({k:"assist",type:"act",ic:"cpu",lab:(S.aiPaired&&S.aiName)?("Ask "+S.aiName):"Ask AI",sub:assistSub,assist:true});
+    items.push({k:"assist",type:"act",ic:"cpu",lab:(S.aiPaired&&S.aiName)?("Ask "+S.aiName):"Ask AI",sub:assistSub,assist:true,card:"ai"});
     if(IN_GAME){   // #50 per-game controls remap — only surfaced while a game is active
       items.push({k:"remap",type:"act",ic:"target",lab:"Per-game controls",
         sub:"Remap buttons just for this game",remap:true,card:"saves"});}
@@ -207,7 +208,7 @@
     var modes=[["battery","Battery"],["balanced","Balanced"],["performance","Perf"]];
     sys+='<div class="row '+(foc===si?"focus":"")+'"><div class="lab">'+ico("cpu")+'Performance mode</div><div class="seg">'+
       modes.map(m=>'<span class="'+(S.perf===m[0]?"sel":"")+'">'+m[1]+'</span>').join("")+'</div></div>';
-    var cap="", saves="", gfx="", gperf_html="";
+    var cap="", saves="", gfx="", gperf_html="", ai="";
     // Video & Cheats card (IN_GAME only): shader cycle + bezel toggle (#70), then the loop adds
     // the Cheats row (#72) and, when expanded, each cheat toggle.
     if(IN_GAME){
@@ -240,10 +241,15 @@
       var html='<div class="row '+(foc===i?"focus":"")+(it.danger?" danger":"")+'"><div class="lab">'+ico(it.ic)+it.lab+
         (sub?'<span class="v">'+sub+'</span>':"")+'</div></div>';
       if(it.card==="cap") cap+=html; else if(it.card==="saves") saves+=html;
-      else if(it.card==="gfx") gfx+=html; else sys+=html;});
+      else if(it.card==="gfx") gfx+=html; else if(it.card==="ai") ai+=html; else sys+=html;});
     // #61 per-game perf/fps rows appended to Performance card (below live telemetry + HUD)
     if(IN_GAME && gperf_html){var gpc=$("perf");if(gpc)gpc.innerHTML+=gperf_html;}
     $("sys").innerHTML=sys; $("cap").innerHTML=cap;
+    // AI card: paired-status summary line above the action rows
+    var aiStatusHtml='<div style="font-size:12px;color:'+(S.aiPaired?'#5cd0ff':'#aeb6d4')+';margin-bottom:8px;display:flex;align-items:center;gap:6px">'+
+      ico(S.aiPaired?'cpu':'cpu')+(S.aiPaired===null?'Checking…':S.aiPaired?(S.aiName?S.aiName+' — paired':'AI paired'):'No AI paired')+'</div>';
+    if($("aistatus"))$("aistatus").innerHTML=aiStatusHtml;
+    if($("ai"))$("ai").innerHTML=ai;
     var gc=$("gfxcard"); if(gc) gc.style.display=(IN_GAME?"":"none");
     if($("gfx")) $("gfx").innerHTML=gfx;
     var sc=$("savescard"); if(sc) sc.style.display=IN_GAME?"":"none";
@@ -373,7 +379,7 @@
   function focusVisible(){var el=document.querySelector(".row.focus");if(el&&el.scrollIntoView)el.scrollIntoView({block:"nearest",inline:"nearest"});}
   function move(d){foc=(foc+d+items.length)%items.length;render();focusVisible();}
   // which visual card a focusable item lives in — for L1/R1 ([ / ]) section hopping
-  function secOf(it){if(!it)return"sys";if(it.k==="vol"||it.k==="bri")return"av";if(it.k==="hud")return"perf";if(it.type==="seg")return"sys";return it.card||"sys";}
+  function secOf(it){if(!it)return"sys";if(it.k==="vol"||it.k==="bri")return"av";if(it.k==="hud")return"perf";if(it.type==="seg")return"sys";if(it.k==="aihub"||it.k==="assist")return"ai";return it.card||"sys";}
   function jumpSection(d){if(!items.length)return;
     var order=[];items.forEach(function(it){var s=secOf(it);if(order.indexOf(s)<0)order.push(s);});
     var ci=order.indexOf(secOf(items[foc])),ns=order[(ci+d+order.length)%order.length];
