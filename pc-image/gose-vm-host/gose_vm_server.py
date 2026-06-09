@@ -11142,28 +11142,45 @@ class H(http.server.SimpleHTTPRequestHandler):
                 LOG.warning("/install/disk REFUSED — owner proof required")
                 return self._json({"ok": False, "code": "ERR_NOT_OWNER",
                                    "error": "disk install requires owner PIN or dev token"})
-            if kind == "ai":
-                LOG.warning("/install/disk REFUSED — AI token not accepted for destructive ops")
-                return self._json({"ok": False, "code": "ERR_AI_REFUSED",
-                                   "error": "disk install cannot be authorised by an AI token"})
+            # _owner_credential returns kind "pin" or "token" only (never "ai").
+            # Disk install requires PIN proof (the human physically at the kiosk). The dev token
+            # is accepted here too since it is 0o000-shadowed in every agent sandbox and cannot
+            # be read by an AI — but when a real flash path lands, PIN-only is the correct gate.
+            if kind not in ("pin", "token"):
+                LOG.warning("/install/disk REFUSED — unexpected credential kind %r", kind)
+                return self._json({"ok": False, "code": "ERR_CREDENTIAL",
+                                   "error": "disk install requires PIN or owner token proof"})
             # Confirm phrase must match exactly (sent by the hold-to-confirm UI).
             confirm = (payload.get("confirm") or "").strip()
             if confirm != "INSTALL GOSE TO DISK":
                 return self._json({"ok": False, "code": "ERR_CONFIRM",
                                    "error": "confirmation phrase did not match"})
             # Detect if we are in a VM — the real write path must never run inside a VM.
-            # This is a belt-and-suspenders guard on top of the UI's own VM warning.
+            # Belt-and-suspenders guard on top of the UI's own VM warning.
+            # Uses systemd-detect-virt first; falls back to /proc/cpuinfo hypervisor flag
+            # (same two-step as platform_detect) because systemd-detect-virt is absent in
+            # some Batocera builds.
+            _in_vm = False
             try:
                 import subprocess as _sp2
                 r2 = _sp2.run(["systemd-detect-virt", "--vm"],
                               capture_output=True, timeout=4)
                 if r2.returncode == 0:
-                    return self._json({"ok": False, "stubbed": True,
-                                       "code": "ERR_VM",
-                                       "error": ("Disk install is not available inside a VM — "
-                                                 "boot GOSE on real hardware to use this feature.")})
+                    _in_vm = True
             except Exception:
                 pass
+            if not _in_vm:
+                try:
+                    with open("/proc/cpuinfo") as _cf:
+                        if "hypervisor" in _cf.read().lower():
+                            _in_vm = True
+                except Exception:
+                    pass
+            if _in_vm:
+                return self._json({"ok": False, "stubbed": True,
+                                   "code": "ERR_VM",
+                                   "error": ("Disk install is not available inside a VM — "
+                                             "boot GOSE on real hardware to use this feature.")})
             # STUB — real disk-flashing implementation goes here.
             # Do NOT perform any disk writes; return an honest stubbed response.
             LOG.info("/install/disk: owner confirmed, stub response (real flash not implemented)")
