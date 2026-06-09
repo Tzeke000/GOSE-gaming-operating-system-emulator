@@ -1,0 +1,89 @@
+{
+  "name": "Super Tilt Bro. (NES homebrew)",
+  "system": "nes",
+  "core": "fceumm",
+  "endian": "little",
+  "read_method": "core_ram",
+  "match": { "game_substr": "Super_Tilt_Bro" },
+
+  "_source": "SOURCE-DERIVED 2026-06-09 — all addresses extracted directly from the GPL source, game/mem_labels.asm + game/constants.asm (github.com/sgadrat/super-tilt-bro master). NCI pipeline LIVE-VERIFIED: ROM at /userdata/roms/nes/Super_Tilt_Bro_(E).nes, RetroArch NCI UDP :55355 responded correctly on title screen (global_game_state=0x01 confirmed). In-game field values (stocks, positions, state) NOT yet live-verified against rendered display — blocked by menu navigation (dev controller routes to P2, title/mode-selection needs P1 input to advance; see #117 notes). SOURCE values are authoritative.",
+
+  "notes": "Smash-Bros-style 2-player NES homebrew. Coordinate space: game uses 16-bit fixed-point for physics (player_a_x + player_a_x_low = pixel + subpixel), but player_a_x ($04) alone is the integer pixel position — use that for AI. player_a_x_screen / player_a_y_screen ($0e/$10) are screen-scroll indices (0 = on-screen). Damage is a percentage (0-999%+ in theory, displayed 0-999). Stocks start at config_initial_stocks (default 4, MAX_STOCKS=4 in constants). Player A = left/P1 controller ($d0), Player B = right/P2 controller ($d1). Player number encoding: 0 = Player A, 1 = Player B (X-register indexing into interleaved arrays). game_winner ($05db) is set to 0 (Player A won) or 1 (Player B won) when a player's stocks hit 0; only valid when global_game_state == GAME_STATE_GAMEOVER ($02).",
+
+  "fields": [
+    { "name": "global_game_state",   "address": "0xd4",  "type": "u8",
+      "note": "0x00=INGAME 0x01=TITLE 0x02=GAMEOVER 0x05=STAGE_SELECTION 0x06=CHARACTER_SELECTION 0x07=MODE_SELECTION" },
+    { "name": "game_winner",         "address": "0x5db", "type": "u8",
+      "note": "Set to 0 (Player A wins) or 1 (Player B wins) when game ends. Only valid when global_game_state==0x02 (GAMEOVER)." },
+
+    { "name": "player_a_state",      "address": "0x00",  "type": "u8",
+      "note": "Player A (P1/left) character state. 0x00=THROWN 0x01=RESPAWN 0x02=INNEXISTANT 0x03=SPAWN 0x04=OWNED 0x05=STANDING 0x06=RUNNING 0x07+=character custom states" },
+    { "name": "player_b_state",      "address": "0x01",  "type": "u8",
+      "note": "Player B (P2/right) character state. Same enum as player_a_state." },
+
+    { "name": "player_a_x",          "address": "0x04",  "type": "u8",
+      "note": "Player A integer X pixel position (horizontal). Full precision = player_a_x + player_a_x_low ($4a) as fixed-point." },
+    { "name": "player_b_x",          "address": "0x05",  "type": "u8",
+      "note": "Player B integer X pixel position." },
+    { "name": "player_a_y",          "address": "0x06",  "type": "u8",
+      "note": "Player A integer Y pixel position (vertical, increases downward). Full precision = player_a_y + player_a_y_low ($4c)." },
+    { "name": "player_b_y",          "address": "0x07",  "type": "u8",
+      "note": "Player B integer Y pixel position." },
+
+    { "name": "player_a_x_screen",   "address": "0x0e",  "type": "u8",
+      "note": "Player A scroll-screen X offset. 0 = player is on the main screen. Non-zero = off the visible stage (dying/blasted off)." },
+    { "name": "player_b_x_screen",   "address": "0x0f",  "type": "u8" },
+    { "name": "player_a_y_screen",   "address": "0x10",  "type": "u8",
+      "note": "Player A scroll-screen Y offset. 0 = on main screen." },
+    { "name": "player_b_y_screen",   "address": "0x11",  "type": "u8" },
+
+    { "name": "player_a_hitstun",    "address": "0x02",  "type": "u8",
+      "note": "Player A hitstun frames remaining. >0 = currently in hitstun (cannot act)." },
+    { "name": "player_b_hitstun",    "address": "0x03",  "type": "u8" },
+
+    { "name": "player_a_damages",    "address": "0x48",  "type": "u8",
+      "note": "Player A damage percentage (0-255+; displayed as %). Higher = easier to KO." },
+    { "name": "player_b_damages",    "address": "0x49",  "type": "u8" },
+
+    { "name": "player_a_stocks",     "address": "0x54",  "type": "u8",
+      "note": "Player A remaining lives/stocks. Starts at config_initial_stocks (default 4). 0 = player is out (triggers GAMEOVER)." },
+    { "name": "player_b_stocks",     "address": "0x55",  "type": "u8" },
+
+    { "name": "player_a_velocity_h", "address": "0x0c",  "type": "s8",
+      "note": "Player A horizontal velocity (signed, integer part). player_a_velocity_h_low=$50 is subpixel." },
+    { "name": "player_b_velocity_h", "address": "0x0d",  "type": "s8" },
+    { "name": "player_a_velocity_v", "address": "0x0a",  "type": "s8",
+      "note": "Player A vertical velocity (signed, integer part). Positive = falling." },
+    { "name": "player_b_velocity_v", "address": "0x0b",  "type": "s8" },
+
+    { "name": "player_a_direction",  "address": "0x08",  "type": "u8",
+      "note": "Player A facing direction. 0 = left (DIRECTION_LEFT), 1 = right (DIRECTION_RIGHT)." },
+    { "name": "player_b_direction",  "address": "0x09",  "type": "u8" },
+
+    { "name": "player_a_grounded",   "address": "0x62",  "type": "u8",
+      "note": "0 = airborne; non-zero = platform offset from stage_data (player is on the ground)." },
+    { "name": "player_b_grounded",   "address": "0x63",  "type": "u8" },
+
+    { "name": "player_a_hitbox_enabled", "address": "0x24", "type": "u8",
+      "note": "0=hitbox off, 1=direct hitbox active, 2=custom hitbox. Non-zero = Player A is attacking." },
+    { "name": "player_b_hitbox_enabled", "address": "0x25", "type": "u8" },
+
+    { "name": "controller_a_btns",   "address": "0xd0",  "type": "u8",
+      "note": "P1 controller button bitmask this frame. Bit7=A, Bit6=B, Bit5=Select, Bit4=Start, Bit3=Up, Bit2=Down, Bit1=Left, Bit0=Right." },
+    { "name": "controller_b_btns",   "address": "0xd1",  "type": "u8",
+      "note": "P2 controller button bitmask. Same bit layout as controller_a_btns." },
+    { "name": "controller_a_last_frame_btns", "address": "0xd2", "type": "u8",
+      "note": "P1 previous frame buttons. Diff from controller_a_btns = newly-pressed inputs." },
+    { "name": "controller_b_last_frame_btns", "address": "0xd3", "type": "u8" },
+
+    { "name": "screen_shake_counter","address": "0x70",  "type": "u8",
+      "note": "Non-zero while screen is shaking (after a strong hit / KO). Frame counter." },
+    { "name": "slow_down_counter",   "address": "0x7f",  "type": "u8",
+      "note": "Non-zero during hit-pause slowdown frames (game freezes briefly on strong hits)." },
+
+    { "name": "config_initial_stocks","address": "0xd9", "type": "u8",
+      "note": "Configured starting stock count (set in CONFIG screen). Both players start with this many lives." },
+    { "name": "config_ai_level",     "address": "0xda",  "type": "u8",
+      "note": "Built-in AI level (0=off, non-zero=AI enabled for the NES-side CPU opponent). Separate from external AI control." }
+  ]
+}
