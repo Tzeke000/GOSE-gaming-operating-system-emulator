@@ -332,18 +332,22 @@ def _clear_activity():
         LOG.warning("activity clear failed: %s", e)
 
 def game_activity():
-    """GET /game/activity — current game state for the Guide header and AI."""
+    """GET /game/activity — current game state for the Guide header and AI.
+    Includes `ai_playable`: whether the current game has a baked AI play-map (#117) so the
+    "Play with <AI>" detail page can gate honestly against the same source the arm path uses."""
     try:
         d = json.load(open(ACTIVITY_F))
         if isinstance(d, dict) and d.get("game"):
+            _sys, _game = d.get("system", ""), d.get("game", "")
             return {"ok": True, "playing": True,
-                    "system": d.get("system", ""), "game": d.get("game", ""),
+                    "system": _sys, "game": _game,
+                    "ai_playable": _spectate_profile(_sys, _game) is not None,
                     "since": d.get("since"), "state": d.get("state", "playing")}
     except FileNotFoundError:
         pass
     except Exception:
         pass
-    return {"ok": True, "playing": False, "state": "desktop"}
+    return {"ok": True, "playing": False, "state": "desktop", "ai_playable": False}
 
 def _playstats():
     """Load playstats.json; migrate from legacy playtime.json if playstats is empty/absent."""
@@ -5057,6 +5061,17 @@ def guide_toggle():
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+def guide_close():
+    """#113/#119: hide the Guide overlay WITHOUT killing the running game (USR2 = hide/resume,
+    distinct from /game/exit which kills the launcher). Idempotent: a no-op if no overlay is open.
+    The "Play with <AI>" flow calls this so the screen returns to the game/desktop the moment the
+    AI is armed."""
+    try:
+        subprocess.run(["pkill", "-USR2", "-f", "overlay_window.py"], capture_output=True, text=True, timeout=5)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 _GAME_PATS = ["retroarch", "emulatorlauncher", "ppsspp", "pcsx", "dolphin-emu", "mupen64",
               "duckstation", "flycast", "mednafen", "melonds", "scummvm", "bwrap", "glxgears"]
 
@@ -5327,6 +5342,141 @@ def _learning_params(history):
              "Learning (balanced)")
     return {"hz": hz, "dead": dead, "label": label,
             "win_rate": round(win_rate, 2), "games_seen": len(recent)}
+
+# ---- #113 per-AI play configuration (the "Play with <AI>" detail page) ----------------
+# Each paired AI gets a small config record: how it should play THIS device's games.
+# Stored in play_config.json under "ai_play" -> {<name>: {...}} so it travels with the
+# existing play-config file (and its lock). Owner-gated on write (same model as /ai/grant).
+#
+#   opponent : "human" (Play vs Human)  | "ai"  (AI vs AI / exhibition)
+#   mode     : "vs"                      | "coop"
+#   difficulty: easy|med|hard|learning   (mirrors DIFFICULTY_TABLE)
+#   read_vs  : bool  — read the human's inputs in VS games   (privacy; default OFF)
+#   read_coop: bool  — read the human's inputs in Co-Op games (privacy; default ON)
+# --------------------------------------------------------------------------------------
+_PLAYCFG_OPPONENTS = ("human", "ai")
+_PLAYCFG_MODES = ("vs", "coop")
+
+def _ai_playconfig_defaults():
+    return {"opponent": "human", "mode": "vs", "difficulty": DIFFICULTY_DEFAULT,
+            "read_vs": False, "read_coop": True}
+
+def ai_playconfig_get(name):
+    """GET /ai/playconfig?name=<AI> — the saved per-AI play config (defaults if unset)."""
+    name = (name or "").strip()[:32]
+    if not name:
+        return {"ok": False, "error": "name required"}
+    with _PLAY_CONFIG_LOCK:
+        cfg = _play_config()
+    store = cfg.get("ai_play", {})
+    rec = store.get(name) if isinstance(store, dict) else None
+    out = _ai_playconfig_defaults()
+    if isinstance(rec, dict):
+        out.update({k: rec[k] for k in out if k in rec})
+    return {"ok": True, "name": name, "config": out,
+            "difficulties": list(DIFFICULTY_TABLE.keys())}
+
+def ai_playconfig_set(payload):
+    """POST /ai/playconfig {name, opponent, mode, difficulty, read_vs, read_coop} — persist
+    a per-AI play config. Owner-gated at the route. Unknown/invalid values fall back to the
+    current/default so a junk POST can't corrupt the record. Returns the stored config."""
+    name = (payload.get("name") or "").strip()[:32]
+    if not name or not re.match(r"^[\w][\w .\-]*$", name):
+        return {"ok": False, "error": "name required"}
+    with _PLAY_CONFIG_LOCK:
+        cfg = _play_config()
+        store = cfg.get("ai_play")
+        if not isinstance(store, dict):
+            store = {}
+        rec = store.get(name)
+        cur = _ai_playconfig_defaults()
+        if isinstance(rec, dict):
+            cur.update({k: rec[k] for k in cur if k in rec})
+        # apply only valid incoming values; everything else keeps its current value
+        if payload.get("opponent") in _PLAYCFG_OPPONENTS:
+            cur["opponent"] = payload["opponent"]
+        if payload.get("mode") in _PLAYCFG_MODES:
+            cur["mode"] = payload["mode"]
+        if payload.get("difficulty") in DIFFICULTY_TABLE:
+            cur["difficulty"] = payload["difficulty"]
+        if "read_vs" in payload:
+            cur["read_vs"] = bool(payload["read_vs"])
+        if "read_coop" in payload:
+            cur["read_coop"] = bool(payload["read_coop"])
+        store[name] = cur
+        cfg["ai_play"] = store
+        # keep the global difficulty (read by the play scripts) in sync with this AI's choice
+        cfg["difficulty"] = cur["difficulty"]
+        _play_config_save(cfg)
+    return {"ok": True, "name": name, "config": cur}
+
+def ai_play_arm(payload):
+    """POST /ai/play/arm {name, system, game} — the "Play with <AI>" action.
+    Arms the named AI to play the CURRENT game in its seat. Honest about capability:
+      * AI-vs-AI (opponent="ai") on a game WITH a verified play-map -> real spectate match.
+      * vs-Human on a game WITH a play-map -> launch the game seated (human P1, AI P2) and
+        mark the AI armed; the AI's own play loop drives its paddle (the real Pong path).
+      * Any game WITHOUT a play-map -> arm + return armed:false / playmap:false so the UI can
+        show an honest "no play-map for this game yet" state. NEVER fakes play.
+    Owner-gated at the route."""
+    name = (payload.get("name") or "").strip()[:32]
+    if not name or not re.match(r"^[\w][\w .\-]*$", name):
+        return {"ok": False, "error": "name required"}
+    g = _ai_grants_load()
+    rec = g.get(name)
+    if not rec:
+        return {"ok": False, "error": f"'{name}' is not paired"}
+    tier = ai_tier(name)
+    if tier not in ("play", "admin"):
+        return {"ok": False, "error": f"'{name}' has tier '{tier}' — playing requires at least Play tier"}
+
+    # current game: prefer the live activity, fall back to the posted system/game
+    act = game_activity()
+    system = (payload.get("system") or act.get("system") or "").strip()
+    game = (payload.get("game") or act.get("game") or "").strip()
+    if not system or not game:
+        return {"ok": False, "playmap": False, "armed": False,
+                "error": "no current game — launch a game first, then arm the AI"}
+
+    profile = _spectate_profile(system, game)
+    cfg = ai_playconfig_get(name).get("config", _ai_playconfig_defaults())
+
+    if not profile:
+        # honest: this game has no baked play-map yet — do NOT fake play
+        return {"ok": True, "armed": False, "playmap": False,
+                "name": name, "system": system, "game": game,
+                "note": f"no play-map for {system}/{game} yet — the AI can't play this game "
+                        f"autonomously. pong1k2p is the proven map; others need a baked profile (#117)."}
+
+    # AI-vs-AI: needs a SECOND paired play-tier AI; hand off to the real spectate path.
+    if cfg.get("opponent") == "ai":
+        others = [n for n, r in g.items()
+                  if n != name and ai_tier(n) in ("play", "admin") and r.get("token")]
+        if not others:
+            return {"ok": False, "armed": False, "playmap": True,
+                    "name": name, "system": system, "game": game,
+                    "error": "AI-vs-AI needs a second paired Play-tier AI — pair another, or "
+                             "switch Opponent to Play vs Human"}
+        return spectate_start({"game": game, "system": system,
+                               "ai_a": name, "ai_b": others[0]})
+
+    # vs-Human: launch the game with the human in P1 and the AI in its seat (default P2).
+    # The AI's play loop (the proven Pong path) drives its paddle — armed, real, not faked.
+    seat = rec.get("seat") or 2
+    _all_js, _devs = _player_devices()
+    # human/physical pads first, AI virtual pad pinned to the AI's seat slot
+    res = launch_game(system, game)
+    if not res.get("ok"):
+        return {"ok": False, "armed": False, "playmap": True, "name": name,
+                "error": "game launch failed: " + str(res.get("error", "")), **res}
+    _write_activity(system, game)
+    notifications_post({"title": f"Playing with {name}",
+                        "body": f"{name} armed in seat P{seat} — {game}",
+                        "kind": "info", "icon": "gamepad-2"})
+    return {"ok": True, "armed": True, "playmap": True, "profile": profile,
+            "name": name, "system": system, "game": game, "seat": seat,
+            "difficulty": cfg.get("difficulty"),
+            "note": f"{name} is armed in seat P{seat}; its play loop drives that paddle."}
 
 def game_state_slots(system, game):
     # list savestate slots on disk for a ROM: /userdata/saves/<system>/<game>.state[N] (+ .png thumb).
@@ -10156,6 +10306,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(play_difficulty_get())
         if route == "/play/history":
             return self._json(play_history_get())
+        if route == "/ai/playconfig":
+            return self._json(ai_playconfig_get(self._qs().get("name", "")))
         if route == "/game/stats":
             q = self._qs()
             if q.get("system") and q.get("game"):
@@ -10656,6 +10808,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(friends_save(payload))
         if route == "/guide/toggle":
             return self._json(guide_toggle())
+        if route == "/guide/close":
+            return self._json(guide_close())
         if route == "/game/exit":
             return self._json(game_exit())
         if route == "/game/screenshot":
@@ -10734,12 +10888,27 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json(scrape_game(payload.get("system", ""), payload.get("game", "")))
             return self._json(scrape_system(payload.get("system", ""), force=True))
         if route in ("/ai/join", "/ai/heartbeat", "/ai/leave", "/ai/grant", "/ai/revoke",
-                     "/ai/request", "/ai/request/clear"):
+                     "/ai/request", "/ai/request/clear", "/ai/playconfig", "/ai/play/arm"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
             except Exception:
                 payload = {}
+            if route in ("/ai/playconfig", "/ai/play/arm"):
+                # Owner-gate: persisting how an AI plays, or arming it to take a seat, is a
+                # privileged action — only the device owner (PIN or dev token) may call it.
+                # An AI token is intentionally NOT accepted (an AI must not arm itself or
+                # rewrite its own play config). Same pre-OOBE carve-out as ai/grant: before
+                # the first-boot owner exists the flag is absent, so we allow it.
+                if os.path.exists(OOBE_DONE_FLAG):
+                    ok, _cred, _kind = _owner_credential(payload)
+                    if not ok:
+                        LOG.warning("%s REFUSED — owner proof required (post-OOBE)", route)
+                        return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                           "error": "owner PIN or dev token required"})
+                if route == "/ai/playconfig":
+                    return self._json(ai_playconfig_set(payload))
+                return self._json(ai_play_arm(payload))
             if route == "/ai/grant":
                 # Owner-gate: granting or changing AI tiers is a privileged action — only the
                 # device owner (PIN or dev token) may call this.  An AI token is intentionally

@@ -131,6 +131,7 @@
   var REQS=[];     // pending pairing requests [{name,tier,ts}]
   var LIVE={};     // name -> {online,mode} from /ai/players
   var COPILOT={};  // name -> {copilot:bool} — #42 watchdog opt-in (owner-only toggle, default OFF)
+  var CURGAME="";  // #113/#115 current game name (or "" = desktop) — passed to the detail page
   // PANEL: null | {agent:name} | {add:true,val:""} | {tok:{name,token,tier,why}}
   var PANEL=null;
   var lastSig="";
@@ -213,45 +214,10 @@
     var old=document.getElementById("pmask");if(old)old.remove();
     if(!PANEL)return;
     var h="";
-    if(PANEL.agent){
-      var n=PANEL.agent,p=GR[n];
-      if(!p){PANEL=null;return;}
-      var lv=LIVE[n]||{};
-      h='<div class="head"><div class="av" style="background:'+accFor(n)+'">'+esc(n[0])+'</div>'+
-        '<div><h3>'+esc(n)+'</h3><div class="hs">'+(lv.online?'<span style="color:#3fe0a0">● Online</span>':'Offline')+
-        ' · paired'+(p.paired_via?' via '+esc(p.paired_via):'')+'</div></div>'+
-        '<span class="badge '+esc(p.tier)+'" style="margin-left:auto">'+TLABEL[p.tier]+'</span></div>'+
-        '<div class="sect">ACCESS — A applies the tier</div>'+
-        TIERS.map(function(t){
-          return '<div class="prow '+(p.tier===t?'sel':'')+' focusable" data-fk="p:tier:'+t+'" data-tier="'+t+'">'+
-            '<span class="rdot"></span><div><div class="rnm">'+TLABEL[t]+'</div><div class="rsub">'+TDESC[t]+'</div></div>'+
-            (p.tier===t?'<span class="rval">Current ✓</span>':'')+'</div>';}).join("");
-      if(p.tier!=="observe"){
-        h+='<div class="sect">CONTROLLER SEAT — pins its input to one player slot</div><div class="seatrow">'+
-          '<span class="seat '+(!p.seat?'sel':'')+' focusable" data-fk="p:seat:0" data-seat="0">Any</span>'+
-          [1,2,3,4].map(function(s){return '<span class="seat '+(p.seat===s?'sel':'')+' focusable" data-fk="p:seat:'+s+'" data-seat="'+s+'">P'+s+'</span>';}).join("")+'</div>';
-      }
-      // #42 Copilot / Watchdog toggle — opt-in, default OFF; play+ tier only
-      var cpOn=!!(COPILOT[n]&&COPILOT[n].copilot);
-      var cpCanEnable=(p.tier==="play"||p.tier==="admin");
-      h+=’<div class="sect">COPILOT / WATCHDOG — #42 (opt-in, default off)</div>’+
-        ‘<div class="prow ‘+(cpCanEnable?’focusable’:’’)+(cpOn?’ sel’:’’)+’" data-fk="p:copilot" ‘+(cpCanEnable?’data-copilot="1"’:’’)+
-        ‘ style="’+(cpCanEnable?’’:’opacity:.45;cursor:default’)+’">’ +
-        ‘<div><div class="rnm">’+(cpOn?’Copilot: ON’:’Copilot: OFF’)+’</div>’+
-        ‘<div class="rsub">’+(cpCanEnable
-          ? (cpOn
-              ? ‘This AI is watching for stuck/error states and can surface alerts via notifications. Toggle to disable.’
-              : ‘Allow this AI to surface watchdog alerts via notifications (play+ tier only; no input/screen reads unless separately enabled).’)
-          : ‘Requires play or admin tier — raise this AI\’s tier first.’
-        )+’</div></div>’+
-        (cpCanEnable?’<span class="rval">’+(cpOn?’On’:’Off’)+’</span>’:’’)+
-        ‘</div>’;
-      h+=’<div class="prow danger focusable" data-fk="p:revoke" data-revoke="1">’+
-        ‘<div><div class="rnm">Revoke &amp; remove (deny)</div>’+
-        ‘<div class="rsub">Kills ‘+esc(n)+’’s token immediately and removes it from this list.</div></div></div>’+
-        ‘<div class="prow focusable" data-fk="p:back" data-close="1"><div class="rnm">Back to AI Players</div><span class="rval">B</span></div>’+
-        ‘<div class="note">Pairing token: shown once, when this AI was paired. Lost it? Revoke, then pair again — a fresh token is minted (docs/16: rotation = revoke + regrant).</div>’;
-    } else if(PANEL.add){
+    // NOTE: the per-agent inline access panel is RETIRED (#113) — selecting an AI card now
+    // navigates to gose-ai-detail.html, which owns tier / seat / copilot / play. Only the
+    // pairing flows (add a new AI; show its one-time token) remain as inline panels here.
+    if(PANEL.add){
       h='<div class="head"><div class="av" style="background:#5cd0ff">+</div>'+
         '<div><h3>Pair a new AI</h3><div class="hs">It starts at the safe Observe tier — read-only. You can raise it after.</div></div></div>'+
         '<input class="inp focusable" id="add-name" data-fk="p:name" placeholder="AI name — e.g. Nova, Aria, Atlas" value="'+esc(PANEL.val||"")+'" spellcheck="false" autocomplete="off">'+
@@ -367,8 +333,17 @@
       render("p:done");poll();
     }).catch(function(){if(hint)hint.textContent="Pairing failed — no response.";});
   }
-  function openPanel(name){if(!GR[name])return;PANEL={agent:name};dlog("panel-open",name);
-    render("p:tier:"+(GR[name].tier||"observe"));}
+  // #113: selecting a paired AI card opens its DETAIL PAGE (replaces the old inline panel).
+  // Carry name/tier/seat + the current game so the detail page lands populated immediately.
+  function openPanel(name){
+    var p=GR[name]; if(!p)return;
+    dlog("open-detail",name);
+    var q="name="+encodeURIComponent(name)+
+          "&tier="+encodeURIComponent(p.tier||"observe")+
+          "&seat="+encodeURIComponent(p.seat||"")+
+          "&game="+encodeURIComponent(CURGAME||"");
+    location.href="gose-ai-detail.html?"+q;
+  }
   function openAdd(){PANEL={add:true,val:""};dlog("panel-open","add");render("p:name");}
   function closePanel(){
     if(!PANEL)return;
@@ -409,6 +384,10 @@
           fetch("/ai/copilot",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
             var agents=(d&&d.agents)||[];
             agents.forEach(function(a){COPILOT[a.name]={copilot:!!a.copilot};});
+          }).catch(function(){});
+          // #113/#115 current game — handed to the detail page when a card is selected
+          fetch("/game/activity",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+            CURGAME=(d&&d.playing&&d.game)?d.game:"";
           }).catch(function(){});
           var onAis=ORDER.filter(function(n){return LIVE[n]&&LIVE[n].online;});
           $("banner-txt").innerHTML=REQS.length

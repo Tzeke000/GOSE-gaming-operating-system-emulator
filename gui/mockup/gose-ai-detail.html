@@ -77,72 +77,383 @@
   </div>
 
   <div class="who">
-    <div class="av" id="ai-av" style="background:#ffce5c">W</div>
-    <div><div class="nm" id="ai-name2">Wren</div>
-      <div class="st"><span class="dot"></span>Online · watching · seat P2</div></div>
-    <span class="badge" id="ai-tier">Play</span>
+    <div class="av" id="ai-av" style="background:#ffce5c">?</div>
+    <div><div class="nm" id="ai-name2">AI</div>
+      <div class="st"><span class="dot" id="ai-dot" style="background:#3a3e4c"></span><span id="ai-status">Offline</span></div></div>
+    <span class="badge" id="ai-tier">Observe</span>
   </div>
 
   <div class="wrap"><div class="col">
 
     <div class="sect">CURRENT GAME</div>
     <div class="row"><div><div class="rnm" id="cur-game">Desktop</div>
-      <div class="rsub">Changes to whatever you launch — shows "Desktop" when you're not in a game.</div></div>
+      <div class="rsub" id="cur-game-sub">Changes to whatever you launch — shows "Desktop" when you're not in a game.</div></div>
       <span class="tag">LIVE</span></div>
 
-    <div class="playbtn focusable focus" data-fk="play"><span class="pi">▶</span>
-      <div><div class="pt">Ready to play with Wren</div>
-        <div class="psub">Tap to arm — the AI starts the moment you back out of the Guide.</div></div></div>
+    <div class="playbtn focusable focus" data-fk="play" id="playbtn"><span class="pi">▶</span>
+      <div><div class="pt" id="play-title">Ready to play</div>
+        <div class="psub" id="play-sub">Tap to arm — the AI starts the moment you back out of the Guide.</div></div></div>
 
     <div class="sect">PERMISSIONS</div>
-    <div class="row focusable" data-fk="t:observe"><div class="rdot"></div>
-      <div><div class="rnm">Observe</div><div class="rsub">Read-only — can watch the screen &amp; game state.</div></div></div>
-    <div class="row sel focusable" data-fk="t:play"><div class="rdot"></div>
-      <div><div class="rnm">Play</div><div class="rsub">Can launch &amp; control games.</div></div><span class="rval">Current ✓</span></div>
-    <div class="row focusable" data-fk="t:admin"><div class="rdot"></div>
-      <div><div class="rnm">Admin</div><div class="rsub">Full OS control — settings, install, shell, power.</div></div></div>
+    <div class="row focusable" data-fk="t:observe" data-tier="observe"><div class="rdot"></div>
+      <div><div class="rnm">Observe</div><div class="rsub">Read-only — can watch the screen &amp; game state.</div></div><span class="rval"></span></div>
+    <div class="row focusable" data-fk="t:play" data-tier="play"><div class="rdot"></div>
+      <div><div class="rnm">Play</div><div class="rsub">Can launch &amp; control games.</div></div><span class="rval"></span></div>
+    <div class="row focusable" data-fk="t:admin" data-tier="admin"><div class="rdot"></div>
+      <div><div class="rnm">Admin</div><div class="rsub">Full OS control — settings, install, shell, power.</div></div><span class="rval"></span></div>
 
     <div class="sect">OPPONENT</div>
-    <div class="seg focusable" data-fk="opp"><span class="opt sel">Play vs Human</span><span class="opt">AI vs AI</span></div>
+    <div class="seg focusable" data-fk="opp"><span class="opt" data-opp="human">Play vs Human</span><span class="opt" data-opp="ai">AI vs AI</span></div>
     <div class="note">Human always takes P1. The first AI set up becomes P2; a second AI (in games that allow 3+) becomes P3.</div>
 
     <div class="sect">SEAT</div>
-    <div class="chips"><span class="chip focusable" data-fk="s1">P1</span><span class="chip sel focusable" data-fk="s2">P2</span>
-      <span class="chip focusable" data-fk="s3">P3</span><span class="chip focusable" data-fk="s4">P4</span></div>
+    <div class="chips" id="seat-chips"><span class="chip focusable" data-fk="s1" data-seat="1">P1</span><span class="chip focusable" data-fk="s2" data-seat="2">P2</span>
+      <span class="chip focusable" data-fk="s3" data-seat="3">P3</span><span class="chip focusable" data-fk="s4" data-seat="4">P4</span></div>
     <div class="note">Which seat this AI is currently set to play.</div>
 
     <div class="sect">MODE</div>
-    <div class="seg focusable" data-fk="mode"><span class="opt sel">VS</span><span class="opt">Co-Op</span></div>
+    <div class="seg focusable" data-fk="mode"><span class="opt" data-mode="vs">VS</span><span class="opt" data-mode="coop">Co-Op</span></div>
     <div class="note">Only the modes the current game supports appear — if it has just one, only that one shows.</div>
 
     <div class="sect">DIFFICULTY</div>
-    <div class="chips"><span class="chip focusable" data-fk="d-easy">Easy</span><span class="chip focusable" data-fk="d-med">Medium</span>
-      <span class="chip sel focusable" data-fk="d-hard">Hard</span><span class="chip focusable" data-fk="d-learn">Learning</span></div>
+    <div class="chips"><span class="chip focusable" data-fk="d-easy" data-diff="easy">Easy</span><span class="chip focusable" data-fk="d-med" data-diff="med">Medium</span>
+      <span class="chip focusable" data-fk="d-hard" data-diff="hard">Hard</span><span class="chip focusable" data-fk="d-learn" data-diff="learning">Learning</span></div>
     <div class="note">Learning studies the play-by-play, the result, and your history to adapt and predict.</div>
 
     <div class="sect">INPUT READING — PRIVACY</div>
-    <div class="row focusable" data-fk="rv"><div><div class="rnm">Read my inputs in VS games</div>
+    <div class="row focusable" data-fk="rv" data-toggle="read_vs"><div><div class="rnm">Read my inputs in VS games</div>
       <div class="rsub">Lets the AI watch your controller while you compete against it. Off by default.</div></div>
-      <span class="sw off"></span></div>
-    <div class="row focusable" data-fk="rc"><div><div class="rnm">Read my inputs in Co-Op games</div>
+      <span class="sw off" id="sw-rv"></span></div>
+    <div class="row focusable" data-fk="rc" data-toggle="read_coop"><div><div class="rnm">Read my inputs in Co-Op games</div>
       <div class="rsub">Lets the AI coordinate with you as a teammate. On by default.</div></div>
-      <span class="sw on"></span></div>
+      <span class="sw on" id="sw-rc"></span></div>
 
   </div></div>
 
   <div class="foot"><span class="ic" data-i="sparkles"></span> Detail view for a paired AI — opens when you select its card on the AI&nbsp;Players page
     <span class="h"><b>↑↓←→</b> move · <b>A/Enter</b> select · <b>B/Esc</b> back</span></div>
+  <div class="toast" id="toast" style="position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:99"></div>
+
+  <!-- owner-PIN prompt (owner-gated writes; mirrors Settings › Security). Hidden until needed. -->
+  <div id="pinmask" style="display:none;position:fixed;inset:0;background:#06060cd8;align-items:center;justify-content:center;z-index:120">
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px 24px;width:380px;max-width:92vw">
+      <h3 style="margin:0 0 6px;font-size:18px">Confirm it’s you</h3>
+      <div style="color:var(--muted);font-size:13px;line-height:1.5">Enter your device PIN to change how this AI plays. Only the owner can.</div>
+      <input id="pininp" type="password" inputmode="numeric" autocomplete="off" data-osk-primary
+        placeholder="Device PIN"
+        style="width:100%;margin:12px 0;padding:12px 14px;border-radius:11px;border:2px solid var(--line);background:var(--surface2);color:var(--text);font-size:16px;outline:none">
+      <div style="display:flex;gap:9px">
+        <div class="row focusable" id="pinok" data-fk="pinok" style="flex:1;justify-content:center;background:var(--accent);color:#06121a;border-color:transparent;cursor:pointer"><span class="rnm">Confirm</span></div>
+        <div class="row focusable" id="pincancel" data-fk="pincancel" style="flex:1;justify-content:center;cursor:pointer"><span class="rnm">Cancel</span></div>
+      </div>
+    </div>
+  </div>
 
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
-  (function(){try{var p=new URLSearchParams(location.search),n=p.get("name");
-    if(n){document.getElementById("ai-name").textContent=n;
-      document.getElementById("ai-name2").textContent=n;
-      document.getElementById("ai-av").textContent=(n[0]||"?").toUpperCase();}
-    var t=p.get("tier"); if(t) document.getElementById("ai-tier").textContent=t;
-    var g=p.get("game"); if(g) document.getElementById("cur-game").textContent=g;
-  }catch(e){}})();
+  var $=function(id){return document.getElementById(id);};
+  var DBG=(location.hash||"").indexOf("dbg")>=0;
+  function dlog(){ if(DBG){ try{ console.log.apply(console,["[ai-detail]"].concat([].slice.call(arguments))); }catch(e){} } }
+
+  // ---- query hints (initial paint) + canonical state (filled from the server) ----------
+  var Q=new URLSearchParams(location.search);
+  var NAME=(Q.get("name")||"").trim();
+  var TIER=Q.get("tier")||"observe";
+  var SEAT=parseInt(Q.get("seat"),10)||0;        // 0 = any/unset
+  var GAME=Q.get("game")||"";                    // current game name hint
+  var SYSTEM="";                                  // resolved from /game/activity
+  var CFG={opponent:"human",mode:"vs",difficulty:"med",read_vs:false,read_coop:true};
+  var ONLINE=false, AIMODE="watching", PLAYMAP=false, ARMING=false;
+
+  var ACCENTS=["#5cd0ff","#7d8cff","#37d39b","#ff7a9c","#ffce5c","#b388ff"];
+  function accFor(n){ var h=0; n=n||"?"; for(var i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))>>>0; return ACCENTS[h%ACCENTS.length]; }
+  var TLABEL={observe:"Observe",play:"Play",admin:"Admin"};
+  var DLABEL={easy:"Easy",med:"Medium",hard:"Hard",learning:"Learning"};
+
+  function say(m){var t=$("toast");t.textContent=m;t.classList.add("show");
+    clearTimeout(say._t);say._t=setTimeout(function(){t.classList.remove("show");},2000);
+    t.style.opacity="1";clearTimeout(say._o);say._o=setTimeout(function(){t.style.opacity="0";},2000);}
+  function paint(){document.querySelectorAll("[data-i]").forEach(function(e){
+    e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)");});}
+  function oskVisible(){var o=$("osk");return !!(o&&o.classList.contains("on"));}
+
+  // ---- backend ----------------------------------------------------------------------
+  function post(path,body){return fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)}).then(function(r){return r.json();}).catch(function(){return {ok:false};});}
+  function getJSON(path){return fetch(path,{cache:"no-store"}).then(function(r){return r.json();}).catch(function(){return {};});}
+
+  // ---- owner auth (the canonical kiosk pattern, mirrors Settings › Security): the tier /
+  //      seat / play-config / play-arm writes are owner-gated server-side, so the owner proves
+  //      it's them with the device PIN. We cache the verified PIN in memory for this page's
+  //      lifetime (never persisted), and retry once after a successful prompt. The server is
+  //      still the authority — a wrong PIN just round-trips ERR_NOT_OWNER. ----
+  var OWNERPIN=null;            // device PIN, in-memory only
+  var _pinResolve=null;          // pending prompt resolver
+
+  // ownerPost(path, body) -> resolves the server JSON. Injects the cached PIN; if the server
+  // says ERR_NOT_OWNER it prompts for the PIN and retries exactly once.
+  function ownerPost(path,body){
+    function attempt(){
+      var b={};for(var k in body)b[k]=body[k];
+      if(OWNERPIN)b.pin=OWNERPIN;
+      return post(path,b);
+    }
+    return attempt().then(function(d){
+      if(d&&d.code==="ERR_NOT_OWNER"){
+        OWNERPIN=null;
+        return promptPin().then(function(pin){
+          if(!pin)return d;       // user cancelled — surface the original refusal
+          OWNERPIN=pin;
+          return attempt().then(function(d2){
+            if(d2&&d2.code==="ERR_NOT_OWNER"){OWNERPIN=null;say("Wrong PIN — try again");}
+            return d2;
+          });
+        });
+      }
+      return d;
+    });
+  }
+  // promptPin() -> Promise<pin|null>. A tiny modal PIN entry (pad + OSK friendly).
+  function promptPin(){
+    return new Promise(function(resolve){
+      _pinResolve=resolve;
+      var m=$("pinmask"); m.style.display="flex";
+      var inp=$("pininp"); inp.value="";
+      setTimeout(function(){try{inp.focus();}catch(e){}},30);
+      setF($("pinok"));
+    });
+  }
+  function closePin(pin){
+    var m=$("pinmask"); m.style.display="none";
+    try{if(window.GOSE&&GOSE.osk)GOSE.osk.hide();}catch(e){}
+    var r=_pinResolve; _pinResolve=null;
+    setF($("playbtn"));
+    if(r)r(pin||null);
+  }
+
+  // ---- render the whole page from state (focus is restored by data-fk after) ---------
+  function render(){
+    var disp=NAME||"AI";
+    $("ai-name").textContent=disp; $("ai-name2").textContent=disp;
+    $("ai-av").textContent=(disp[0]||"?").toUpperCase();
+    $("ai-av").style.background=accFor(disp);
+    $("ai-tier").textContent=TLABEL[TIER]||TIER;
+    $("ai-dot").style.background=ONLINE?"#3fe0a0":"#3a3e4c";
+    var seatTxt=SEAT?(" · seat P"+SEAT):"";
+    $("ai-status").textContent=(ONLINE?("Online · "+(AIMODE==="playing"?"playing":AIMODE==="controlling"?"in control":"watching")):"Offline")+seatTxt;
+
+    // current game
+    $("cur-game").textContent=GAME||"Desktop";
+    $("cur-game-sub").textContent=GAME
+      ? (PLAYMAP?("This game has a baked play-map — "+disp+" can play it."):(disp+" can't play this game autonomously yet (no baked play-map)."))
+      : 'Launch a game and it shows here — "Desktop" means you’re not in a game.';
+
+    // permissions: highlight the current tier
+    document.querySelectorAll("[data-tier]").forEach(function(el){
+      var on=el.dataset.tier===TIER; el.classList.toggle("sel",on);
+      var rv=el.querySelector(".rval"); if(rv)rv.textContent=on?"Current ✓":"";});
+
+    // opponent / mode segments
+    document.querySelectorAll("[data-opp]").forEach(function(el){el.classList.toggle("sel",el.dataset.opp===CFG.opponent);});
+    document.querySelectorAll("[data-mode]").forEach(function(el){el.classList.toggle("sel",el.dataset.mode===CFG.mode);});
+    // difficulty chips
+    document.querySelectorAll("[data-diff]").forEach(function(el){el.classList.toggle("sel",el.dataset.diff===CFG.difficulty);});
+    // seat chips
+    document.querySelectorAll("[data-seat]").forEach(function(el){el.classList.toggle("sel",(+el.dataset.seat)===SEAT);});
+    // privacy switches
+    $("sw-rv").className="sw "+(CFG.read_vs?"on":"off");
+    $("sw-rc").className="sw "+(CFG.read_coop?"on":"off");
+
+    // play button label (dynamic per AI) + honest state
+    var canPlay=(TIER==="play"||TIER==="admin");
+    $("play-title").textContent=ARMING?("Arming "+disp+"…"):("Play with "+disp);
+    if(!canPlay){
+      $("play-sub").textContent="Raise "+disp+" to Play or Admin tier first (it can only watch on Observe).";
+    } else if(!GAME){
+      $("play-sub").textContent="Launch a game first — then arm "+disp+" to take its seat.";
+    } else if(!PLAYMAP){
+      $("play-sub").textContent="No play-map for this game yet — "+disp+" can’t play it autonomously.";
+    } else {
+      $("play-sub").textContent=(CFG.opponent==="ai")
+        ? ("Tap to start an AI-vs-AI exhibition on "+(GAME)+".")
+        : ("Tap to arm — "+disp+" takes seat P"+(SEAT||2)+" and starts when you back out of the Guide.");
+    }
+    paint();
+  }
+
+  // ---- roving focus over .focusable -------------------------------------------------
+  function focusables(){return [].slice.call(document.querySelectorAll(".focusable")).filter(function(el){return el.offsetParent!==null;});}
+  function cur(){return document.querySelector(".focus");}
+  function setF(el){if(!el)return;var c=cur();if(c&&c!==el)c.classList.remove("focus");
+    el.classList.add("focus");try{el.scrollIntoView({block:"nearest"});}catch(e){}
+    dlog("focus",el.dataset&&el.dataset.fk||el.tagName);}
+  function move(d){
+    var list=focusables(); if(!list.length)return;
+    var a=cur(); if(!a||list.indexOf(a)<0){setF(list[0]);return;}
+    var r=a.getBoundingClientRect(),best=null,bd=1e9;
+    for(var i=0;i<list.length;i++){var el=list[i];if(el===a)continue;
+      var b=el.getBoundingClientRect();
+      var dx=(b.left+b.width/2)-(r.left+r.width/2),dy=(b.top+b.height/2)-(r.top+r.height/2);
+      var ok={right:dx>6,left:dx<-6,down:dy>6,up:dy<-6}[d];if(!ok)continue;
+      var al=(d==="left"||d==="right")?Math.abs(dx):Math.abs(dy);
+      var of=(d==="left"||d==="right")?Math.abs(dy):Math.abs(dx);
+      // weight the travel axis heavily so the NEAREST row wins and a distant full-width row
+      // can't out-score a closer (but horizontally-offset) chip — that was skipping the seat
+      // and difficulty chip rows on pure down/up nav. Offset stays a soft tiebreaker.
+      var dd=al*4+of;if(dd<bd){bd=dd;best=el;}}
+    if(!best){var i2=list.indexOf(a);
+      best=(d==="right"||d==="down")?list[(i2+1)%list.length]:list[(i2-1+list.length)%list.length];
+      if(best===a)best=null;}
+    if(best)setF(best);
+  }
+
+  // ---- actions ----------------------------------------------------------------------
+  function setTier(t){
+    if(!NAME||t===TIER)return;
+    var body=t==="observe"?{name:NAME,tier:"observe",pair:true,via:"detail"}:{name:NAME,tier:t};
+    ownerPost("/ai/grant",body).then(function(d){
+      if(!d||!d.ok){say("Grant failed"+(d&&d.error?": "+d.error:""));return;}
+      TIER=t; if(t==="observe")SEAT=0; else if(d.seat!==undefined)SEAT=d.seat||0;
+      say(NAME+" → "+(TLABEL[t]||t)); render();
+    });
+  }
+  function setSeat(s){
+    if(!NAME)return;
+    if(TIER==="observe"){say("Raise "+NAME+" to Play first to pin a seat");return;}
+    var seat=(s===SEAT)?null:s;     // tapping the current seat clears it (back to Any)
+    ownerPost("/ai/grant",{name:NAME,tier:TIER,seat:seat}).then(function(d){
+      if(!d||!d.ok){say("Seat change failed"+(d&&d.error?": "+d.error:""));return;}
+      SEAT=d.seat||0; say(NAME+(SEAT?(" → seat P"+SEAT):" → any seat")); render();
+    });
+  }
+  function saveCfg(patch,label){
+    if(!NAME)return;
+    var body={name:NAME};for(var k in patch)body[k]=patch[k];
+    // optimistic update so the UI is responsive; reverts on server reject
+    var prev={};for(var k2 in patch)prev[k2]=CFG[k2];
+    for(var k3 in patch)CFG[k3]=patch[k3]; render();
+    dlog("saveCfg",JSON.stringify(patch));
+    ownerPost("/ai/playconfig",body).then(function(d){
+      if(!d||!d.ok){for(var k in prev)CFG[k]=prev[k];render();say("Save failed"+(d&&d.error?": "+d.error:""));dlog("saveCfg FAILED",d&&d.code);return;}
+      if(d.config)CFG=d.config; render(); if(label)say(label); dlog("saveCfg ok");
+    });
+  }
+  function armPlay(){
+    if(ARMING)return;
+    if(TIER!=="play"&&TIER!=="admin"){say("Raise "+NAME+" to Play tier first");return;}
+    if(!GAME){say("Launch a game first, then arm "+NAME);return;}
+    if(!PLAYMAP){say("No play-map for "+(GAME)+" yet — "+NAME+" can’t play it autonomously");render();return;}
+    ARMING=true; render();
+    // arm/start is owner-gated (it launches + seats an AI). Prompt for the PIN if needed, THEN
+    // (a) auto-close the Guide (hide overlay, do NOT kill the game) and (b) arm/start play.
+    ownerPost("/ai/play/arm",{name:NAME,system:SYSTEM,game:GAME}).then(function(d){
+      ARMING=false;
+      if(!d||!d.ok){say("Play failed"+(d&&d.error?": "+d.error:""));render();return;}
+      if(d.armed===false){PLAYMAP=!!d.playmap;say(d.note||"No play-map for this game yet");render();return;}
+      // armed for real — now close the Guide overlay (not owner-gated) and return to the game
+      post("/guide/close",{});
+      say((d.note)||(NAME+" is playing — "+(GAME)));
+      render();
+      setTimeout(function(){location.href="gose-home.html";},900);
+    });
+  }
+
+  function back(){location.href="gose-ai.html";}
+
+  function pinOpen(){return $("pinmask")&&$("pinmask").style.display!=="none";}
+
+  function activate(el){
+    if(!el)return;var d=el.dataset||{};
+    if(d.fk==="pinok"){closePin(($("pininp").value||"").trim());return;}
+    if(d.fk==="pincancel"){closePin(null);return;}
+    if(d.fk==="play"){armPlay();return;}
+    if(d.tier){setTier(d.tier);return;}
+    if(d.seat!==undefined){setSeat(+d.seat);return;}
+    if(d.fk==="opp"){saveCfg({opponent:CFG.opponent==="human"?"ai":"human"},"Opponent: "+(CFG.opponent==="human"?"AI vs AI":"Play vs Human"));return;}
+    if(d.fk==="mode"){saveCfg({mode:CFG.mode==="vs"?"coop":"vs"},"Mode: "+(CFG.mode==="vs"?"Co-Op":"VS"));return;}
+    if(d.diff){saveCfg({difficulty:d.diff},"Difficulty: "+(DLABEL[d.diff]||d.diff));return;}
+    if(d.toggle){var nv=!CFG[d.toggle];var p={};p[d.toggle]=nv;
+      saveCfg(p,(d.toggle==="read_vs"?"Read inputs in VS":"Read inputs in Co-Op")+": "+(nv?"On":"Off"));return;}
+  }
+
+  // segments adjust with left/right too (not just A) so they feel like the rest of the OS
+  function adjust(el,dir){
+    if(!el)return;var d=el.dataset||{};
+    if(d.fk==="opp"||d.fk==="mode"){activate(el);}
+  }
+
+  // ---- input ------------------------------------------------------------------------
+  addEventListener("keydown",function(e){
+    if(e.defaultPrevented||oskVisible())return;
+    var k=e.key;
+    // PIN modal owns input while open (§3.10 modal contract): arrows move between
+    // Confirm/Cancel, Enter confirms, Escape cancels; typing falls through to the field.
+    if(pinOpen()){
+      if(k==="Escape"||k==="Backspace"){closePin(null);e.preventDefault();}
+      else if(k==="ArrowLeft"||k==="ArrowRight"||k==="Left"||k==="Right"){
+        setF(cur()===$("pinok")?$("pincancel"):$("pinok"));e.preventDefault();}
+      else if(k==="Enter"){
+        // Enter on Cancel cancels; otherwise (field or Confirm) it confirms with the typed PIN
+        if(cur()===$("pincancel"))closePin(null);else closePin(($("pininp").value||"").trim());
+        e.preventDefault();}
+      // all other keys (digits etc.) pass through to the PIN input
+      return;
+    }
+    if(k==="ArrowRight"||k==="Right"){var c=cur();if(c&&(c.dataset.fk==="opp"||c.dataset.fk==="mode"))adjust(c,1);else move("right");}
+    else if(k==="ArrowLeft"||k==="Left"){var c2=cur();if(c2&&(c2.dataset.fk==="opp"||c2.dataset.fk==="mode"))adjust(c2,-1);else move("left");}
+    else if(k==="ArrowDown"||k==="Down")move("down");
+    else if(k==="ArrowUp"||k==="Up")move("up");
+    else if(k==="Enter"||k===" ")activate(cur());
+    else if(k==="Escape"||k==="Backspace")back();
+    else return;
+    e.preventDefault();
+  });
+  document.addEventListener("focusin",function(e){var t=e.target;
+    if(t&&t.classList&&t.classList.contains("focusable")&&cur()!==t)setF(t);});
+
+  function wire(){
+    [].slice.call(document.querySelectorAll(".focusable")).forEach(function(el){
+      el.onclick=function(ev){ev.stopPropagation();setF(el);activate(el);};});
+  }
+
+  // ---- load: hydrate state from the live endpoints, then paint -----------------------
+  function loadActivity(){
+    // /game/activity is the authority: it carries the live game AND `ai_playable`
+    // (server-side _spectate_profile, the SAME gate the arm path uses) — so the Play
+    // button's honest state matches what the backend will actually do.
+    return getJSON("/game/activity").then(function(d){
+      if(d&&d.playing&&d.game){GAME=d.game;SYSTEM=d.system||"";PLAYMAP=!!d.ai_playable;}
+      else if(!GAME){GAME="";SYSTEM="";PLAYMAP=false;}
+    });
+  }
+  function loadGrant(){
+    return getJSON("/ai/grants").then(function(d){
+      var g=(d&&d.grants)||{};
+      if(NAME&&g[NAME]){TIER=g[NAME].tier||TIER;SEAT=g[NAME].seat||0;}
+    });
+  }
+  function loadLive(){
+    return getJSON("/ai/players").then(function(d){
+      var ps=(d&&d.players)||[];
+      var me=ps.filter(function(p){return p.name===NAME;})[0];
+      ONLINE=!!(me&&me.online);AIMODE=(me&&me.mode)||"watching";
+    });
+  }
+  function loadCfg(){
+    if(!NAME)return Promise.resolve();
+    return getJSON("/ai/playconfig?name="+encodeURIComponent(NAME)).then(function(d){
+      if(d&&d.ok&&d.config)CFG=d.config;
+    });
+  }
+  function refresh(){
+    Promise.all([loadActivity(),loadGrant(),loadLive(),loadCfg()]).then(function(){render();});
+  }
+
+  // first paint from query hints (instant), then hydrate from the server
+  render();wire();paint();refresh();setInterval(function(){if(!ARMING)refresh();},5000);
+  setF($("playbtn"));
 </script>
+<script src="assets/a11y.js"></script>
 </body>
 </html>
