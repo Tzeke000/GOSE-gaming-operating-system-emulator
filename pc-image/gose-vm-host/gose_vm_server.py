@@ -8191,11 +8191,24 @@ def controllers_led(payload):
         return {"ok": False, "error": "controller not found: %s" % cid}
     ep = _pad_event_path(pad)
     # Try sysfs LED path first (DualSense exposes /sys/class/leds/<hidN>:rgb:indicator)
+    # IMPORTANT: only write to an LED node that belongs to THIS pad's HID device — derive
+    # the parent HID id from the event node's sysfs path so we never bleed onto another pad.
     try:
+        hid_id = None
+        if ep:
+            # /sys/class/input/eventN/device -> resolve to find the hidN parent
+            ev_name = os.path.basename(ep)   # "eventN"
+            ev_sysfs = os.path.realpath("/sys/class/input/%s" % ev_name)
+            # walk up: input/eventN -> input -> hidN (two levels up on hid-connected devices)
+            hid_candidate = os.path.dirname(os.path.dirname(ev_sysfs))
+            hid_id = os.path.basename(hid_candidate)   # e.g. "0003:054C:0CE6.0001"
         leds_root = "/sys/class/leds"
         for led_name in os.listdir(leds_root):
-            led_path = os.path.join(leds_root, led_name)
             # DualSense pattern: "N:rgb:indicator"; multi_intensity sets R G B in one write
+            # Skip this LED node if we know the pad's HID id and this LED doesn't match it
+            if hid_id and hid_id not in led_name:
+                continue
+            led_path = os.path.join(leds_root, led_name)
             multi = os.path.join(led_path, "multi_intensity")
             if os.path.exists(multi):
                 with open(multi, "w") as fh:
@@ -8317,7 +8330,17 @@ def game_remap_set(payload):
     try:
         for p_str, actions in remap_raw.items():
             player = int(p_str)
-            remap[player] = {str(a): int(v) for a, v in actions.items()}
+            # clamp player to 1-4 (RA supports up to 4 players; out-of-range keys corrupt the rmp)
+            if player < 1 or player > 4:
+                return {"ok": False, "error": "player must be 1-4, got %d" % player}
+            cleaned = {}
+            for a, v in actions.items():
+                # reject action keys not in the known set — prevents newline injection into the rmp
+                action = str(a)
+                if action not in _RA_ACTIONS:
+                    return {"ok": False, "error": "unknown action key: %r" % action}
+                cleaned[action] = int(v)
+            remap[player] = cleaned
     except Exception as ex:
         return {"ok": False, "error": "bad remap format: %s" % ex}
     core = _effective_default(system)
