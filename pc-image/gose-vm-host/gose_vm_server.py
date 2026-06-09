@@ -4572,6 +4572,16 @@ def privacy_set(payload):
         p["screen_capture"] = chg["screen_capture"] = v
     if "diagnostics" in payload:
         p["diagnostics"] = chg["diagnostics"] = bool(payload["diagnostics"])
+    # Network-exposure toggles (share_qr and friends_presence) are owner-only:
+    # they broadcast data to the network or open LAN endpoints, so an AI at Play
+    # tier — or anyone with unauthenticated loopback access — must not flip them.
+    # Any request that includes either key must prove owner identity (PIN or token).
+    _net_keys = {"share_qr", "friends_presence"}
+    if _net_keys & set(payload):
+        if not _owner_ok(payload):
+            return {"ok": False, "code": "ERR_NOT_OWNER",
+                    "error": "owner PIN or token required to change network-sharing settings "
+                             "(friends_presence / share_qr)"}
     if "share_qr" in payload:   # #60 QR share toggle
         p["share_qr"] = chg["share_qr"] = bool(payload["share_qr"])
     if "friends_presence" in payload:   # #73 friends/presence toggle
@@ -4664,9 +4674,9 @@ def parental_set(payload):
         if "daily_limit_m" in p:
             try:
                 lim = int(p["daily_limit_m"])
-                if lim < 0: raise ValueError
+                if lim < 0 or lim > 1440: raise ValueError
             except (ValueError, TypeError):
-                return {"ok": False, "error": "daily_limit_m must be a non-negative integer (minutes)"}
+                return {"ok": False, "error": "daily_limit_m must be 0–1440 (minutes per day; 0 = no limit)"}
             d["daily_limit_m"] = chg["daily_limit_m"] = lim
         if not chg:
             return {"ok": False, "error": "nothing to change"}
@@ -4844,6 +4854,12 @@ def friends_save(payload):
     ts_ip = str(p.get("ts_ip") or "").strip()
     if not name or not ts_ip:
         return {"ok": False, "error": "name and ts_ip required"}
+    # Validate ts_ip: must be a Tailscale IP (100.64.0.0/10 — 100.64.x.x through 100.127.x.x)
+    # or a bare dotted-quad in that range. This blocks loopback SSRF, LAN probes, and
+    # shell-injection strings from being stored and later probed by _probe_gose_peer.
+    _TS_IP_RE = re.compile(r"^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}$")
+    if not _TS_IP_RE.match(ts_ip):
+        return {"ok": False, "error": "ts_ip must be a Tailscale IP (100.64.x.x – 100.127.x.x)"}
     with _FRIENDS_LOCK:
         d = _friends_load()
         devices = d.get("devices", [])
@@ -9917,6 +9933,14 @@ class H(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         self._wrap(self._route_post)
 
+    @staticmethod
+    def _scrub_path(path):
+        """Strip secret query params from the path before logging.
+        Currently: pin= and owner_token= — both are owner credentials that must not
+        appear in gose.log where any log-reader could harvest them."""
+        import re as _re
+        return _re.sub(r'(?i)([?&])(pin|owner_token)=[^&]*', r'\1\2=***', path)
+
     def _wrap(self, fn):
         # every request: rate-limit expensive routes, run, log timing, catch+log errors (never crash)
         t0 = time.time()
@@ -9926,9 +9950,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json({"ok": False, "error": "rate limited — slow down"})
         try:
             fn()
-            LOG.info("%s %s %dms", self.command, self.path, int((time.time() - t0) * 1000))
+            LOG.info("%s %s %dms", self.command, self._scrub_path(self.path), int((time.time() - t0) * 1000))
         except Exception:
-            LOG.error("%s %s FAILED\n%s", self.command, self.path, traceback.format_exc())
+            LOG.error("%s %s FAILED\n%s", self.command, self._scrub_path(self.path), traceback.format_exc())
             try: self._json({"ok": False, "error": "internal error"})
             except Exception: pass
 
