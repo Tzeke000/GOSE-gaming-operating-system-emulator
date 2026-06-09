@@ -8033,6 +8033,16 @@ GAMES_CATALOG = [
      "dest": "Tyrian.game",
      "kind": "zipdir", "strip": "tyrian21/", "datadir": "data",
      "url": "https://www.camanis.net/tyrian/tyrian21.zip"},
+    # Super Tilt Bro. (NES homebrew platform fighter, GPL-3.0) by sgadrat.
+    # ROM pre-installed via host-download from sgadrat.itch.io (requires session auth;
+    # no stable hotlink URL). kind="pre-installed": games_install is never called
+    # (file already on disk). URL field = itch.io page for attribution only.
+    {"id": "super-tilt-bro", "name": "Super Tilt Bro.", "system": "nes",
+     "desc": "Free 2-player NES homebrew platform fighter by sgadrat. Knock your opponent off the screen. GPL licensed.",
+     "license": "GPL-3.0", "cat": "Fighting",
+     "dest": "Super_Tilt_Bro_(E).nes",
+     "kind": "pre-installed",
+     "url": "https://sgadrat.itch.io/super-tilt-bro"},
     # Blade Buster (NES homebrew shmup) was REVIEWED and SKIPPED 2026-06-07: romhacking.net
     # (its canonical host) 403s non-browser clients and prohibits hotlinking, so there is no
     # stable direct URL this installer could honestly use. Revisit if the author publishes
@@ -8069,6 +8079,12 @@ def games_install(payload):
     # hard confinement: resolved write target must live directly inside the system's roms dir
     if os.path.realpath(out_path) != out_path or not out_path.startswith(sysdir + os.sep):
         return {"ok": False, "error": "refused: path escapes the roms directory"}
+    if g.get("kind") == "pre-installed":
+        if os.path.isfile(out_path):
+            return {"ok": True, "id": gid, "installed": True, "already": True,
+                    "path": out_path, "note": "pre-installed game — ROM ships with this GOSE build"}
+        return {"ok": False, "error": "pre-installed game not found on disk (ROM not bundled in this build)",
+                "hint": "download manually from " + g.get("url", "")}
     if os.path.isfile(out_path):
         return {"ok": True, "id": gid, "installed": True, "already": True,
                 "path": out_path, "note": "already installed"}
