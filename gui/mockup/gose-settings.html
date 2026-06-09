@@ -235,7 +235,7 @@
     {id:"accounts", ic:"users", nm:"Accounts", rows:[
       {ic:"user", nm:"You", sub:"Primary account on this device", t:"info", val:"—", live:"owner"},
       {ic:"sparkles", nm:"AI players", sub:"Paired agents & their access tier — manage in the AI Hub", t:"agents"},
-      {ic:"users", nm:"Add account", sub:"More people / profiles on one device", t:"dis", tag:"[needs build]", why:"GOSE is single-owner today — multi-account needs the auth backend (docs/24 §1.5)"},
+      {ic:"users", nm:"Profiles", sub:"Switch between profiles or add one — up to 4 people on one device", t:"link", go:"gose-profiles.html"},
       {ic:"lock", nm:"Sign-in", sub:"What the lock screen asks for — real credential auth lands with docs/24 §1.5", t:"cycle", v:["None","PIN","Password"], apply:"signin"},
     ]},
     {id:"ai", ic:"sparkles", nm:"AI & Remote", rows:[
@@ -642,6 +642,8 @@
     try{const o=await(await fetch("/oobe/status",{cache:"no-store"})).json();
       const u=o&&o.owner; if(u)setLive("owner",(u.username||u.display||"Owner")+" — owner");
       else setLive("owner","Owner (run first-time setup)");}catch(e){}
+    try{const au=await(await fetch("/users/active",{cache:"no-store"})).json();
+      if(au&&au.ok&&au.role!=="owner"){const lbl=au.role==="guest"?"Guest session active":"Active: "+(au.display||au.username||"");setLive("owner",lbl);}}catch(e){}
     try{const v=await(await fetch("/version",{cache:"no-store"})).json();
       if(v&&v.version){setLive("ver","v"+v.version+(v.build?(" · "+v.build):""));
         if(v.base)setLive("base",v.base);}}catch(e){}

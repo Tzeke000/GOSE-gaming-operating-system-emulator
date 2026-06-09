@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Profiles</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    display:flex;flex-direction:column;align-items:center}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  /* ---- top bar ---- */
+  .bar{width:100%;max-width:660px;display:flex;align-items:center;gap:10px;
+    padding:24px 0 8px;flex:none}
+  .bar .back{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:13.5px;
+    font-weight:600;cursor:pointer;padding:6px 10px 6px 4px;border-radius:9px;
+    border:2px solid transparent}
+  .bar .back.focus{border-color:var(--accent);color:var(--accent);box-shadow:var(--focusglow)}
+  .bar h1{font-size:22px;margin:0;flex:1}
+  .bar .cnt{color:var(--muted);font-size:13px}
+  /* ---- profile grid ---- */
+  .grid{display:flex;flex-direction:column;gap:10px;width:100%;max-width:660px;
+    overflow:auto;flex:1;padding:4px 0 100px}
+  /* profile card */
+  .card{display:flex;align-items:center;gap:14px;background:var(--surface);
+    border:2px solid var(--line);border-radius:16px;padding:14px 16px;cursor:pointer;
+    transition:border-color .12s,box-shadow .12s;position:relative}
+  .card.active{border-color:var(--accent);background:#5cd0ff0d}
+  .card.focus{border-color:var(--accent);box-shadow:var(--focusglow);background:#5cd0ff14}
+  .card.active .nm{color:var(--accent)}
+  /* avatar circle */
+  .av{width:54px;height:54px;border-radius:50%;flex:none;display:flex;align-items:center;
+    justify-content:center;font-size:20px;font-weight:700;color:#06121a}
+  /* info */
+  .info{flex:1;min-width:0}
+  .nm{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta{color:var(--muted);font-size:12.5px;margin-top:3px;display:flex;gap:8px;align-items:center}
+  /* role badge */
+  .rbadge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:700;
+    letter-spacing:.5px;text-transform:uppercase;padding:2px 8px;border-radius:999px;border:1px solid}
+  .rbadge.owner{color:#ffce5c;border-color:#ffce5c55;background:#ffce5c12}
+  .rbadge.user{color:#37d39b;border-color:#37d39b55;background:#37d39b12}
+  .rbadge.guest{color:var(--muted);border-color:var(--line);background:#ffffff08}
+  /* active tick */
+  .tick{color:#37d39b;font-size:18px;margin-left:auto;flex:none}
+  /* remove button (owner-only, on non-owner cards) */
+  .rm{display:none;position:absolute;top:10px;right:12px;font-size:11px;font-weight:700;
+    color:#ff8e8e;border:1px solid #ff8e8e55;background:#ff8e8e12;border-radius:8px;
+    padding:3px 9px;cursor:pointer}
+  .card:hover .rm,.card.focus .rm{display:inline-block}
+  /* add profile card */
+  .card.add-card{border-style:dashed;color:var(--muted)}
+  .card.add-card .nm{color:var(--muted)}
+  .card.add-card.focus .nm,.card.add-card:hover .nm{color:var(--accent)}
+  /* divider */
+  .divider{border:none;border-top:1px solid var(--line);margin:6px 0}
+  /* ---- add-form modal ---- */
+  .modal-bg{position:fixed;inset:0;background:#06060cc8;display:none;
+    align-items:center;justify-content:center;z-index:50}
+  .modal-bg.on{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    padding:24px 28px;width:520px;max-width:92vw;max-height:88vh;overflow:auto}
+  .modal h2{margin:0 0 6px;font-size:18px}
+  .modal .sub{color:var(--muted);font-size:13px;margin-bottom:18px;line-height:1.5}
+  .field{margin:10px 0}
+  .field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px}
+  .inp{width:100%;background:var(--surface2);border:2px solid var(--line);border-radius:11px;
+    padding:11px 13px;font-size:15px;color:var(--text);font-family:inherit;outline:none}
+  .inp::placeholder{color:var(--muted)}
+  .inp:focus,.inp.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .swatches{display:flex;gap:10px;margin-top:6px;flex-wrap:wrap}
+  .sw{width:38px;height:38px;border-radius:50%;border:3px solid transparent;cursor:pointer}
+  .sw.sel{border-color:#fff}.sw.focus{box-shadow:var(--focusglow);border-color:var(--accent)}
+  .modal-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  .btn{background:var(--accent);color:#06121a;border-radius:11px;padding:10px 22px;
+    font-weight:700;font-size:14px;border:2px solid var(--accent);cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--text);border-color:var(--line)}
+  .btn.focus,.btn:focus{box-shadow:var(--focusglow)}
+  .btn.ghost.focus{border-color:var(--accent)}
+  .btn[disabled]{opacity:.45}
+  /* pin-confirm modal */
+  .pin-box{display:none;flex-direction:column;align-items:center;gap:10px}
+  .pin-box.on{display:flex}
+  .pin-dots{display:flex;gap:11px;margin:4px 0}
+  .pin-dots .d{width:13px;height:13px;border-radius:50%;border:2px solid #ffffff55}
+  .pin-dots .d.on{background:var(--accent);border-color:var(--accent)}
+  .pin-pad{display:grid;grid-template-columns:repeat(3,72px);gap:8px}
+  .pin-pad .k{height:52px;border-radius:12px;background:#161826cc;border:2px solid #ffffff1e;
+    display:flex;align-items:center;justify-content:center;font-size:19px;font-weight:600;
+    cursor:pointer;user-select:none}
+  .pin-pad .k.focus{border-color:var(--accent);box-shadow:var(--focusglow);background:#1d2238}
+  .pin-pad .k.fn{font-size:14px;color:var(--muted)}
+  /* toast */
+  .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);
+    background:#1a1d2e;border:1px solid var(--line);border-radius:12px;padding:10px 20px;
+    font-size:13.5px;z-index:100;transition:transform .25s,opacity .25s;opacity:0;
+    white-space:nowrap;max-width:90vw;text-align:center}
+  .toast.on{transform:translateX(-50%) translateY(0);opacity:1}
+  .toast.ok{border-color:#37d39b55;color:#37d39b}
+  .toast.err{border-color:#ff8e8e55;color:#ff8e8e}
+  /* footer hint */
+  .foot{position:fixed;bottom:0;left:0;right:0;display:flex;align-items:center;
+    justify-content:center;padding:10px 40px;color:var(--muted);font-size:12px;
+    gap:16px;pointer-events:none}
+</style></head>
+<body data-osk-auto>
+<div class="bar focusable" id="back" data-act="back">
+  <span style="font-size:18px">‹</span>
+  <h1>Profiles</h1>
+  <span class="cnt" id="cnt"></span>
+</div>
+<div class="grid" id="grid"></div>
+<!-- add-profile modal -->
+<div class="modal-bg" id="add-bg">
+  <div class="modal">
+    <h2>Add profile</h2>
+    <div class="sub">Add a profile for another person. They can play games — system settings stay owner-only. Up to 4 profiles total.</div>
+    <div class="field"><label>Username <span style="color:#ff8e8e">*</span></label>
+      <input class="inp" id="add-username" placeholder="e.g. alex — shown on the profile screen" autocomplete="off" spellcheck="false"></div>
+    <div class="field"><label>Display name (optional)</label>
+      <input class="inp" id="add-display" placeholder="Full name — optional"></div>
+    <div class="field"><label>Profile colour</label>
+      <div class="swatches" id="add-swatches"></div></div>
+    <div class="field">
+      <label>Quick PIN (exactly 8 digits — optional)</label>
+      <div class="pin-box" id="add-pin-box">
+        <div class="pin-dots" id="add-pin-dots"></div>
+        <div class="pin-pad" id="add-pin-pad"></div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">B = delete · OK = confirm</div>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px" id="add-pin-lbl">
+        Tap a digit to set a PIN, or leave blank to skip.</div>
+    </div>
+    <div style="min-height:16px;font-size:13px;color:#ff8e8e;margin-top:4px" id="add-err"></div>
+    <!-- owner-PIN confirm row -->
+    <div class="field" id="add-owner-pin-row" style="display:none">
+      <label>Your PIN (to confirm)</label>
+      <input class="inp" id="add-owner-pin" type="password" inputmode="numeric" maxlength="8" placeholder="8-digit owner PIN"></div>
+    <div class="modal-btns">
+      <span class="btn ghost focusable" id="add-cancel">Cancel</span>
+      <span class="btn focusable" id="add-ok">Add profile</span>
+    </div>
+  </div>
+</div>
+<!-- remove confirm modal -->
+<div class="modal-bg" id="rm-bg">
+  <div class="modal">
+    <h2 id="rm-title">Remove profile?</h2>
+    <div class="sub" id="rm-sub">This removes the profile from this device. Games and saves are kept.</div>
+    <div class="field" id="rm-owner-pin-row">
+      <label>Your PIN (to confirm)</label>
+      <input class="inp" id="rm-owner-pin" type="password" inputmode="numeric" maxlength="8" placeholder="8-digit owner PIN"></div>
+    <div style="min-height:16px;font-size:13px;color:#ff8e8e;margin-top:4px" id="rm-err"></div>
+    <div class="modal-btns">
+      <span class="btn ghost focusable" id="rm-cancel">Cancel</span>
+      <span class="btn focusable" id="rm-ok" style="background:#ff8e8e;border-color:#ff8e8e;color:#1a0808">Remove</span>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="foot">D-pad · <b>A</b> select · <b>B</b> back</div>
+<script src="assets/platform.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+(function(){
+  document.documentElement.dataset.theme = localStorage.getItem("gose-theme")||"onyx";
+  var ACCENTS=["#5cd0ff","#7d8cff","#37d39b","#ff7a9c","#ffce5c","#b388ff","#ff9a5c","#aeb4d2"];
+  var _addAccent="#37d39b", _addPin="", _rmTarget=null;
+  var _isOwner=false, _activeUser="";
+
+  function api(path,body){
+    return fetch(path,body?{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)}:{cache:"no-store"})
+      .then(function(r){return r.json();}).catch(function(){return {ok:false};});
+  }
+  function ico(n){return '<span class="ic" data-i="'+n+'"></span>';}
+  function paintIcons(){if(window.GICON){GICON.paint(document);return;}
+    document.querySelectorAll("[data-i]").forEach(function(e){
+      e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)");});}
+
+  function esc(v){return String(v||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");}
+
+  // ---- roving focus ----
+  function focusables(){return [].slice.call(document.querySelectorAll(".focusable"))
+    .filter(function(el){return el.offsetParent!==null;});}
+  function cur(){return document.querySelector(".focus");}
+  function setF(el){if(!el)return;var c=cur();if(c)c.classList.remove("focus");
+    el.classList.add("focus");el.scrollIntoView({block:"nearest"});
+    try{if(window.GOSE&&GOSE.sound)GOSE.sound("nav");}catch(e){}}
+  function move(d){
+    var a=cur()||focusables()[0];if(!a)return;var r=a.getBoundingClientRect();
+    var best=null,bd=1e9,list=focusables();
+    for(var i=0;i<list.length;i++){var el=list[i];if(el===a)continue;
+      var b=el.getBoundingClientRect();
+      var dx=(b.left+b.width/2)-(r.left+r.width/2),dy=(b.top+b.height/2)-(r.top+r.height/2);
+      var ok={right:dx>6,left:dx<-6,down:dy>6,up:dy<-6}[d];if(!ok)continue;
+      var al=(d==="left"||d==="right")?Math.abs(dx):Math.abs(dy);
+      var of=(d==="left"||d==="right")?Math.abs(dy):Math.abs(dx);
+      var dd=al+of*2;if(dd<bd){bd=dd;best=el;}}
+    if(best)setF(best);}
+
+  function showToast(msg,type,dur){
+    var t=document.getElementById("toast");
+    t.textContent=msg;t.className="toast "+(type||"ok")+" on";
+    setTimeout(function(){t.classList.remove("on");},dur||2200);}
+
+  // ---- load and render profiles ----
+  function load(){
+    Promise.all([
+      api("/users/list"),
+      api("/users/active")
+    ]).then(function(res){
+      var ul=res[0], ua=res[1];
+      var users=(ul&&ul.users)||[];
+      _activeUser=(ua&&ua.username)||"";
+      var isGuest=(ul&&ul.guest_active)||false;
+      // determine if owner is active (for the "add" button etc.)
+      _isOwner=!isGuest&&_activeUser===(users.find(function(u){return u.role==="owner";})||{}).username;
+      render(users, isGuest, ul&&ul.max);
+    });
+  }
+
+  function render(users, guestActive, maxUsers){
+    var cnt=document.getElementById("cnt");
+    if(cnt) cnt.textContent=users.length+"/"+(maxUsers||4)+" profiles";
+    var grid=document.getElementById("grid");
+    var html="";
+    users.forEach(function(u){
+      var isActive=(!guestActive&&_activeUser===u.username);
+      var accent=u.accent||"#5cd0ff";
+      var initials=(u.display||u.username||"?").substring(0,2).toUpperCase();
+      var roleLbl=u.role==="owner"?"Owner":"User";
+      var canRemove=_isOwner&&u.role!=="owner";
+      html+='<div class="card focusable'+(isActive?" active":"")
+        +'" data-username="'+esc(u.username)+'" data-role="'+esc(u.role||"user")+'" data-act="switch">'
+        +'<div class="av" style="background:'+accent+'">'+esc(initials)+'</div>'
+        +'<div class="info">'
+          +'<div class="nm">'+esc(u.display||u.username)+'</div>'
+          +'<div class="meta">'
+            +'<span class="rbadge '+(u.role==="owner"?"owner":"user")+'">'+roleLbl+'</span>'
+            +(u.pin_set?'<span style="color:var(--muted);font-size:11px">'+ico("lock")+' PIN</span>':'')
+          +'</div>'
+        +'</div>'
+        +(isActive?'<span class="tick">'+ico("check")+'</span>':'')
+        +(canRemove?'<span class="rm focusable" data-act="remove" data-username="'+esc(u.username)+'">Remove</span>':'')
+        +'</div>';
+    });
+    // Guest option
+    if(guestActive){
+      html+='<div class="card active focusable" data-act="guest-end">'
+        +'<div class="av" style="background:#3a3e4c;color:#aeb4d2;font-size:18px">'+ico("user")+'</div>'
+        +'<div class="info"><div class="nm">Guest</div>'
+          +'<div class="meta"><span class="rbadge guest">Guest · play only</span></div></div>'
+        +'<span class="tick">'+ico("check")+'</span>'
+        +'</div>';
+    } else {
+      html+='<hr class="divider">'
+        +'<div class="card focusable" data-act="guest-start">'
+          +'<div class="av" style="background:#3a3e4c;color:#aeb4d2;font-size:18px">'+ico("user")+'</div>'
+          +'<div class="info"><div class="nm">Play as Guest</div>'
+            +'<div class="meta"><span class="rbadge guest">Play only · no saved data</span></div></div>'
+          +'<span style="color:var(--muted);font-size:13px">A ›</span>'
+        +'</div>';
+    }
+    // Add profile (owner only, below max)
+    if(_isOwner && users.length < (maxUsers||4)){
+      html+='<div class="card add-card focusable" data-act="add">'
+        +'<div class="av" style="background:#1a1d2e;color:var(--muted);font-size:22px">+</div>'
+        +'<div class="info"><div class="nm">Add profile</div>'
+          +'<div class="meta" style="font-size:12px">Another person on this device</div></div>'
+        +'<span style="color:var(--muted);font-size:13px">A ›</span>'
+        +'</div>';
+    }
+    grid.innerHTML=html;
+    paintIcons();
+    wireClicks();
+    var first=grid.querySelector(".active")||grid.querySelector(".focusable");
+    setF(first);
+  }
+
+  function wireClicks(){
+    [].slice.call(document.querySelectorAll(".focusable")).forEach(function(el){
+      el.onclick=function(e){
+        if(el.dataset.act==="remove"){e.stopPropagation();}
+        if(document.activeElement&&document.activeElement.blur&&el.tagName!=="INPUT")
+          document.activeElement.blur();
+        setF(el);activate(el);};});
+  }
+
+  function activate(el){
+    if(!el||!el.dataset) return;
+    var act=el.dataset.act;
+    if(act==="back"){history.back();return;}
+    if(act==="switch"){doSwitch(el.dataset.username);return;}
+    if(act==="guest-start"){doGuestStart();return;}
+    if(act==="guest-end"){doGuestEnd();return;}
+    if(act==="add"){openAdd();return;}
+    if(act==="remove"){openRemove(el.dataset.username);return;}
+    if(el.tagName==="INPUT"){el.focus();return;}
+  }
+
+  // ---- switch profile ----
+  function doSwitch(uname){
+    if(!uname||uname===_activeUser){
+      showToast("Already on this profile","ok");return;}
+    api("/users/switch",{username:uname}).then(function(d){
+      if(d&&d.ok){
+        showToast("Switched to "+(d.user&&d.user.display||uname),"ok");
+        setTimeout(function(){location.href="gose-home.html";},700);
+      } else {
+        showToast((d&&d.error)||"Switch failed","err");}
+    });}
+
+  function doGuestStart(){
+    api("/users/guest/start").then(function(d){
+      if(d&&d.ok){
+        showToast("Guest session started — play only","ok");
+        setTimeout(function(){location.href="gose-home.html";},700);
+      } else showToast("Could not start guest session","err");
+    });}
+
+  function doGuestEnd(){
+    api("/users/guest/end").then(function(d){
+      if(d&&d.ok){showToast("Guest session ended","ok");load();}
+      else showToast((d&&d.error)||"Failed","err");
+    });}
+
+  // ---- add profile ----
+  var _addPinPr=0,_addPinPc=0;
+  var PIN_KEYS=[["1","2","3"],["4","5","6"],["7","8","9"],[{k:"back",l:"⌫"},"0",{k:"ok",l:"OK"}]];
+  function buildAddPinPad(){
+    var pp=document.getElementById("add-pin-pad");
+    pp.innerHTML=PIN_KEYS.map(function(row,ri){
+      return row.map(function(c,ci){
+        var k=typeof c==="string"?c:c.k,l=typeof c==="string"?c:c.l;
+        return '<div class="k '+(typeof c!=="string"?"fn":"")
+          +'" data-pk="'+k+'" data-pr="'+ri+'" data-pc="'+ci+'">'+l+'</div>';
+      }).join("");
+    }).join("");
+    [].slice.call(pp.children).forEach(function(el){
+      el.onclick=function(){_addPinPr=+el.dataset.pr;_addPinPc=+el.dataset.pc;
+        markPinPad();actPinKey(el.dataset.pk);};});
+    markPinPad();}
+  function markPinPad(){
+    [].slice.call(document.querySelectorAll("#add-pin-pad .k")).forEach(function(el){
+      el.classList.toggle("focus",+el.dataset.pr===_addPinPr&&+el.dataset.pc===_addPinPc);});}
+  function movePinPad(dr,dc){
+    _addPinPr=(_addPinPr+dr+PIN_KEYS.length)%PIN_KEYS.length;
+    _addPinPc=(_addPinPc+dc+3)%3;markPinPad();}
+  function actPinKey(k){
+    var lbl=document.getElementById("add-pin-lbl"),dots=document.getElementById("add-pin-dots");
+    if(k==="back"){_addPin=_addPin.slice(0,-1);}
+    else if(k==="ok"){/* confirm — do nothing extra, already read on submit */}
+    else if(/^\d$/.test(k)&&_addPin.length<8){_addPin+=k;}
+    if(lbl){lbl.textContent=_addPin.length===0?"Tap a digit to set a PIN, or leave blank to skip."
+      :_addPin.length<8?""+_addPin.length+"/8 digits entered — tap 8 to set"
+      :"PIN set (8 digits) — will be applied when you add the profile.";}
+    if(dots){dots.innerHTML=Array.from({length:Math.max(4,_addPin.length)},function(_,i){
+      return '<span class="d '+(i<_addPin.length?"on":"")+'"></span>';}).join("");}
+  }
+  function openAdd(){
+    // require owner — if we don't have owner_pin yet, show the owner pin row
+    _addPin="";_addAccent="#37d39b";
+    document.getElementById("add-username").value="";
+    document.getElementById("add-display").value="";
+    document.getElementById("add-err").textContent="";
+    document.getElementById("add-owner-pin").value="";
+    // show owner-pin row only if owner has a PIN set
+    var ownerPinRow=document.getElementById("add-owner-pin-row");
+    ownerPinRow.style.display="none";
+    api("/auth/pin").then(function(d){
+      if(d&&d.enabled&&d.set) ownerPinRow.style.display="";
+    });
+    buildAddPinPad();actPinKey("");
+    // swatches
+    var sw=document.getElementById("add-swatches");
+    sw.innerHTML=ACCENTS.map(function(a){
+      return '<span class="sw'+(a===_addAccent?" sel":"")+'" data-acc="'+a
+        +'" style="background:'+a+'"></span>';}).join("");
+    [].slice.call(sw.children).forEach(function(el){
+      el.onclick=function(){_addAccent=el.dataset.acc;
+        [].slice.call(sw.children).forEach(function(s){s.classList.toggle("sel",s===el);});}; });
+    document.getElementById("add-bg").classList.add("on");
+    document.getElementById("add-username").focus();
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();
+  }
+  function closeAdd(){
+    document.getElementById("add-bg").classList.remove("on");
+    if(window.GOSE&&GOSE.modalPop)GOSE.modalPop();
+    var f=document.querySelector(".grid .focusable.active")||document.querySelector(".grid .focusable");
+    setF(f);}
+  function submitAdd(){
+    var uname=document.getElementById("add-username").value.trim();
+    var display=document.getElementById("add-display").value.trim();
+    var ownerPin=document.getElementById("add-owner-pin").value;
+    var err=document.getElementById("add-err");
+    if(!uname){err.textContent="Username is required.";return;}
+    var body={username:uname,display:display||uname,accent:_addAccent,owner_pin:ownerPin||undefined};
+    if(_addPin.length===8)body.pin=_addPin;
+    document.getElementById("add-ok").setAttribute("disabled","");
+    api("/users/add",body).then(function(d){
+      document.getElementById("add-ok").removeAttribute("disabled");
+      if(d&&d.ok){closeAdd();showToast((d.user&&d.user.display||uname)+" added","ok");load();}
+      else{err.textContent=(d&&d.error)||"Failed to add profile.";}
+    });}
+
+  // ---- remove profile ----
+  function openRemove(uname){
+    _rmTarget=uname;
+    document.getElementById("rm-title").textContent="Remove \""+uname+"\"?";
+    document.getElementById("rm-sub").textContent=
+      "This removes "+uname+" from this device. Games and saves in /userdata/saves/"+uname+"/ are kept.";
+    document.getElementById("rm-owner-pin").value="";
+    document.getElementById("rm-err").textContent="";
+    // show pin row only if owner has a pin
+    api("/auth/pin").then(function(d){
+      document.getElementById("rm-owner-pin-row").style.display=
+        (d&&d.enabled&&d.set)?"":"none";
+    });
+    document.getElementById("rm-bg").classList.add("on");
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();}
+  function closeRemove(){
+    document.getElementById("rm-bg").classList.remove("on");
+    if(window.GOSE&&GOSE.modalPop)GOSE.modalPop();
+    var f=document.querySelector(".grid .focusable");setF(f);}
+  function submitRemove(){
+    if(!_rmTarget)return;
+    var ownerPin=document.getElementById("rm-owner-pin").value;
+    var err=document.getElementById("rm-err");
+    document.getElementById("rm-ok").setAttribute("disabled","");
+    api("/users/remove",{username:_rmTarget,owner_pin:ownerPin||undefined}).then(function(d){
+      document.getElementById("rm-ok").removeAttribute("disabled");
+      if(d&&d.ok){closeRemove();showToast(_rmTarget+" removed","ok");load();}
+      else{err.textContent=(d&&d.error)||"Failed to remove profile.";}
+    });}
+
+  // ---- button wiring ----
+  document.getElementById("add-cancel").onclick=closeAdd;
+  document.getElementById("add-ok").onclick=submitAdd;
+  document.getElementById("rm-cancel").onclick=closeRemove;
+  document.getElementById("rm-ok").onclick=submitRemove;
+
+  // ---- keyboard nav ----
+  var _pinFocused=false;
+  document.addEventListener("keydown",function(e){
+    var addOpen=document.getElementById("add-bg").classList.contains("on");
+    var rmOpen=document.getElementById("rm-bg").classList.contains("on");
+    if(addOpen){
+      // when focus is on the pin pad, arrows drive the pin pad; otherwise normal
+      var padEl=document.getElementById("add-pin-pad");
+      var inPad=padEl&&padEl.querySelector(".k.focus");
+      if(inPad){
+        var k=e.key;
+        if(k==="ArrowUp")movePinPad(-1,0);
+        else if(k==="ArrowDown")movePinPad(1,0);
+        else if(k==="ArrowLeft")movePinPad(0,-1);
+        else if(k==="ArrowRight")movePinPad(0,1);
+        else if(k==="Enter"||k===" "){
+          var focused=document.querySelector("#add-pin-pad .k.focus");
+          if(focused)actPinKey(focused.dataset.pk);
+        }else if(/^\d$/.test(k))actPinKey(k);
+        else if(k==="Backspace")actPinKey("back");
+        else return;
+        e.preventDefault();return;
+      }
+      if(e.key==="Escape"||e.key==="Backspace"){closeAdd();e.preventDefault();return;}
+      if(e.key==="Enter"){submitAdd();e.preventDefault();return;}
+      return;}
+    if(rmOpen){
+      if(e.key==="Escape"||e.key==="Backspace"){closeRemove();e.preventDefault();return;}
+      if(e.key==="Enter"){submitRemove();e.preventDefault();return;}
+      return;}
+    var k=e.key;
+    if(k==="ArrowRight")move("right");
+    else if(k==="ArrowLeft")move("left");
+    else if(k==="ArrowDown")move("down");
+    else if(k==="ArrowUp")move("up");
+    else if(k==="Enter"||k===" ")activate(cur());
+    else if(k==="Escape"||k==="Backspace"){history.back();}
+    else if(k==="]"||k==="PageDown"){}  // no tabs here
+    else if(k==="["||k==="PageUp"){}
+    else return;
+    e.preventDefault();});
+
+  load();
+})();
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>

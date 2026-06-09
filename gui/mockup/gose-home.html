@@ -79,7 +79,7 @@
   <div class="top">
     <img src="assets/brand/gose-crystal.png" alt="GOSE">
     <div><div class="b">GOSE</div></div><span class="s">Game Operating System Emulator</span>
-    <div class="tray"><span class="ic bell" id="t-bell" data-i="bell" title="Notifications"></span><span id="t-badge" class="badge"></span><span class="ic" id="t-wifi" data-i="wifi" title="network"></span><span class="ic" id="t-bat" data-i="battery" title="battery"></span><span id="t-batpct"></span><span id="t-clock"></span></div>
+    <div class="tray"><span class="ic bell" id="t-bell" data-i="bell" title="Notifications"></span><span id="t-badge" class="badge"></span><span class="ic" id="t-wifi" data-i="wifi" title="network"></span><span class="ic" id="t-bat" data-i="battery" title="battery"></span><span id="t-batpct"></span><span id="t-clock"></span><span id="t-user-av" title="Switch profile" onclick="location.href='gose-profiles.html'" style="display:none;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#06121a;font-size:11px;font-weight:700;align-items:center;justify-content:center;cursor:pointer;margin-left:4px;flex:none"></span></div>
   </div>
 
   <div class="side" id="side"></div>
@@ -370,6 +370,27 @@
   }
   async function pollTray(){ try{ const d=await (await fetch("/status.json",{cache:"no-store"})).json(); updateTray(d); }catch(e){} }
   pollTray(); setInterval(pollTray, 2000);
+
+  /* ---------- active-user avatar in tray (multi-user #58) ---------- */
+  (function(){
+    function updateUserAv(d){
+      var el=$("t-user-av"); if(!el) return;
+      var isOwner=(d.role==="owner");
+      var isGuest=(d.role==="guest");
+      // show the avatar only when NOT on the owner (guest/other = show to remind & allow switch)
+      if(isOwner){el.style.display="none";return;}
+      var initials=((d.display||d.username||"G")[0]||"G").toUpperCase();
+      var accent=d.accent||"#aeb4d2";
+      el.style.background=accent;el.style.display="inline-flex";
+      el.title=(isGuest?"Guest session — click to switch profile":"Profile: "+(d.display||d.username||"")+" — click to switch");
+      el.textContent=initials;
+    }
+    function pollUser(){
+      fetch("/users/active",{cache:"no-store"}).then(function(r){return r.json();})
+        .then(function(d){if(d&&d.ok)updateUserAv(d);}).catch(function(){});
+    }
+    pollUser(); setInterval(pollUser,5000);
+  })();
 
   /* ---------- wallpaper chosen in Settings ---------- */
   (function(){const WALLS=[

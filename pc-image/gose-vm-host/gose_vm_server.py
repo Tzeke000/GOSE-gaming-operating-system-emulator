@@ -4054,6 +4054,223 @@ def pin_set(payload):
     LOG.info("PIN set for owner %s (len %d)", o.get("username"), len(pin))
     return {"ok": True, "set": True}
 
+# ---- Multi-user profiles (#58 / #31) -----------------------------------------------
+# Up to 4 named local profiles: owner (role="owner") + up to 3 more (role="user").
+# Each profile has its own accent / display name. Saves are per-user when a non-owner
+# is active (/userdata/saves/<username>/). Settings changes are owner-only.
+# Guest mode: ephemeral in-memory flag — play-only, no settings access, no saved data.
+#
+# Active-user state lives in ACTIVE_USER_F so kiosk reloads respect the switch.
+# On boot it always starts as the owner (the file is absent until a switch).
+# The file is deleted on reboot (start-shell.sh / gose-session.sh can rm it on start).
+#
+# Security model: adding/removing users requires owner PIN.
+# Switching to another named profile requires NO credential (family device: trust model).
+# Guest mode requires no credential (intentionally open — play-only is the budget).
+# Switching BACK to the owner from guest/other requires no credential either (the owner
+# is physically present — this is a convenience lock, not a security boundary).
+# Per docs/24 §1.5: this is a convenience feature, not an access-control system.
+
+ACTIVE_USER_F = "/userdata/system/gose/active_user.json"
+_USERS_MAX = 4       # owner + 3 more named profiles
+_USERS_LOCK = threading.Lock()
+
+# in-memory guest flag — set when a guest session is active; cleared on end/switch
+_GUEST_SESSION: dict = {}   # {} when no guest; {"started": <ts>} when active
+
+
+def _safe_username(raw: str, existing=None) -> str:
+    """Normalise + validate a username string. Returns cleaned string or raises ValueError."""
+    u = re.sub(r"[^\w\-.]", "", str(raw or "")).strip(".")[:32]
+    if not u:
+        raise ValueError("username must be non-empty alphanumeric/dash/dot")
+    if u.lower() in ("guest", "root", "admin", "system", "owner"):
+        raise ValueError("reserved username — choose a different name")
+    if existing and u.lower() in [x.lower() for x in existing]:
+        raise ValueError("username already exists")
+    return u
+
+
+def users_list():
+    """GET /users/list — all profiles (credentials stripped) + active user."""
+    acc = _accounts_load()
+    users = []
+    for u in acc.get("users", []):
+        pub = {k: v for k, v in u.items() if not k.startswith("pin_") and k != "password"}
+        pub["pin_set"] = bool(u.get("pin_hash"))
+        users.append(pub)
+    active = _active_user_read()
+    return {"ok": True, "users": users, "active": active,
+            "guest_active": bool(_GUEST_SESSION),
+            "max": _USERS_MAX}
+
+
+def _active_user_read() -> str:
+    """Return the active username (owner if no file or any error)."""
+    try:
+        d = json.load(open(ACTIVE_USER_F))
+        return str(d.get("username") or "")
+    except Exception:
+        pass
+    # fall back to owner username
+    o = _owner_record()
+    return o.get("username", "owner") if o else "owner"
+
+
+def _active_user_write(username: str):
+    try:
+        os.makedirs(os.path.dirname(ACTIVE_USER_F), exist_ok=True)
+        write_json_atomic(ACTIVE_USER_F, {"username": username, "since": int(time.time())})
+    except Exception as e:
+        LOG.warning("active_user write failed: %s", e)
+
+
+def users_add(payload):
+    """POST /users/add {username, display?, accent?, pin?, owner_pin} — owner-only."""
+    p = payload or {}
+    if not _owner_ok({"pin": p.get("owner_pin"), "owner_token": p.get("owner_token")}):
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner PIN required to add a profile"}
+    with _USERS_LOCK:
+        acc = _accounts_load()
+        users = acc.get("users", [])
+        if len(users) >= _USERS_MAX:
+            return {"ok": False, "code": "ERR_MAX_USERS",
+                    "error": "maximum %d profiles reached — remove one first" % _USERS_MAX}
+        existing = [u.get("username", "") for u in users]
+        try:
+            uname = _safe_username(p.get("username", ""), existing)
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
+        display = (str(p.get("display") or uname).strip()[:48]) or uname
+        accent = str(p.get("accent") or "#37d39b")[:16]
+        record = {"username": uname, "display": display, "role": "user",
+                  "accent": accent, "created_at": int(time.time())}
+        raw_pin = str(p.get("pin") or "")
+        if PIN_RE.match(raw_pin):
+            salt = secrets.token_hex(16)
+            record.update({"pin_salt": salt, "pin_hash": _pin_compute(raw_pin, salt),
+                            "pin_algo": PIN_ALGO, "pin_len": len(raw_pin), "has_pin": True})
+        users.append(record)
+        acc["users"] = users
+        write_json_atomic(ACCOUNTS_F, acc)
+    LOG.info("users/add: added profile %s", uname)
+    pub = {k: v for k, v in record.items() if not k.startswith("pin_")}
+    pub["pin_set"] = bool(record.get("pin_hash"))
+    return {"ok": True, "user": pub}
+
+
+def users_remove(payload):
+    """POST /users/remove {username, owner_pin} — owner-only; cannot remove owner."""
+    p = payload or {}
+    if not _owner_ok({"pin": p.get("owner_pin"), "owner_token": p.get("owner_token")}):
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner PIN required to remove a profile"}
+    uname = str(p.get("username") or "").strip()
+    if not uname:
+        return {"ok": False, "error": "username required"}
+    with _USERS_LOCK:
+        acc = _accounts_load()
+        users = acc.get("users", [])
+        target = next((u for u in users if u.get("username") == uname), None)
+        if not target:
+            return {"ok": False, "error": "profile not found: %s" % uname}
+        if target.get("role") == "owner":
+            return {"ok": False, "error": "cannot remove the owner profile"}
+        acc["users"] = [u for u in users if u.get("username") != uname]
+        write_json_atomic(ACCOUNTS_F, acc)
+        # if this user was active, switch back to owner
+        active = _active_user_read()
+        if active == uname:
+            o = _owner_record(acc)
+            _active_user_write(o.get("username", "owner") if o else "owner")
+    LOG.info("users/remove: removed profile %s", uname)
+    return {"ok": True, "removed": uname}
+
+
+def users_switch(payload):
+    """POST /users/switch {username} — switch active user; no credential needed (family model).
+    Switching to 'guest' is the same as users_guest_start().
+    Setting username to '' or the owner's name resets to owner."""
+    global _GUEST_SESSION
+    p = payload or {}
+    uname = str(p.get("username") or "").strip()
+    if uname.lower() == "guest":
+        return users_guest_start()
+    acc = _accounts_load()
+    o = _owner_record(acc)
+    owner_name = o.get("username", "owner") if o else "owner"
+    if not uname or uname == owner_name:
+        # switching to owner — end any guest session
+        _GUEST_SESSION = {}
+        _active_user_write(owner_name)
+        LOG.info("users/switch: switched to owner (%s)", owner_name)
+        return {"ok": True, "active": owner_name, "role": "owner"}
+    users = acc.get("users", [])
+    target = next((u for u in users if u.get("username") == uname), None)
+    if not target:
+        return {"ok": False, "error": "profile not found: %s" % uname}
+    _GUEST_SESSION = {}
+    _active_user_write(uname)
+    LOG.info("users/switch: switched to %s (role %s)", uname, target.get("role"))
+    pub = {k: v for k, v in target.items() if not k.startswith("pin_")}
+    pub["pin_set"] = bool(target.get("pin_hash"))
+    return {"ok": True, "active": uname, "role": target.get("role", "user"), "user": pub}
+
+
+def users_active():
+    """GET /users/active — the currently active user record (credentials stripped)."""
+    global _GUEST_SESSION
+    if _GUEST_SESSION:
+        return {"ok": True, "username": "guest", "display": "Guest", "role": "guest",
+                "accent": "#aeb4d2", "pin_set": False,
+                "guest_since": _GUEST_SESSION.get("started")}
+    uname = _active_user_read()
+    acc = _accounts_load()
+    u = next((x for x in acc.get("users", []) if x.get("username") == uname), None)
+    if not u:
+        u = _owner_record(acc)
+    if not u:
+        return {"ok": True, "username": "owner", "display": "Owner", "role": "owner",
+                "accent": "#5cd0ff", "pin_set": False}
+    pub = {k: v for k, v in u.items() if not k.startswith("pin_")}
+    pub["pin_set"] = bool(u.get("pin_hash"))
+    return {"ok": True, **pub}
+
+
+def users_guest_start():
+    """POST /users/guest/start — start a guest (play-only) session."""
+    global _GUEST_SESSION
+    _GUEST_SESSION = {"started": int(time.time())}
+    LOG.info("users/guest: guest session started")
+    return {"ok": True, "role": "guest", "started": _GUEST_SESSION["started"]}
+
+
+def users_guest_end():
+    """POST /users/guest/end — end the guest session, return to owner."""
+    global _GUEST_SESSION
+    _GUEST_SESSION = {}
+    acc = _accounts_load()
+    o = _owner_record(acc)
+    owner_name = o.get("username", "owner") if o else "owner"
+    _active_user_write(owner_name)
+    LOG.info("users/guest: guest session ended; restored to owner (%s)", owner_name)
+    return {"ok": True, "active": owner_name}
+
+
+def _active_user_is_guest() -> bool:
+    return bool(_GUEST_SESSION)
+
+
+def _active_user_role() -> str:
+    """Quick role check: 'owner', 'user', or 'guest'."""
+    if _GUEST_SESSION:
+        return "guest"
+    uname = _active_user_read()
+    acc = _accounts_load()
+    u = next((x for x in acc.get("users", []) if x.get("username") == uname), None)
+    return (u.get("role") or "user") if u else "owner"
+
 # ---- UI prefs — the CANONICAL personalization store (Settings overhaul, task 14) --------
 # One server-side dict so theme/accent/etc survive kiosk reloads and EVERY page (incl.
 # lock) reads the same values: assets/a11y.js GETs /ui/prefs on each page load, mirrors
@@ -8831,6 +9048,10 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(net_wifi_status())
         if route == "/oobe/status":
             return self._json(oobe_status())
+        if route == "/users/list":
+            return self._json(users_list())
+        if route == "/users/active":
+            return self._json(users_active())
         if route == "/auth/pin":
             return self._json(pin_status())
         if route == "/storage.json":
@@ -9147,6 +9368,22 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/oobe/complete":
                 return self._json(oobe_complete(payload))
             return self._json(oobe_reset(payload))
+        if route in ("/users/add", "/users/remove", "/users/switch",
+                     "/users/guest/start", "/users/guest/end"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/users/add":
+                return self._json(users_add(payload))
+            if route == "/users/remove":
+                return self._json(users_remove(payload))
+            if route == "/users/switch":
+                return self._json(users_switch(payload))
+            if route == "/users/guest/start":
+                return self._json(users_guest_start())
+            return self._json(users_guest_end())
         if route in ("/auth/pin", "/auth/pin/set"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
