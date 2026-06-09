@@ -1,8 +1,9 @@
 # GOSE distribution launcher - "double-click GOSE, it boots in its own VM".
 # Reuses boot-gose-vm.ps1 (the WORKING virgl/audio/BT/bridge boot, 2026-06-06); this
 # script only orchestrates: find pieces -> provision if first run -> boot or focus ->
-# wait for the agent -> bring the GOSE window forward. It NEVER touches the host OS;
-# everything runs inside the QEMU VM (its own sandbox). No admin required to launch.
+# wait for the agent -> bring the GOSE window forward -> wait for exit -> close console.
+# It NEVER touches the host OS; everything runs inside the QEMU VM (its own sandbox).
+# No admin required to launch.
 #
 # Path resolution prefers BUNDLE-relative layout (a downloaded GOSE folder), then falls
 # back to the dev box. Bundle layout (see ..\README.md):
@@ -18,6 +19,21 @@ $LauncherDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $BundleRoot  = Split-Path -Parent $LauncherDir   # the GOSE\ folder in a real download
 
 function Say([string]$m) { Write-Host "[GOSE] $m" }
+
+# Hide or minimize the launcher console window so only the GOSE VM window is visible.
+# Called once the VM is up and the user no longer needs to read the startup log.
+# Uses the Win32 ShowWindow API via P/Invoke (no external tools, no admin).
+function Hide-Console {
+  try {
+    $sig = @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll")]   public static extern bool  ShowWindow(IntPtr hWnd, int nCmdShow);
+'@
+    $type = Add-Type -MemberDefinition $sig -Name WinApi -Namespace GoseLauncher -PassThru -ErrorAction Stop
+    $hwnd = $type[0]::GetConsoleWindow()
+    if ($hwnd -ne [IntPtr]::Zero) { $type[1]::ShowWindow($hwnd, 0) | Out-Null }  # 0 = SW_HIDE
+  } catch { }  # non-fatal: if this fails the console stays visible (harmless)
+}
 
 # Bring the GOSE VM window to the foreground by PID (pure PowerShell via the WSH shell -
 # no P/Invoke). AppActivate is best-effort; a miss is non-fatal (the window still opened).
@@ -44,8 +60,10 @@ if (-not $QemuBin -or -not (Test-Path "$QemuBin\qemu-system-x86_64.exe")) {
 
 # --- already running? focus it instead of double-booting ---
 # Match THIS GOSE VM specifically by the "-name GOSE-PC" flag in its cmdline (set in boot-gose-vm.ps1).
-# A global Get-Process qemu-system-x86_64 check wrongly fires when ANY other QEMU VM is running.
-$existing = Get-CimInstance Win32_Process -Filter "Name='qemu-system-x86_64.exe'" -ErrorAction SilentlyContinue |
+# Check both the windowed (.w.exe) and console (.exe) variants; a global check would wrongly fire
+# if any other QEMU VM is running.
+$existing = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue `
+  -Filter "Name='qemu-system-x86_64w.exe' OR Name='qemu-system-x86_64.exe'" |
   Where-Object { $_.CommandLine -like '*-name GOSE-PC*' } |
   Select-Object -First 1
 if ($existing) {
@@ -56,14 +74,38 @@ if ($existing) {
 
 # --- first-run provisioning: if the disk is missing but a .gz ships, decompress it ---
 if (-not $Image -and $ImageGz) {
-  Say "First run: provisioning the GOSE disk image (decompressing, one time)..."
-  $dest = Join-Path (Split-Path -Parent $ImageGz) "gose-disk.img"
-  $in = [System.IO.File]::OpenRead($ImageGz)
-  $out = [System.IO.File]::Create($dest)
-  $gz = New-Object System.IO.Compression.GZipStream($in, [System.IO.Compression.CompressionMode]::Decompress)
-  try { $gz.CopyTo($out) } finally { $gz.Dispose(); $out.Dispose(); $in.Dispose() }
+  $gzSize = (Get-Item $ImageGz).Length
+  $gzMB   = [math]::Round($gzSize / 1MB, 1)
+  Say "First run: provisioning the GOSE disk (decompressing ${gzMB} MB — one time, takes a minute)..."
+  $dest   = Join-Path (Split-Path -Parent $ImageGz) "gose-disk.img"
+  $in     = [System.IO.File]::OpenRead($ImageGz)
+  $out    = [System.IO.File]::Create($dest)
+  $gz     = New-Object System.IO.Compression.GZipStream($in, [System.IO.Compression.CompressionMode]::Decompress)
+  # Stream in 4 MB chunks so we can print progress without a heavy dependency.
+  $buf    = New-Object byte[] (4 * 1024 * 1024)
+  $written = [long]0
+  $sw     = [System.Diagnostics.Stopwatch]::StartNew()
+  $lastPrint = [long]0
+  try {
+    while ($true) {
+      $read = $gz.Read($buf, 0, $buf.Length)
+      if ($read -le 0) { break }
+      $out.Write($buf, 0, $read)
+      $written += $read
+      # Print a progress line every ~32 MB written (avoids console spam).
+      if (($written - $lastPrint) -ge (32 * 1024 * 1024)) {
+        $writtenMB = [math]::Round($written / 1MB)
+        $elapsed   = $sw.Elapsed.TotalSeconds
+        $mbps      = if ($elapsed -gt 0) { [math]::Round($written / 1MB / $elapsed, 0) } else { 0 }
+        Write-Host "  provisioning... ${writtenMB} MB written (${mbps} MB/s)"
+        $lastPrint = $written
+      }
+    }
+  } finally { $gz.Dispose(); $out.Dispose(); $in.Dispose() }
+  $totalMB  = [math]::Round($written / 1MB)
+  $elapsed  = [math]::Round($sw.Elapsed.TotalSeconds)
+  Say "Provisioned: $dest  (${totalMB} MB in ${elapsed}s)"
   $Image = (Resolve-Path -LiteralPath $dest).Path
-  Say "Provisioned: $Image"
 }
 if (-not $Image) {
   Say "FATAL: no GOSE disk image (.\vm\gose-disk.img or .img.gz). A real download ships one here."; pause; exit 1
@@ -88,10 +130,27 @@ for ($i = 0; $i -lt 90; $i++) {
   Start-Sleep -Milliseconds 1000
 }
 
-$qproc = Get-CimInstance Win32_Process -Filter "Name='qemu-system-x86_64.exe'" -ErrorAction SilentlyContinue |
+# Locate the QEMU process (also used for wait-for-exit below).
+# Match by both .exe variants (qemu-system-x86_64w.exe preferred; .exe is the fallback).
+$qproc = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue `
+  -Filter "Name='qemu-system-x86_64w.exe' OR Name='qemu-system-x86_64.exe'" |
   Where-Object { $_.CommandLine -like '*-name GOSE-PC*' } |
   Select-Object -First 1
 if ($qproc) { Focus-Gose $qproc.ProcessId }
 
 if ($up) { Say "GOSE is up. The VM window is yours - enjoy." }
 else     { Say "GOSE window launched; the agent did not answer in 90s (the OS may still be booting)." }
+
+# --- hide the launcher console so only the GOSE VM window remains on screen ---
+# The console was useful for the startup log; now it's just clutter.
+Hide-Console
+
+# --- clean exit: wait for the GOSE VM to close, then exit the launcher ---
+# This ensures GOSE.bat's console also disappears when the user closes the GOSE window,
+# leaving no ghost windows behind. If QEMU was not found (some edge case) we just exit now.
+if ($qproc) {
+  try {
+    $liveProc = Get-Process -Id $qproc.ProcessId -ErrorAction Stop
+    $liveProc.WaitForExit()
+  } catch { }  # process already gone — fine, fall through
+}

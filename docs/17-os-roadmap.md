@@ -84,6 +84,20 @@ preserved (`.oobe-done` absent, no `accounts.json`) → kiosk routes to `gose-oo
 `gose-session.sh` lands OOBE when the flag is absent + `gose-boot.html` redirects on `/oobe/status !done`).
 Single QEMU instance, no duplicates.
 
+**Launcher window polish (2026-06-09, task #17 follow-up):**
+- ✅ **VM window title** — `boot-gose-vm.ps1` now sets `$env:SDL_VIDEO_WINDOW_TITLE = 'GOSE'` before
+  launch; SDL inherits it and the QEMU window shows "GOSE" instead of "QEMU (GOSE-PC)".
+- ✅ **No spurious console window from QEMU** — `boot-gose-vm.ps1` now prefers `qemu-system-x86_64w.exe`
+  (the Windows-subsystem variant, present in MSYS2; falls back to `.exe` if absent). The windowed
+  variant does not open a secondary console, so only the GOSE VM window is visible to the user.
+- ✅ **First-run decompression progress** — chunked streaming with MB/s + bytes-written feedback every
+  32 MB; user sees progress during the ~1 min first-run provision instead of a frozen spinner.
+- ✅ **Console hide after VM is up** — once the agent answers and the VM window is focused,
+  `Hide-Console` (Win32 SW_HIDE via P/Invoke) hides the launcher console. Only the GOSE window
+  remains on screen. Non-fatal if the P/Invoke fails (console stays visible, harmless).
+- ✅ **Clean exit** — launcher now calls `WaitForExit()` on the QEMU process. When the user closes the
+  GOSE window, the launcher exits and GOSE.bat's console also disappears — no ghost windows.
+
 **Still TODO (honest — this is a working LOCAL launcher, not a store package):**
 - ⬜⭐ **Real Steam depot packaging** (depot upload, app config, Steam launch options) + store assets.
 - ⬜⭐ **Code-signing** the launcher/installer (unsigned `.bat`/`.ps1`/`.exe` trip SmartScreen/AV).
@@ -92,6 +106,8 @@ Single QEMU instance, no duplicates.
   the whole MSYS2 `mingw64\bin` — over-broad, hundreds of MB).
 - ⬜ **WHPX dependency**: QEMU acceleration needs Windows Hypervisor Platform; enabling it is a one-time
   admin host step. Launching GOSE afterward needs no admin — but the bundle should detect+guide this.
+- ⬜ **Reboot-verify (with Zeke)**: after a cold VM reboot, verify boot splash chain is correct
+  end-to-end (S03 → S28 → kiosk) — not testable without rebooting the live VM. Owned by Zeke.
 - ⬜ A native `.exe` wrapper (vs `.bat`) for a cleaner Steam/desktop launch + a proper splash UI.
 
 ## F. OS fundamentals still thin

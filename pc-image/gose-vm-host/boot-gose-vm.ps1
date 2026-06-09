@@ -15,13 +15,23 @@ param(
   [switch]$Companion = ($env:GOSE_COMPANION -eq '1')
 )
 $bin = $QemuBin                                    # MSYS2 qemu (virgl-enabled); overridable for the portable bundle
-$qemu = "$bin\qemu-system-x86_64.exe"
-if (-not (Test-Path $qemu)) { Write-Error "MSYS2 qemu not found at $qemu"; exit 1 }
+# Prefer the Windows-subsystem variant (qemu-system-x86_64w.exe) — it has no attached console
+# window of its own, so the only window the user sees is the GOSE VM. Fall back to the console
+# build if the windowed variant is absent (dev/CI setups that only have the .exe).
+$qemuW = "$bin\qemu-system-x86_64w.exe"
+$qemuC = "$bin\qemu-system-x86_64.exe"
+$qemu  = if (Test-Path $qemuW) { $qemuW } else { $qemuC }
+if (-not (Test-Path $qemu)) { Write-Error "MSYS2 qemu not found at $bin"; exit 1 }
 $env:PATH = "$bin;$env:PATH"                        # so its DLLs (virgl/epoxy/ANGLE) resolve
+# Override the SDL window title so the QEMU window shows "GOSE" rather than "QEMU (GOSE-PC)".
+# Must be set before the process inherits the environment.
+$env:SDL_VIDEO_WINDOW_TITLE = 'GOSE'
 
 # kill any existing GOSE qemu + usbredir bridge first (port 8731/2222/14000 forwards conflict).
 # Match THIS VM by its "-name GOSE-PC" cmdline flag — a global kill would stop other QEMU VMs.
-Get-CimInstance Win32_Process -Filter "Name='qemu-system-x86_64.exe'" -ErrorAction SilentlyContinue |
+# Check both the windowed (.w.exe preferred on launch) and the console build (.exe fallback).
+Get-CimInstance Win32_Process -ErrorAction SilentlyContinue `
+  -Filter "Name='qemu-system-x86_64w.exe' OR Name='qemu-system-x86_64.exe'" |
   Where-Object { $_.CommandLine -like '*-name GOSE-PC*' } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Get-Process usbredirect -ErrorAction SilentlyContinue | Stop-Process -Force
@@ -100,7 +110,9 @@ $a = @(
   '-device','usb-redir,chardev=usbredir4,id=usbredirdev4'
 )
 Write-Host "Booting GOSE-PC VM (virgl/$Display) via MSYS2 qemu..."
-Start-Process -FilePath $qemu -ArgumentList $a -WorkingDirectory $bin
+# -PassThru returns the Process object so callers (gose-launcher.ps1) can Wait-Process on it for
+# clean-exit: when the user closes the GOSE window the launcher exits and closes its console.
+$script:GoseVmProcess = Start-Process -FilePath $qemu -ArgumentList $a -WorkingDirectory $bin -PassThru
 Write-Host "Launched. Agent reachable at 127.0.0.1:8731 (token in .mcp.json) once booted."
 
 # Bridge the laptop's Bluetooth radio into the VM via USBDk (usb-redir). Wait for QEMU's
