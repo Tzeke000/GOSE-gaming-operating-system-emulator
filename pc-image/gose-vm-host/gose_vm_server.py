@@ -127,7 +127,12 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/system/gpu": (30, 60),
            # stress: double-start is already rejected by the single-instance guard, but
            # rate-limit prevents loop-calling from a rogue page (auth-decorator pass will add owner-gate).
-           "/stress/start": (4, 60), "/stress/stop": (20, 60)}
+           "/stress/start": (4, 60), "/stress/stop": (20, 60),
+           # platform probe: cheap read-only; rate-limit prevents thrash on OOBE step render.
+           "/system/platform": (20, 60),
+           # disk install: owner-gated DESTRUCTIVE stub — rate-limited to prevent accidental
+           # double-trigger; real implementation requires hardware + packaging work.
+           "/install/disk": (2, 300)}
 
 _SKIPDIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_media"}
 # .disabled = store-placeholder marker (Game.ext.disabled). splitext only strips the LAST
@@ -10014,6 +10019,103 @@ def gpu_capability_refresh():
         _gpu_cap_cache = result
     return result
 
+# ===================== PLATFORM / RUN-MODE DETECTION =====================
+#
+# Three mutually exclusive run modes:
+#   "bare_metal" — GOSE booted directly on real hardware (full GPU, all features)
+#   "vm"         — GOSE running inside a VM (GPU ceiling depends on passthrough)
+#   "app"        — GOSE running as a windowed app on a host OS (host GPU accessible
+#                  via the host OS, but Linux/Proton PC games are unavailable)
+#
+# Detection method:
+#   1. `systemd-detect-virt --vm` — authoritative; exits 0 + prints virt-type when inside a VM.
+#   2. Fallback: /proc/cpuinfo hypervisor flag (works when systemd-detect-virt absent).
+#   3. If neither flags VM: assume bare_metal (most honest default; app mode requires the
+#      host OS to set GOSE_RUN_MODE=app in the environment before launching the server).
+#
+# Vulkan is reported from the gpu_capability() cache (already proven by /system/gpu probe).
+# The OOBE wizard reads this endpoint once and caches the result locally in JS.
+
+def platform_detect():
+    """Detect the GOSE run mode + virt type.  Read-only; no state mutations."""
+    import subprocess as _sp
+
+    # --- detect VM via systemd-detect-virt ---
+    virt_type = None
+    try:
+        r = _sp.run(["systemd-detect-virt", "--vm"],
+                    capture_output=True, timeout=4)
+        virt_name = r.stdout.decode("utf-8", errors="replace").strip()
+        if r.returncode == 0 and virt_name:
+            virt_type = virt_name          # e.g. "kvm", "qemu", "vmware", "xen"
+    except Exception:
+        pass
+
+    # --- /proc/cpuinfo hypervisor fallback ---
+    if virt_type is None:
+        try:
+            with open("/proc/cpuinfo") as f:
+                cpuinfo = f.read()
+            if "hypervisor" in cpuinfo.lower():
+                virt_type = "vm-cpuinfo"   # generic VM, virt-tool not available
+        except Exception:
+            pass
+
+    # --- app mode override (host OS must inject GOSE_RUN_MODE=app) ---
+    env_override = os.environ.get("GOSE_RUN_MODE", "").strip().lower()
+    if env_override == "app":
+        run_mode = "app"
+    elif virt_type is not None:
+        run_mode = "vm"
+    else:
+        run_mode = "bare_metal"
+
+    # --- Vulkan from the cached GPU probe (non-blocking; uses in-memory cache if warm) ---
+    gpu = {}
+    try:
+        with _gpu_cap_lock:
+            gpu = dict(_gpu_cap_cache)
+    except Exception:
+        pass
+    vulkan_available = bool((gpu.get("vulkan") or {}).get("available"))
+
+    # --- honest capability summary for the wizard ---
+    if run_mode == "bare_metal":
+        capability = "full"
+        message = (
+            "Running directly on hardware — full GPU available. "
+            "All games including modern titles are supported."
+        )
+    elif run_mode == "vm" and vulkan_available:
+        capability = "full"
+        message = (
+            "Running in a VM with Vulkan passthrough — "
+            "full driver path, modern games supported."
+        )
+    elif run_mode == "vm" and not vulkan_available:
+        capability = "retro"
+        message = (
+            "Running in a VM without Vulkan — light and retro games only. "
+            "Modern games that require Vulkan cannot run in this configuration."
+        )
+    else:  # app
+        capability = "retro"
+        message = (
+            "Running as an app on a host OS — the host's GPU handles rendering, "
+            "but Linux/Proton PC games are not available. "
+            "Retro emulation via native builds works normally."
+        )
+
+    return {
+        "ok": True,
+        "run_mode": run_mode,          # "bare_metal" | "vm" | "app"
+        "virt_type": virt_type,        # e.g. "kvm", "qemu", or null for bare-metal/app
+        "vulkan": vulkan_available,
+        "capability": capability,      # "full" | "retro"
+        "message": message,
+    }
+
+
 # ===================== STRESS TEST — #101 =====================
 # Safety contract (critical for a load tool):
 #   * The load runs in gose_stress_worker.py, a SEPARATE KILLABLE PROCESS (not in this server).
@@ -10503,6 +10605,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             if qs.get("refresh") == "1":
                 return self._json(gpu_capability_refresh())
             return self._json(gpu_capability())
+        if route == "/system/platform":
+            # GET /system/platform — run-mode detection (bare_metal / vm / app) + Vulkan flag.
+            # Read-only probe; first call may take ~1s (systemd-detect-virt); subsequent calls
+            # that hit a warm GPU cache are instant.  Used by the OOBE wizard platform step.
+            if not rate_ok(route, *_LIMITS["/system/platform"]):
+                return self._json({"ok": False, "error": "rate limited"})
+            return self._json(platform_detect())
         if route == "/health":
             return self._json(health())
         if route == "/version":
@@ -11012,6 +11121,57 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/oobe/complete":
                 return self._json(oobe_complete(payload))
             return self._json(oobe_reset(payload))
+        if route == "/install/disk":
+            # POST /install/disk — OWNER-GATED, DESTRUCTIVE, CURRENTLY STUBBED.
+            # The UI shows a hard-gated warning + type-to-confirm before reaching here.
+            # A real implementation would: wipe partition table, write the GOSE PC image,
+            # set up the bootloader, and reboot — permanently replacing the running OS.
+            # This stub lets the wizard flow be validated without touching any real disk.
+            # Gate: requires a matching two-part confirmation from the UI (typed phrase +
+            # hold duration) AND owner auth (PIN or dev token).  An AI token is refused —
+            # disk install is a human-initiated destructive action only.
+            if not rate_ok(route, *_LIMITS["/install/disk"]):
+                return self._json({"ok": False, "error": "rate limited"})
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            ok, _cred, kind = _owner_credential(payload)
+            if not ok:
+                LOG.warning("/install/disk REFUSED — owner proof required")
+                return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                   "error": "disk install requires owner PIN or dev token"})
+            if kind == "ai":
+                LOG.warning("/install/disk REFUSED — AI token not accepted for destructive ops")
+                return self._json({"ok": False, "code": "ERR_AI_REFUSED",
+                                   "error": "disk install cannot be authorised by an AI token"})
+            # Confirm phrase must match exactly (sent by the hold-to-confirm UI).
+            confirm = (payload.get("confirm") or "").strip()
+            if confirm != "INSTALL GOSE TO DISK":
+                return self._json({"ok": False, "code": "ERR_CONFIRM",
+                                   "error": "confirmation phrase did not match"})
+            # Detect if we are in a VM — the real write path must never run inside a VM.
+            # This is a belt-and-suspenders guard on top of the UI's own VM warning.
+            try:
+                import subprocess as _sp2
+                r2 = _sp2.run(["systemd-detect-virt", "--vm"],
+                              capture_output=True, timeout=4)
+                if r2.returncode == 0:
+                    return self._json({"ok": False, "stubbed": True,
+                                       "code": "ERR_VM",
+                                       "error": ("Disk install is not available inside a VM — "
+                                                 "boot GOSE on real hardware to use this feature.")})
+            except Exception:
+                pass
+            # STUB — real disk-flashing implementation goes here.
+            # Do NOT perform any disk writes; return an honest stubbed response.
+            LOG.info("/install/disk: owner confirmed, stub response (real flash not implemented)")
+            return self._json({"ok": False, "stubbed": True,
+                               "code": "ERR_NOT_IMPLEMENTED",
+                               "error": ("Disk install is not yet available in this build. "
+                                         "Download the GOSE installer image from the GOSE website "
+                                         "and flash it with Balena Etcher or Rufus.")})
         if route in ("/users/add", "/users/remove", "/users/switch",
                      "/users/guest/start", "/users/guest/end"):
             try:

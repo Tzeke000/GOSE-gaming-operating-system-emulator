@@ -68,6 +68,38 @@
   .terms{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
     font-size:13px;color:var(--muted);line-height:1.6;max-height:184px;overflow:auto}
   .terms h4{color:var(--text);margin:10px 0 4px;font-size:13.5px}.terms h4:first-child{margin-top:0}
+  /* platform step */
+  .mode-card{background:var(--surface2);border:2px solid var(--line);border-radius:14px;
+    padding:16px 18px;margin:10px 0}
+  .mode-card.ok{border-color:#37d39b40;background:#37d39b0a}
+  .mode-card.warn{border-color:#ffce5c55;background:#ffce5c0a}
+  .mode-card .mc-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .mode-card .mc-head .ic{font-size:20px}.mode-card.ok .mc-head .ic{color:#37d39b}
+  .mode-card.warn .mc-head .ic{color:#ffce5c}
+  .mode-card .mc-title{font-weight:700;font-size:15px}
+  .mode-card .mc-msg{color:var(--muted);font-size:13px;line-height:1.55;margin-bottom:10px}
+  .mode-card .mc-detail{font-size:12px;color:var(--muted);opacity:.75;margin-top:4px}
+  .mode-detect{color:var(--muted);font-size:13px;margin:10px 0 4px;display:flex;align-items:center;gap:8px}
+  /* install-disk step */
+  .danger-box{background:#1a0808;border:2px solid #ff8e8e55;border-radius:14px;padding:16px 18px;margin:10px 0}
+  .danger-box h3{color:#ff8e8e;font-size:16px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+  .danger-box p{color:var(--muted);font-size:13px;line-height:1.6;margin:6px 0}
+  .danger-box .warn-list{list-style:none;padding:0;margin:6px 0 10px;font-size:13px;color:#ff8e8e}
+  .danger-box .warn-list li{display:flex;align-items:flex-start;gap:7px;margin:4px 0}
+  /* hold-to-confirm button */
+  .hold-btn{position:relative;overflow:hidden;background:#3a0a0a;border:2px solid #ff8e8e88;
+    border-radius:12px;padding:14px 20px;cursor:pointer;font-weight:700;font-size:14px;
+    color:#ff8e8e;display:flex;align-items:center;gap:10px;margin-top:10px;
+    transition:border-color .12s,box-shadow .12s;user-select:none;-webkit-user-select:none}
+  .hold-btn.focus{box-shadow:0 0 0 3px #ff8e8e44;border-color:#ff8e8e}
+  .hold-btn .hb-prog{position:absolute;left:0;top:0;bottom:0;width:0%;background:#ff8e8e22;transition:width .05s linear}
+  .hold-btn .hb-lbl{position:relative;z-index:1}
+  .hold-btn.done{background:#37d39b15;border-color:#37d39b;color:#37d39b}
+  .hold-btn.done .hb-prog{width:100%;background:#37d39b22}
+  .confirm-inp{width:100%;background:var(--surface2);border:2px solid var(--line);border-radius:11px;
+    padding:11px 14px;font-size:14px;color:var(--text);font-family:inherit;outline:none;margin-top:8px}
+  .confirm-inp:focus,.confirm-inp.focus{border-color:#ff8e8e;box-shadow:0 0 0 3px #ff8e8e33}
+  .confirm-inp.match{border-color:#37d39b}
   /* token reveal */
   .token{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0c0f1c;border:1px solid var(--line);
     border-radius:10px;padding:11px 13px;color:#7cffb0;font-size:13px;word-break:break-all;margin-top:8px}
@@ -181,10 +213,23 @@
   // Resets to "observe" each time the AI step is rendered (safe default).
   var aiTier = "observe";
 
+  // Platform detection result (fetched once from GET /system/platform; cached here).
+  // Null until the fetch completes; "loading" while in flight.
+  var platformData = null;         // {run_mode, virt_type, vulkan, capability, message} | null
+  var platformFetching = false;
+
+  // install_disk step UI state (pure UI — never persisted)
+  var diskConfirmText = "";        // typed confirmation phrase
+  var diskHoldProgress = 0;       // 0–100 hold progress
+  var diskHoldTimer = null;        // setInterval for hold animation
+  var diskHoldDone = false;        // true once the hold completed
+
   // collected answers
   var S = {
     locale:"en-US", keyboard:"us", net:null,
     license:false,
+    // detected run_mode — set by the platform step and sent in /oobe/complete
+    run_mode: null,                // "bare_metal" | "vm" | "app" | null (not yet detected)
     account:{username:"", name:"", password:"", pin:"", accent:"#5cd0ff", has_password:false, has_pin:false},
     // remote access credential set in OOBE (step: remoteaccess).
     // mode: null (skipped) | "password" | "key"
@@ -202,6 +247,7 @@
   //       "optional" (clear Skip + "Optional" badge; skipping has no side effects)
   var STEPS = [
     {id:"welcome", name:"Welcome"},
+    {id:"platform", name:"Platform", kind:"default"},
     {id:"language", name:"Language", kind:"default"},
     {id:"keyboard", name:"Keyboard", kind:"default"},
     {id:"controller", name:"Controller", kind:"default"},
@@ -212,6 +258,7 @@
     {id:"privacy", name:"Privacy", kind:"optional", skip:true},
     {id:"customize", name:"Personalize", kind:"optional", skip:true},
     {id:"ai", name:"AI companion", kind:"optional", skip:true},
+    {id:"install_disk", name:"Install to disk", kind:"optional", skip:true, skipLabel:"Skip — stay in current mode"},
     {id:"ready", name:"Finish"}
   ];
   var idx = 0;
@@ -292,22 +339,24 @@
         '<div class="opt focusable" data-act="continue"><span class="ic" data-i="play"></span>'+
         '<div><div class="nm">Get started</div><div class="sub2">Set up this device now</div></div>'+
         '<span class="val">A ›</span></div>';
+    } else if(s.id==="platform"){
+      h = renderPlatformStep();
     } else if(s.id==="language"){
-      h='<div class="step-eyebrow">Step 1 — region</div><h1>Choose your language</h1>'+
+      h='<div class="step-eyebrow">Step 2 — region</div><h1>Choose your language</h1>'+
         '<p class="sub">GOSE will use this for menus and the clock format.</p>'+
         '<div class="scroll">'+LANGS.map(function(l){
           return '<div class="opt focusable'+(S.locale===l[0]?' sel':'')+'" data-opt="locale" data-v="'+l[0]+'">'+
             ico("globe")+'<div class="nm">'+l[1]+'</div>'+
             '<span class="val">'+(S.locale===l[0]?"Selected ✓":"")+'</span></div>'; }).join("")+'</div>';
     } else if(s.id==="keyboard"){
-      h='<div class="step-eyebrow">Step 2 — input</div><h1>Keyboard layout</h1>'+
+      h='<div class="step-eyebrow">Step 3 — input</div><h1>Keyboard layout</h1>'+
         '<p class="sub">Used by the on-screen keyboard and any physical keyboard you connect.</p>'+
         '<div class="scroll">'+KBDS.map(function(k){
           return '<div class="opt focusable'+(S.keyboard===k[0]?' sel':'')+'" data-opt="keyboard" data-v="'+k[0]+'">'+
             ico("keyboard")+'<div class="nm">'+k[1]+'</div>'+
             '<span class="val">'+(S.keyboard===k[0]?"Selected ✓":"")+'</span></div>'; }).join("")+'</div>';
     } else if(s.id==="controller"){
-      h='<div class="step-eyebrow">Step 3 — controller</div>'+
+      h='<div class="step-eyebrow">Step 4 — controller</div>'+
         '<h1>Press any button on the controller you want to use</h1>'+
         '<p class="sub">Every connected pad can drive first-time setup — if a controller moves this '+
         'screen, it already works. The <b>highlighted</b> one below becomes this device\'s owner when '+
@@ -322,14 +371,14 @@
         '<b>Enter</b> selects, <b>Esc</b> goes back.</div>'+
         '<div class="hint" id="padhint"></div></div>';
     } else if(s.id==="network"){
-      h='<div class="step-eyebrow">Step 4 — network (optional)</div><h1>Connect to Wi-Fi</h1>'+
+      h='<div class="step-eyebrow">Step 5 — network (optional)</div><h1>Connect to Wi-Fi</h1>'+
         '<p class="sub">Wi-Fi enables updates and optional online features. GOSE works fully offline — '+
         'you can <b>skip</b> this and connect later.</p>'+
         '<div class="scroll" id="nets"><div class="opt"><span class="ic" data-i="wifi"></span>'+
         '<div class="nm">Scanning for networks…</div></div></div>'+
         '<div class="hint" id="nethint"></div>';
     } else if(s.id==="license"){
-      h='<div class="step-eyebrow">Step 5 — terms</div><h1>License agreement</h1>'+
+      h='<div class="step-eyebrow">Step 6 — terms</div><h1>License agreement</h1>'+
         '<p class="sub">Please review and accept to continue.</p>'+
         '<div class="terms" tabindex="0">'+
         '<h4>GOSE End-User Terms (summary)</h4>'+
@@ -350,7 +399,7 @@
     } else if(s.id==="account"){
       // Field semantics (owner decision 2026-06-07): "Your name" = the person's actual name;
       // "Username" = the identity GOSE displays everywhere (login + lock screens show the USERNAME).
-      h='<div class="step-eyebrow">Step 6 — your account</div><h1>Create your account</h1>'+
+      h='<div class="step-eyebrow">Step 7 — your account</div><h1>Create your account</h1>'+
         '<p class="sub">This first account is the device <b>owner</b>. The <b>username</b> is what GOSE '+
         'shows on the login and lock screens. The keyboard opens on a field automatically — <b>Enter</b> '+
         'moves to the next field, <b>B</b> closes it.</p>'+
@@ -382,7 +431,7 @@
       var raMode = S.remoteaccess.mode || "password";
       var raPwVal = (raMode==="password" && S.remoteaccess.credential) ? S.remoteaccess.credential : "";
       var raKeyVal = (raMode==="key" && S.remoteaccess.credential) ? S.remoteaccess.credential : "";
-      h='<div class="step-eyebrow">Step 7 — remote access (optional)</div>'+
+      h='<div class="step-eyebrow">Step 8 — remote access (optional)</div>'+
         '<h1>Set up remote access</h1>'+
         '<p class="sub">Only needed if you want to connect from another computer via SSH — e.g. to transfer '+
         'files or troubleshoot. You can <b>skip this now</b> and set it later in Settings → Security. '+
@@ -427,7 +476,7 @@
       var P=[["boxart_scrape","image","Download missing cover art","Looks up box art online (sends game names to thumbnails.libretro.com). Off by default."],
              ["telemetry","cpu","Share anonymous diagnostics","Help improve GOSE. Nothing is sent unless you turn this on."],
              ["online","cloud","Allow online features","Lets features like updates reach the internet when you use them."]];
-      h='<div class="step-eyebrow">Step 7 — privacy</div><h1>Privacy choices</h1>'+
+      h='<div class="step-eyebrow">Step 8 — privacy</div><h1>Privacy choices</h1>'+
         '<p class="sub">Everything is <b>off</b> by default — GOSE sends nothing unless you opt in here. '+
         'You can change any of these later in Settings → Privacy.</p>'+
         '<div class="scroll">'+P.map(function(p){
@@ -435,7 +484,7 @@
             ico(p[1])+'<div><div class="nm">'+p[2]+'</div><div class="sub2">'+p[3]+'</div></div>'+
             '<span class="pill"><i></i></span></div>'; }).join("")+'</div>';
     } else if(s.id==="customize"){
-      h='<div class="step-eyebrow">Step 8 — personalize</div><h1>Make it yours</h1>'+
+      h='<div class="step-eyebrow">Step 9 — personalize</div><h1>Make it yours</h1>'+
         '<p class="sub">Pick a theme and name your device. (Optional — tweak more in Settings.)</p>'+
         '<div class="field"><label>Theme</label><div class="grid2">'+THEMES.map(function(t){
           return '<div class="opt focusable'+(S.theme===t[0]?' sel':'')+'" data-opt="theme" data-v="'+t[0]+'">'+
@@ -451,7 +500,7 @@
         {id:"play",    ic:"gamepad-2", nm:"Play",    sub:"Can drive controller input. Use for an AI co-player or co-op partner."},
         {id:"admin",   ic:"shield",   nm:"Admin",   sub:"Full OS control. Only for a deeply trusted AI you built or control yourself."}
       ];
-      h='<div class="step-eyebrow">Step 9 — AI companions (optional)</div><h1>Pair your AI companions</h1>'+
+      h='<div class="step-eyebrow">Step 10 — AI companions (optional)</div><h1>Pair your AI companions</h1>'+
         '<p class="sub">Name an AI, pick its starting permission tier, and add it. '+
         'Each paired AI gets its own token — shown once here. You can add more and adjust tiers anytime in the <b>AI Hub</b>. '+
         'This is optional — skip and pair later if you prefer.</p>'+
@@ -471,6 +520,8 @@
           '<div class="sub2">Pairs now — token shown once below. You can add another after.</div></div>'+
           '<span class="val">A</span></div>'+
         '<div id="pairout">'+pairBlock()+'</div></div>';
+    } else if(s.id==="install_disk"){
+      h = renderInstallDiskStep();
     } else if(s.id==="ready"){
       h='<div class="finale" id="finale">'+
         '<img class="logo" src="assets/brand/gose-crystal.png" alt="">'+
@@ -545,6 +596,8 @@
   });
 
   function wireStep(s){
+    if(s.id==="platform") loadPlatform();
+    if(s.id==="install_disk") wireDiskStep();
     if(s.id==="controller"){ loadDbCount(); padFresh=true; loadControllers();
       // #104 live detect: 500ms poll catches hot-plug (unplug/replug) promptly.
       // visibilitychange + focus also rescans immediately when the window regains
@@ -562,6 +615,273 @@
     [].slice.call(document.querySelectorAll(".focusable")).forEach(function(el){
       el.onclick=function(){ if(document.activeElement&&document.activeElement.blur&&el.tagName!=="INPUT")document.activeElement.blur();
         setF(el); activate(el); }; });
+  }
+
+  // ---- platform step: detect run mode + show confirm/override ----
+  //
+  // On step entry, fetch GET /system/platform (once; cached in platformData).
+  // Auto-detect sets S.run_mode to the server's answer.  User can override using
+  // the three mode-cards below the detected result.
+  //
+  // Three modes (Zeke-locked design):
+  //   bare_metal  — booted on real HW, full GPU          → "full driver path"
+  //   vm          — inside a VM, GPU depends on passthrough
+  //     with Vulkan  → "full driver path"
+  //     without      → "light/retro only — can't run Vulkan games"
+  //   app         — windowed on a host OS, retro emulation only; no Linux/Proton PC games
+
+  var RUN_MODES = [
+    {id:"bare_metal", ic:"cpu",     nm:"Bare metal", sub:"GOSE is the OS — full GPU, all games supported."},
+    {id:"vm",         ic:"layers",  nm:"Virtual machine", sub:"Inside a VM — GPU capability depends on passthrough."},
+    {id:"app",        ic:"grid",    nm:"App on a host OS", sub:"Running as a windowed app — retro emulation works; Linux/Proton PC games are not available."}
+  ];
+
+  function modeCapability(mode, vulkan){
+    if(mode==="bare_metal") return {cap:"full", ok:true};
+    if(mode==="vm" && vulkan) return {cap:"full — Vulkan passthrough detected", ok:true};
+    if(mode==="vm") return {cap:"light / retro only — no Vulkan", ok:false};
+    if(mode==="app") return {cap:"retro only — host GPU, no Linux/Proton games", ok:false};
+    return {cap:"unknown", ok:false};
+  }
+
+  function renderPlatformStep(){
+    var pd = platformData;
+    var mode = S.run_mode;                           // user's current selection (may differ from detected)
+    var detected = pd ? pd.run_mode : null;
+    var vulkan = pd ? pd.vulkan : false;
+    var loading = (pd===null);
+
+    var detectedHtml = "";
+    if(loading){
+      detectedHtml = '<div class="mode-detect">'+ico("cpu")+'Detecting your platform…</div>';
+    } else if(pd && pd.run_mode){
+      var det = modeCapability(pd.run_mode, pd.vulkan);
+      var cls = det.ok ? "ok" : "warn";
+      var icn = det.ok ? "check" : "info";
+      detectedHtml =
+        '<div class="mode-card '+cls+'" style="margin-bottom:14px">'+
+        '<div class="mc-head">'+ico(icn)+'<span class="mc-title">Detected: '+humanMode(pd.run_mode)+'</span></div>'+
+        '<div class="mc-msg">'+esc(pd.message)+'</div>'+
+        '<div class="mc-detail">'+
+          (pd.virt_type?'Hypervisor: '+esc(pd.virt_type)+' · ':'')+'Vulkan: '+(pd.vulkan?'available':'not available')+
+        '</div></div>';
+    } else {
+      detectedHtml = '<div class="mode-detect" style="color:#ff8e8e">'+ico("info")+' Platform detection unavailable — select manually below.</div>';
+    }
+
+    var overrideHtml =
+      '<div style="font-size:12.5px;color:var(--muted);margin:6px 0 6px">'+
+        (detected ? 'Override detected mode (if detection is wrong):' : 'Select your run mode:')+
+      '</div>'+
+      RUN_MODES.map(function(m){
+        var sel = (mode===m.id);
+        var cv = modeCapability(m.id, vulkan);
+        return '<div class="opt focusable'+(sel?' sel':'')+'" data-run-mode="'+m.id+'">'
+          +ico(m.ic)
+          +'<div><div class="nm">'+m.nm+'</div>'
+          +'<div class="sub2">'+m.sub+'</div></div>'
+          +'<span class="val">'+(sel?"Selected ✓":(cv.ok?'<span style="color:#37d39b;font-size:11px">Full</span>':'<span style="color:#ffce5c;font-size:11px">Retro</span>'))+'</span></div>';
+      }).join("");
+
+    return '<div class="step-eyebrow">Step 1 — platform</div><h1>Platform &amp; run mode</h1>'+
+      '<p class="sub">GOSE detects how it\'s running — on real hardware, inside a VM, or as a '+
+      'windowed app. This determines what games you can play. Confirm the detected mode or '+
+      'override if detection is wrong.</p>'+
+      '<div class="scroll">'+
+      detectedHtml+
+      overrideHtml+
+      '</div>';
+  }
+
+  function humanMode(mode){
+    if(mode==="bare_metal") return "Bare metal (real hardware)";
+    if(mode==="vm") return "Virtual machine";
+    if(mode==="app") return "App on a host OS";
+    return mode||"Unknown";
+  }
+
+  function loadPlatform(){
+    if(platformData !== null) return;           // already fetched (or fetch in flight)
+    if(platformFetching) return;
+    platformFetching = true;
+    api("/system/platform").then(function(d){
+      platformFetching = false;
+      platformData = (d && d.run_mode) ? d : {run_mode:null, vulkan:false, message:"Detection unavailable"};
+      // auto-set S.run_mode to detected value if not already user-chosen
+      if(S.run_mode === null && platformData.run_mode) S.run_mode = platformData.run_mode;
+      // re-render the platform step if we are still on it
+      if(STEPS[idx].id==="platform") render();
+    }).catch(function(){
+      platformFetching = false;
+      platformData = {run_mode:null, vulkan:false, message:"Detection unavailable"};
+      if(STEPS[idx].id==="platform") render();
+    });
+  }
+
+  function selectRunMode(mode){
+    S.run_mode = mode;
+    // update selection highlight without a full re-render (keeps focus stable)
+    [].slice.call(card.querySelectorAll("[data-run-mode]")).forEach(function(o){
+      var on=(o.dataset.runMode===mode); o.classList.toggle("sel",on);
+      var val=o.querySelector(".val");
+      if(val){
+        var cv = modeCapability(mode, platformData?platformData.vulkan:false);
+        if(on){ val.textContent="Selected ✓"; }
+        else {
+          var m2=o.dataset.runMode;
+          var cv2=modeCapability(m2, platformData?platformData.vulkan:false);
+          val.innerHTML=cv2.ok?'<span style="color:#37d39b;font-size:11px">Full</span>':'<span style="color:#ffce5c;font-size:11px">Retro</span>';
+        }
+      }
+    });
+    try{ GOSE&&GOSE.sound&&GOSE.sound("select"); }catch(e){}
+  }
+
+  // ---- install_disk step: destructive flow with hard gate ----
+  //
+  // Gate = TWO concurrent requirements:
+  //   1. Typed confirmation phrase (exact match: "INSTALL GOSE TO DISK")
+  //   2. Hold-to-confirm button held for 3 seconds
+  //
+  // Both must be satisfied simultaneously before the server call fires.
+  // The server also checks for VM environment + owner auth + phrase — belt and suspenders.
+  // STUB: the real disk-flash is not implemented; the server returns an honest error.
+
+  var DISK_PHRASE = "INSTALL GOSE TO DISK";
+  var DISK_HOLD_MS = 3000;   // required hold duration (3 seconds)
+
+  function renderInstallDiskStep(){
+    var isVm = (S.run_mode==="vm") || (platformData && platformData.run_mode==="vm");
+    var phraseMatch = (diskConfirmText===DISK_PHRASE);
+    var holdCls = diskHoldDone?"done":"";
+    var holdPct = diskHoldDone?100:diskHoldProgress;
+    var holdLbl = diskHoldDone?"Held — confirmed" :
+                  (holdPct>0?"Hold to confirm… ("+(Math.ceil((DISK_HOLD_MS-(holdPct/100*DISK_HOLD_MS))/1000))+"s)":"Hold to erase and install");
+
+    var vmWarning = isVm ?
+      '<div class="mode-card warn" style="margin-bottom:14px">'+
+        '<div class="mc-head">'+ico("info")+'<span class="mc-title">Running inside a VM</span></div>'+
+        '<div class="mc-msg">Disk install is not available inside a VM. To install GOSE to real hardware, '+
+        'boot from the GOSE installer image on bare metal.</div></div>' : "";
+
+    return '<div class="step-eyebrow">Step 11 — install to disk (optional)</div>'+
+      '<h1 style="color:#ff8e8e">'+ico("cpu")+' Install to disk</h1>'+
+      '<div class="scroll">'+
+      vmWarning+
+      '<div class="danger-box">'+
+        '<h3>'+ico("info")+' This permanently replaces your operating system</h3>'+
+        '<p>Proceeding will <b>erase this drive</b> and install GOSE as the only operating system. '+
+        '<b>This cannot be undone.</b> Windows, all existing data, and all other operating systems '+
+        'on this drive will be permanently deleted.</p>'+
+        '<ul class="warn-list">'+
+          '<li>'+ico("info")+' <b>ALL data on this drive will be erased.</b></li>'+
+          '<li>'+ico("info")+' <b>Windows (and all apps, files, and games on it) will be deleted.</b></li>'+
+          '<li>'+ico("info")+' This is a one-way operation. There is no undo.</li>'+
+          '<li>'+ico("info")+' Back up everything important before continuing.</li>'+
+        '</ul>'+
+        '<div style="font-size:13px;color:var(--muted);margin-bottom:8px">'+
+          'To confirm you understand, type the exact phrase below:'+
+          '<br><b style="color:var(--text)">'+DISK_PHRASE+'</b>'+
+        '</div>'+
+        '<input class="confirm-inp focusable'+(phraseMatch?' match':'')+'" data-field="disk_confirm" '+
+          'placeholder="Type the phrase exactly to unlock the button" '+
+          'value="'+esc(diskConfirmText)+'" autocomplete="off" spellcheck="false">'+
+        '<div class="hold-btn focusable '+holdCls+'" data-act="disk-hold" id="disk-hold-btn">'+
+          '<div class="hb-prog" id="disk-hold-prog" style="width:'+holdPct+'%"></div>'+
+          '<span class="hb-lbl">'+ico("cpu")+' '+holdLbl+'</span>'+
+        '</div>'+
+        '<div class="hint" id="disk-hint" style="margin-top:8px"></div>'+
+      '</div>'+
+      '</div>';
+  }
+
+  function wireDiskStep(){
+    // reset hold state each time the step renders
+    diskHoldProgress = 0;
+    diskHoldDone = false;
+    if(diskHoldTimer){ clearInterval(diskHoldTimer); diskHoldTimer=null; }
+    // wire the confirm input for live phrase matching
+    var inp = card.querySelector('[data-field="disk_confirm"]');
+    if(inp) inp.addEventListener("input", function(){ diskConfirmText=inp.value; refreshDiskHold(); });
+  }
+
+  function refreshDiskHold(){
+    // update the confirm input's visual match state
+    var inp=card.querySelector('[data-field="disk_confirm"]');
+    if(inp){ var match=(inp.value===DISK_PHRASE); inp.classList.toggle("match",match); }
+    // update the hold-button enabled state
+    var btn=document.getElementById("disk-hold-btn");
+    if(btn){
+      var enabled=(diskConfirmText===DISK_PHRASE)||diskHoldDone;
+      btn.style.opacity=enabled?"1":"0.4";
+      btn.style.pointerEvents=enabled?"":"none";
+      // remove focus from the hold button when phrase is cleared
+      if(!enabled && btn.classList.contains("focus")){
+        var fb=card.querySelector(".focusable"); if(fb) setF(fb);
+      }
+    }
+  }
+
+  function startHold(el){
+    if(diskConfirmText!==DISK_PHRASE){ return; }  // phrase must match first
+    if(diskHoldDone){ doDiskInstall(); return; }   // already held — proceed directly
+    if(diskHoldTimer) return;                       // already holding
+    var startTime = Date.now();
+    var progEl = document.getElementById("disk-hold-prog");
+    var btnEl = document.getElementById("disk-hold-btn");
+    diskHoldTimer = setInterval(function(){
+      var elapsed = Date.now()-startTime;
+      diskHoldProgress = Math.min(100, Math.round((elapsed/DISK_HOLD_MS)*100));
+      var pct = diskHoldProgress;
+      if(progEl) progEl.style.width=pct+"%";
+      var sLeft = Math.max(0, Math.ceil((DISK_HOLD_MS-elapsed)/1000));
+      var lbl = btnEl?btnEl.querySelector(".hb-lbl"):null;
+      if(lbl) lbl.innerHTML = ico("cpu")+" Hold to confirm… ("+sLeft+"s)";
+      if(elapsed>=DISK_HOLD_MS){
+        clearInterval(diskHoldTimer); diskHoldTimer=null;
+        diskHoldDone=true; diskHoldProgress=100;
+        if(btnEl){ btnEl.classList.add("done"); }
+        if(lbl) lbl.innerHTML = ico("check")+" Held — confirmed";
+        if(progEl) progEl.style.width="100%";
+        doDiskInstall();
+      }
+    }, 50);
+    // cancels if the button loses focus (finger lifts / stick released)
+    el.addEventListener("blur",   cancelHold, {once:true});
+    el.addEventListener("mouseleave", cancelHold, {once:true});
+  }
+
+  function cancelHold(){
+    if(diskHoldDone) return;
+    if(diskHoldTimer){ clearInterval(diskHoldTimer); diskHoldTimer=null; }
+    diskHoldProgress=0;
+    var progEl=document.getElementById("disk-hold-prog"); if(progEl) progEl.style.width="0%";
+    var btnEl=document.getElementById("disk-hold-btn");
+    if(btnEl){ btnEl.classList.remove("done");
+      var lbl=btnEl.querySelector(".hb-lbl");
+      if(lbl) lbl.innerHTML=ico("cpu")+" Hold to erase and install"; }
+  }
+
+  function doDiskInstall(){
+    var hint=document.getElementById("disk-hint");
+    if(hint){ hint.style.color="var(--muted)"; hint.textContent="Sending request…"; }
+    api("/install/disk", {confirm:DISK_PHRASE}).then(function(d){
+      if(d&&d.ok){
+        if(hint){ hint.style.color="#37d39b"; hint.textContent="Install started — do not power off."; }
+      } else if(d&&d.stubbed){
+        // honest stub response — tell the user clearly
+        if(hint){ hint.style.color="#ffce5c";
+          hint.textContent=(d.error||"Disk install is not available in this build. Use the installer image on real hardware."); }
+      } else if(d&&d.code==="ERR_VM"){
+        if(hint){ hint.style.color="#ff8e8e";
+          hint.textContent="Not available inside a VM — boot GOSE on real hardware."; }
+      } else {
+        if(hint){ hint.style.color="#ff8e8e";
+          hint.textContent=(d&&d.error)||"Request failed. Check server logs."; }
+      }
+    }).catch(function(){
+      if(hint){ hint.style.color="#ff8e8e"; hint.textContent="Network error — server not reachable."; }
+    });
   }
 
   // ---- controller step: live registry list + supported-families count ----
@@ -794,6 +1114,7 @@
                has_password:!!S.account.password, has_pin:!!S.account.pin, accent:S.account.accent},
       remote_access: raPayload,   // null = skipped (SSH credential stays as-is)
       privacy:S.privacy, locale:S.locale, keyboard:S.keyboard, timezone:null,
+      run_mode: S.run_mode,       // detected / confirmed run mode (null = not detected)
       theme:S.theme, device_name:(String(S.device_name||"").trim()||"GOSE"),
       // every agent added in the AI step (already paired live; completion re-issues
       // idempotently). "ai" = legacy single shape, "ais" = the full multi-pair list.
@@ -881,6 +1202,7 @@
       else if(f==="device_name") S.device_name=v;
       else if(f==="ai_name") S.ai_name=v;
       else if(f==="ra_password"){ S.remoteaccess.credential=v; S.remoteaccess.mode="password"; }
+      else if(f==="disk_confirm"){ diskConfirmText=v; refreshDiskHold(); }
     });
   }
 
@@ -891,6 +1213,10 @@
       if(a==="continue") next(); else if(a==="back") back(); else if(a==="skip") skip();
       else if(a==="pair"){ captureInputs(); doPair(); }
       else if(a==="ra-key-defer"){ S.remoteaccess.key_deferred=true; S.remoteaccess.mode="key"; skip(); }
+      else if(a==="disk-hold") startHold(el);
+      return; }
+    if(el.dataset.runMode){
+      selectRunMode(el.dataset.runMode);
       return; }
     // remote access mode tab toggle (password / key)
     // #107: tier picker for the AI step
@@ -956,10 +1282,17 @@
     var k=e.key;
     if(k==="ArrowRight") move("right");
     else if(k==="ArrowLeft") move("left");
-    else if(k==="ArrowDown"){ if(!accountMove(1)) move("down"); }
-    else if(k==="ArrowUp"){ if(!accountMove(-1)) move("up"); }
-    else if(k==="Enter"||k===" ") activate(cur());
-    else if(k==="Escape"||k==="Backspace"){ try{ GOSE&&GOSE.sound&&GOSE.sound("back"); }catch(e2){} back(); }
+    else if(k==="ArrowDown"){ cancelHold(); if(!accountMove(1)) move("down"); }
+    else if(k==="ArrowUp"){ cancelHold(); if(!accountMove(-1)) move("up"); }
+    else if(k==="Enter"||k===" "){
+      var c2=cur();
+      if(c2&&c2.dataset.act==="disk-hold"){
+        // hold button: Enter/Space starts or cancels the hold (held = confirm; released = cancel)
+        if(diskHoldTimer){ cancelHold(); }
+        else{ startHold(c2); }
+      } else { activate(c2); }
+    }
+    else if(k==="Escape"||k==="Backspace"){ cancelHold(); try{ GOSE&&GOSE.sound&&GOSE.sound("back"); }catch(e2){} back(); }
     // L1/R1 ([ / ]) = previous / next step. docs/27 §3.3 reserves [ ] for TAB-LIKE structures;
     // reasoned call (2026-06-07): a linear wizard IS tab-like — the steps are sibling panes in a
     // fixed sequence (the footer dots are the tab strip), so [/]=prev/next-step matches the
@@ -968,6 +1301,13 @@
     else if(k==="["||k==="PageUp"){ back(); }      // L1 = back
     else return;
     e.preventDefault();
+  });
+  // hold-button: keyup on Enter/Space cancels the hold (must keep key held continuously)
+  document.addEventListener("keyup", function(e){
+    if(e.key==="Enter"||e.key===" "){
+      var c2=cur();
+      if(c2&&c2.dataset.act==="disk-hold"&&diskHoldTimer) cancelHold();
+    }
   });
   // NOTE (docs/27 §2.1): no raw gamepad-API reads or polls may exist on this page. The bridge
   // (gose-pad-nav.py) is the single input authority; this page only consumes synthesized keys.
