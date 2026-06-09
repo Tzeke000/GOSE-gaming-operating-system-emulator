@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE &mdash; Stress Test</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+
+  /* header */
+  .top{display:flex;align-items:center;gap:12px;padding:16px 30px 4px}
+  .top img{width:30px;height:30px}.top h1{font-size:18px;margin:0}
+  .top .sub{color:var(--muted);font-size:12px;margin-left:4px}
+  .top .home{margin-left:auto;background:none;border:none;color:var(--muted);font-size:13px;
+    cursor:pointer;font-family:inherit;padding:4px 8px;border-radius:8px}
+  .top .home:focus{outline:none;box-shadow:var(--focusglow);border:2px solid var(--accent)}
+
+  /* honesty banner */
+  .banner{margin:0 30px 8px;background:var(--surface);border:1px solid var(--line);
+    border-radius:11px;padding:9px 14px;font-size:12px;color:var(--muted);line-height:1.5}
+  .banner strong{color:var(--text)}
+
+  /* main two-column layout */
+  .main{flex:1;display:flex;gap:14px;margin:0 30px 14px;min-height:0}
+
+  /* left panel: controls + config */
+  .lp{display:flex;flex-direction:column;gap:10px;width:300px;flex:none}
+
+  /* right panel: live readout */
+  .rp{flex:1;display:flex;flex-direction:column;gap:10px;min-height:0}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+  .card h3{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin:0 0 10px}
+
+  /* duration picker */
+  .dur-row{display:flex;gap:8px}
+  .dur-btn{flex:1;background:var(--surface2);border:2px solid transparent;color:var(--text);
+    border-radius:9px;padding:9px 0;font-size:14px;font-weight:600;cursor:pointer;
+    font-family:inherit;text-align:center;transition:border-color .15s,background .15s}
+  .dur-btn.sel{border-color:var(--accent);background:var(--accent)22;color:var(--accent)}
+  .dur-btn:focus{outline:none;box-shadow:var(--focusglow)}
+
+  /* mem picker */
+  .mem-row{display:flex;gap:8px}
+  .mem-btn{flex:1;background:var(--surface2);border:2px solid transparent;color:var(--text);
+    border-radius:9px;padding:7px 0;font-size:12px;font-weight:600;cursor:pointer;
+    font-family:inherit;text-align:center}
+  .mem-btn.sel{border-color:var(--accent);background:var(--accent)22;color:var(--accent)}
+  .mem-btn:focus{outline:none;box-shadow:var(--focusglow)}
+
+  /* start/stop button */
+  .go-btn{width:100%;padding:13px;border:none;border-radius:11px;font-size:15px;font-weight:700;
+    cursor:pointer;font-family:inherit;transition:background .15s,opacity .15s}
+  .go-btn.start{background:var(--accent);color:#fff}
+  .go-btn.stop{background:#e5534b;color:#fff}
+  .go-btn:disabled{opacity:.45;cursor:not-allowed}
+  .go-btn:focus{outline:none;box-shadow:var(--focusglow)}
+
+  /* progress bar */
+  .prog-wrap{background:#ffffff12;border-radius:5px;height:7px;overflow:hidden;margin-top:6px}
+  .prog-bar{height:100%;background:linear-gradient(90deg,var(--accent),#7d8cff);
+    transition:width .5s linear;border-radius:5px}
+
+  /* metric tiles */
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .tile{background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+  .tile .k{font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--muted);display:flex;align-items:center;gap:5px}
+  .tile .v{font-size:22px;font-weight:700;margin-top:3px}
+  .tile .v.warn{color:#f5a623}
+  .tile .v.ok{color:#3fb950}
+  .tile .v.dim{color:var(--muted)}
+  .tile .bar{height:5px;border-radius:3px;background:#ffffff10;margin-top:7px;overflow:hidden}
+  .tile .bar i{display:block;height:100%;border-radius:3px;transition:width .5s}
+
+  /* summary card */
+  .sum-card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+  .sum-card h3{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin:0 0 10px}
+  .sum-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;
+    border-bottom:1px solid var(--line);font-size:13px}
+  .sum-row:last-child{border-bottom:none}
+  .sum-row .sk{color:var(--muted)}
+  .sum-row .sv{font-weight:600}
+  .sum-row .sv.pass{color:#3fb950}.sum-row .sv.warn{color:#f5a623}.sum-row .sv.fail{color:#e5534b}
+
+  /* status line */
+  .status-line{font-size:12px;color:var(--muted);margin-top:4px;min-height:18px;text-align:center}
+
+  /* footer hint */
+  .foot{padding:6px 30px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);
+    display:flex;gap:18px;flex-shrink:0}
+  .foot span{display:flex;align-items:center;gap:4px}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <img src="assets/brand/gose-core.png" alt="GOSE">
+  <h1>Stress Test</h1>
+  <span class="sub">Stability &amp; Thermal Check</span>
+  <button class="home" id="btnHome" tabindex="1">&#x2190; Back</button>
+</div>
+
+<div class="banner">
+  <strong>What this tests:</strong> CPU saturation (all vCPUs), memory allocation &amp; churn, and
+  GL rendering via virgl (glxgears on the host GPU). This is a <strong>stability and thermal test</strong>
+  &mdash; not a Vulkan benchmark. The VM uses virgl (software path through the host GPU), so GL FPS reflects
+  that path, not bare-metal 3D performance. Numbers are honest VM numbers.
+</div>
+
+<div class="main">
+  <!-- LEFT: controls -->
+  <div class="lp">
+    <div class="card">
+      <h3>DURATION</h3>
+      <div class="dur-row">
+        <button class="dur-btn sel" data-dur="60"  tabindex="2">1 min</button>
+        <button class="dur-btn"     data-dur="180" tabindex="3">3 min</button>
+        <button class="dur-btn"     data-dur="300" tabindex="4">5 min</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>MEMORY LOAD</h3>
+      <div class="mem-row">
+        <button class="mem-btn sel" data-mem="256" tabindex="5">256 MB</button>
+        <button class="mem-btn"     data-mem="512" tabindex="6">512 MB</button>
+        <button class="mem-btn"     data-mem="1024" tabindex="7">1 GB</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>STATUS</h3>
+      <div id="progWrap" class="prog-wrap" style="display:none">
+        <div id="progBar" class="prog-bar" style="width:0%"></div>
+      </div>
+      <div id="statusLine" class="status-line">Ready to run</div>
+    </div>
+
+    <button id="goBtn" class="go-btn start" tabindex="8">Start Test</button>
+  </div>
+
+  <!-- RIGHT: live metrics -->
+  <div class="rp">
+    <div class="card" style="flex:none">
+      <h3>LIVE READOUT</h3>
+      <div class="tiles">
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/cpu.svg)"></span> CPU LOAD</div>
+          <div class="v dim" id="mCpu">&mdash;</div>
+          <div class="bar"><i id="mCpuBar" style="width:0%;background:linear-gradient(90deg,#58a6ff,#7d8cff)"></i></div>
+        </div>
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/thermometer.svg)"></span> CPU TEMP</div>
+          <div class="v dim" id="mTemp">&mdash;</div>
+        </div>
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/hard-drive.svg)"></span> MEM USED</div>
+          <div class="v dim" id="mMem">&mdash;</div>
+          <div class="bar"><i id="mMemBar" style="width:0%;background:linear-gradient(90deg,#3fb950,#58a6ff)"></i></div>
+        </div>
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/monitor.svg)"></span> GL FPS</div>
+          <div class="v dim" id="mFps">&mdash;</div>
+        </div>
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/cpu.svg)"></span> CPU FREQ</div>
+          <div class="v dim" id="mFreq">&mdash;</div>
+        </div>
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/triangle-alert.svg)"></span> THROTTLE</div>
+          <div class="v dim" id="mThrottle">None</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sum-card" id="sumCard">
+      <h3>SUMMARY</h3>
+      <div id="sumBody">
+        <div class="sum-row"><span class="sk">Duration</span><span class="sv" id="sDur">&mdash;</span></div>
+        <div class="sum-row"><span class="sk">Peak CPU Temp</span><span class="sv" id="sTemp">&mdash;</span></div>
+        <div class="sum-row"><span class="sk">Min GL FPS</span><span class="sv" id="sFps">&mdash;</span></div>
+        <div class="sum-row"><span class="sk">Throttle Events</span><span class="sv" id="sThrottle">&mdash;</span></div>
+        <div class="sum-row"><span class="sk">Result</span><span class="sv" id="sResult">&mdash;</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="foot">
+  <span><kbd>A</kbd> / Enter &mdash; select</span>
+  <span><kbd>B</kbd> / Esc &mdash; back</span>
+  <span><kbd>L1/R1</kbd> &mdash; duration</span>
+  <span><kbd>X</kbd> &mdash; start / stop</span>
+</div>
+
+<script src="assets/cursor.js"></script>
+<script src="assets/notify.js"></script>
+<script src="assets/a11y.js"></script>
+<script>
+// ---- state ----
+let dur = 60, mem = 256;
+let running = false, pollTimer = null;
+let focItems = [];   // all focusable elements in order
+let focIdx = 0;
+
+// ---- nav helpers ----
+function qs(s){ return document.querySelector(s); }
+function qsa(s){ return Array.from(document.querySelectorAll(s)); }
+
+function rebuildFocus(){
+  focItems = [
+    qs("#btnHome"),
+    ...qsa(".dur-btn"),
+    ...qsa(".mem-btn"),
+    qs("#goBtn"),
+  ].filter(Boolean);
+  focIdx = Math.max(0, Math.min(focIdx, focItems.length - 1));
+}
+
+function applyFocus(){
+  rebuildFocus();
+  if(focItems[focIdx]) focItems[focIdx].focus();
+}
+
+// ---- duration / mem selection ----
+function selectDur(d){
+  dur = d;
+  qsa(".dur-btn").forEach(b => {
+    b.classList.toggle("sel", +b.dataset.dur === d);
+  });
+}
+function selectMem(m){
+  mem = m;
+  qsa(".mem-btn").forEach(b => {
+    b.classList.toggle("sel", +b.dataset.mem === m);
+  });
+}
+
+qsa(".dur-btn").forEach(b => b.addEventListener("click", () => { if(!running) selectDur(+b.dataset.dur); }));
+qsa(".mem-btn").forEach(b => b.addEventListener("click", () => { if(!running) selectMem(+b.dataset.mem); }));
+
+// ---- start / stop ----
+async function postJSON(url, body){
+  const r = await fetch(url, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  return r.json();
+}
+
+async function startTest(){
+  if(running) return;
+  running = true;
+  setUIRunning(true);
+  setStatus("Starting…");
+  try {
+    const r = await postJSON("/stress/start", {duration_s: dur, mem_mb: mem});
+    if(!r.ok){
+      setStatus("Failed to start: " + (r.error || "unknown error"));
+      running = false; setUIRunning(false); return;
+    }
+    setStatus("Running…");
+    startPoll();
+  } catch(e){
+    setStatus("Error: " + e.message);
+    running = false; setUIRunning(false);
+  }
+}
+
+async function stopTest(){
+  if(!running) return;
+  setStatus("Stopping…");
+  try { await postJSON("/stress/stop", {}); } catch(e){}
+  // poll will see running:false and clean up
+}
+
+function setUIRunning(r){
+  const btn = qs("#goBtn");
+  qsa(".dur-btn,.mem-btn").forEach(b => b.disabled = r);
+  if(r){
+    btn.textContent = "Stop Test";
+    btn.className = "go-btn stop";
+    qs("#progWrap").style.display = "";
+  } else {
+    btn.textContent = "Start Test";
+    btn.className = "go-btn start";
+    qs("#progWrap").style.display = "none";
+    qs("#progBar").style.width = "0%";
+  }
+  btn.onclick = r ? stopTest : startTest;
+}
+
+qs("#goBtn").onclick = startTest;
+qs("#btnHome").onclick = () => { location.href = "gose-settings.html#system"; };
+
+// ---- polling ----
+function startPoll(){
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(poll, 1000);
+}
+function stopPoll(){
+  if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+}
+
+async function poll(){
+  try {
+    const r = await fetch("/stress/status");
+    const d = await r.json();
+    updateMetrics(d);
+    if(!d.running){
+      stopPoll();
+      running = false;
+      setUIRunning(false);
+      setStatus(d.summary && d.summary.completed ? "Test complete." : "Stopped.");
+      updateSummary(d.summary || {});
+      if(typeof GOSE !== "undefined" && GOSE.notify){
+        const st = (d.summary||{}).stable;
+        GOSE.notify({
+          title: "Stress Test",
+          body: st === false ? "Throttling detected — check thermals." :
+                (st ? "Stable — no throttling observed." : "Test complete."),
+          icon: "triangle-alert"
+        });
+      }
+    }
+  } catch(e){
+    // server busy; retry on next tick
+  }
+}
+
+function setStatus(msg){
+  qs("#statusLine").textContent = msg;
+}
+
+function fmt(v, unit, decimals){
+  if(v === null || v === undefined) return "—";
+  return v.toFixed ? v.toFixed(decimals || 0) + unit : v + unit;
+}
+
+function updateMetrics(d){
+  const cpu = d.cpu_pct;
+  const temp = d.cpu_temp_c;
+  const fps  = d.gl_fps;
+  const memU = d.mem_used_mb;
+  const memT = d.mem_total_mb;
+  const freq = d.cpu_freq_mhz;
+  const thr  = d.throttled;
+
+  // CPU
+  const cpuEl = qs("#mCpu");
+  cpuEl.textContent = cpu !== null && cpu !== undefined ? Math.round(cpu) + "%" : "—";
+  cpuEl.className = "v " + (cpu >= 90 ? "ok" : cpu >= 50 ? "" : "dim");
+  qs("#mCpuBar").style.width = (cpu || 0) + "%";
+
+  // Temp
+  const tempEl = qs("#mTemp");
+  tempEl.textContent = temp ? temp + "°C" : "n/a (VM)";
+  tempEl.className = "v " + (temp > 90 ? "warn" : temp > 0 ? "" : "dim");
+
+  // Mem
+  const memEl = qs("#mMem");
+  memEl.textContent = memU ? Math.round(memU) + " MB" : "—";
+  memEl.className = "v";
+  if(memU && memT) qs("#mMemBar").style.width = Math.round(memU/memT*100) + "%";
+
+  // FPS
+  const fpsEl = qs("#mFps");
+  fpsEl.textContent = fps ? fps + " fps" : (d.gl_running ? "warming…" : "n/a");
+  fpsEl.className = "v " + (fps > 30 ? "ok" : fps ? "warn" : "dim");
+
+  // Freq
+  const freqEl = qs("#mFreq");
+  freqEl.textContent = freq ? freq + " MHz" : "—";
+  freqEl.className = "v";
+
+  // Throttle
+  const thrEl = qs("#mThrottle");
+  thrEl.textContent = thr ? "DETECTED" : (d.running ? "None" : "—");
+  thrEl.className = "v " + (thr ? "warn" : "ok");
+
+  // Progress
+  if(d.duration_s && d.elapsed_s !== undefined){
+    const pct = Math.min(100, Math.round(d.elapsed_s / d.duration_s * 100));
+    qs("#progBar").style.width = pct + "%";
+    if(d.running) setStatus(Math.round(d.elapsed_s) + "s / " + d.duration_s + "s elapsed");
+  }
+}
+
+function updateSummary(s){
+  const durS = s.duration_s;
+  qs("#sDur").textContent = durS ? (durS >= 60 ? Math.round(durS/60)+"m "+Math.round(durS%60)+"s" : Math.round(durS)+"s") : "—";
+  qs("#sTemp").textContent = s.temp_peak_c ? s.temp_peak_c + "°C" : "n/a (VM)";
+
+  const fpsEl = qs("#sFps");
+  fpsEl.textContent = s.fps_min ? s.fps_min + " fps" : "—";
+  fpsEl.className = "sv " + (s.fps_min > 30 ? "pass" : s.fps_min ? "warn" : "");
+
+  const thrEl = qs("#sThrottle");
+  thrEl.textContent = s.throttle_events !== undefined ? s.throttle_events : "—";
+  thrEl.className = "sv " + (s.throttle_events > 0 ? "fail" : "pass");
+
+  const resEl = qs("#sResult");
+  if(s.stable === undefined){
+    resEl.textContent = "—"; resEl.className = "sv";
+  } else if(s.stable){
+    resEl.textContent = "STABLE"; resEl.className = "sv pass";
+  } else {
+    resEl.textContent = "THROTTLED"; resEl.className = "sv fail";
+  }
+}
+
+// ---- keyboard / gamepad nav ----
+// Pad navigation: D-pad moves between focusable items; X = start/stop; B = back
+document.addEventListener("keydown", e => {
+  if(e.key === "Escape" || e.key === "Backspace"){
+    if(running){ stopTest(); return; }
+    location.href = "gose-settings.html#system"; return;
+  }
+  if(e.key === "Enter" || e.key === "GoseConfirm"){
+    if(document.activeElement && document.activeElement !== qs("#goBtn")){
+      document.activeElement.click(); return;
+    }
+    if(!running) startTest(); else stopTest(); return;
+  }
+  if(e.key === "x" || e.key === "X" || e.key === "GoseX"){
+    if(!running) startTest(); else stopTest(); return;
+  }
+  if(e.key === "ArrowRight" || e.key === "GoseR1"){
+    // cycle duration right
+    const durs = [60,180,300];
+    const idx = durs.indexOf(dur);
+    selectDur(durs[(idx+1) % durs.length]); return;
+  }
+  if(e.key === "ArrowLeft" || e.key === "GoseL1"){
+    const durs = [60,180,300];
+    const idx = durs.indexOf(dur);
+    selectDur(durs[(idx + durs.length - 1) % durs.length]); return;
+  }
+  if(e.key === "ArrowDown"){
+    rebuildFocus(); focIdx = Math.min(focIdx+1, focItems.length-1); applyFocus(); return;
+  }
+  if(e.key === "ArrowUp"){
+    rebuildFocus(); focIdx = Math.max(focIdx-1, 0); applyFocus(); return;
+  }
+});
+
+// poll once on load to restore state if test is already running (e.g. page reload)
+(async function init(){
+  rebuildFocus();
+  try {
+    const r = await fetch("/stress/status");
+    const d = await r.json();
+    if(d.running){
+      running = true; setUIRunning(true);
+      setStatus("Test in progress…");
+      startPoll();
+      updateMetrics(d);
+    }
+  } catch(e){}
+})();
+</script>
+</body>
+</html>
