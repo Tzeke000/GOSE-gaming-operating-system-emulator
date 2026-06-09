@@ -124,7 +124,10 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/ai/copilot/alert": (20, 60),
            # gpu probe: first call is slow (~6-8s), subsequent are instant (cached);
            # refresh=1 re-runs the probe — rate-limited to avoid re-running it repeatedly.
-           "/system/gpu": (30, 60)}
+           "/system/gpu": (30, 60),
+           # stress: double-start is already rejected by the single-instance guard, but
+           # rate-limit prevents loop-calling from a rogue page (auth-decorator pass will add owner-gate).
+           "/stress/start": (4, 60), "/stress/stop": (20, 60)}
 
 _SKIPDIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_media"}
 # .disabled = store-placeholder marker (Game.ext.disabled). splitext only strips the LAST
@@ -9937,6 +9940,7 @@ GPU_PROBE_CACHE_F  = "/tmp/gose-gpu-cap.json"
 GPU_PROBE_SCRIPT   = "/userdata/gose-ui/gose_gpu_probe.py"
 _gpu_cap_lock      = threading.Lock()
 _gpu_cap_cache     = {}   # in-memory cache (set once)
+_gpu_probe_running = False  # guard: prevents concurrent probe runs
 
 def _gpu_probe_run():
     """Spawn gose_gpu_probe.py, wait up to 20s, return parsed JSON."""
@@ -9984,15 +9988,31 @@ def gpu_capability():
     return result
 
 def gpu_capability_refresh():
-    """Force a fresh probe (invalidates in-memory + disk cache)."""
-    global _gpu_cap_cache
+    """Force a fresh probe (invalidates in-memory + disk cache).
+    If a probe is already in flight, return the stale cache rather than
+    spawning a second concurrent glxgears/glxinfo run."""
+    global _gpu_cap_cache, _gpu_probe_running
+    with _gpu_cap_lock:
+        if _gpu_probe_running:
+            # probe already running — return stale cache (safe fallback)
+            return _gpu_cap_cache if _gpu_cap_cache else {
+                "ok": False, "error": "probe in progress — try again shortly",
+                "tier": "none", "verdict": "Probe already running"
+            }
+        _gpu_probe_running = True
+        _gpu_cap_cache = {}
     try:
         os.unlink(GPU_PROBE_CACHE_F)
     except Exception:
         pass
+    try:
+        result = _gpu_probe_run()
+    finally:
+        with _gpu_cap_lock:
+            _gpu_probe_running = False
     with _gpu_cap_lock:
-        _gpu_cap_cache = {}
-    return _gpu_probe_run()
+        _gpu_cap_cache = result
+    return result
 
 # ===================== STRESS TEST — #101 =====================
 # Safety contract (critical for a load tool):
