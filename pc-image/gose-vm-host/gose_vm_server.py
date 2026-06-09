@@ -9905,6 +9905,20 @@ class H(http.server.SimpleHTTPRequestHandler):
         self._wrap(self._route_get)
 
     def do_POST(self):
+        # SSRF / DNS-rebinding guard: only accept POST from the loopback origin.
+        # Without this, a page loaded in the couch browser (Firefox running as root)
+        # could fire a "simple" cross-origin POST (Content-Type: text/plain with JSON
+        # body) to /launch and get arbitrary root shell execution — no CORS preflight
+        # needed for simple requests. Checking the Host header defeats both DNS-rebinding
+        # and the simple-request bypass: a real browser always sends the true Host.
+        host = (self.headers.get("Host") or "").split(":")[0].strip()
+        if host not in ("127.0.0.1", "localhost", ""):
+            LOG.warning("POST blocked: bad Host %r from %s", host, self.client_address)
+            self.send_response(403)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"ok":false,"error":"forbidden: cross-origin POST rejected"}')
+            return
         self._wrap(self._route_post)
 
     def _wrap(self, fn):
