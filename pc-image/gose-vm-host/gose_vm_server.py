@@ -1941,6 +1941,8 @@ def launch_game(system, game, players=None):
         except Exception as e:
             LOG.warning("#112 could not delete auto-save %s: %s", _auto, e)
         _clear_gameover_flag(system, game)
+    # #61 apply per-game perf_mode + fps_cap (safe no-op if no override stored)
+    game_perf_apply(system, os.path.splitext(os.path.basename(rom))[0])
     try:
         _spawn(["emulatorlauncher"] + _virtual_pad_args(order=players) + ["-system", system, "-rom", rom])
         record_recent(system, game)
