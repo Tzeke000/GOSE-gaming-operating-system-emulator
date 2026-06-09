@@ -5765,6 +5765,16 @@ def _write_saves_schedule():
 
 _load_saves_schedule()
 
+# Sync ai_tokens.json from ai_grants.json on every server start so the agent's
+# enforcement map is always consistent with the persisted grants, regardless of
+# how the previous server session ended.  Without this, a crash or pkill between
+# a write_json_atomic(AI_GRANTS_F) and the subsequent _sync_ai_tokens() call
+# leaves the two files desynced until the next grant/revoke operation.
+try:
+    _sync_ai_tokens(_ai_grants_load())
+except Exception as _e:
+    LOG.warning("startup: ai_tokens sync failed: %s", _e)
+
 def saves_list():
     """List all save files grouped by system/game."""
     import glob as _glob, re as _re
@@ -5804,6 +5814,7 @@ def saves_list():
 
 def saves_backup_all():
     """Tar.gz ALL /userdata/saves to the configured backup dir. Path-safe."""
+    _BACKUP_LOW_BYTES = 512 * 1024 * 1024   # refuse if < 512 MiB free
     try:
         if not os.path.isdir(SAVES_ROOT):
             return {"ok": False, "error": "no saves directory"}
@@ -5813,20 +5824,47 @@ def saves_backup_all():
         if real_dest != _ud and not real_dest.startswith(_ud + "/"):
             return {"ok": False, "error": "dest outside /userdata"}
         os.makedirs(real_dest, exist_ok=True)
+        # Refuse early if disk is already critically low — better a clear error than
+        # a failed write that leaves another stale .tmp- file.
+        try:
+            _sv = os.statvfs(real_dest)
+            _free = _sv.f_bavail * _sv.f_frsize
+            if _free < _BACKUP_LOW_BYTES:
+                return {"ok": False, "error": "disk too full for backup (free: %d MiB)" % (_free // (1024*1024))}
+        except Exception:
+            pass
+        # Sweep stale .tmp- files from any previous interrupted run BEFORE writing a
+        # new one, so they don't quietly consume all remaining space.
+        try:
+            for _stale in os.listdir(real_dest):
+                if _stale.startswith(".tmp-") and _stale.endswith(".tar.gz"):
+                    try:
+                        os.remove(os.path.join(real_dest, _stale))
+                        LOG.info("saves backup: removed stale tmp %s", _stale)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         name = "saves-" + time.strftime("%Y%m%d-%H%M%S") + ".tar.gz"
         final = os.path.join(real_dest, name)
         tmp = os.path.join(real_dest, ".tmp-" + name)
-        r = subprocess.run(["tar", "-czf", tmp, "-C", "/userdata", "saves"],
-                           capture_output=True, text=True, timeout=300)
-        if not os.path.exists(tmp) or r.returncode > 1:
-            try: os.remove(tmp)
-            except Exception: pass
-            return {"ok": False, "error": "tar failed: " + (r.stderr or "")[:200]}
-        os.replace(tmp, final)
-        size = os.path.getsize(final)
-        LOG.info("SAVES BACKUP %s (%d bytes)", name, size)
-        _saves_prune(real_dest)
-        return {"ok": True, "file": name, "path": final, "size": size}
+        try:
+            r = subprocess.run(["tar", "-czf", tmp, "-C", "/userdata", "saves"],
+                               capture_output=True, text=True, timeout=300)
+            if not os.path.exists(tmp) or r.returncode > 1:
+                return {"ok": False, "error": "tar failed: " + (r.stderr or "")[:200]}
+            os.replace(tmp, final)
+            size = os.path.getsize(final)
+            LOG.info("SAVES BACKUP %s (%d bytes)", name, size)
+            _saves_prune(real_dest)
+            return {"ok": True, "file": name, "path": final, "size": size}
+        finally:
+            # Always clean up the .tmp- file on any exit path (success, failure, or exception).
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
     except Exception as e:
         LOG.error("saves backup failed: %s", e)
         return {"ok": False, "error": str(e)}
@@ -5855,15 +5893,20 @@ def saves_export_game(system, game, dest_path):
         name = "save-{}-{}-{}.tar.gz".format(system, safe_game, time.strftime("%Y%m%d-%H%M%S"))
         final = os.path.join(dest_dir, name)
         tmp = os.path.join(dest_dir, ".tmp-" + name)
-        cmd = ["tar", "-czf", tmp, "-C", sys_dir] + files
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-        if not os.path.exists(tmp) or r.returncode > 1:
-            try: os.remove(tmp)
-            except Exception: pass
-            return {"ok": False, "error": "tar failed: " + (r.stderr or "")[:200]}
-        os.replace(tmp, final)
-        return {"ok": True, "file": name, "path": final, "size": os.path.getsize(final),
-                "files": len(files), "system": system, "game": game}
+        try:
+            cmd = ["tar", "-czf", tmp, "-C", sys_dir] + files
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if not os.path.exists(tmp) or r.returncode > 1:
+                return {"ok": False, "error": "tar failed: " + (r.stderr or "")[:200]}
+            os.replace(tmp, final)
+            return {"ok": True, "file": name, "path": final, "size": os.path.getsize(final),
+                    "files": len(files), "system": system, "game": game}
+        finally:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except Exception:
+                pass
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -5918,6 +5961,12 @@ def saves_import_full(archive_path):
         members = [m.strip() for m in lst.stdout.splitlines() if m.strip()]
         for m in members:
             mm = m.lstrip("./")
+            # Reject any member that would nest /userdata inside /userdata.
+            # Archives created by saves_backup_all use -C /userdata, so members are
+            # "saves/..." — but a hand-crafted or legacy archive could have a leading
+            # "userdata/" component that would extract to /userdata/userdata/saves/...
+            if mm.startswith("userdata/") or mm == "userdata":
+                return {"ok": False, "error": "archive has leading 'userdata/' component (would nest): " + m}
             if ".." in mm.split("/"):
                 return {"ok": False, "error": "unsafe path: " + m}
             if mm and not mm.startswith("saves/") and not mm == "saves":
