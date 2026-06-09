@@ -157,11 +157,15 @@
     } else {
       items.push({k:"power",type:"act",ic:"power",lab:"Power",sub:"›",power:true});
     }
+    // AI Players hub — quick access to the paired-AI manager from the guide
+    items.push({k:"aihub",type:"act",ic:"sparkles",lab:"AI Players",
+      sub:S.aiPaired?(S.aiName?S.aiName+" paired":"manage your AI"):"pair an AI",aihub:true});
     // #41 AI assist — always present; tier-gate is enforced server-side + reflected in sub-label
+    var aiN=S.aiName||"your AI";
     var assistSub=S.aiPaired===null?"…":S.aiPaired===false?"pair an AI first":
-      (S.assistState==="sent"?"sent — waiting for AI":S.assistState==="asking"?"…":
-       S.assistState==="error"?S.assistMsg||"error":"ask your paired AI");
-    items.push({k:"assist",type:"act",ic:"cpu",lab:"Ask AI",sub:assistSub,assist:true});
+      (S.assistState==="sent"?"sent — waiting for "+aiN:S.assistState==="asking"?"…":
+       S.assistState==="error"?S.assistMsg||"error":"ask "+aiN);
+    items.push({k:"assist",type:"act",ic:"cpu",lab:(S.aiPaired&&S.aiName)?("Ask "+S.aiName):"Ask AI",sub:assistSub,assist:true});
     if(IN_GAME){   // #50 per-game controls remap — only surfaced while a game is active
       items.push({k:"remap",type:"act",ic:"target",lab:"Per-game controls",
         sub:"Remap buttons just for this game",remap:true,card:"saves"});}
@@ -304,12 +308,13 @@
   // #41 AI assist — load paired state on open, post request, handle modal
   function loadAiPaired(){
     api("/ai/grants").then(function(d){
-      if(!d||!d.grants){S.aiPaired=false;build();return;}
+      if(!d||!d.grants){S.aiPaired=false;S.aiName=null;build();return;}
       var now=Date.now()/1000;
-      var paired=Object.values(d.grants).some(function(g){
+      var names=Object.keys(d.grants).filter(function(n){
+        var g=d.grants[n];
         if(g.expires&&now>g.expires)return false;
         return!!g.tier;});
-      S.aiPaired=paired;build();});
+      S.aiPaired=names.length>0;S.aiName=names[0]||null;build();});
   }
   var _assistModalOpen=false;
   function openAssistModal(){
@@ -394,6 +399,7 @@
       if(S.aiPaired===null){say("Checking AI status…");return;}
       if(S.assistState==="sent"||S.assistState==="asking"){say("AI assist already in flight — waiting for response");return;}
       openAssistModal();return;}
+    if(it.aihub){location.href="gose-ai.html";return;}
     if(it.wifi){if(!S.hasWifi){say("No Wi-Fi radio on this device");return;}say("Toggling Wi-Fi…");
       api("/net/wifi/toggle",{}).then(x=>{say((x&&x.ok)?("Wi-Fi "+(x.powered?"on":"off")):((x&&x.error)||"Wi-Fi toggle failed"));refresh();});return;}
     if(it.quiet){var q=!S.quiet;S.quiet=q;render();api("/ui/prefs",{set:{"gose-snd-quiet":q?"1":"0"}}).then(()=>say(q?"Quiet mode on — all sounds off":"Quiet mode off"));return;}
