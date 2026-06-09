@@ -87,14 +87,15 @@
     {nm:_t("apps.app.emulators.nm","Emulators"), ds:_t("apps.app.emulators.ds","Cores & systems — license-aware store"), ic:"emulators", href:"gose-store.html?tab=emulators"},
   ];
   let shown=APPS.slice(), foc=0;
+  function esc(s){return(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
   function paint(){if(window.GICON){GICON.paint(document);return;}document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1800);}
   function render(){
     $("grid").innerHTML=shown.length?shown.map((a,i)=>`<div class="app ${i===foc?'focus':''}" data-i2="${i}">
       <div class="ai">${a.iconUrl
-        ? `<img src="${a.iconUrl}" style="width:34px;height:34px;border-radius:8px;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block'"><span class="ic" data-i="${a.ic}" style="display:none"></span>`
-        : `<span class="ic" data-i="${a.ic}"></span>`}</div>
-      <div class="nm">${a.nm}</div><div class="ds">${a.ds}</div>${a.soon?'<span class="soon">SOON</span>':''}</div>`).join("")
+        ? `<img src="${esc(a.iconUrl)}" style="width:34px;height:34px;border-radius:8px;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block'"><span class="ic" data-i="${esc(a.ic)}" style="display:none"></span>`
+        : `<span class="ic" data-i="${esc(a.ic)}"></span>`}</div>
+      <div class="nm">${esc(a.nm)}</div><div class="ds">${esc(a.ds)}</div>${a.soon?'<span class="soon">SOON</span>':''}</div>`).join("")
       :'<div class="ds" style="padding:20px">No apps match.</div>';
     [...$("grid").children].forEach(el=>el.dataset.i2!==undefined&&(el.onclick=()=>{foc=+el.dataset.i2;launch();}));
     const f=$("grid").querySelector(".app.focus");if(f)f.scrollIntoView({block:"nearest"});
