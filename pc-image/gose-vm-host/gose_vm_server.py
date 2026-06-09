@@ -4316,7 +4316,16 @@ def ui_prefs_get():
     return {"ok": True, "prefs": p}
 
 def ui_prefs_set(payload):
+    # Guest sessions are play-only — they must not persistently alter OS-wide settings.
+    # Named users (owner/user) may set prefs freely. Reset is owner-only (destructive).
+    if _active_user_is_guest():
+        return {"ok": False, "code": "ERR_GUEST",
+                "error": "guest sessions cannot change OS settings — switch to your profile first"}
     if (payload or {}).get("reset"):
+        # Reset wipes all shared prefs — owner-only
+        if not _owner_ok(payload or {}):
+            return {"ok": False, "code": "ERR_NOT_OWNER",
+                    "error": "owner PIN or dev token required to reset UI preferences"}
         with _PREFS_LOCK:
             try:
                 if os.path.exists(UI_PREFS_F):
@@ -5614,7 +5623,11 @@ def gose_backups():
     return {"ok": True, "backups": out, "dir": BACKUP_DIR}
 
 def gose_restore(payload):
-    """Restore GOSE state from a backup in /userdata/backups. Path-confined + member-validated."""
+    """Restore GOSE state from a backup in /userdata/backups. Path-confined + member-validated.
+    Owner-gated: requires owner PIN or dev token (same gate as factory reset)."""
+    if not _owner_ok(payload or {}):
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner PIN or dev token required to restore a backup"}
     f = (payload or {}).get("file") or ""
     base = os.path.basename(f)
     if not base or base != f or not base.endswith(".tar.gz"):
@@ -5647,7 +5660,10 @@ def gose_restore(payload):
 
 def gose_factory_reset(payload):
     """Wipe GOSE config/state to defaults (accounts/grants/favorites/recent/playtime). Makes a
-    safety backup first. PRESERVES roms + saves + OS. Requires an explicit confirm token."""
+    safety backup first. PRESERVES roms + saves + OS. Requires owner PIN/token + confirm token."""
+    if not _owner_ok(payload or {}):
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner PIN or dev token required to factory reset"}
     confirm = (payload or {}).get("confirm")
     if confirm not in (True, "RESET", "reset", "true"):
         return {"ok": False, "error": "factory reset requires confirm token (confirm: 'RESET')"}
