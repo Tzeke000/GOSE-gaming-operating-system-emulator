@@ -120,8 +120,8 @@
   function lockout(s){mode="locked";entered="";dots();$("pad").classList.add("locked");
     let left=Math.ceil(s);clearInterval(lockT);
     const tickL=()=>{if(left<=0){clearInterval(lockT);$("pad").classList.remove("locked");mode="enter";
-        hint("Enter your PIN");return;}
-      hint("Too many tries — wait "+left+"s",true);left--;};
+        hint(_t("lock.hint_pin","Enter your PIN"));return;}
+      hint(_t("lock.error_locked","Too many attempts — wait 30 s").replace("30 s",left+"s"),true);left--;};
     tickL();lockT=setInterval(tickL,1000);}
   function submit(){
     if(mode==="locked"||!entered)return;
@@ -144,7 +144,7 @@
         dots();shake();
         if(d&&d.locked_for>0){lockout(d.locked_for);return;}
         if(d&&d.ok===false&&d.set===false){showPad("setup");return;}   // hash vanished → re-setup
-        hint("Wrong PIN"+(d&&d.tries_left?" — "+d.tries_left+" tries left":""),true);
+        hint(_t("lock.error_wrong","Wrong PIN — try again")+(d&&d.tries_left?" ("+d.tries_left+" left)":""),true);
       }).catch(()=>{dots();shake();hint("Can't reach sign-in — try again",true);});}
   let _padT=null;function showPadSoon(m){clearTimeout(_padT);_padT=setTimeout(()=>showPad(m),1400);}
   buildPad();

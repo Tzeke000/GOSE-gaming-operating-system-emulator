@@ -578,13 +578,15 @@
     else if(r.apply==="a11y_cbpalette"){prefs({"gose-cb-palette":["off","deut","prot","trit"][r.i||0]});showToast("Colorblind accent palette: "+r.v[r.i]);}
     else if(r.apply==="a11y_holdalt"){prefs({"gose-hold-alt":r.i===1?"on":"off"});
       showToast(r.i===1?"Hold-alternative chords: On — UI flag set. Bridge build needed for mechanical tap-sequences (docs/27 §1).":"Hold-alternative chords: Off");}
-    // i18n language switcher — live, no page reload needed for the Settings page itself;
+    // i18n language switcher — live on this page (gose-locale-change triggers render());
     // other pages pick it up on next navigation (GOSE.i18n.applyPage() runs at load).
     else if(r.apply==="lang"){
       const code=(r._codes||["en","es"])[r.i||0];
       if(window.GOSE&&GOSE.i18n&&GOSE.i18n.setLocale)GOSE.i18n.setLocale(code);
       else try{localStorage.setItem("gose-lang",code);}catch(e){}
-      showToast("Language: "+r.v[r.i]+" — takes effect on next page load");}
+      const lbl=(window.GOSE&&GOSE.i18n)?GOSE.i18n.t("settings.lang.toast")+r.v[r.i]+GOSE.i18n.t("settings.lang.toast_reload"):
+        "Language: "+r.v[r.i]+" — other pages reload to apply";
+      showToast(lbl);}
     // First-time tips (tips.js) — v:["On","Off"]. localStorage-ONLY by design: the server's
     // prefs store rejects unknown keys, so this writes gose-tips-off directly, never via prefs().
     else if(r.apply==="tips"){const off=(r.i===1);localStorage.setItem("gose-tips-off",off?"1":"0");
@@ -1144,5 +1146,16 @@
   render();
 </script>
 <script src="assets/i18n.js"></script>
+<script>
+  // Re-render when locale changes so category names + row labels update live.
+  // i18n.js loaded above, so setLocale() is now available and GOSE.t() works.
+  // NOTE: Settings CATS are hardcoded English; a full translation of row labels
+  // requires adding data-i18n keys for every row — tracked as a future task.
+  // This listener at minimum re-runs applyPage() (data-i18n elements) + re-renders
+  // the two-pane view so the language row itself reflects the new locale.
+  try {
+    window.addEventListener('gose-locale-change', function() { render(); });
+  } catch(e) {}
+</script>
 <script src="assets/a11y.js"></script>
 </body></html>
