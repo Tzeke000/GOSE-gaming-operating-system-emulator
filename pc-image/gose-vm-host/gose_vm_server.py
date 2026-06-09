@@ -8053,6 +8053,299 @@ def lobby_state():
     return {"ok": True, "max_players": 4, "available": avail, "default_order": default_order,
             "grants": {n: {"tier": ai_tier(n), "seat": grants[n].get("seat")} for n in grants}}
 
+# ---- Controller Care (#23) ----
+# Battery: read via /sys/class/power_supply/ (kernel hid-battery driver).
+# LED: write via /sys/class/leds/ or evdev EV_LED (ff-memless is different).
+# Rumble: evdev FF_RUMBLE via write(EV_FF) then play. On this VM all pads are virtual — no FF/LED;
+#         the functions return capability flags so the UI can be honest rather than silent.
+
+def _pad_sysfs(pad):
+    """Return the sysfs power_supply path for a pad dict if one exists, else None.
+    HID pads expose a power_supply named after their hidraw device or input node."""
+    sysfs = pad.get("sysfs") or ""           # from _parse_controllers if we extended it
+    # try /sys/class/power_supply/input{N}-battery (kernel hid-battery driver)
+    js = pad.get("js")
+    if js is None:
+        return None
+    # common pattern: the input event node paired with the js node
+    # we search for any power_supply whose uevent contains the input subsystem path
+    try:
+        ps_root = "/sys/class/power_supply"
+        for ps in os.listdir(ps_root):
+            ps_path = os.path.join(ps_root, ps)
+            try:
+                uevent = open(os.path.join(ps_path, "uevent")).read()
+                if "hid" in uevent.lower() or "input" in uevent.lower():
+                    cap_path = os.path.join(ps_path, "capacity")
+                    if os.path.exists(cap_path):
+                        return ps_path
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return None
+
+def _pad_battery(pad):
+    """Read battery % for a pad. Returns int 0-100 or None if unavailable."""
+    ps = _pad_sysfs(pad)
+    if not ps:
+        return None
+    try:
+        return int(open(os.path.join(ps, "capacity")).read().strip())
+    except Exception:
+        return None
+
+def _pad_event_path(pad):
+    """Return /dev/input/eventN path for a pad (needed for evdev FF/LED ops)."""
+    return pad.get("path")   # already set by _parse_controllers
+
+def _pad_has_ff(event_path):
+    """Check if the device has FF (rumble) capability via its EV bitmap."""
+    if not event_path:
+        return False
+    try:
+        import evdev
+        d = evdev.InputDevice(event_path)
+        has = evdev.ecodes.EV_FF in d.capabilities()
+        d.close()
+        return has
+    except Exception:
+        return False
+
+def _pad_has_led(event_path):
+    """Check if the device has LED capability (e.g. DualSense lightbar)."""
+    if not event_path:
+        return False
+    try:
+        import evdev
+        d = evdev.InputDevice(event_path)
+        has = evdev.ecodes.EV_LED in d.capabilities()
+        d.close()
+        return has
+    except Exception:
+        return False
+
+def controllers_care():
+    """Extended controller info for the care page: battery, rumble cap, LED cap."""
+    pads = _parse_controllers()
+    admin, _ = _effective_admin(pads)
+    out = []
+    for p in pads:
+        ep = _pad_event_path(p)
+        batt = _pad_battery(p)
+        has_ff = _pad_has_ff(ep)
+        has_led = _pad_has_led(ep)
+        out.append({
+            "id": p["id"], "name": p["name"], "source": p["source"],
+            "guid": p["guid"], "js": p["js"],
+            "is_os_admin": p["id"] == admin,
+            "battery_pct": batt,        # None = not available
+            "has_rumble": has_ff,
+            "has_led": has_led,
+        })
+    return {"ok": True, "controllers": out}
+
+def controllers_rumble(payload):
+    """Trigger a short test rumble on the specified pad (by id).
+    Requires FF_RUMBLE capability — virtual pads will return has_rumble:false."""
+    cid = (payload or {}).get("id")
+    strength = min(100, max(0, int((payload or {}).get("strength", 70))))
+    pads = _parse_controllers()
+    pad = next((p for p in pads if p["id"] == cid), None)
+    if not pad:
+        return {"ok": False, "error": "controller not found: %s" % cid}
+    ep = _pad_event_path(pad)
+    if not _pad_has_ff(ep):
+        return {"ok": True, "done": False, "reason": "no_ff",
+                "note": "This pad has no force-feedback hardware (virtual pad or unsupported model)"}
+    try:
+        import evdev
+        from evdev import ecodes as e
+        d = evdev.InputDevice(ep)
+        val = int(strength / 100 * 0xffff)
+        effect = evdev.ff.Effect(
+            e.FF_RUMBLE, -1, 0,
+            evdev.ff.Trigger(0, 0),
+            evdev.ff.Replay(400, 0),
+            evdev.ff.EffectType(ff_rumble_effect=evdev.ff.Rumble(val, val >> 1))
+        )
+        effect_id = d.upload_effect(effect)
+        d.write(e.EV_FF, effect_id, 1)
+        time.sleep(0.42)
+        d.erase_effect(effect_id)
+        d.close()
+        return {"ok": True, "done": True, "strength": strength}
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
+
+def controllers_led(payload):
+    """Set LED color on a pad (by id). Payload: {id, r, g, b} (0-255 each).
+    DualSense and Switch Pro controllers expose this via /sys/class/leds or evdev EV_LED."""
+    cid = (payload or {}).get("id")
+    r = min(255, max(0, int((payload or {}).get("r", 0))))
+    g = min(255, max(0, int((payload or {}).get("g", 0))))
+    b = min(255, max(0, int((payload or {}).get("b", 255))))
+    pads = _parse_controllers()
+    pad = next((p for p in pads if p["id"] == cid), None)
+    if not pad:
+        return {"ok": False, "error": "controller not found: %s" % cid}
+    ep = _pad_event_path(pad)
+    # Try sysfs LED path first (DualSense exposes /sys/class/leds/<hidN>:rgb:indicator)
+    try:
+        leds_root = "/sys/class/leds"
+        for led_name in os.listdir(leds_root):
+            led_path = os.path.join(leds_root, led_name)
+            # DualSense pattern: "N:rgb:indicator"; multi_intensity sets R G B in one write
+            multi = os.path.join(led_path, "multi_intensity")
+            if os.path.exists(multi):
+                with open(multi, "w") as fh:
+                    fh.write("%d %d %d\n" % (r, g, b))
+                return {"ok": True, "done": True, "r": r, "g": g, "b": b, "via": "sysfs"}
+    except Exception:
+        pass
+    # Fallback: evdev EV_LED (older hid-sony / xpad drivers)
+    if not _pad_has_led(ep):
+        return {"ok": True, "done": False, "reason": "no_led",
+                "note": "This pad has no LED hardware (virtual pad or unsupported model)"}
+    try:
+        import evdev
+        from evdev import ecodes as e
+        d = evdev.InputDevice(ep)
+        # Write individual LED codes that exist on this device
+        caps = d.capabilities().get(e.EV_LED, [])
+        for code in caps:
+            val = r if code == e.LED_RED else g if code == e.LED_GREEN else b if code == e.LED_BLUE else 0
+            d.write(e.EV_LED, code, 1 if val > 127 else 0)
+        d.close()
+        return {"ok": True, "done": True, "r": r, "g": g, "b": b, "via": "evdev"}
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
+
+# ---- Per-game input remaps (#50) ----
+# RetroArch per-game remap files live at:
+#   <remap_dir>/<core-name>/<game-name>.rmp
+# Each .rmp line is: input_playerN_<action>_btn = <index>
+# We read the active core for a system from batocera.conf, derive the remap path,
+# and read/write the file. The UI sends a flat map of {action: btn_index} per player.
+
+RA_REMAP_DIR = "/userdata/system/configs/retroarch/config/remaps"
+
+# Standard RetroArch remap action keys (single player; suffix _p2_ for player 2 etc.)
+_RA_ACTIONS = [
+    "a", "b", "x", "y", "l", "r", "l2", "r2", "l3", "r3",
+    "start", "select", "up", "down", "left", "right",
+]
+
+def _remap_path(system, game, core=None):
+    """Return the .rmp path for a game. core defaults to the system's effective core."""
+    if not core:
+        core = _effective_default(system)
+    # RetroArch uses the core's display name (from libretro info) or the .so stem.
+    # Batocera's configgen writes files using the core stem (e.g. "fceumm").
+    game_stem = os.path.splitext(os.path.basename(game))[0] if game else "unknown"
+    return os.path.join(RA_REMAP_DIR, core, game_stem + ".rmp")
+
+def _parse_rmp(path):
+    """Parse a .rmp file into a nested dict: {player: {action: btn_index}}."""
+    result = {}
+    if not os.path.exists(path):
+        return result
+    try:
+        for line in open(path):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip().strip('"')
+            # pattern: input_playerN_<action>_btn or input_playerN_<action>_axis
+            m = re.match(r"input_player(\d+)_([a-z0-9_]+)_btn", k)
+            if m:
+                player = int(m.group(1))
+                action = m.group(2)
+                try:
+                    result.setdefault(player, {})[action] = int(v)
+                except ValueError:
+                    result.setdefault(player, {})[action] = v
+    except Exception:
+        pass
+    return result
+
+def _write_rmp(path, remap):
+    """Write a remap dict (player -> action -> btn_index) to a .rmp file."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    lines = []
+    for player in sorted(remap):
+        for action in sorted(remap[player]):
+            val = remap[player][action]
+            lines.append("input_player%d_%s_btn = %s" % (player, action, val))
+    content = "\n".join(lines) + ("\n" if lines else "")
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        fh.write(content)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+def game_remap_get(system, game):
+    """Get the per-game remap for system+game. Returns current binds and defaults."""
+    if not system or not game:
+        return {"ok": False, "error": "system and game required"}
+    core = _effective_default(system)
+    path = _remap_path(system, game, core)
+    remap = _parse_rmp(path)
+    game_stem = os.path.splitext(os.path.basename(game))[0]
+    return {
+        "ok": True,
+        "system": system, "game": game_stem, "core": core,
+        "path": path,
+        "has_remap": os.path.exists(path),
+        "remap": remap,    # {player_int: {action: btn_index}}
+        "actions": _RA_ACTIONS,
+    }
+
+def game_remap_set(payload):
+    """Save per-game remap. Payload: {system, game, remap: {player: {action: btn}}}."""
+    system = (payload or {}).get("system", "")
+    game = (payload or {}).get("game", "")
+    remap_raw = (payload or {}).get("remap", {})
+    if not system or not game:
+        return {"ok": False, "error": "system and game required"}
+    # normalise: keys may be strings from JSON
+    remap = {}
+    try:
+        for p_str, actions in remap_raw.items():
+            player = int(p_str)
+            remap[player] = {str(a): int(v) for a, v in actions.items()}
+    except Exception as ex:
+        return {"ok": False, "error": "bad remap format: %s" % ex}
+    core = _effective_default(system)
+    path = _remap_path(system, game, core)
+    try:
+        _write_rmp(path, remap)
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
+    LOG.info("per-game remap saved: %s / %s @ %s", system, game, path)
+    return {"ok": True, "system": system, "game": os.path.splitext(os.path.basename(game))[0],
+            "core": core, "path": path, "players": sorted(remap)}
+
+def game_remap_delete(payload):
+    """Delete the per-game remap (reset to global defaults)."""
+    system = (payload or {}).get("system", "")
+    game = (payload or {}).get("game", "")
+    if not system or not game:
+        return {"ok": False, "error": "system and game required"}
+    path = _remap_path(system, game)
+    if not os.path.exists(path):
+        return {"ok": True, "deleted": False, "note": "no remap file found — already at defaults"}
+    try:
+        os.remove(path)
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}
+    LOG.info("per-game remap deleted: %s / %s", system, game)
+    return {"ok": True, "deleted": True, "path": path}
+
 # ---- Host-bridge proxies: real laptop perf + brightness (tolerate the bridge being down) ----
 def sys_perf_host():
     r = host_bridge("/perf", timeout=4)
@@ -8604,6 +8897,11 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(controllers_list())
         if route == "/controllers/admin":
             return self._json(controllers_admin_get())
+        if route == "/controllers/care":
+            return self._json(controllers_care())
+        if route == "/game/remap":
+            qs = self._qs()
+            return self._json(game_remap_get(qs.get("system", ""), qs.get("game", "")))
         if route == "/spectate/status":
             return self._json(spectate_status())
         if route == "/lobby/state":
@@ -8787,6 +9085,20 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             return self._json(controllers_admin_set(payload))
+        if route in ("/controllers/rumble", "/controllers/led",
+                     "/game/remap", "/game/remap/delete"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/controllers/rumble":
+                return self._json(controllers_rumble(payload))
+            if route == "/controllers/led":
+                return self._json(controllers_led(payload))
+            if route == "/game/remap/delete":
+                return self._json(game_remap_delete(payload))
+            return self._json(game_remap_set(payload))
         if route in ("/storage/detected", "/storage/import", "/storage/dismiss", "/storage/removed",
                      "/storage/delete"):
             try:

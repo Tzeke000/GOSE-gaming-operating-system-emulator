@@ -113,7 +113,7 @@
          hud:"off",hudHas:false,quiet:false,hasWifi:false,
          shaderset:"none",shaderList:[],bezel:false,cheats:[],cheatNote:"",cheatsExpanded:false,
          // #115 current-activity (game name in header)
-         curGame:null,   // null = desktop, string = game name currently running
+         curGame:null,curSystem:null,curRom:null,   // null = desktop; populated by loadActivity
          // #41 AI assist
          aiPaired:null,   // null=unknown, false=no paired AI, true=at least one paired AI
          assistState:"idle",  // idle | asking | sent | error
@@ -158,6 +158,9 @@
       (S.assistState==="sent"?"sent — waiting for AI":S.assistState==="asking"?"…":
        S.assistState==="error"?S.assistMsg||"error":"ask your paired AI");
     items.push({k:"assist",type:"act",ic:"cpu",lab:"Ask AI",sub:assistSub,assist:true});
+    if(IN_GAME){   // #50 per-game controls remap — only surfaced while a game is active
+      items.push({k:"remap",type:"act",ic:"target",lab:"Per-game controls",
+        sub:"Remap buttons just for this game",remap:true,card:"saves"});}
     items.push({k:"exit",type:"act",ic:"layout-grid",lab:"Exit to Desktop",exit:true,danger:true});
     if(foc>=items.length)foc=items.length-1;
     render();
@@ -267,8 +270,11 @@
   // #115 activity — load current game name for the header
   function loadActivity(){
     api("/game/activity").then(function(d){
-      if(d&&d.playing&&d.game){S.curGame=d.game.replace(/_/g," ");}
-      else{S.curGame=null;}
+      if(d&&d.playing&&d.game){
+        S.curGame=d.game.replace(/_/g," ");
+        S.curSystem=d.system||null;
+        S.curRom=d.rom||d.game||null;   // raw filename for remap path
+      } else{S.curGame=null;S.curSystem=null;S.curRom=null;}
       render();
     });
   }
@@ -358,6 +364,11 @@
       api("/game/rewind",{on:ron}).then(d=>say((d&&d.ok)?("Rewind "+(d.enabled?"on":"off")+" — next launch"):"Rewind change failed"));return;}
     if(it.act){api("/sys/power",{action:it.act});return;}
     if(it.power){S.powerMode=true;build();return;}
+    if(it.remap){
+      // #50 per-game controls: open the remap page for the current game
+      var sys=S.curSystem||"",rom=S.curRom||"";
+      if(!sys||!rom){say("Game info not available — try again in a moment");return;}
+      location.href="gose-game-remap.html?system="+encodeURIComponent(sys)+"&game="+encodeURIComponent(rom);return;}
     if(it.exit){api("/game/exit",{});return;}
     if(it.k==="vol"){S.mute=!S.mute;api("/sys/audio",{mute:S.mute});render();}}
   addEventListener("keydown",function(e){var k=e.key;

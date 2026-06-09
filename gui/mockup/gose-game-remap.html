@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Per-game controls</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 4px}
+  .top img{width:32px;height:32px;object-fit:contain;filter:drop-shadow(0 0 6px #9a5bff55)}
+  .top h1{font-size:19px;margin:0}.top .s{font-size:12px;color:var(--muted);margin-top:1px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px;display:flex;align-items:center;gap:6px}
+  .meta{padding:4px 36px 2px;color:var(--muted);font-size:12.5px}
+  .meta b{color:var(--accent)}
+  /* player tabs */
+  .ptabs{display:flex;gap:8px;padding:6px 36px 4px}
+  .ptab{background:var(--surface);border:2px solid transparent;border-radius:10px;
+    padding:7px 15px;font-weight:600;font-size:13px;cursor:pointer;color:var(--muted)}
+  .ptab.sel{background:var(--surface2);color:var(--text)}
+  .ptab.kf{border-color:var(--accent);box-shadow:var(--focusglow)}
+  /* remap list */
+  .wrap{flex:1;margin:4px 36px 0;background:var(--surface);border:1px solid var(--line);
+    border-radius:14px;overflow:auto;min-height:0}
+  .ph{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);padding:10px 16px 4px}
+  .row{display:flex;align-items:center;gap:13px;padding:9px 16px;border:2px solid transparent;cursor:pointer;border-radius:0}
+  .row:first-of-type{border-top-left-radius:11px;border-top-right-radius:11px}
+  .row.kf{border-color:var(--accent);background:#5cd0ff14}
+  .row.kf .nm{color:var(--accent)}
+  .row.bind{border-color:#ffce5c;background:#ffce5c14}
+  .row.bind .btn-lbl{background:#ffce5c;color:#060a0f;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.55}}
+  .row .nm{flex:1;font-weight:600;font-size:14px}
+  .row .def{color:var(--muted);font-size:12px;min-width:80px}
+  .row .btn-lbl{font-weight:700;color:var(--accent);background:#5cd0ff1c;
+    border:1px solid var(--line);border-radius:9px;padding:4px 13px;font-size:13px;
+    min-width:110px;text-align:center;white-space:nowrap}
+  .row .changed{font-size:10px;font-weight:700;color:#ffce5c;margin-left:2px}
+  /* action bar */
+  .actbar{display:flex;gap:9px;padding:8px 36px 0}
+  .ab{background:var(--surface);border:2px solid transparent;border-radius:11px;
+    padding:9px 16px;font-weight:600;font-size:13px;cursor:pointer;
+    display:flex;align-items:center;gap:7px}
+  .ab.kf{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .ab.warn{border-color:#ff7a9c22}
+  .ab.warn.kf{border-color:#ff7a9c}
+  /* foot */
+  .foot{margin:8px 36px 14px;display:flex;gap:8px;align-items:center;color:var(--muted);
+    font-size:12.5px;background:var(--surface);border:1px solid var(--line);
+    border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:68px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;
+    transition:opacity .25s;pointer-events:none}
+  .toast.show{opacity:1}
+</style></head>
+<body>
+  <div class="top">
+    <img src="assets/brand/gose-crystal.png" alt="GOSE">
+    <div><h1>Per-game controls</h1><div class="s" id="subtitle">Loading…</div></div>
+    <div class="home"><span class="ic" data-i="gamepad-2"></span><span>B / Esc — back</span></div>
+  </div>
+  <div class="meta" id="meta"></div>
+  <div class="ptabs" id="ptabs"></div>
+  <div class="wrap" id="wrap"></div>
+  <div class="actbar" id="actbar"></div>
+  <div class="foot">
+    <span class="ic" data-i="gamepad-2"></span> Per-game remaps override the global button map for this game only
+    <span class="h"><b>↑↓</b> move · <b>A</b> bind · <b>L1/R1</b> player · <b>Esc</b> back</span>
+  </div>
+  <div class="toast" id="toast"></div>
+<script src="assets/platform.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
+
+  // Deep-link: ?system=nes&game=pong1k2p.nes
+  function qs() {
+    const p = new URLSearchParams(location.search);
+    return { system: p.get("system") || "", game: p.get("game") || "" };
+  }
+  const { system, game } = qs();
+
+  const $ = id => document.getElementById(id);
+  function paint() {
+    if (window.GICON) { GICON.paint(document); return; }
+    document.querySelectorAll("[data-i]").forEach(e =>
+      e.style.setProperty("--u", `url(assets/icons/${e.dataset.i}.svg)`));
+  }
+  function say(m) {
+    const t = $("toast"); t.textContent = m; t.classList.add("show");
+    clearTimeout(say._t); say._t = setTimeout(() => t.classList.remove("show"), 2000);
+  }
+  function postJ(url, body) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}) }).then(r => r.json()).catch(() => ({ ok: false }));
+  }
+
+  // Standard RA action labels (matches _RA_ACTIONS on the server)
+  const ACTIONS = [
+    { k: "a",      nm: "A (Confirm)",       def: 1 },
+    { k: "b",      nm: "B (Back / Cancel)",  def: 0 },
+    { k: "x",      nm: "X action",           def: 3 },
+    { k: "y",      nm: "Y action",           def: 2 },
+    { k: "l",      nm: "L1 / LB",            def: 4 },
+    { k: "r",      nm: "R1 / RB",            def: 5 },
+    { k: "l2",     nm: "L2 / LT",            def: 6 },
+    { k: "r2",     nm: "R2 / RT",            def: 7 },
+    { k: "l3",     nm: "L3 (left stick click)",  def: 9  },
+    { k: "r3",     nm: "R3 (right stick click)", def: 10 },
+    { k: "start",  nm: "Start / Menu",       def: 7 },
+    { k: "select", nm: "Select / View",      def: 6 },
+    { k: "up",     nm: "D-pad Up",           def: "h0up"    },
+    { k: "down",   nm: "D-pad Down",         def: "h0down"  },
+    { k: "left",   nm: "D-pad Left",         def: "h0left"  },
+    { k: "right",  nm: "D-pad Right",        def: "h0right" },
+  ];
+  const DFLT = {};
+  ACTIONS.forEach(a => DFLT[a.k] = a.def);
+
+  function btnLabel(idx) {
+    if (idx == null) return "—";
+    if (typeof idx === "string" && idx.startsWith("h0")) {
+      return { h0up: "D-Up", h0down: "D-Down", h0left: "D-Left", h0right: "D-Right" }[idx] || idx;
+    }
+    const i = parseInt(idx, 10);
+    const face = { 0: "B (South)", 1: "A (East)", 2: "Y (West)", 3: "X (North)",
+      4: "L1", 5: "R1", 6: "Select", 7: "Start", 8: "Guide", 9: "L3", 10: "R3",
+      11: "D-Up", 12: "D-Down", 13: "D-Left", 14: "D-Right" };
+    return face[i] !== undefined ? face[i] : "Button " + i;
+  }
+
+  let gameData = null; // server response
+  let player = 1;      // active player tab (1-based)
+  let editMap = {};    // player -> {action: btn_index} — our working copy
+  let binding = null;  // action key being bound, or null
+  let foc = 0;         // focused row index (0..ACTIONS.length-1, then actbar items)
+  let zone = "rows";   // "rows" | "act"
+  let hasRemap = false;
+  let dirty = false;   // unsaved changes
+
+  // actbar items
+  const ACTBAR = [
+    { id: "save",  ic: "check",     nm: "Save" },
+    { id: "reset", ic: "rotate-ccw",nm: "Reset to defaults", warn: true },
+    { id: "done",  ic: "arrow-left",nm: "Done" },
+  ];
+  let actFoc = 0;
+
+  function nRows() { return ACTIONS.length; }
+  function totalFoc() { return nRows() + ACTBAR.length; }
+
+  function curMap() {
+    return editMap[player] || {};
+  }
+  function curVal(action_k) {
+    const m = curMap();
+    return m.hasOwnProperty(action_k) ? m[action_k] : DFLT[action_k];
+  }
+  function isChanged(action_k) {
+    const m = curMap();
+    if (!m.hasOwnProperty(action_k)) return false;
+    return m[action_k] !== DFLT[action_k];
+  }
+
+  function renderSubtitle() {
+    const stem = game ? game.replace(/\.[^.]+$/, "") : "—";
+    $("subtitle").textContent = stem + (system ? " · " + system.toUpperCase() : "");
+  }
+  function renderMeta() {
+    if (!gameData) { $("meta").textContent = ""; return; }
+    const hasOwn = gameData.has_remap;
+    $("meta").innerHTML = `Core: <b>${gameData.core || "—"}</b> · ` +
+      `Remap file: <b>${hasOwn ? "saved" : "none — using global defaults"}</b>` +
+      (dirty ? ` · <b style="color:#ffce5c">unsaved changes</b>` : "");
+  }
+  function renderPtabs() {
+    const el = $("ptabs"); el.innerHTML = "";
+    [1, 2].forEach(p => {
+      const t = document.createElement("div");
+      t.className = "ptab" + (p === player ? " sel" : "");
+      t.textContent = "Player " + p;
+      t.onclick = () => { player = p; foc = 0; zone = "rows"; render(); };
+      el.appendChild(t);
+    });
+  }
+  function renderRows() {
+    const el = $("wrap");
+    el.innerHTML = `<div class="ph">PLAYER ${player} — BUTTON MAP</div>`;
+    ACTIONS.forEach((a, ri) => {
+      const val = curVal(a.k);
+      const chg = isChanged(a.k);
+      const isBind = binding === a.k;
+      const isFoc = zone === "rows" && foc === ri;
+      const row = document.createElement("div");
+      row.className = "row" + (isFoc ? " kf" : "") + (isBind ? " bind" : "");
+      row.innerHTML = `<span class="nm">${a.nm}</span>` +
+        `<span class="def">${chg ? `<span style="color:var(--muted);text-decoration:line-through">${btnLabel(DFLT[a.k])}</span>` : btnLabel(DFLT[a.k])}</span>` +
+        `<span class="btn-lbl">${isBind ? "Press a button…" : btnLabel(val)}${chg ? '<span class="changed">●</span>' : ""}</span>`;
+      row.onclick = () => { if (binding) return; foc = ri; zone = "rows"; render(); startBind(a.k); };
+      el.appendChild(row);
+    });
+    const fRow = el.querySelector(".row.kf");
+    if (fRow) fRow.scrollIntoView({ block: "nearest" });
+  }
+  function renderActbar() {
+    const el = $("actbar"); el.innerHTML = "";
+    ACTBAR.forEach((ab, i) => {
+      const isFoc = zone === "act" && actFoc === i;
+      const btn = document.createElement("div");
+      btn.className = "ab" + (isFoc ? " kf" : "") + (ab.warn ? " warn" : "");
+      btn.innerHTML = `<span class="ic" data-i="${ab.ic}"></span>${ab.nm}`;
+      btn.onclick = () => { actFoc = i; zone = "act"; render(); doAct(ab.id); };
+      el.appendChild(btn);
+    });
+    paint();
+  }
+  function render() {
+    renderSubtitle(); renderMeta(); renderPtabs(); renderRows(); renderActbar();
+    paint();
+  }
+
+  function startBind(action_k) {
+    const gp = navigator.getGamepads && [...navigator.getGamepads()].find(x => x);
+    if (!gp) { say("Connect a controller to capture a button press"); return; }
+    binding = action_k;
+    render();
+    say("Press the button for: " + (ACTIONS.find(a => a.k === action_k) || {}).nm);
+  }
+
+  async function doAct(id) {
+    if (id === "done") { history.back(); return; }
+    if (id === "save") { await saveCurrent(); return; }
+    if (id === "reset") { await doReset(); return; }
+  }
+
+  async function saveCurrent() {
+    if (!system || !game) { say("No game selected"); return; }
+    // Build full remap from editMap, only include players with any overrides
+    const remap = {};
+    for (const p of [1, 2]) {
+      if (editMap[p] && Object.keys(editMap[p]).length > 0) {
+        remap[p] = editMap[p];
+      }
+    }
+    const r = await postJ("/game/remap", { system, game, remap });
+    if (!r.ok) { say("Save failed: " + (r.error || "error")); return; }
+    dirty = false;
+    hasRemap = true;
+    if (gameData) gameData.has_remap = true;
+    render();
+    say("Remap saved for " + (r.game || game));
+  }
+
+  async function doReset() {
+    if (!system || !game) { history.back(); return; }
+    if (!doReset._armed) {
+      doReset._armed = true; say("Press Reset again to remove all custom binds for this game");
+      clearTimeout(doReset._t); doReset._t = setTimeout(() => { doReset._armed = false; }, 3000);
+      return;
+    }
+    doReset._armed = false;
+    const r = await postJ("/game/remap/delete", { system, game });
+    if (!r.ok && r.error) { say("Reset failed: " + r.error); return; }
+    editMap = {}; dirty = false; hasRemap = false;
+    if (gameData) gameData.has_remap = false;
+    render();
+    say(r.deleted ? "Custom remap removed — back to global defaults" : "Already at defaults");
+  }
+
+  async function loadRemap() {
+    if (!system || !game) {
+      $("subtitle").textContent = "No game specified — open from the game bar or library";
+      return;
+    }
+    try {
+      const d = await fetch(`/game/remap?system=${encodeURIComponent(system)}&game=${encodeURIComponent(game)}`,
+        { cache: "no-store" }).then(r => r.json());
+      if (!d.ok) { say("Load failed: " + (d.error || "error")); return; }
+      gameData = d;
+      hasRemap = d.has_remap;
+      // populate editMap from server remap
+      editMap = {};
+      for (const [p_str, actions] of Object.entries(d.remap || {})) {
+        const p = parseInt(p_str, 10);
+        editMap[p] = {};
+        for (const [act, val] of Object.entries(actions)) {
+          editMap[p][act] = val;
+        }
+      }
+    } catch (e) { say("Load error: " + e.message); }
+    render();
+  }
+
+  // Gamepad capture: during bind, capture first newly-pressed button
+  let _gpPrev = {}, _gpPrimed = false;
+  (function gpLoop() {
+    const gp = navigator.getGamepads && [...navigator.getGamepads()].find(x => x);
+    if (gp) {
+      if (binding) {
+        // capture first newly-pressed button
+        for (let i = 0; i < gp.buttons.length; i++) {
+          if (gp.buttons[i].pressed && !_gpPrev[i] && _gpPrimed) {
+            if (!editMap[player]) editMap[player] = {};
+            editMap[player][binding] = i;
+            dirty = true;
+            binding = null;
+            render();
+            say("Bound: " + btnLabel(i));
+            break;
+          }
+        }
+        gp.buttons.forEach((b, i) => _gpPrev[i] = b.pressed);
+        _gpPrimed = true;
+        requestAnimationFrame(gpLoop); return;
+      }
+      const t = i => _gpPrimed && gp.buttons[i] && gp.buttons[i].pressed && !_gpPrev[i];
+      if (t(12)) kbMove(-1); if (t(13)) kbMove(1);
+      if (t(0)) kbActivate(); if (t(1)) history.back();
+      if (t(4)) { player = player === 1 ? 2 : 1; foc = 0; zone = "rows"; render(); } // L1
+      if (t(5)) { player = player === 1 ? 2 : 1; foc = 0; zone = "rows"; render(); } // R1
+      gp.buttons.forEach((b, i) => _gpPrev[i] = b.pressed); _gpPrimed = true;
+    }
+    requestAnimationFrame(gpLoop);
+  })();
+
+  function kbMove(d) {
+    if (binding) return;
+    if (zone === "rows") {
+      let nf = foc + d;
+      if (nf < 0) { zone = "act"; actFoc = 0; }
+      else if (nf >= nRows()) { zone = "act"; actFoc = 0; }
+      else { foc = nf; }
+    } else {
+      let nf = actFoc + d;
+      if (nf < 0) { zone = "rows"; foc = nRows() - 1; }
+      else if (nf >= ACTBAR.length) { zone = "rows"; foc = 0; }
+      else { actFoc = nf; }
+    }
+    render();
+  }
+  function kbActivate() {
+    if (binding) return;
+    if (zone === "rows") {
+      const a = ACTIONS[foc]; if (a) startBind(a.k);
+    } else {
+      doAct(ACTBAR[actFoc].id);
+    }
+  }
+
+  addEventListener("keydown", e => {
+    let k = e.key;
+    if (/^(Up|Down|Left|Right)$/.test(k)) k = "Arrow" + k;
+    if (binding) {
+      if (k === "Escape" || k === "Backspace") { binding = null; render(); e.preventDefault(); }
+      return;
+    }
+    if (k === "Escape" || k === "Backspace") { history.back(); e.preventDefault(); return; }
+    if (k === "[" || k === "PageUp")  { player = 1; foc = 0; zone = "rows"; render(); e.preventDefault(); return; }
+    if (k === "]" || k === "PageDown") { player = 2; foc = 0; zone = "rows"; render(); e.preventDefault(); return; }
+    if (k === "ArrowUp")   { kbMove(-1); e.preventDefault(); return; }
+    if (k === "ArrowDown") { kbMove(1);  e.preventDefault(); return; }
+    if (k === "Enter" || k === " ") { kbActivate(); e.preventDefault(); return; }
+  });
+
+  loadRemap();
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>

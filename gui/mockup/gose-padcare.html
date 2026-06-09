@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Controller Care</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-500-normal.woff2) format('woff2');font-weight:500}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 8px}
+  .top img{width:32px;height:32px;object-fit:contain;filter:drop-shadow(0 0 6px #9a5bff55)}
+  .top h1{font-size:19px;margin:0}.top .s{font-size:12px;color:var(--muted);margin-top:1px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px;display:flex;align-items:center;gap:6px}
+  /* pad tabs */
+  .tabs{display:flex;gap:8px;padding:4px 36px 2px;overflow-x:auto}
+  .tab{background:var(--surface);border:2px solid transparent;border-radius:11px;
+    padding:9px 16px;font-weight:600;font-size:13.5px;cursor:pointer;white-space:nowrap;
+    display:flex;align-items:center;gap:8px;color:var(--muted)}
+  .tab.sel{background:var(--surface2);color:var(--text)}
+  .tab.kf{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .tab .bat{font-size:12px;font-weight:700;color:#37d39b}
+  .tab .batlow{color:#ff7a9c}
+  .tab .badm{width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block;margin-left:2px}
+  /* card area */
+  .card-wrap{flex:1;margin:10px 36px 0;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:14px}
+  /* section */
+  .sec{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 16px}
+  .sec-hd{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--muted);margin-bottom:8px}
+  /* row */
+  .row{display:flex;align-items:center;gap:14px;min-height:52px;padding:8px 12px;
+    border:2px solid transparent;border-radius:11px;cursor:pointer}
+  .row.kf{border-color:var(--accent);background:#5cd0ff14;box-shadow:var(--focusglow)}
+  .row.kf .ic,.row.kf .nm{color:var(--accent)}
+  .row.dim{opacity:.5}
+  .row .ic{font-size:20px;color:#b8becc;flex:none}
+  .row .lbl{flex:1;min-width:0}
+  .row .nm{font-weight:600;font-size:14px}
+  .row .sub{color:var(--muted);font-size:12px;margin-top:1px}
+  .row .val{margin-left:auto;color:var(--accent);font-weight:600;font-size:14px;
+    white-space:nowrap;display:flex;align-items:center;gap:8px}
+  .row .val .off{color:var(--muted)}
+  .row .val .ic-sm{font-size:14px}
+  /* battery bar */
+  .batbar{width:90px;height:8px;border-radius:4px;background:var(--surface2);overflow:hidden;border:1px solid var(--line)}
+  .batfill{height:100%;border-radius:4px;transition:width .4s}
+  /* LED picker (inline color swatches) */
+  .swatches{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
+  .swatch{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer;flex:none;transition:transform .12s}
+  .swatch.sel{border-color:#fff;transform:scale(1.15)}
+  /* foot */
+  .foot{margin:10px 36px 14px;display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12.5px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+  .toast{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;
+    transition:opacity .25s;pointer-events:none}
+  .toast.show{opacity:1}
+  .none-msg{padding:28px 36px;color:var(--muted);text-align:center}
+</style></head>
+<body>
+  <div class="top">
+    <img src="assets/brand/gose-crystal.png" alt="GOSE">
+    <div><h1>Controller Care</h1><div class="s">Battery · LED color · Rumble test — per connected pad</div></div>
+    <div class="home"><span class="ic" data-i="gamepad-2"></span><span>B / Esc — back</span></div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+  <div class="card-wrap" id="card"></div>
+  <div class="foot">
+    <span class="ic" data-i="battery"></span> Battery reads from the OS — only HID pads with a battery driver report it.
+    LED &amp; rumble require compatible hardware (DualSense, Xbox, Switch Pro).
+    <span class="h"><b>↑↓</b> rows · <b>←→</b> switch pad · <b>A</b> activate · <b>Esc</b> back</span>
+  </div>
+  <div class="toast" id="toast"></div>
+<script src="assets/platform.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
+
+  // LED color presets: [label, r, g, b]
+  const LED_COLORS = [
+    ["White",  255, 255, 255], ["Blue",   0,   80, 255],
+    ["Cyan",   0,  200, 220],  ["Green",  0,  200,  80],
+    ["Amber", 255, 140,   0],  ["Red",   220,  20,  20],
+    ["Pink",  220,  40, 160],  ["Off",     0,   0,   0],
+  ];
+
+  let pads = [], padIdx = 0, rows = [], rowFoc = 0, zone = "tabs";
+  let ledColor = 0; // index into LED_COLORS
+  let careData = [];
+
+  const $ = id => document.getElementById(id);
+
+  function paint() {
+    if (window.GICON) { GICON.paint(document); return; }
+    document.querySelectorAll("[data-i]").forEach(e =>
+      e.style.setProperty("--u", `url(assets/icons/${e.dataset.i}.svg)`));
+  }
+  function say(m) {
+    const t = $("toast"); t.textContent = m; t.classList.add("show");
+    clearTimeout(say._t); say._t = setTimeout(() => t.classList.remove("show"), 2000);
+  }
+  function post(url, body) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}) }).then(r => r.json()).catch(() => ({ ok: false }));
+  }
+
+  function batColor(pct) {
+    if (pct == null) return "#8b90a6";
+    if (pct <= 15) return "#ff7a9c";
+    if (pct <= 30) return "#ffce5c";
+    return "#37d39b";
+  }
+  function batLabel(pct) { return pct == null ? "—" : pct + "%"; }
+
+  function buildRows(pad) {
+    // Build the focusable row specs for this pad
+    const hasBat  = pad.battery_pct != null;
+    const hasFF   = pad.has_rumble;
+    const hasLED  = pad.has_led;
+    const list = [];
+
+    // Battery row (read-only info)
+    list.push({ id: "battery", ic: "battery", nm: "Battery",
+      sub: hasBat ? "Charge level reported by the OS power driver"
+                  : "Not available — pad doesn't expose a battery or driver not loaded",
+      kind: "info",
+      val: () => {
+        const p = careData.find(x => x.id === pad.id);
+        const pct = p ? p.battery_pct : null;
+        const c = batColor(pct);
+        const bar = pct != null
+          ? `<div class="batbar"><div class="batfill" style="width:${pct}%;background:${c}"></div></div>`
+          : "";
+        return `${bar}<span style="color:${c};font-weight:700">${batLabel(pct)}</span>`;
+      },
+      dim: !hasBat,
+    });
+
+    // LED color picker
+    list.push({ id: "led", ic: "sparkles", nm: "LED color",
+      sub: hasLED ? "Set the pad's lightbar color — applies immediately"
+                  : "[needs hardware] DualSense / compatible pad required",
+      kind: hasLED ? "led" : "dis",
+      val: () => {
+        if (!hasLED) return `<span class="off">[needs hardware]</span>`;
+        const sw = LED_COLORS.map((c, i) =>
+          `<span class="swatch${i===ledColor?" sel":""}" data-li="${i}"
+            style="background:rgb(${c[1]},${c[2]},${c[3]})"
+            title="${c[0]}"></span>`).join("");
+        return `<span class="swatches">${sw}</span>`;
+      },
+      dim: !hasLED,
+    });
+
+    // Rumble test
+    list.push({ id: "rumble", ic: "activity", nm: "Rumble test",
+      sub: hasFF ? "Trigger a short vibration on this pad — works with compatible hardware"
+                 : "[needs hardware] Force feedback not available on this pad (virtual or unsupported)",
+      kind: hasFF ? "action" : "dis",
+      val: () => hasFF
+        ? `<span>Test <span class="ic ic-sm" data-i="chevron-right"></span></span>`
+        : `<span class="off">[needs hardware]</span>`,
+      dim: !hasFF,
+    });
+
+    // Source / info row
+    list.push({ id: "info", ic: "info", nm: "Pad info",
+      sub: "Connection type and controller ID",
+      kind: "info",
+      val: () => {
+        const p = careData.find(x => x.id === pad.id) || pad;
+        return `<span class="off">${p.source} · js${p.js}</span>`;
+      },
+      dim: false,
+    });
+
+    // Admin row
+    list.push({ id: "admin", ic: "settings", nm: "Set as OS controller",
+      sub: pad.is_os_admin
+        ? "This pad drives GOSE menus — already the active OS controller"
+        : "Make this pad drive GOSE menus and navigation (replaces the current OS admin pad)",
+      kind: pad.is_os_admin ? "info" : "action",
+      val: () => pad.is_os_admin
+        ? `<span style="color:#37d39b">Active</span>`
+        : `<span>Set <span class="ic ic-sm" data-i="chevron-right"></span></span>`,
+      dim: false,
+    });
+
+    return list;
+  }
+
+  function renderTabs() {
+    const el = $("tabs"); el.innerHTML = "";
+    if (!careData.length) { el.innerHTML = "<span style='color:var(--muted);font-size:13px;padding:8px'>No controllers detected</span>"; return; }
+    careData.forEach((p, i) => {
+      const pct = p.battery_pct;
+      const isAdm = p.is_os_admin;
+      const batHtml = pct != null
+        ? `<span class="bat${pct <= 20 ? " batlow" : ""}">${pct}%</span>` : "";
+      const admHtml = isAdm ? `<span class="badm" title="OS admin"></span>` : "";
+      const t = document.createElement("div");
+      t.className = "tab" + (i === padIdx ? " sel" : "") + (zone === "tabs" && i === padIdx ? " kf" : "");
+      t.innerHTML = `<span class="ic" data-i="gamepad-2"></span>${p.name}${batHtml}${admHtml}`;
+      t.onclick = () => { padIdx = i; zone = "pane"; rows = buildRows(careData[padIdx]); rowFoc = 0; render(); };
+      el.appendChild(t);
+    });
+    paint();
+  }
+
+  function renderCard() {
+    const el = $("card"); el.innerHTML = "";
+    if (!careData.length) {
+      el.innerHTML = `<div class="none-msg">No controllers detected. Plug one in or pair over Bluetooth.</div>`;
+      return;
+    }
+    const pad = careData[padIdx];
+    if (!pad) return;
+    rows = buildRows(pad);
+
+    const sec = document.createElement("div");
+    sec.className = "sec";
+    sec.innerHTML = `<div class="sec-hd">${pad.name.toUpperCase()}</div>`;
+    rows.forEach((r, ri) => {
+      const el2 = document.createElement("div");
+      el2.className = "row" + (ri === rowFoc && zone === "pane" ? " kf" : "") + (r.dim ? " dim" : "");
+      el2.innerHTML = `<span class="ic" data-i="${r.ic}"></span>
+        <div class="lbl"><div class="nm">${r.nm}</div><div class="sub">${r.sub}</div></div>
+        <div class="val">${r.val()}</div>`;
+      el2.onclick = () => { rowFoc = ri; zone = "pane"; render(); activate(); };
+      // swatch clicks inside LED row
+      el2.querySelectorAll(".swatch").forEach(sw => {
+        sw.onclick = (ev) => { ev.stopPropagation(); ledColor = +sw.dataset.li; render(); doLED(pad); };
+      });
+      sec.appendChild(el2);
+    });
+    el.appendChild(sec);
+    // scroll focused row into view
+    const focused = sec.querySelector(".row.kf");
+    if (focused) focused.scrollIntoView({ block: "nearest" });
+    paint();
+  }
+
+  function render() { renderTabs(); renderCard(); }
+
+  async function doRumble(pad) {
+    say("Testing rumble on " + pad.name + "…");
+    const r = await post("/controllers/rumble", { id: pad.id, strength: 70 });
+    if (!r.ok) { say("Rumble: " + (r.error || "failed")); return; }
+    if (!r.done) { say(r.note || "No rumble hardware on this pad"); return; }
+    say("Rumble done");
+  }
+
+  async function doLED(pad) {
+    const c = LED_COLORS[ledColor];
+    say("Setting LED: " + c[0]);
+    const r = await post("/controllers/led", { id: pad.id, r: c[1], g: c[2], b: c[3] });
+    if (!r.ok) { say("LED: " + (r.error || "failed")); return; }
+    if (!r.done) { say(r.note || "No LED hardware on this pad"); return; }
+    say("LED: " + c[0] + " applied");
+  }
+
+  async function doSetAdmin(pad) {
+    const r = await post("/controllers/admin", { id: pad.id });
+    if (!r.ok) { say("Admin: " + (r.error || "failed")); return; }
+    // refresh care data to reflect new admin
+    await loadCare();
+    say(pad.name + " is now the OS controller");
+  }
+
+  function activate() {
+    const pad = careData[padIdx]; if (!pad) return;
+    const row = rows[rowFoc]; if (!row) return;
+    if (row.kind === "dis") { say(row.sub); return; }
+    if (row.kind === "info") { say(row.nm + " — " + pad.name); return; }
+    if (row.id === "rumble") { doRumble(pad); return; }
+    if (row.id === "led") { ledColor = (ledColor + 1) % LED_COLORS.length; render(); doLED(pad); return; }
+    if (row.id === "admin") { doSetAdmin(pad); return; }
+  }
+
+  function move(d) {
+    if (zone === "tabs") {
+      padIdx = (padIdx + d + careData.length) % Math.max(1, careData.length);
+      rows = careData[padIdx] ? buildRows(careData[padIdx]) : [];
+      rowFoc = 0;
+    } else {
+      rowFoc = (rowFoc + d + rows.length) % Math.max(1, rows.length);
+    }
+    render();
+  }
+  function switchPad(d) {
+    padIdx = (padIdx + d + careData.length) % Math.max(1, careData.length);
+    rows = careData[padIdx] ? buildRows(careData[padIdx]) : [];
+    rowFoc = 0; zone = "pane"; render();
+  }
+
+  addEventListener("keydown", e => {
+    let k = e.key;
+    if (/^(Up|Down|Left|Right)$/.test(k)) k = "Arrow" + k;
+    if (k === "Escape" || k === "Backspace") { history.back(); e.preventDefault(); return; }
+    if (k === "[" || k === "PageUp")  { switchPad(-1); e.preventDefault(); return; }
+    if (k === "]" || k === "PageDown") { switchPad(1);  e.preventDefault(); return; }
+    if (k === "ArrowUp")   { move(-1); e.preventDefault(); return; }
+    if (k === "ArrowDown") { move(1);  e.preventDefault(); return; }
+    if (k === "ArrowLeft")  { if (zone === "pane" && rows[rowFoc]?.id === "led") { ledColor = (ledColor - 1 + LED_COLORS.length) % LED_COLORS.length; render(); doLED(careData[padIdx]); } else switchPad(-1); e.preventDefault(); return; }
+    if (k === "ArrowRight") { if (zone === "pane" && rows[rowFoc]?.id === "led") { ledColor = (ledColor + 1) % LED_COLORS.length; render(); doLED(careData[padIdx]); } else switchPad(1);  e.preventDefault(); return; }
+    if (k === "Enter" || k === " ") { if (zone === "tabs") { zone = "pane"; render(); } else activate(); e.preventDefault(); return; }
+  });
+
+  // Gamepad nav (no raw getGamepads loop — bridge synthesizes keys, but handle the
+  // gamepad API here as a fallback for pages not running inside the pad-nav bridge)
+  let _gpPrev = {}, _gpPrimed = false;
+  (function gpLoop() {
+    const gp = navigator.getGamepads && [...navigator.getGamepads()].find(x => x);
+    if (gp) {
+      const t = i => _gpPrimed && gp.buttons[i] && gp.buttons[i].pressed && !_gpPrev[i];
+      if (t(12)) move(-1); if (t(13)) move(1);
+      if (t(14)) switchPad(-1); if (t(15)) switchPad(1);
+      if (t(0)) { if (zone === "tabs") { zone = "pane"; render(); } else activate(); }
+      if (t(1)) history.back();
+      if (t(4)) switchPad(-1); if (t(5)) switchPad(1); // L1/R1
+      gp.buttons.forEach((b, i) => _gpPrev[i] = b.pressed); _gpPrimed = true;
+    }
+    requestAnimationFrame(gpLoop);
+  })();
+
+  async function loadCare() {
+    try {
+      const d = await fetch("/controllers/care", { cache: "no-store" }).then(r => r.json());
+      if (d && d.ok) {
+        careData = d.controllers || [];
+        // keep padIdx in range
+        if (padIdx >= careData.length) padIdx = Math.max(0, careData.length - 1);
+      }
+    } catch (e) {}
+    rows = careData[padIdx] ? buildRows(careData[padIdx]) : [];
+    render();
+  }
+
+  loadCare();
+  setInterval(loadCare, 4000); // live battery refresh
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>
