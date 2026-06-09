@@ -1242,6 +1242,27 @@ def fs_places():
             "games": {"name": "Games", "path": ROMS},
             "drive": drive}
 
+_FS_READ_SCRUB_KEYS = {"pin_hash", "pin_salt", "pin_algo", "password", "secret", "ssh_key"}
+
+def _fs_read_scrub(raw_bytes, fpath):
+    """Strip credential fields from JSON files that must never leave the server in plaintext.
+    Applied when fs_read serves accounts.json (and any other file whose basename is in the
+    scrub list).  Returns the (possibly-modified) text string."""
+    text = raw_bytes.decode("utf-8", "replace")
+    _SCRUB_NAMES = {"accounts.json"}
+    if os.path.basename(fpath) not in _SCRUB_NAMES:
+        return text
+    try:
+        obj = json.loads(text)
+        for u in obj.get("users", []):
+            for k in _FS_READ_SCRUB_KEYS:
+                u.pop(k, None)
+        return json.dumps(obj)
+    except Exception:
+        # Not valid JSON or unexpected shape — refuse to serve it at all rather than
+        # accidentally leak a partial parse.
+        return None
+
 def fs_read(path):
     f = _safe(path)
     if not f or not os.path.isfile(f):
@@ -1249,8 +1270,11 @@ def fs_read(path):
     try:
         with open(f, "rb") as fh:
             data = fh.read(262144)  # cap 256KB
-        return {"ok": True, "path": f, "truncated": os.path.getsize(f) > 262144,
-                "text": data.decode("utf-8", "replace")}
+        truncated = os.path.getsize(f) > 262144
+        text = _fs_read_scrub(data, f)
+        if text is None:
+            return {"ok": False, "error": "file contains credentials and could not be safely scrubbed"}
+        return {"ok": True, "path": f, "truncated": truncated, "text": text}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
