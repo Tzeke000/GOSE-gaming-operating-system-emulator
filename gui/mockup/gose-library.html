@@ -203,12 +203,12 @@
       const s=SYS[allIdx];
       const qLabel=searchQ?` <span style="color:var(--accent);font-size:10px;font-weight:700">"${esc(searchQ)}"</span>`:"";
       html+=`<div class="rail-sec first">Catalog</div>`;
-      html+=`<div class="sys ${allIdx===cat?'on':''}" data-i2="${allIdx}"><span class="n">${s.name}${qLabel}</span><span class="c">${filteredGames(s.games).length}</span></div>`;
+      html+=`<div class="sys ${allIdx===cat?'on':''}" data-i2="${allIdx}"><span class="n">${esc(s.name)}${qLabel}</span><span class="c">${filteredGames(s.games).length}</span></div>`;
     }
     // Auto-collections (Recently Added, Recently Played, Most Played, recents, favs)
     if(colAuto.length){
       html+='<div class="rail-sec">Auto</div>';
-      html+=colAuto.map((s,_)=>{const i=SYS.indexOf(s);return`<div class="sys col-auto ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.name}</span><span class="c">${s.games.length}</span></div>`;}).join("");
+      html+=colAuto.map((s,_)=>{const i=SYS.indexOf(s);return`<div class="sys col-auto ${i===cat?'on':''}" data-i2="${i}"><span class="n">${esc(s.name)}</span><span class="c">${s.games.length}</span></div>`;}).join("");
     }
     // User collections
     if(colUser.length){
@@ -218,7 +218,7 @@
     // Real systems
     if(realSys.length){
       html+='<div class="rail-sec">Systems</div>';
-      html+=realSys.map((s,_)=>{const i=SYS.indexOf(s);return`<div class="sys ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.logo?`<img src="${s.logo}" alt="" style="height:13px;width:auto;max-width:104px;vertical-align:-2px;margin-right:7px;opacity:.9" onerror="this.remove()">`:''}${s.name}</span><span class="c">${s.games.length}</span></div>`;}).join("");
+      html+=realSys.map((s,_)=>{const i=SYS.indexOf(s);return`<div class="sys ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.logo?`<img src="${s.logo}" alt="" style="height:13px;width:auto;max-width:104px;vertical-align:-2px;margin-right:7px;opacity:.9" onerror="this.remove()">`:''}${esc(s.name)}</span><span class="c">${s.games.length}</span></div>`;}).join("");
     }
     rail.innerHTML=html;
     [...rail.children].forEach(el=>{if(el.dataset.i2!==undefined)el.onclick=()=>{cat=+el.dataset.i2;foc=0;filterSystem="";render();};});}
@@ -282,7 +282,7 @@
     // header
     const qBadge=searchQ?` <span style="font-size:11px;color:var(--accent);font-weight:700">"${esc(searchQ)}"</span>`:"";
     const delBtn=s.system&&s.system.startsWith("__col_")?`<span style="color:#ff6b6b;font-size:11px;cursor:pointer;font-weight:700;margin-left:auto" id="del-col">Delete collection</span>`:``;
-    const headerLabel=isAll?(searchQ?'SEARCH RESULTS':'ALL SYSTEMS'):(s.logo?`<img src="${s.logo}" alt="${esc(s.name)}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode(''))">`:s.name.toUpperCase()+' ');
+    const headerLabel=isAll?(searchQ?'SEARCH RESULTS':'ALL SYSTEMS'):(s.logo?`<img src="${s.logo}" alt="${esc(s.name)}" style="height:26px;width:auto;max-width:220px;vertical-align:-7px;margin-right:11px" onerror="this.replaceWith(document.createTextNode(''))">`:esc(s.name.toUpperCase())+' ');
     pane.innerHTML=`<div class="ph">${headerLabel}${qBadge} — ${n} GAME${n!=1?'S':''}${delBtn}</div>`+
       `<div class="sortbar" id="sortbar">`+SORT_MODES.map((m,i)=>`<div class="sortbtn ${foc===(n+N_ACT+i)?'focus':''} ${sortMode===m.k?'active':''}" data-si="${i}">${m.l}</div>`).join("")+`</div>`+
       `<div id="gamearea"></div>`+
