@@ -1701,6 +1701,89 @@ def set_game_options(payload):
     LOG.info("game options set: %s", k)
     return {"ok": True, "key": k}
 
+# ---- #61 per-game performance profiles + FPS cap --------------------------------
+# perf_mode: battery/balanced/performance/default (default = inherit global)
+# fps_cap:   0 = off, positive int = frame limit
+# Stored in GAME_PERF_F (JSON); applied via game_perf_apply() at launch.
+
+_PERF_MODES = ("default", "battery", "balanced", "performance")
+_FPS_CAP_MAX = 300
+
+GAME_PERF_F = "/userdata/system/gose/game_perf.json"
+
+def _game_perf_store():
+    import json as _json
+    try:
+        return _json.load(open(GAME_PERF_F))
+    except Exception:
+        return {}
+
+def _game_perf_save(store):
+    import json as _json
+    os.makedirs(os.path.dirname(GAME_PERF_F), exist_ok=True)
+    tmp = GAME_PERF_F + ".tmp"
+    with open(tmp, "w") as f:
+        _json.dump(store, f, indent=2); f.flush(); os.fsync(f.fileno())
+    os.replace(tmp, GAME_PERF_F)
+
+def game_perf_get(system, game):
+    """GET /game/perf?system=&game= — per-game perf_mode + fps_cap overrides."""
+    if not system or not game:
+        return {"ok": False, "error": "system+game required"}
+    key = "%s/%s" % (system, game)
+    store = _game_perf_store()
+    entry = store.get(key, {})
+    return {"ok": True, "system": system, "game": game,
+            "perf_mode": entry.get("perf_mode", "default"),
+            "fps_cap": int(entry.get("fps_cap", 0)),
+            "modes": list(_PERF_MODES)}
+
+def game_perf_set(payload):
+    """POST /game/perf — set per-game perf_mode and/or fps_cap."""
+    system = payload.get("system"); game = payload.get("game")
+    if not system or not game:
+        return {"ok": False, "error": "system+game required"}
+    pm = payload.get("perf_mode")
+    if pm is not None and pm not in _PERF_MODES:
+        return {"ok": False, "error": "perf_mode must be one of %s" % list(_PERF_MODES)}
+    fps = None
+    if "fps_cap" in payload:
+        try:
+            fps = int(payload["fps_cap"])
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "fps_cap must be an integer"}
+        if not (0 <= fps <= _FPS_CAP_MAX):
+            return {"ok": False, "error": "fps_cap must be 0 (off) or 1-%d" % _FPS_CAP_MAX}
+    key = "%s/%s" % (system, game)
+    store = _game_perf_store()
+    entry = store.setdefault(key, {})
+    if pm is not None:
+        entry["perf_mode"] = pm
+    if fps is not None:
+        entry["fps_cap"] = fps
+    _game_perf_save(store)
+    LOG.info("game_perf set: %s => %s", key, entry)
+    return {"ok": True, "system": system, "game": game,
+            "perf_mode": entry.get("perf_mode", "default"),
+            "fps_cap": int(entry.get("fps_cap", 0))}
+
+def game_perf_apply(system, game):
+    """Apply per-game perf_mode + fps_cap at launch time. Safe no-op if no override."""
+    key = "%s/%s" % (system, game)
+    entry = _game_perf_store().get(key, {})
+    pm = entry.get("perf_mode", "default")
+    fps = int(entry.get("fps_cap", 0))
+    applied = {}
+    if pm and pm != "default":
+        sys_perf(pm)
+        applied["perf_mode"] = pm
+    if fps > 0:
+        _bconf_set("global.fps_cap", str(fps))
+        applied["fps_cap"] = fps
+    else:
+        _bconf_set("global.fps_cap", "")
+    return {"ok": True, "applied": applied}
+
 # Our AI virtual controllers present as Xbox 360 pads (agent input.py). EmulationStation normally
 # tells Batocera's launcher which controllers exist; since the GOSE shell replaced ES, we must pass
 # those per-player args ourselves or the pad is detected-but-unbound (= AI can't actually play). The
@@ -9266,6 +9349,184 @@ def game_remap_delete(payload):
     LOG.info("per-game remap deleted: %s / %s", system, game)
     return {"ok": True, "deleted": True, "path": path}
 
+# ---- #68 battery care + idle policy -------------------------------------------
+# idle_policy.json: dim_secs (0=off), sleep_secs (0=off), pause_on_idle (bool)
+# charge_limit.json: charge_limit_pct (50-100, 0=off)
+# Stored in /userdata/system/gose/ — survives overlay + Batocera userdata.
+
+IDLE_POLICY_F  = "/userdata/system/gose/idle_policy.json"
+CHARGE_LIMIT_F = "/userdata/system/gose/charge_limit.json"
+
+_IDLE_DEFAULTS   = {"dim_secs": 0, "sleep_secs": 0, "pause_on_idle": False}
+_CHARGE_DEFAULTS = {"charge_limit_pct": 0}
+
+def _json_load_safe(path, defaults):
+    import json as _json
+    try:
+        d = _json.load(open(path))
+        return {**defaults, **{k: d[k] for k in defaults if k in d}}
+    except Exception:
+        return dict(defaults)
+
+def _json_save_safe(path, data):
+    import json as _json
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        _json.dump(data, f, indent=2); f.flush(); os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+def idle_policy_get():
+    """GET /sys/idle-policy — dim/sleep timers + pause-on-idle flag."""
+    p = _json_load_safe(IDLE_POLICY_F, _IDLE_DEFAULTS)
+    return {"ok": True, **p}
+
+def idle_policy_set(payload):
+    """POST /sys/idle-policy — update one or more fields; others unchanged."""
+    p = _json_load_safe(IDLE_POLICY_F, _IDLE_DEFAULTS)
+    errs = []
+    if "dim_secs" in payload:
+        try:
+            v = int(payload["dim_secs"])
+            if v < 0: raise ValueError
+            p["dim_secs"] = v
+        except (TypeError, ValueError):
+            errs.append("dim_secs must be >= 0 integer")
+    if "sleep_secs" in payload:
+        try:
+            v = int(payload["sleep_secs"])
+            if v < 0: raise ValueError
+            p["sleep_secs"] = v
+        except (TypeError, ValueError):
+            errs.append("sleep_secs must be >= 0 integer")
+    if "pause_on_idle" in payload:
+        p["pause_on_idle"] = bool(payload["pause_on_idle"])
+    if errs:
+        return {"ok": False, "error": "; ".join(errs)}
+    _json_save_safe(IDLE_POLICY_F, p)
+    _idle_policy_updated.set()
+    LOG.info("idle_policy set: %s", p)
+    return {"ok": True, **p}
+
+def charge_limit_get():
+    """GET /sys/charge-limit — current charge ceiling (0 = off/unsupported)."""
+    import glob as _glob
+    p = _json_load_safe(CHARGE_LIMIT_F, _CHARGE_DEFAULTS)
+    kernel_val = None
+    for path in sorted(_glob.glob("/sys/class/power_supply/BAT*/charge_control_end_threshold")):
+        try:
+            kernel_val = int(open(path).read().strip())
+            break
+        except Exception:
+            pass
+    return {"ok": True, "charge_limit_pct": p["charge_limit_pct"],
+            "kernel_value": kernel_val,
+            "supported": kernel_val is not None}
+
+def charge_limit_set(payload):
+    """POST /sys/charge-limit {charge_limit_pct: N} — 50-100 or 0 to clear."""
+    import glob as _glob
+    try:
+        v = int(payload.get("charge_limit_pct", 0))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "charge_limit_pct must be integer"}
+    if v != 0 and not (50 <= v <= 100):
+        return {"ok": False, "error": "charge_limit_pct must be 50-100 or 0 to disable"}
+    _json_save_safe(CHARGE_LIMIT_F, {"charge_limit_pct": v})
+    applied_kernel = False
+    for path in sorted(_glob.glob("/sys/class/power_supply/BAT*/charge_control_end_threshold")):
+        try:
+            open(path, "w").write(str(v) if v > 0 else "100")
+            applied_kernel = True
+        except Exception:
+            pass
+    LOG.info("charge_limit set: %d (kernel=%s)", v, applied_kernel)
+    return {"ok": True, "charge_limit_pct": v, "applied_kernel": applied_kernel,
+            "note": None if applied_kernel else "VM: kernel sysfs not writable — will apply on bare metal"}
+
+# ---- Idle watcher daemon -------------------------------------------------------
+import threading as _threading
+_idle_policy_updated = _threading.Event()
+_idle_last_activity  = [time.time()]
+
+def _idle_input_listener():
+    """Daemon: update _idle_last_activity on any /dev/input/event* activity."""
+    import select as _select, glob as _g
+    fds = {}
+    def _open_devs():
+        for path in sorted(_g.glob("/dev/input/event*")):
+            if path not in fds:
+                try: fds[path] = open(path, "rb")
+                except Exception: pass
+    _open_devs()
+    while True:
+        try:
+            _open_devs()
+            if not fds:
+                time.sleep(2); continue
+            ready, _, _ = _select.select(list(fds.values()), [], [], 2.0)
+            if ready:
+                for f in ready:
+                    try: f.read(24)
+                    except Exception: pass
+                _idle_last_activity[0] = time.time()
+        except Exception:
+            time.sleep(1)
+
+def _idle_watcher():
+    """Daemon: fire dim / sleep / pause based on idle_policy."""
+    _dimmed = [False]
+    _paused = [False]
+
+    def _ensure_active():
+        if _dimmed[0]:
+            sys_brightness(set_val=60)
+            _dimmed[0] = False
+        if _paused[0]:
+            try:
+                import subprocess as _sp
+                _sp.run(["/bin/sh", "-c",
+                         "pkill -CONT retroarch 2>/dev/null; pkill -CONT emulatorlauncher 2>/dev/null"],
+                        timeout=3)
+            except Exception:
+                pass
+            _paused[0] = False
+
+    while True:
+        _idle_policy_updated.wait(timeout=5)
+        _idle_policy_updated.clear()
+        p = _json_load_safe(IDLE_POLICY_F, _IDLE_DEFAULTS)
+        dim_secs      = p["dim_secs"]
+        sleep_secs    = p["sleep_secs"]
+        pause_on_idle = p["pause_on_idle"]
+
+        if dim_secs == 0 and sleep_secs == 0 and not pause_on_idle:
+            _ensure_active(); continue
+
+        idle = time.time() - _idle_last_activity[0]
+        if idle < 5:
+            _ensure_active(); continue
+
+        if dim_secs > 0 and idle >= dim_secs and not _dimmed[0]:
+            r = sys_brightness(set_val=5)
+            if r.get("ok") or r.get("has") is False:
+                _dimmed[0] = True
+
+        if pause_on_idle and idle >= max(dim_secs or 30, 10) and not _paused[0]:
+            try:
+                import subprocess as _sp
+                _sp.run(["/bin/sh", "-c",
+                         "pkill -STOP retroarch 2>/dev/null; pkill -STOP emulatorlauncher 2>/dev/null"],
+                        timeout=3)
+                _paused[0] = True
+            except Exception:
+                pass
+
+        if sleep_secs > 0 and idle >= sleep_secs:
+            _ensure_active()
+            sys_power("sleep")
+            _idle_last_activity[0] = time.time()
+
 # ---- Host-bridge proxies: real laptop perf + brightness (tolerate the bridge being down) ----
 def sys_perf_host():
     r = host_bridge("/perf", timeout=4)
@@ -9741,6 +10002,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         if route == "/game/cheats":
             q = self._qs()
             return self._json(game_cheats(q.get("system", ""), q.get("game", "")))
+        if route == "/game/perf":
+            q = self._qs()
+            return self._json(game_perf_get(q.get("system", ""), q.get("game", "")))
+        if route == "/sys/idle-policy":
+            return self._json(idle_policy_get())
+        if route == "/sys/charge-limit":
+            return self._json(charge_limit_get())
         if route == "/sys/hud":
             return self._json(hud_get())
         if route == "/net/wifi/status":
@@ -10414,7 +10682,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json(play_difficulty_set(payload.get("difficulty", "")))
             return self._json(play_history_append(payload))
         if route in ("/fs/op", "/proc/kill", "/splice/cut", "/launch",
-                     "/sys/audio", "/sys/brightness", "/sys/power", "/sys/perf", "/bt"):
+                     "/sys/audio", "/sys/brightness", "/sys/power", "/sys/perf", "/bt",
+                     "/game/perf", "/sys/idle-policy", "/sys/charge-limit"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}")
@@ -10433,6 +10702,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                     return self._json(sys_power(payload.get("action")))
                 if route == "/sys/perf":
                     return self._json(sys_perf(payload.get("mode")))
+                if route == "/game/perf":
+                    return self._json(game_perf_set(payload))
+                if route == "/sys/idle-policy":
+                    return self._json(idle_policy_set(payload))
+                if route == "/sys/charge-limit":
+                    return self._json(charge_limit_set(payload))
                 if route == "/bt":
                     return self._json(bt_action(payload))
                 return self._json(proc_kill(payload.get("pid"), payload.get("sig", 15)))
@@ -10450,6 +10725,8 @@ class Server(socketserver.ThreadingTCPServer):
 h = functools.partial(H, directory=ROOT)
 ensure_user_dirs()   # Desktop/Documents/Downloads/Pictures/Music/Videos exist on boot
 threading.Thread(target=_queue_worker, daemon=True).start()   # download queue: one install at a time
+threading.Thread(target=_idle_input_listener, daemon=True).start()  # #68 activity monitor
+threading.Thread(target=_idle_watcher, daemon=True).start()          # #68 idle dim/sleep/pause
 threading.Thread(target=auto_scrape_boot, daemon=True).start()   # auto-fill missing cover art on boot
 threading.Thread(target=_session_watcher, daemon=True).start()  # playtime: finalize session on SIGKILL/unexpected exit
 _PORT = int(os.environ.get("GOSE_UI_PORT") or 8780)   # override = isolated test instances

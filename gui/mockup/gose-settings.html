@@ -207,15 +207,17 @@
     {id:"power", ic:"battery", nm:"Power & Battery", rows:[
       {ic:"battery", nm:"Battery", sub:"Live from the host laptop (hidden on a desktop PC)", t:"info", val:"—", live:"bat"},
       {ic:"power", nm:"Power mode", sub:"CPU governor — applies where cpufreq exists (recorded on this VM)", t:"cycle", v:["Balanced","Performance","Battery saver"], apply:"perf"},
-      {ic:"clock", nm:"Sleep after", sub:"Idle time before the screen sleeps", t:"dis", tag:"[needs build]", why:"No idle watcher exists yet — nothing would act on this timer"},
-      {ic:"sun", nm:"Dim on battery", sub:"Lower brightness when unplugged", t:"dis", tag:"[needs build]", why:"Needs a battery watcher on the host bridge — not built yet"},
+      {ic:"sun", nm:"Dim screen after", sub:"Dim to minimum brightness after this idle time (0 = off)", t:"cycle", v:["Off","1 min","2 min","5 min","10 min"], apply:"dim_secs", vals:[0,60,120,300,600]},
+      {ic:"moon", nm:"Sleep after", sub:"Suspend the device after this idle time (0 = off)", t:"cycle", v:["Off","5 min","10 min","30 min","1 hour"], apply:"sleep_secs", vals:[0,300,600,1800,3600]},
+      {ic:"pause", nm:"Pause game on idle", sub:"SIGSTOP the emulator when idle — resumes on any input", t:"cycle", v:["Off","On"], apply:"pause_on_idle"},
+      {ic:"battery", nm:"Charge limit", sub:"Stop charging at this level to protect battery health (handheld hardware — VM: stored, applies on bare metal)", t:"cycle", v:["Off","60%","70%","80%","85%","90%"], apply:"charge_limit", vals:[0,60,70,80,85,90]},
       {ic:"moon", nm:"Sleep now", sub:"Suspend the device (VM: simulated — no battery hardware)", t:"action", val:"sleep", post:"/sys/power", body:{action:"sleep"}, act:"Sleeping…"},
       {ic:"rotate-ccw", nm:"Restart", sub:"Reboot GOSE", t:"action", val:"restart", post:"/sys/power", body:{action:"restart"}, act:"Restarting…", confirm:true},
       {ic:"power", nm:"Shut down", sub:"Power off the device", t:"action", val:"shutdown", post:"/sys/power", body:{action:"shutdown"}, act:"Shutting down…", confirm:true},
     ]},
     {id:"privacy", ic:"shield", nm:"Privacy & Security", rows:[
       {ic:"shield", nm:"Require approval to join", sub:"An AI never self-elevates — you grant every tier (docs/16). No off switch by design.", t:"info", val:"Always on"},
-      {ic:"lock", nm:"Lock on idle", sub:"Require unlock after sleep", t:"dis", tag:"[needs build]", why:"No idle watcher exists yet — lock manually from the desktop power menu"},
+      {ic:"lock", nm:"Lock on idle", sub:"Require unlock after sleep — enable Sleep after in Power & Battery first", t:"cycle", v:["Off","On"], apply:"lock_on_idle"},
       {ic:"monitor", nm:"Allow screen capture", sub:"Never blocks captures & the replay buffer; Ask behaves as Always until prompts land", t:"cycle", v:["Ask","Always","Never"], apply:"cap", i:1},
       {ic:"image", nm:"Download missing cover art", sub:"Sends game names to thumbnails.libretro.com when on (opt-in, docs/24)", t:"cycle", v:["Off","On"], apply:"boxart"},
       {ic:"sparkles", nm:"Usage diagnostics", sub:"Records your choice — GOSE sends nothing today", t:"cycle", v:["Off","On"], apply:"diag"},
@@ -515,6 +517,28 @@
       else showToast("Resolution: "+((x&&x.error)||"failed"));})();}
     else if(r.apply==="vsync"){(async()=>{const x=await postJSON("/sys/vsync",{on:r.i===0});
       showToast((x&&x.ok)?("VSync: "+r.v[r.i]+" — applies next game launch"):"VSync: failed");})();}
+    else if(r.apply==="dim_secs"||r.apply==="sleep_secs"||r.apply==="pause_on_idle"){
+      const field=r.apply;
+      let val;
+      if(field==="pause_on_idle") val=(r.i===1);
+      else val=(r.vals||[0])[r.i||0];
+      const body={};body[field]=val;
+      fetch("/sys/idle-policy",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
+        .then(x=>x.json()).then(x=>showToast(r.nm+": "+(field==="pause_on_idle"?(val?"On":"Off"):r.v[r.i])));
+    }
+    else if(r.apply==="charge_limit"){
+      const val=(r.vals||[0])[r.i||0];
+      fetch("/sys/charge-limit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({charge_limit_pct:val})})
+        .then(x=>x.json()).then(x=>{
+          if(x&&x.ok===false)showToast(x.error||"Charge limit failed");
+          else showToast("Charge limit: "+(val===0?"Off":val+"%")+(x&&x.note?" (bare metal)":""));
+        });
+    }
+    else if(r.apply==="lock_on_idle"){
+      const on=(r.i===1);
+      localStorage.setItem("gose-lock-on-idle",on?"1":"0");
+      showToast("Lock on idle: "+(on?"On":"Off"));
+    }
     else if(r.apply==="perf"){(async()=>{const modes=["balanced","performance","battery"];
       const x=await postJSON("/sys/perf",{mode:modes[r.i||0]});
       showToast("Power mode: "+r.v[r.i]+((x&&x.ok)?(x.applied?(" — "+x.applied+" cores"):" — recorded (no cpufreq on this VM)"):""));})();}
@@ -691,6 +715,24 @@
         rerowIf("sound");
       }
     }catch(e){}
+    // #68 idle policy + charge limit — load from server into the Power rows
+    try{const ip=await(await fetch("/sys/idle-policy",{cache:"no-store"})).json();
+      if(ip&&ip.ok){
+        const dimR=findRow("dim_secs","apply"); const slpR=findRow("sleep_secs","apply"); const pauseR=findRow("pause_on_idle","apply");
+        if(dimR){const k=[0,60,120,300,600].indexOf(ip.dim_secs||0); dimR.i=k<0?0:k;}
+        if(slpR){const k=[0,300,600,1800,3600].indexOf(ip.sleep_secs||0); slpR.i=k<0?0:k;}
+        if(pauseR)pauseR.i=ip.pause_on_idle?1:0;
+        rerowIf("power");
+      }
+    }catch(e){}
+    try{const cl=await(await fetch("/sys/charge-limit",{cache:"no-store"})).json();
+      if(cl&&cl.ok){
+        const clR=findRow("charge_limit","apply");
+        if(clR){const k=[0,60,70,80,85,90].indexOf(cl.charge_limit_pct||0); clR.i=k<0?0:k; rerowIf("power");}
+      }
+    }catch(e){}
+    // lock_on_idle from localStorage
+    try{const liR=findRow("lock_on_idle","apply"); if(liR){liR.i=localStorage.getItem("gose-lock-on-idle")==="1"?1:0; rerowIf("privacy");}}catch(e){}
   })();
   async function refreshAgents(){
     try{const d=await(await fetch("/ai/grants",{cache:"no-store"})).json();
