@@ -50,4 +50,40 @@ if [ -f "$ESS" ] && [ -f "$SESSION" ] && ! grep -q 'gose-ui/gose-session.sh' "$E
   # byte-for-byte the line the working dev disk runs (verified against the live VM).
   sed -i 's#dbus-run-session -- emulationstation .*#dbus-run-session -- sh /userdata/gose-ui/gose-session.sh#' "$ESS"
 fi
+
+# --- #18 OS-level boot-health counter + auto-rollback ---
+# Mirrors the UI-shell watchdog's .boot_attempts / gose-ui.prev pattern at the OS/boot level.
+# Counter lives in userdata (survives reboots; cleared when the system comes up healthy).
+# Boot partition (/boot) is FAT and mounted read-write here in S00bootcustom; userdata may not
+# yet be mounted at this point on all builds, so we write to the tmpfs marker we control (/tmp)
+# and the gose_vm_server reads/clears the canonical counter in userdata later.
+#
+# FLOW:
+#   1. On every boot we increment /tmp/gose_boot_attempt (tmpfs — only lives this session).
+#   2. gose_vm_server writes the durable counter to /userdata/system/gose/.boot_attempts_os
+#      BEFORE clearing it when it confirms the system is healthy (home page served).
+#   3. If the durable counter >= THRESHOLD on next boot, gose_vm_server auto-restores boot.prev
+#      and surfaces a recovery notice.  (The actual /boot squashfs swap is the Phase-2 RAUC path;
+#      Phase 1 only snapshots config + version info and auto-restores the GOSE shell/config.)
+#
+# Write the per-session tmpfs marker so the server can tell "this was a cold boot".
+touch /tmp/gose_cold_boot 2>/dev/null || true
+
+# Increment the durable boot-attempt counter (userdata path).
+GOSE_STATE_DIR=/userdata/system/gose
+BOOT_ATT_OS="$GOSE_STATE_DIR/.boot_attempts_os"
+mkdir -p "$GOSE_STATE_DIR" 2>/dev/null
+if [ -f "$BOOT_ATT_OS" ]; then
+  n=$(cat "$BOOT_ATT_OS" 2>/dev/null | tr -d '[:space:]')
+  [ -z "$n" ] && n=0
+  n=$((n + 1))
+else
+  n=1
+fi
+printf '%d' "$n" > "$BOOT_ATT_OS.tmp" && mv "$BOOT_ATT_OS.tmp" "$BOOT_ATT_OS" || true
+
+# BRICK-RISK GUARD: we only auto-rollback the GOSE shell/config (userdata), NEVER the
+# /boot squashfs.  The actual squashfs swap is Phase 2 (RAUC, A/B partitions) and is
+# explicitly out of scope here.  The counter above is informational; the server decides
+# what to do when it reads it on startup (see gose_vm_server.py: boot_health_check()).
 exit 0

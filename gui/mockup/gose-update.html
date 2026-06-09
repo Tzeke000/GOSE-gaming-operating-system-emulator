@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE &mdash; System Update</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+
+  /* header */
+  .top{display:flex;align-items:center;gap:12px;padding:16px 30px 4px}
+  .top img{width:30px;height:30px}.top h1{font-size:18px;margin:0}
+  .top .sub{color:var(--muted);font-size:12px;margin-left:4px}
+  .top .home{margin-left:auto;background:none;border:none;color:var(--muted);font-size:13px;
+    cursor:pointer;font-family:inherit;padding:4px 8px;border-radius:8px}
+  .top .home:focus{outline:none;box-shadow:var(--focusglow);border:2px solid var(--accent)}
+
+  /* honesty banner */
+  .banner{margin:0 30px 8px;background:var(--surface);border:1px solid var(--line);
+    border-radius:11px;padding:9px 14px;font-size:12px;color:var(--muted);line-height:1.5}
+  .banner strong{color:var(--text)}
+  .banner.warn{border-color:#f5a62388;background:#f5a62310}
+  .banner.rollback{border-color:#e5534b88;background:#e5534b10}
+
+  .scroll{flex:1;overflow-y:auto;padding:0 30px 14px}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:13px;
+    padding:16px 18px;margin-bottom:12px}
+  .card h3{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin:0 0 12px}
+
+  /* info rows */
+  .row{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;
+    border-bottom:1px solid var(--line);font-size:13px}
+  .row:last-child{border-bottom:none}
+  .rk{color:var(--muted)}.rv{font-weight:600}
+  .rv.ok{color:#3fb950}.rv.warn{color:#f5a623}.rv.err{color:#e5534b}.rv.dim{color:var(--muted)}
+
+  /* action buttons */
+  .actions{display:flex;flex-direction:column;gap:9px;margin-top:4px}
+  .btn{width:100%;padding:12px 16px;border:none;border-radius:11px;font-size:14px;font-weight:700;
+    cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:8px;
+    transition:background .15s,opacity .15s}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn:focus{outline:none;box-shadow:var(--focusglow)}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.ghost{background:var(--surface2);color:var(--text);border:1px solid var(--line)}
+  .btn.danger{background:#e5534b;color:#fff}
+  .btn.danger.arm{background:#7c1f1b}   /* pressed once, waiting for confirm */
+
+  /* status message */
+  .status{font-size:12px;color:var(--muted);min-height:20px;margin-top:6px;text-align:center}
+  .status.ok{color:#3fb950}.status.err{color:#e5534b}.status.info{color:var(--accent)}
+
+  /* progress bar */
+  .prog-wrap{background:#ffffff12;border-radius:5px;height:6px;overflow:hidden;margin:8px 0 0}
+  .prog-bar{height:100%;background:linear-gradient(90deg,var(--accent),#7d8cff);
+    width:0%;transition:width .4s;border-radius:5px}
+
+  /* snapshot badge */
+  .badge{display:inline-flex;align-items:center;gap:5px;background:var(--surface2);
+    border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-size:11px;
+    color:var(--muted)}
+  .badge.live{border-color:#3fb95066;background:#3fb95018;color:#3fb950}
+  .badge.none{border-color:var(--line)}
+
+  /* phase notice */
+  .phase-notice{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5}
+  .phase-notice strong{color:var(--text)}
+
+  /* footer hint */
+  .foot{padding:6px 30px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);
+    display:flex;gap:18px;flex-shrink:0}
+  .foot span{display:flex;align-items:center;gap:4px}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <img src="assets/brand/gose-core.png" alt="GOSE">
+  <h1>System Update</h1>
+  <span class="sub">OS Version &amp; Rollback</span>
+  <button class="home" id="btnHome" tabindex="1">&#x2190; Back</button>
+</div>
+
+<div class="banner" id="phaseBanner">
+  <strong>Phase 1 — Snapshot + Auto-restore.</strong>
+  This screen lets you check for updates, snapshot the current known-good state, and roll back if something goes wrong.
+  The actual OS image swap (A/B partitions via RAUC) is <strong>Phase 2</strong> and is not yet built.
+  On this dev VM the <em>Apply</em> step is a safe dry-run — it takes the snapshot but does not modify
+  <code>/boot</code>.
+</div>
+
+<div id="rollbackBanner" class="banner rollback" style="display:none;margin-top:0;margin-bottom:8px">
+  <strong>Auto-rollback fired.</strong>
+  GOSE detected repeated boot failures and restored your previous configuration automatically.
+  Your games and saves are untouched.
+</div>
+
+<div class="scroll">
+
+  <!-- CURRENT VERSION -->
+  <div class="card">
+    <h3>CURRENT OS</h3>
+    <div class="row"><span class="rk">Batocera version</span><span class="rv" id="curVer">—</span></div>
+    <div class="row"><span class="rk">Kernel</span><span class="rv dim" id="curKernel">—</span></div>
+    <div class="row"><span class="rk">Boot attempts (this session)</span><span class="rv" id="bootAtt">—</span></div>
+    <div class="row" style="border-bottom:none">
+      <span class="rk">Snapshot status</span>
+      <span id="snapBadge" class="badge none">none</span>
+    </div>
+  </div>
+
+  <!-- CHECK FOR UPDATES -->
+  <div class="card">
+    <h3>CHECK &amp; UPDATE</h3>
+    <div class="actions">
+      <button class="btn ghost" id="btnCheck" tabindex="2">
+        <span class="ic" data-i="search" style="width:15px;height:15px"></span>
+        Check for update
+      </button>
+      <div class="status" id="checkStatus"></div>
+      <div class="prog-wrap" id="checkProg" style="display:none"><div class="prog-bar" id="checkProgBar"></div></div>
+
+      <button class="btn primary" id="btnApply" tabindex="3" disabled>
+        <span class="ic" data-i="download" style="width:15px;height:15px"></span>
+        Snapshot &amp; Apply update
+      </button>
+      <div class="status" id="applyStatus"></div>
+    </div>
+    <p class="phase-notice">
+      <strong>Apply</strong> takes a snapshot of the current state first, then applies the update.
+      On this dev VM the squashfs swap is a <strong>dry-run</strong> (no changes to <code>/boot</code>).
+      On real hardware Phase 2 (RAUC) handles the atomic A/B partition swap.
+    </p>
+  </div>
+
+  <!-- PREVIOUS SNAPSHOT + ROLLBACK -->
+  <div class="card">
+    <h3>PREVIOUS SNAPSHOT</h3>
+    <div class="row"><span class="rk">Snapshot version</span><span class="rv dim" id="prevVer">—</span></div>
+    <div class="row"><span class="rk">Snapshot taken</span><span class="rv dim" id="prevTs">—</span></div>
+    <div class="row" style="border-bottom:none"><span class="rk">Files saved</span>
+      <span class="rv dim" id="prevFiles">accounts.json, batocera.conf, .oobe-done</span></div>
+    <div class="actions" style="margin-top:12px">
+      <button class="btn danger" id="btnRollback" tabindex="4" disabled>
+        <span class="ic" data-i="rotate-ccw" style="width:15px;height:15px"></span>
+        Roll back to previous snapshot
+      </button>
+      <div class="status" id="rollbackStatus"></div>
+    </div>
+    <p class="phase-notice">
+      Rollback restores the GOSE config files from the snapshot.
+      It does <strong>not</strong> change <code>/boot</code> or the OS image — only GOSE configuration.
+      Your games and saves are never touched.
+    </p>
+  </div>
+
+</div><!-- /scroll -->
+
+<div class="foot">
+  <span><span class="ic" data-i="arrow-left"></span> Back</span>
+  <span><span class="ic" data-i="corner-down-left"></span> Select</span>
+  <span><span class="ic" data-i="shield"></span> Owner-gated actions</span>
+</div>
+
+<script src="assets/cursor.js"></script>
+<script>
+// ---- paint icons ----
+(function(){
+  const BASE="assets/icons/";
+  document.querySelectorAll(".ic[data-i]").forEach(el=>{
+    el.style.setProperty("--u","url("+BASE+el.dataset.i+".svg)");
+  });
+})();
+
+// ---- nav ----
+document.getElementById("btnHome").onclick=()=>history.back();
+
+// ---- state ----
+let _st=null;          // cached /system/update response
+let _rollbackArmed=false;
+
+// ---- fetch helpers ----
+async function getStatus(){
+  try{
+    const r=await fetch("/system/update",{cache:"no-store"});
+    _st=await r.json();
+    return _st;
+  }catch(e){return null;}
+}
+
+async function postAction(route, body){
+  try{
+    const r=await fetch(route,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body||{})});
+    return await r.json();
+  }catch(e){return {ok:false,error:String(e)};}
+}
+
+// ---- render status ----
+function renderStatus(st){
+  if(!st){return;}
+  // current version
+  const c=st.current||{};
+  document.getElementById("curVer").textContent=c.batocera_version||"unknown";
+  document.getElementById("curKernel").textContent=c.kernel||"unknown";
+  const att=st.boot_attempts_os||0;
+  const attEl=document.getElementById("bootAtt");
+  attEl.textContent=att+" / "+st.boot_threshold+" threshold";
+  attEl.className="rv"+(att>=st.boot_threshold?" err":att>0?" warn":" ok");
+
+  // snapshot badge
+  const prev=st.prev_snapshot;
+  const badge=document.getElementById("snapBadge");
+  if(prev&&prev.batocera_version){
+    badge.className="badge live";
+    badge.textContent="saved "+fmtTs(prev.ts||"");
+  }else{
+    badge.className="badge none";
+    badge.textContent="none";
+  }
+
+  // prev snapshot card
+  document.getElementById("prevVer").textContent=(prev&&prev.batocera_version)||"—";
+  document.getElementById("prevTs").textContent=(prev&&prev.ts)?fmtTs(prev.ts):"no snapshot";
+  document.getElementById("btnRollback").disabled=!(prev&&prev.batocera_version);
+
+  // rollback-fired banner (if boot_attempts_os was >=threshold but counter is now 0 = was cleared by auto-rollback)
+  // We check the notifications endpoint indirectly via a meta key; simpler: just check the server log.
+  // For now show/hide based on the last_rollback meta
+  if(st.last_rollback){
+    document.getElementById("rollbackBanner").style.display="";
+  }
+
+  // dry-run notice
+  if(st.dry_run_mode){
+    document.getElementById("phaseBanner").style.display="";
+  }
+}
+
+function fmtTs(ts){
+  if(!ts)return "—";
+  try{
+    const d=new Date(ts);
+    return d.toLocaleString();
+  }catch(e){return ts;}
+}
+
+function setStatus(el, msg, cls){
+  el.textContent=msg;
+  el.className="status"+(cls?" "+cls:"");
+}
+
+// ---- actions ----
+const btnCheck=document.getElementById("btnCheck");
+const btnApply=document.getElementById("btnApply");
+const btnRollback=document.getElementById("btnRollback");
+
+btnCheck.onclick=async function(){
+  btnCheck.disabled=true;
+  setStatus(document.getElementById("checkStatus"),"Checking…","info");
+  document.getElementById("checkProg").style.display="";
+  let w=0;const iv=setInterval(()=>{w=Math.min(w+8,90);document.getElementById("checkProgBar").style.width=w+"%";},200);
+  const r=await postAction("/system/update/check",{owner_token:_ownerToken()});
+  clearInterval(iv);
+  document.getElementById("checkProgBar").style.width="100%";
+  setTimeout(()=>{document.getElementById("checkProg").style.display="none";},600);
+  if(!r){setStatus(document.getElementById("checkStatus"),"Network error","err");btnCheck.disabled=false;return;}
+  if(!r.ok){
+    setStatus(document.getElementById("checkStatus"),r.error||"Not authorized","err");
+    btnCheck.disabled=false;return;
+  }
+  if(r.up_to_date){
+    setStatus(document.getElementById("checkStatus"),"Up to date — "+r.current.batocera_version,"ok");
+    btnApply.disabled=true;
+  }else{
+    setStatus(document.getElementById("checkStatus"),"Update available: "+r.available.version,"warn");
+    btnApply.disabled=false;
+  }
+  btnCheck.disabled=false;
+  // refresh status
+  const st=await getStatus(); renderStatus(st);
+};
+
+btnApply.onclick=async function(){
+  btnApply.disabled=true;
+  setStatus(document.getElementById("applyStatus"),"Taking snapshot…","info");
+  const r=await postAction("/system/update/apply",{owner_token:_ownerToken()});
+  if(!r){setStatus(document.getElementById("applyStatus"),"Network error","err");btnApply.disabled=false;return;}
+  if(!r.ok && !r.dry_run){
+    setStatus(document.getElementById("applyStatus"),r.error||"Not authorized","err");
+    btnApply.disabled=false;return;
+  }
+  if(r.dry_run){
+    setStatus(document.getElementById("applyStatus"),
+      "Snapshot saved. Dry-run: /boot not modified (dev VM brick-guard).","ok");
+  }else{
+    setStatus(document.getElementById("applyStatus"),"Update applied. Restart to complete.","ok");
+  }
+  const st=await getStatus(); renderStatus(st);
+};
+
+btnRollback.onclick=async function(){
+  if(!_rollbackArmed){
+    _rollbackArmed=true;
+    btnRollback.className="btn danger arm";
+    btnRollback.querySelector("span:not(.ic)") || (btnRollback.childNodes[btnRollback.childNodes.length-1].textContent=" Confirm roll back");
+    setStatus(document.getElementById("rollbackStatus"),"Press again to confirm rollback","warn");
+    setTimeout(()=>{_rollbackArmed=false;btnRollback.className="btn danger";
+      setStatus(document.getElementById("rollbackStatus"),"");},5000);
+    return;
+  }
+  _rollbackArmed=false;
+  btnRollback.disabled=true;
+  setStatus(document.getElementById("rollbackStatus"),"Restoring…","info");
+  const r=await postAction("/system/update/rollback",{owner_token:_ownerToken()});
+  if(!r){setStatus(document.getElementById("rollbackStatus"),"Network error","err");btnRollback.disabled=false;return;}
+  if(!r.ok){
+    setStatus(document.getElementById("rollbackStatus"),r.error||"Not authorized","err");
+    btnRollback.disabled=false;return;
+  }
+  setStatus(document.getElementById("rollbackStatus"),
+    "Restored: "+(r.restored||[]).join(", ")+". Restart to apply.","ok");
+  const st=await getStatus(); renderStatus(st);
+};
+
+// ---- dev token helper (kiosk has the owner token in the env / localStorage) ----
+function _ownerToken(){
+  // In the kiosk context the owner uses their PIN via the standard auth flow.
+  // For now: use the dev token if stored (gose-settings does the same pattern).
+  return localStorage.getItem("gose-dev-token")||"";
+}
+
+// ---- initial load ----
+(async function(){
+  const st=await getStatus();
+  if(st) renderStatus(st);
+  else setStatus(document.getElementById("checkStatus"),"Could not reach server","err");
+})();
+
+// ---- pad nav ----
+const _btns=[btnCheck,btnApply,btnRollback,document.getElementById("btnHome")];
+let _fi=0;
+function _pfocus(){_btns.forEach((b,i)=>{if(!b.disabled){}});const b=_btns[_fi];if(b&&!b.disabled)b.focus();}
+document.addEventListener("keydown",e=>{
+  if(e.key==="ArrowDown"||e.key==="Tab"){_fi=(_fi+1)%_btns.length;e.preventDefault();_pfocus();}
+  else if(e.key==="ArrowUp"){_fi=(_fi-1+_btns.length)%_btns.length;e.preventDefault();_pfocus();}
+  else if(e.key==="Escape"||e.key==="Backspace"){history.back();}
+});
+let _pp={};
+(function pad(){
+  const g=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
+  if(g){const t=k=>g.buttons[k]&&g.buttons[k].pressed&&!_pp[k];
+    if(t(13)||t(15)){_fi=(_fi+1)%_btns.length;_pfocus();}
+    if(t(12)||t(14)){_fi=(_fi-1+_btns.length)%_btns.length;_pfocus();}
+    if(t(0)){const b=_btns[_fi];if(b&&!b.disabled)b.click();}
+    if(t(1)){history.back();}
+    g.buttons.forEach((x,k)=>_pp[k]=x.pressed);}
+  requestAnimationFrame(pad);
+})();
+</script>
+</body>
+</html>

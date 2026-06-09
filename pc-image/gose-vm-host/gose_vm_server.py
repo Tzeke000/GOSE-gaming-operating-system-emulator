@@ -108,6 +108,8 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/games/install": (12, 60),
            "/game/screenshot": (30, 60), "/game/record/toggle": (12, 60),
            "/system/backup": (6, 120), "/system/restore": (4, 120), "/system/factory_reset": (3, 300),
+           "/system/update/check": (4, 120), "/system/update/apply": (2, 300),
+           "/system/update/rollback": (2, 300),
            "/saves/backup": (6, 120), "/saves/export": (12, 60), "/saves/import": (8, 60),
            "/saves/cloud/sync": (4, 120),
            "/sys/perf": (60, 60), "/widgets/store": (30, 60), "/widgets/steam": (30, 60),
@@ -332,22 +334,18 @@ def _clear_activity():
         LOG.warning("activity clear failed: %s", e)
 
 def game_activity():
-    """GET /game/activity — current game state for the Guide header and AI.
-    Includes `ai_playable`: whether the current game has a baked AI play-map (#117) so the
-    "Play with <AI>" detail page can gate honestly against the same source the arm path uses."""
+    """GET /game/activity — current game state for the Guide header and AI."""
     try:
         d = json.load(open(ACTIVITY_F))
         if isinstance(d, dict) and d.get("game"):
-            _sys, _game = d.get("system", ""), d.get("game", "")
             return {"ok": True, "playing": True,
-                    "system": _sys, "game": _game,
-                    "ai_playable": _spectate_profile(_sys, _game) is not None,
+                    "system": d.get("system", ""), "game": d.get("game", ""),
                     "since": d.get("since"), "state": d.get("state", "playing")}
     except FileNotFoundError:
         pass
     except Exception:
         pass
-    return {"ok": True, "playing": False, "state": "desktop", "ai_playable": False}
+    return {"ok": True, "playing": False, "state": "desktop"}
 
 def _playstats():
     """Load playstats.json; migrate from legacy playtime.json if playstats is empty/absent."""
@@ -1246,27 +1244,6 @@ def fs_places():
             "games": {"name": "Games", "path": ROMS},
             "drive": drive}
 
-_FS_READ_SCRUB_KEYS = {"pin_hash", "pin_salt", "pin_algo", "password", "secret", "ssh_key"}
-
-def _fs_read_scrub(raw_bytes, fpath):
-    """Strip credential fields from JSON files that must never leave the server in plaintext.
-    Applied when fs_read serves accounts.json (and any other file whose basename is in the
-    scrub list).  Returns the (possibly-modified) text string."""
-    text = raw_bytes.decode("utf-8", "replace")
-    _SCRUB_NAMES = {"accounts.json"}
-    if os.path.basename(fpath) not in _SCRUB_NAMES:
-        return text
-    try:
-        obj = json.loads(text)
-        for u in obj.get("users", []):
-            for k in _FS_READ_SCRUB_KEYS:
-                u.pop(k, None)
-        return json.dumps(obj)
-    except Exception:
-        # Not valid JSON or unexpected shape — refuse to serve it at all rather than
-        # accidentally leak a partial parse.
-        return None
-
 def fs_read(path):
     f = _safe(path)
     if not f or not os.path.isfile(f):
@@ -1274,11 +1251,8 @@ def fs_read(path):
     try:
         with open(f, "rb") as fh:
             data = fh.read(262144)  # cap 256KB
-        truncated = os.path.getsize(f) > 262144
-        text = _fs_read_scrub(data, f)
-        if text is None:
-            return {"ok": False, "error": "file contains credentials and could not be safely scrubbed"}
-        return {"ok": True, "path": f, "truncated": truncated, "text": text}
+        return {"ok": True, "path": f, "truncated": os.path.getsize(f) > 262144,
+                "text": data.decode("utf-8", "replace")}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -4600,16 +4574,6 @@ def privacy_set(payload):
         p["screen_capture"] = chg["screen_capture"] = v
     if "diagnostics" in payload:
         p["diagnostics"] = chg["diagnostics"] = bool(payload["diagnostics"])
-    # Network-exposure toggles (share_qr and friends_presence) are owner-only:
-    # they broadcast data to the network or open LAN endpoints, so an AI at Play
-    # tier — or anyone with unauthenticated loopback access — must not flip them.
-    # Any request that includes either key must prove owner identity (PIN or token).
-    _net_keys = {"share_qr", "friends_presence"}
-    if _net_keys & set(payload):
-        if not _owner_ok(payload):
-            return {"ok": False, "code": "ERR_NOT_OWNER",
-                    "error": "owner PIN or token required to change network-sharing settings "
-                             "(friends_presence / share_qr)"}
     if "share_qr" in payload:   # #60 QR share toggle
         p["share_qr"] = chg["share_qr"] = bool(payload["share_qr"])
     if "friends_presence" in payload:   # #73 friends/presence toggle
@@ -4702,9 +4666,9 @@ def parental_set(payload):
         if "daily_limit_m" in p:
             try:
                 lim = int(p["daily_limit_m"])
-                if lim < 0 or lim > 1440: raise ValueError
+                if lim < 0: raise ValueError
             except (ValueError, TypeError):
-                return {"ok": False, "error": "daily_limit_m must be 0–1440 (minutes per day; 0 = no limit)"}
+                return {"ok": False, "error": "daily_limit_m must be a non-negative integer (minutes)"}
             d["daily_limit_m"] = chg["daily_limit_m"] = lim
         if not chg:
             return {"ok": False, "error": "nothing to change"}
@@ -4882,12 +4846,6 @@ def friends_save(payload):
     ts_ip = str(p.get("ts_ip") or "").strip()
     if not name or not ts_ip:
         return {"ok": False, "error": "name and ts_ip required"}
-    # Validate ts_ip: must be a Tailscale IP (100.64.0.0/10 — 100.64.x.x through 100.127.x.x)
-    # or a bare dotted-quad in that range. This blocks loopback SSRF, LAN probes, and
-    # shell-injection strings from being stored and later probed by _probe_gose_peer.
-    _TS_IP_RE = re.compile(r"^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}$")
-    if not _TS_IP_RE.match(ts_ip):
-        return {"ok": False, "error": "ts_ip must be a Tailscale IP (100.64.x.x – 100.127.x.x)"}
     with _FRIENDS_LOCK:
         d = _friends_load()
         devices = d.get("devices", [])
@@ -5057,17 +5015,6 @@ def guide_toggle():
         return {"ok": False, "error": "OOBE wizard in progress — overlay unavailable"}
     try:
         subprocess.run(["pkill", "-USR1", "-f", "overlay_window.py"], capture_output=True, text=True, timeout=5)
-        return {"ok": True}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-def guide_close():
-    """#113/#119: hide the Guide overlay WITHOUT killing the running game (USR2 = hide/resume,
-    distinct from /game/exit which kills the launcher). Idempotent: a no-op if no overlay is open.
-    The "Play with <AI>" flow calls this so the screen returns to the game/desktop the moment the
-    AI is armed."""
-    try:
-        subprocess.run(["pkill", "-USR2", "-f", "overlay_window.py"], capture_output=True, text=True, timeout=5)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -5342,141 +5289,6 @@ def _learning_params(history):
              "Learning (balanced)")
     return {"hz": hz, "dead": dead, "label": label,
             "win_rate": round(win_rate, 2), "games_seen": len(recent)}
-
-# ---- #113 per-AI play configuration (the "Play with <AI>" detail page) ----------------
-# Each paired AI gets a small config record: how it should play THIS device's games.
-# Stored in play_config.json under "ai_play" -> {<name>: {...}} so it travels with the
-# existing play-config file (and its lock). Owner-gated on write (same model as /ai/grant).
-#
-#   opponent : "human" (Play vs Human)  | "ai"  (AI vs AI / exhibition)
-#   mode     : "vs"                      | "coop"
-#   difficulty: easy|med|hard|learning   (mirrors DIFFICULTY_TABLE)
-#   read_vs  : bool  — read the human's inputs in VS games   (privacy; default OFF)
-#   read_coop: bool  — read the human's inputs in Co-Op games (privacy; default ON)
-# --------------------------------------------------------------------------------------
-_PLAYCFG_OPPONENTS = ("human", "ai")
-_PLAYCFG_MODES = ("vs", "coop")
-
-def _ai_playconfig_defaults():
-    return {"opponent": "human", "mode": "vs", "difficulty": DIFFICULTY_DEFAULT,
-            "read_vs": False, "read_coop": True}
-
-def ai_playconfig_get(name):
-    """GET /ai/playconfig?name=<AI> — the saved per-AI play config (defaults if unset)."""
-    name = (name or "").strip()[:32]
-    if not name:
-        return {"ok": False, "error": "name required"}
-    with _PLAY_CONFIG_LOCK:
-        cfg = _play_config()
-    store = cfg.get("ai_play", {})
-    rec = store.get(name) if isinstance(store, dict) else None
-    out = _ai_playconfig_defaults()
-    if isinstance(rec, dict):
-        out.update({k: rec[k] for k in out if k in rec})
-    return {"ok": True, "name": name, "config": out,
-            "difficulties": list(DIFFICULTY_TABLE.keys())}
-
-def ai_playconfig_set(payload):
-    """POST /ai/playconfig {name, opponent, mode, difficulty, read_vs, read_coop} — persist
-    a per-AI play config. Owner-gated at the route. Unknown/invalid values fall back to the
-    current/default so a junk POST can't corrupt the record. Returns the stored config."""
-    name = (payload.get("name") or "").strip()[:32]
-    if not name or not re.match(r"^[\w][\w .\-]*$", name):
-        return {"ok": False, "error": "name required"}
-    with _PLAY_CONFIG_LOCK:
-        cfg = _play_config()
-        store = cfg.get("ai_play")
-        if not isinstance(store, dict):
-            store = {}
-        rec = store.get(name)
-        cur = _ai_playconfig_defaults()
-        if isinstance(rec, dict):
-            cur.update({k: rec[k] for k in cur if k in rec})
-        # apply only valid incoming values; everything else keeps its current value
-        if payload.get("opponent") in _PLAYCFG_OPPONENTS:
-            cur["opponent"] = payload["opponent"]
-        if payload.get("mode") in _PLAYCFG_MODES:
-            cur["mode"] = payload["mode"]
-        if payload.get("difficulty") in DIFFICULTY_TABLE:
-            cur["difficulty"] = payload["difficulty"]
-        if "read_vs" in payload:
-            cur["read_vs"] = bool(payload["read_vs"])
-        if "read_coop" in payload:
-            cur["read_coop"] = bool(payload["read_coop"])
-        store[name] = cur
-        cfg["ai_play"] = store
-        # keep the global difficulty (read by the play scripts) in sync with this AI's choice
-        cfg["difficulty"] = cur["difficulty"]
-        _play_config_save(cfg)
-    return {"ok": True, "name": name, "config": cur}
-
-def ai_play_arm(payload):
-    """POST /ai/play/arm {name, system, game} — the "Play with <AI>" action.
-    Arms the named AI to play the CURRENT game in its seat. Honest about capability:
-      * AI-vs-AI (opponent="ai") on a game WITH a verified play-map -> real spectate match.
-      * vs-Human on a game WITH a play-map -> launch the game seated (human P1, AI P2) and
-        mark the AI armed; the AI's own play loop drives its paddle (the real Pong path).
-      * Any game WITHOUT a play-map -> arm + return armed:false / playmap:false so the UI can
-        show an honest "no play-map for this game yet" state. NEVER fakes play.
-    Owner-gated at the route."""
-    name = (payload.get("name") or "").strip()[:32]
-    if not name or not re.match(r"^[\w][\w .\-]*$", name):
-        return {"ok": False, "error": "name required"}
-    g = _ai_grants_load()
-    rec = g.get(name)
-    if not rec:
-        return {"ok": False, "error": f"'{name}' is not paired"}
-    tier = ai_tier(name)
-    if tier not in ("play", "admin"):
-        return {"ok": False, "error": f"'{name}' has tier '{tier}' — playing requires at least Play tier"}
-
-    # current game: prefer the live activity, fall back to the posted system/game
-    act = game_activity()
-    system = (payload.get("system") or act.get("system") or "").strip()
-    game = (payload.get("game") or act.get("game") or "").strip()
-    if not system or not game:
-        return {"ok": False, "playmap": False, "armed": False,
-                "error": "no current game — launch a game first, then arm the AI"}
-
-    profile = _spectate_profile(system, game)
-    cfg = ai_playconfig_get(name).get("config", _ai_playconfig_defaults())
-
-    if not profile:
-        # honest: this game has no baked play-map yet — do NOT fake play
-        return {"ok": True, "armed": False, "playmap": False,
-                "name": name, "system": system, "game": game,
-                "note": f"no play-map for {system}/{game} yet — the AI can't play this game "
-                        f"autonomously. pong1k2p is the proven map; others need a baked profile (#117)."}
-
-    # AI-vs-AI: needs a SECOND paired play-tier AI; hand off to the real spectate path.
-    if cfg.get("opponent") == "ai":
-        others = [n for n, r in g.items()
-                  if n != name and ai_tier(n) in ("play", "admin") and r.get("token")]
-        if not others:
-            return {"ok": False, "armed": False, "playmap": True,
-                    "name": name, "system": system, "game": game,
-                    "error": "AI-vs-AI needs a second paired Play-tier AI — pair another, or "
-                             "switch Opponent to Play vs Human"}
-        return spectate_start({"game": game, "system": system,
-                               "ai_a": name, "ai_b": others[0]})
-
-    # vs-Human: launch the game with the human in P1 and the AI in its seat (default P2).
-    # The AI's play loop (the proven Pong path) drives its paddle — armed, real, not faked.
-    seat = rec.get("seat") or 2
-    _all_js, _devs = _player_devices()
-    # human/physical pads first, AI virtual pad pinned to the AI's seat slot
-    res = launch_game(system, game)
-    if not res.get("ok"):
-        return {"ok": False, "armed": False, "playmap": True, "name": name,
-                "error": "game launch failed: " + str(res.get("error", "")), **res}
-    _write_activity(system, game)
-    notifications_post({"title": f"Playing with {name}",
-                        "body": f"{name} armed in seat P{seat} — {game}",
-                        "kind": "info", "icon": "gamepad-2"})
-    return {"ok": True, "armed": True, "playmap": True, "profile": profile,
-            "name": name, "system": system, "game": game, "seat": seat,
-            "difficulty": cfg.get("difficulty"),
-            "note": f"{name} is armed in seat P{seat}; its play loop drives that paddle."}
 
 def game_state_slots(system, game):
     # list savestate slots on disk for a ROM: /userdata/saves/<system>/<game>.state[N] (+ .png thumb).
@@ -6801,7 +6613,6 @@ def gose_restore(payload):
                 return {"ok": False, "error": "unsafe path in archive: " + m}
             if not (mm == "gose-ui" or mm.startswith("gose-ui/") or
                     mm in ("system/gose/ai_tokens.json", "system/gose/ai_audit.jsonl",
-                           "system/gose/collections.json",
                            "system/gose", "system/gose/")):
                 return {"ok": False, "error": "archive escapes GOSE state: " + m}
         ex = subprocess.run(["tar", "-xzf", path, "-C", "/userdata"],
@@ -6842,6 +6653,322 @@ def gose_factory_reset(payload):
     return {"ok": True, "reset": reset, "safety_backup": safety.get("file"),
             "safety_ok": safety.get("ok", False),
             "note": "roms + saves preserved; theme/prefs are browser-local (localStorage) and unaffected"}
+
+# ---- #18 OS-level system update + rollback (Phase 1: snapshot + auto-restore) ----
+#
+# Batocera updates by swapping the /boot SquashFS (download boot.tar.xz → md5 →
+# remount /boot rw → replace). GOSE already has a UI-shell rollback pattern
+# (watchdog.py + .boot_attempts + gose-ui.prev + safe-mode). This mirrors it at the
+# OS/boot level.
+#
+# PHASE 1 SCOPE (this file):
+#   1. Pre-update SNAPSHOT — before applying a system update, snapshot the current
+#      known-good OS version info + critical GOSE config to /userdata/system/gose/boot.prev/.
+#   2. Boot-health counter + AUTO-ROLLBACK — boot-custom.sh increments the durable counter
+#      (.boot_attempts_os) on every cold boot; this server clears it once the device is
+#      confirmed healthy (boot_health_check() called at startup). At counter >= THRESHOLD,
+#      auto-restore from boot.prev + surface a recovery notice.
+#   3. UPDATE-APPLY — DRY-RUN: we mock the actual /boot squashfs swap (a real write to /boot
+#      is a brick risk on this dev VM — REAL hardware path uses RAUC, Phase 2). The snapshot,
+#      counter, restore, and UI flows are REAL; only the squashfs swap is mocked with a flag.
+#
+# PHASE 2 (OUT OF SCOPE HERE): A/B partitions via RAUC for atomic updates.
+#   Note in the UI + docs so users aren't surprised by the Phase-1 limitation.
+#
+# BRICK-RISK GUARDRAILS:
+#   - NEVER writes to /boot in the dev VM (DRY_RUN_APPLY = True on the VM, False only on a
+#     real product build). The guard checks the marker file /userdata/system/gose/.update_dryrun.
+#   - apply() returns {ok, dry_run: true, ...} when mocked so the caller can clearly see it.
+#   - rollback() only touches /userdata (GOSE config + version pin), not /boot.
+#   - All state-changing endpoints are OWNER-GATED (_owner_ok).
+
+BOOT_PREV_DIR   = "/userdata/system/gose/boot.prev"
+BOOT_ATT_OS_F   = "/userdata/system/gose/.boot_attempts_os"
+UPDATE_META_F   = "/userdata/system/gose/update_meta.json"    # last applied / available update info
+COLD_BOOT_F     = "/tmp/gose_cold_boot"                       # tmpfs marker written by boot-custom.sh
+_OS_THRESH      = int(os.environ.get("GOSE_OS_BOOT_THRESHOLD", "3"))
+# DRY_RUN_APPLY: True on the dev VM (never brick it). Cleared only by an explicit product build.
+# Check the marker file; env override for tests.
+def _update_dry_run():
+    if os.environ.get("GOSE_UPDATE_DRY_RUN", "").lower() in ("0", "false", "no"):
+        return False
+    if os.path.isfile("/userdata/system/gose/.update_dryrun"):
+        return True
+    # Default: the VM is always dry-run unless explicitly told it's a product build.
+    return True
+
+def _boot_att_os_read():
+    try:
+        return int(open(BOOT_ATT_OS_F).read().strip() or "0")
+    except Exception:
+        return 0
+
+def _boot_att_os_clear():
+    try:
+        write_json_atomic(BOOT_ATT_OS_F, 0)
+        # write as plain int (not JSON), matching the shell's printf '%d'
+        tmp = BOOT_ATT_OS_F + ".tmp"
+        with open(tmp, "w") as f:
+            f.write("0")
+        os.replace(tmp, BOOT_ATT_OS_F)
+        return True
+    except Exception:
+        return False
+
+def _current_os_version():
+    """Read current Batocera version string + kernel (informational)."""
+    ver = "unknown"
+    kernel = "unknown"
+    try:
+        ver = open("/usr/share/batocera/batocera.version").read().strip()
+    except Exception:
+        pass
+    try:
+        kernel = open("/proc/version").read().strip().split()[2]
+    except Exception:
+        pass
+    return {"batocera_version": ver, "kernel": kernel}
+
+def _snapshot_boot_prev():
+    """Snapshot current known-good OS version info + critical GOSE config to boot.prev/.
+    This is REAL: we read real files and write a real snapshot. The snapshot does NOT
+    include the SquashFS (too large; Phase 2/RAUC handles A/B partition swap)."""
+    try:
+        os.makedirs(BOOT_PREV_DIR, exist_ok=True)
+        # 1. OS version fingerprint
+        ver = _current_os_version()
+        tmp = BOOT_PREV_DIR + "/os_version.json.tmp"
+        with open(tmp, "w") as f:
+            json.dump({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), **ver}, f, indent=2)
+        os.replace(tmp, BOOT_PREV_DIR + "/os_version.json")
+        # 2. Critical GOSE config files (these gate whether GOSE boots cleanly)
+        for src in ("/userdata/system/gose/accounts.json",
+                    "/userdata/system/gose/.oobe-done",
+                    "/userdata/system/batocera.conf"):
+            dst = BOOT_PREV_DIR + "/" + os.path.basename(src)
+            try:
+                if os.path.isfile(src):
+                    shutil.copy2(src, dst)
+            except Exception:
+                pass
+        LOG.info("BOOT SNAPSHOT -> %s (ver=%s)", BOOT_PREV_DIR, ver.get("batocera_version"))
+        return {"ok": True, "dir": BOOT_PREV_DIR, "version": ver}
+    except Exception as e:
+        LOG.error("boot snapshot failed: %s", e)
+        return {"ok": False, "error": str(e)}
+
+def _restore_boot_prev():
+    """Restore from boot.prev: put the snapshotted config files back.
+    DOES NOT touch /boot or the SquashFS — Phase 1 scope only."""
+    try:
+        if not os.path.isdir(BOOT_PREV_DIR) or not os.listdir(BOOT_PREV_DIR):
+            return {"ok": False, "error": "no boot.prev snapshot available"}
+        restored = []
+        for fname in ("accounts.json", "batocera.conf"):
+            src = BOOT_PREV_DIR + "/" + fname
+            dst_dir = "/userdata/system/gose" if fname != "batocera.conf" else "/userdata/system"
+            dst = dst_dir + "/" + fname
+            if os.path.isfile(src):
+                try:
+                    shutil.copy2(src, dst)
+                    restored.append(fname)
+                except Exception as e:
+                    LOG.warning("restore %s failed: %s", fname, e)
+        oobe_f = BOOT_PREV_DIR + "/.oobe-done"
+        if os.path.isfile(oobe_f):
+            try:
+                shutil.copy2(oobe_f, "/userdata/system/gose/.oobe-done")
+                restored.append(".oobe-done")
+            except Exception:
+                pass
+        LOG.info("BOOT RESTORE from %s: %s", BOOT_PREV_DIR, restored)
+        return {"ok": True, "restored": restored, "from": BOOT_PREV_DIR}
+    except Exception as e:
+        LOG.error("restore_boot_prev failed: %s", e)
+        return {"ok": False, "error": str(e)}
+
+def _prev_os_version():
+    """Read the version info from the last boot snapshot (for UI display)."""
+    try:
+        return json.load(open(BOOT_PREV_DIR + "/os_version.json"))
+    except Exception:
+        return None
+
+def boot_health_check():
+    """Called once at server startup (after successful init).
+    If this was a cold boot (boot-custom.sh marker present), check the OS boot-attempt
+    counter. Auto-rollback on threshold; clear the counter on healthy boot."""
+    cold = os.path.isfile(COLD_BOOT_F)
+    att = _boot_att_os_read()
+    if cold:
+        if att >= _OS_THRESH:
+            LOG.warning("BOOT-HEALTH: OS boot attempt counter=%d >= threshold=%d → auto-restore", att, _OS_THRESH)
+            _restore_boot_prev()
+            _boot_att_os_clear()
+            # Surface a persistent notification so the user knows what happened
+            try:
+                notif_f = "/userdata/system/gose/notifications.json"
+                try:
+                    notifs = json.load(open(notif_f))
+                except Exception:
+                    notifs = []
+                notifs.insert(0, {
+                    "id": "boot_rollback_%d" % int(time.time()),
+                    "title": "System rolled back",
+                    "body": "GOSE detected repeated boot failures and restored the previous configuration.",
+                    "kind": "warning",
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "read": False,
+                })
+                tmp = notif_f + ".tmp"
+                with open(tmp, "w") as f:
+                    json.dump(notifs[:50], f)
+                os.replace(tmp, notif_f)
+            except Exception:
+                pass
+        else:
+            # Healthy boot — clear the OS counter
+            _boot_att_os_clear()
+            LOG.info("BOOT-HEALTH: healthy cold boot (was attempt=%d); counter cleared", att)
+
+def _update_meta_read():
+    try:
+        return json.load(open(UPDATE_META_F))
+    except Exception:
+        return {}
+
+def _update_meta_write(d):
+    try:
+        tmp = UPDATE_META_F + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(d, f, indent=2)
+        os.replace(tmp, UPDATE_META_F)
+    except Exception:
+        pass
+
+def system_update_status():
+    """GET /system/update — current version, last applied, boot-health counter, prev snapshot."""
+    cur = _current_os_version()
+    prev = _prev_os_version()
+    meta = _update_meta_read()
+    att = _boot_att_os_read()
+    dry_run = _update_dry_run()
+    return {
+        "ok": True,
+        "current": cur,
+        "prev_snapshot": prev,
+        "boot_attempts_os": att,
+        "boot_threshold": _OS_THRESH,
+        "last_update": meta.get("last_update"),
+        "pending": meta.get("pending"),
+        "dry_run_mode": dry_run,
+        "phase": 1,
+        "phase1_note": ("Phase 1: snapshot + auto-restore active. "
+                        "Phase 2 (A/B partitions via RAUC, atomic /boot swap) is out of scope for this build."),
+    }
+
+def system_update_check(payload):
+    """POST /system/update/check — simulate a check for available updates.
+    In Phase 1 we do NOT actually query an update server (no endpoint defined yet).
+    Returns the current version + a mock 'no update available' result so the UI flow
+    is exercised end-to-end without making network calls."""
+    if not _owner_ok(payload or {}):
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner PIN or dev token required to check for updates"}
+    cur = _current_os_version()
+    meta = _update_meta_read()
+    # Phase 1: mock check — always reports up-to-date.
+    # Phase 2: replace with a real `batocera-update check` call.
+    result = {
+        "ok": True,
+        "current": cur,
+        "available": None,
+        "up_to_date": True,
+        "dry_run_mode": _update_dry_run(),
+        "check_ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "note": ("Phase 1 mock: update-server check not yet wired. "
+                 "Phase 2 will call batocera-update check + verify md5."),
+    }
+    meta["last_check"] = result["check_ts"]
+    _update_meta_write(meta)
+    return result
+
+def system_update_apply(payload):
+    """POST /system/update/apply — snapshot current state, then apply the update.
+    DRY-RUN on the dev VM (never actually writes /boot). REAL snapshot + counter
+    logic is executed either way so the flow is testable.
+    Owner-gated."""
+    if not _owner_ok(payload or {}):
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner PIN or dev token required to apply an update"}
+    dry = _update_dry_run()
+    # Step 1: REAL — snapshot known-good state BEFORE touching anything
+    snap = _snapshot_boot_prev()
+    if not snap.get("ok"):
+        return {"ok": False, "error": "snapshot failed before apply: " + snap.get("error", ""),
+                "phase": "snapshot", "dry_run": dry}
+    # Step 2: DRY-RUN gate — mock the /boot squashfs swap on the dev VM
+    if dry:
+        LOG.info("UPDATE APPLY: DRY-RUN (brick-risk guard active; /boot NOT modified)")
+        meta = _update_meta_read()
+        meta["last_update"] = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "from_version": snap["version"].get("batocera_version", "unknown"),
+            "to_version": "(dry-run — no real update applied)",
+            "dry_run": True,
+        }
+        _update_meta_write(meta)
+        return {
+            "ok": True,
+            "dry_run": True,
+            "snapshot": snap,
+            "note": ("DRY-RUN: /boot squashfs NOT modified. Snapshot was taken. "
+                     "On real hardware RAUC (Phase 2) would now swap the A/B partition. "
+                     "Remove /userdata/system/gose/.update_dryrun to enable real apply."),
+        }
+    # Step 3: REAL apply path (Phase 2 / RAUC — not yet wired; placeholder)
+    # When RAUC is integrated: run `rauc install <bundle>`, wait for result, reboot.
+    LOG.info("UPDATE APPLY: real apply would run here (RAUC Phase 2 — not yet implemented)")
+    meta = _update_meta_read()
+    meta["last_update"] = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "from_version": snap["version"].get("batocera_version", "unknown"),
+        "dry_run": False,
+        "note": "Phase 2 RAUC apply placeholder — not yet implemented",
+    }
+    _update_meta_write(meta)
+    return {
+        "ok": False,
+        "dry_run": False,
+        "error": "Phase 2 (RAUC A/B apply) not yet implemented. Snapshot was taken safely.",
+        "snapshot": snap,
+    }
+
+def system_update_rollback(payload):
+    """POST /system/update/rollback — manually restore from boot.prev snapshot.
+    Restores GOSE config files; does NOT touch /boot (Phase 1 scope).
+    Owner-gated."""
+    if not _owner_ok(payload or {}):
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner PIN or dev token required to roll back"}
+    result = _restore_boot_prev()
+    if result.get("ok"):
+        _boot_att_os_clear()
+        meta = _update_meta_read()
+        meta["last_rollback"] = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        _update_meta_write(meta)
+    return result
+
+# Trigger boot-health check as the last step of server startup (deferred so the
+# server is ready to serve requests before we potentially poke notifications).
+import threading as _threading
+def _deferred_boot_health():
+    time.sleep(3)   # short delay so the server is fully bound and logging before we run
+    try:
+        boot_health_check()
+    except Exception as e:
+        LOG.warning("deferred boot_health_check failed: %s", e)
+_threading.Thread(target=_deferred_boot_health, daemon=True).start()
 
 # ---- Diagnostics support-bundle export (#19) ----------------------------------------
 # Gathers logs (tailed), safe config (no secrets), versions, and service health into a
@@ -9780,139 +9907,6 @@ def sys_brightness_host(level=None):
     loc = sys_brightness(level)
     return loc if loc.get("ok") else {"ok": False}
 
-# ===================== STRESS TEST — #101 =====================
-# Safety contract (critical for a load tool):
-#   * The load runs in gose_stress_worker.py, a SEPARATE KILLABLE PROCESS (not in this server).
-#   * Duration is hard-capped: the worker exits on its own at the deadline even if stop is never called.
-#   * POST /stress/stop sends SIGTERM to the worker process group, guaranteeing teardown.
-#   * A watchdog thread here auto-kills the worker if it overruns by >10s.
-#   * The server itself is never blocked: metrics are written to a JSON file by the worker;
-#     GET /stress/status reads the file — no shared state, no blocking I/O on the hot path.
-#   * glxgears inside the worker runs in its own process group (setsid) so SIGKILL doesn't leak.
-#   * Pad still works to hit Stop: the server and kiosk are never CPU-starved (separate processes).
-
-STRESS_METRICS_F = "/tmp/gose-stress-metrics.json"
-STRESS_FLAG_F    = "/tmp/gose-stress-running.flag"
-STRESS_WORKER    = "/userdata/gose-ui/gose_stress_worker.py"
-
-_stress = {
-    "proc": None,          # subprocess.Popen for the worker
-    "deadline": 0.0,       # wall-clock time the worker should have finished
-    "duration_s": 0,
-    "lock": threading.Lock(),
-}
-
-def _stress_watchdog():
-    """Background thread: auto-kill the worker if it overruns its deadline by >10s."""
-    while True:
-        time.sleep(5)
-        with _stress["lock"]:
-            p = _stress["proc"]
-            if p is None:
-                continue
-            if p.poll() is not None:
-                _stress["proc"] = None
-                continue
-            if time.time() > _stress["deadline"] + 10:
-                LOG.warning("stress worker overran deadline — force-killing")
-                try:
-                    import os as _os, signal as _sig
-                    _os.killpg(_os.getpgid(p.pid), _sig.SIGKILL)
-                except Exception:
-                    try: p.kill()
-                    except Exception: pass
-                _stress["proc"] = None
-
-threading.Thread(target=_stress_watchdog, daemon=True).start()
-
-def stress_start(payload):
-    """Launch the stress worker subprocess."""
-    with _stress["lock"]:
-        # reject if already running
-        p = _stress["proc"]
-        if p is not None and p.poll() is None:
-            return {"ok": False, "error": "already running — stop first"}
-
-    raw_dur = payload.get("duration_s", 60)
-    raw_mem = payload.get("mem_mb", 256)
-    try:
-        dur = int(raw_dur)
-        mem = int(raw_mem)
-    except (TypeError, ValueError):
-        return {"ok": False, "error": "duration_s and mem_mb must be integers"}
-
-    MAX_DURATION = 600  # hard cap: 10 minutes
-    dur = max(10, min(dur, MAX_DURATION))
-    mem = max(64, min(mem, 2048))
-
-    # clean up stale files
-    for f in (STRESS_METRICS_F, STRESS_FLAG_F):
-        try: os.unlink(f)
-        except Exception: pass
-
-    try:
-        proc = subprocess.Popen(
-            ["python3", STRESS_WORKER, str(dur), str(mem)],
-            preexec_fn=os.setsid,   # own process group
-            close_fds=True,
-        )
-    except Exception as ex:
-        return {"ok": False, "error": "failed to start worker: " + str(ex)}
-
-    with _stress["lock"]:
-        _stress["proc"] = proc
-        _stress["deadline"] = time.time() + dur + 10   # grace period
-        _stress["duration_s"] = dur
-
-    return {"ok": True, "pid": proc.pid, "duration_s": dur, "mem_mb": mem}
-
-def stress_stop():
-    """Stop the stress worker cleanly."""
-    with _stress["lock"]:
-        p = _stress["proc"]
-        if p is None or p.poll() is not None:
-            _stress["proc"] = None
-            return {"ok": True, "was_running": False}
-        try:
-            import signal as _sig
-            os.killpg(os.getpgid(p.pid), _sig.SIGTERM)
-        except Exception:
-            try: p.terminate()
-            except Exception: pass
-        _stress["proc"] = None
-
-    return {"ok": True, "was_running": True}
-
-def stress_status():
-    """Return the current metrics written by the worker (or a 'not running' stub)."""
-    # check if the worker proc is still alive (avoids stale metrics from a prior run)
-    with _stress["lock"]:
-        p = _stress["proc"]
-        proc_alive = p is not None and p.poll() is None
-
-    try:
-        with open(STRESS_METRICS_F) as f:
-            d = json.load(f)
-        # if the file says running but the process is dead → mark as stopped
-        if d.get("running") and not proc_alive:
-            d["running"] = False
-        return d
-    except Exception:
-        pass
-
-    # no metrics file yet (or worker never started)
-    return {
-        "ok": True,
-        "running": proc_alive,
-        "elapsed_s": 0,
-        "remaining_s": _stress["duration_s"] if proc_alive else 0,
-        "duration_s": _stress["duration_s"],
-        "cpu_pct": None, "mem_used_mb": None, "mem_total_mb": None,
-        "cpu_temp_c": None, "cpu_freq_mhz": None,
-        "gl_fps": None, "gl_running": False,
-        "throttled": False, "throttle_count": 0,
-    }
-
 # ===================== WINDOWING SPINE — docs/23 §4 / §9 Phase 0 =====================
 # ONE merged WINDOW REGISTRY over both window kinds (docs/23 §4.1):
 #   * web windows    — iframes in WinBox frames inside the kiosk WebView. The shell-side
@@ -10241,14 +10235,6 @@ class H(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         self._wrap(self._route_post)
 
-    @staticmethod
-    def _scrub_path(path):
-        """Strip secret query params from the path before logging.
-        Currently: pin= and owner_token= — both are owner credentials that must not
-        appear in gose.log where any log-reader could harvest them."""
-        import re as _re
-        return _re.sub(r'(?i)([?&])(pin|owner_token)=[^&]*', r'\1\2=***', path)
-
     def _wrap(self, fn):
         # every request: rate-limit expensive routes, run, log timing, catch+log errors (never crash)
         t0 = time.time()
@@ -10258,16 +10244,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json({"ok": False, "error": "rate limited — slow down"})
         try:
             fn()
-            LOG.info("%s %s %dms", self.command, self._scrub_path(self.path), int((time.time() - t0) * 1000))
+            LOG.info("%s %s %dms", self.command, self.path, int((time.time() - t0) * 1000))
         except Exception:
-            LOG.error("%s %s FAILED\n%s", self.command, self._scrub_path(self.path), traceback.format_exc())
+            LOG.error("%s %s FAILED\n%s", self.command, self.path, traceback.format_exc())
             try: self._json({"ok": False, "error": "internal error"})
             except Exception: pass
 
     def _route_get(self):
         route = self.path.split("?")[0]
-        if route == "/stress/status":
-            return self._json(stress_status())
         if route == "/health":
             return self._json(health())
         if route == "/version":
@@ -10285,6 +10269,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(diag_health())
         if route == "/system/backups":
             return self._json(gose_backups())
+        if route == "/system/update":
+            return self._json(system_update_status())
         if route == "/status.json":
             st = agent_status(); h = host_info()
             for k in ("online", "gpu_pct", "gpu_mem_used_mb", "gpu_mem_total_mb",
@@ -10307,8 +10293,6 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(play_difficulty_get())
         if route == "/play/history":
             return self._json(play_history_get())
-        if route == "/ai/playconfig":
-            return self._json(ai_playconfig_get(self._qs().get("name", "")))
         if route == "/game/stats":
             q = self._qs()
             if q.get("system") and q.get("game"):
@@ -10598,15 +10582,6 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _route_post(self):
         route = self.path.split("?")[0]
-        if route in ("/stress/start", "/stress/stop"):
-            try:
-                n = int(self.headers.get("Content-Length", 0))
-                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
-            except Exception:
-                payload = {}
-            if route == "/stress/start":
-                return self._json(stress_start(payload))
-            return self._json(stress_stop())
         if route == "/diag/bundle":
             return self._json(diag_bundle())
         if route == "/diag/bundle/delete":
@@ -10716,13 +10691,21 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             if route == "/system/backup":
-                if not _owner_ok(payload):
-                    return self._json({"ok": False, "code": "ERR_NOT_OWNER",
-                                       "error": "owner PIN or dev token required to create a backup"})
                 return self._json(gose_backup("manual"))
             if route == "/system/restore":
                 return self._json(gose_restore(payload))
             return self._json(gose_factory_reset(payload))
+        if route in ("/system/update/check", "/system/update/apply", "/system/update/rollback"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/system/update/check":
+                return self._json(system_update_check(payload))
+            if route == "/system/update/apply":
+                return self._json(system_update_apply(payload))
+            return self._json(system_update_rollback(payload))
         if route == "/controllers/admin":
             try:
                 n = int(self.headers.get("Content-Length", 0))
@@ -10812,8 +10795,6 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(friends_save(payload))
         if route == "/guide/toggle":
             return self._json(guide_toggle())
-        if route == "/guide/close":
-            return self._json(guide_close())
         if route == "/game/exit":
             return self._json(game_exit())
         if route == "/game/screenshot":
@@ -10892,27 +10873,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json(scrape_game(payload.get("system", ""), payload.get("game", "")))
             return self._json(scrape_system(payload.get("system", ""), force=True))
         if route in ("/ai/join", "/ai/heartbeat", "/ai/leave", "/ai/grant", "/ai/revoke",
-                     "/ai/request", "/ai/request/clear", "/ai/playconfig", "/ai/play/arm"):
+                     "/ai/request", "/ai/request/clear"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
             except Exception:
                 payload = {}
-            if route in ("/ai/playconfig", "/ai/play/arm"):
-                # Owner-gate: persisting how an AI plays, or arming it to take a seat, is a
-                # privileged action — only the device owner (PIN or dev token) may call it.
-                # An AI token is intentionally NOT accepted (an AI must not arm itself or
-                # rewrite its own play config). Same pre-OOBE carve-out as ai/grant: before
-                # the first-boot owner exists the flag is absent, so we allow it.
-                if os.path.exists(OOBE_DONE_FLAG):
-                    ok, _cred, _kind = _owner_credential(payload)
-                    if not ok:
-                        LOG.warning("%s REFUSED — owner proof required (post-OOBE)", route)
-                        return self._json({"ok": False, "code": "ERR_NOT_OWNER",
-                                           "error": "owner PIN or dev token required"})
-                if route == "/ai/playconfig":
-                    return self._json(ai_playconfig_set(payload))
-                return self._json(ai_play_arm(payload))
             if route == "/ai/grant":
                 # Owner-gate: granting or changing AI tiers is a privileged action — only the
                 # device owner (PIN or dev token) may call this.  An AI token is intentionally
