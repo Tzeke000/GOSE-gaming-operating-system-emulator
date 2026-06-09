@@ -5467,7 +5467,8 @@ def saves_backup_all():
             return {"ok": False, "error": "no saves directory"}
         dest_dir = str(_saves_sched.get("dest") or SAVES_BACKUP_DIR)
         real_dest = os.path.realpath(dest_dir)
-        if not real_dest.startswith(os.path.realpath("/userdata")):
+        _ud = os.path.realpath("/userdata")
+        if real_dest != _ud and not real_dest.startswith(_ud + "/"):
             return {"ok": False, "error": "dest outside /userdata"}
         os.makedirs(real_dest, exist_ok=True)
         name = "saves-" + time.strftime("%Y%m%d-%H%M%S") + ".tar.gz"
@@ -5499,7 +5500,8 @@ def saves_export_game(system, game, dest_path):
     if not os.path.isdir(sys_dir):
         return {"ok": False, "error": "system saves not found"}
     dest_dir = os.path.realpath(dest_path) if dest_path else SAVES_BACKUP_DIR
-    if not dest_dir.startswith(os.path.realpath("/userdata")):
+    _ud = os.path.realpath("/userdata")
+    if dest_dir != _ud and not dest_dir.startswith(_ud + "/"):
         return {"ok": False, "error": "dest outside /userdata"}
     try:
         os.makedirs(dest_dir, exist_ok=True)
@@ -5530,7 +5532,8 @@ def saves_import_game(system, archive_path):
     if "/" in system or ".." in system:
         return {"ok": False, "error": "invalid system name"}
     real_ap = os.path.realpath(archive_path)
-    if not real_ap.startswith(os.path.realpath("/userdata")) or not os.path.isfile(real_ap):
+    _ud = os.path.realpath("/userdata")
+    if (real_ap != _ud and not real_ap.startswith(_ud + "/")) or not os.path.isfile(real_ap):
         return {"ok": False, "error": "archive not found or outside /userdata"}
     if not real_ap.endswith(".tar.gz"):
         return {"ok": False, "error": "must be a .tar.gz"}
@@ -5541,7 +5544,7 @@ def saves_import_game(system, archive_path):
         members = [m.strip() for m in lst.stdout.splitlines() if m.strip()]
         for m in members:
             mm = m.lstrip("./")
-            if "/" in mm or ".." in mm:
+            if ".." in mm.split("/") or (mm and "/" in mm):
                 return {"ok": False, "error": "archive contains subdirs"}
             ext = os.path.splitext(mm)[1].lower()
             if mm and ext not in _SAVE_EXTS | {".png", ""}:
@@ -5561,7 +5564,8 @@ def saves_import_full(archive_path):
     if not archive_path:
         return {"ok": False, "error": "archive_path required"}
     real_ap = os.path.realpath(archive_path)
-    if not real_ap.startswith(os.path.realpath("/userdata")) or not os.path.isfile(real_ap):
+    _ud = os.path.realpath("/userdata")
+    if (real_ap != _ud and not real_ap.startswith(_ud + "/")) or not os.path.isfile(real_ap):
         return {"ok": False, "error": "archive not found or outside /userdata"}
     if not real_ap.endswith(".tar.gz"):
         return {"ok": False, "error": "must be a .tar.gz"}
@@ -5578,10 +5582,12 @@ def saves_import_full(archive_path):
                 return {"ok": False, "error": "archive escapes saves root: " + m}
             if mm.startswith("saves/") and not mm.endswith("/"):
                 parts = mm.split("/")
-                if len(parts) == 3:
-                    ext = os.path.splitext(parts[2])[1].lower()
-                    if ext not in _SAVE_EXTS | {".png", ""}:
-                        return {"ok": False, "error": "unexpected type: " + mm}
+                # Enforce exactly saves/<system>/<file> — no deeper nesting
+                if len(parts) != 3:
+                    return {"ok": False, "error": "unexpected depth: " + mm}
+                ext = os.path.splitext(parts[2])[1].lower()
+                if ext not in _SAVE_EXTS | {".png", ""}:
+                    return {"ok": False, "error": "unexpected type: " + mm}
         ex = subprocess.run(["tar", "-xzf", real_ap, "-C", "/userdata"],
                             capture_output=True, text=True, timeout=300)
         if ex.returncode > 1:
@@ -5640,7 +5646,8 @@ def saves_schedule_set(payload):
             _saves_sched["keep"] = max(1, min(30, int(payload["keep"])))
         if "dest" in payload:
             d = os.path.realpath(str(payload["dest"]))
-            if d.startswith(os.path.realpath("/userdata")):
+            _ud = os.path.realpath("/userdata")
+            if d == _ud or d.startswith(_ud + "/"):
                 _saves_sched["dest"] = d
             else:
                 return {"ok": False, "error": "dest must be inside /userdata"}

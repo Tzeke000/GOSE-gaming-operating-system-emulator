@@ -235,7 +235,7 @@ async function render(){
 async function renderSaves(){
   const d = _savesData = await api("GET","/saves/list");
   const wrap=document.getElementById("wrap");
-  if(!d.ok){wrap.innerHTML=`<div class="empty">Could not load saves: ${d.error}</div>`;return;}
+  if(!d.ok){wrap.innerHTML='<div class="empty">Could not load saves: '+escH(d.error||'unknown error')+'</div>';return;}
   document.getElementById("hdr-sub").textContent=
     `${d.total_files} file${d.total_files!==1?"s":""} · ${fmt(d.total_bytes)} total`;
   if(!d.systems||!d.systems.length){
@@ -317,7 +317,7 @@ async function renderBackups(){
   const d = _backupsData = await api("GET","/saves/backups");
   const wrap=document.getElementById("wrap");
   document.getElementById("hdr-sub").textContent="save backup archives";
-  if(!d.ok){wrap.innerHTML=`<div class="empty">Could not load backups: ${d.error}</div>`;return;}
+  if(!d.ok){wrap.innerHTML='<div class="empty">Could not load backups: '+escH(d.error||'unknown error')+'</div>';return;}
   let html='<div class="actstrip">'
     +'<div class="btn primary" data-act="backup-all" tabindex="0"><span class="ic" data-i="archive"></span>Back Up Now</div>'
     +'</div>';
@@ -364,7 +364,7 @@ async function renderAuto(){
   const d = _schedData = await api("GET","/saves/schedule");
   const wrap=document.getElementById("wrap");
   document.getElementById("hdr-sub").textContent="scheduled auto-backup";
-  if(!d.ok){wrap.innerHTML=`<div class="empty">Could not load schedule: ${d.error}</div>`;return;}
+  if(!d.ok){wrap.innerHTML='<div class="empty">Could not load schedule: '+escH(d.error||'unknown error')+'</div>';return;}
   const s=d.schedule;
   const freqCycle=["daily","weekly"];
   const keepCycle=[3,5,7,14,30];
@@ -462,7 +462,7 @@ async function renderCloud(){
   const d = _cloudData = await api("GET","/saves/cloud");
   const wrap=document.getElementById("wrap");
   document.getElementById("hdr-sub").textContent="cloud save sync";
-  if(!d.ok){wrap.innerHTML=`<div class="empty">Could not load cloud status: ${d.error}</div>`;return;}
+  if(!d.ok){wrap.innerHTML='<div class="empty">Could not load cloud status: '+escH(d.error||'unknown error')+'</div>';return;}
   const cfg=d.config; const active=d.active||{};
   let html='<div class="ph">CLOUD SYNC</div>';
   // Provider selector
