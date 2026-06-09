@@ -5798,7 +5798,9 @@ def game_gallery():
             if not kind:
                 continue
             p = os.path.join(d, f)
-            if not _safe(p) or not os.path.isfile(p):
+            # skip symlinks — a symlink pointing to a real file elsewhere would pass _safe()
+            # (realpath stays under /userdata) but could expose files outside GALLERY_DIRS.
+            if os.path.islink(p) or not _safe(p) or not os.path.isfile(p):
                 continue
             try: stt = os.stat(p)
             except Exception: continue
@@ -5847,6 +5849,7 @@ import struct as _struct
 
 _SHARE_ENABLED_KEY = "share_qr"   # privacy.json flag, defaults False
 _share_tokens = {}   # token -> {path, expires}
+_share_lock = threading.Lock()   # guards _share_tokens (server is ThreadingTCPServer)
 SHARE_TTL = 300       # 5 minutes
 
 def _share_allowed():
@@ -5855,9 +5858,10 @@ def _share_allowed():
 
 def _share_expire():
     now = time.time()
-    dead = [t for t, v in list(_share_tokens.items()) if v["expires"] < now]
-    for t in dead:
-        _share_tokens.pop(t, None)
+    with _share_lock:
+        dead = [t for t, v in list(_share_tokens.items()) if v["expires"] < now]
+        for t in dead:
+            _share_tokens.pop(t, None)
 
 def _qr_svg(text):
     """Generate a minimal QR SVG (version-auto) using pure Python.
@@ -5899,19 +5903,30 @@ def _qr_svg(text):
             '<text x="10" y="50" font-family="monospace" font-size="10" fill="#7ec8e3">'
             + esc + '</text></svg>')
 
+def _gallery_realpath_ok(rp):
+    """Return True iff rp (an os.path.realpath result) sits inside one of GALLERY_DIRS.
+    Uses realpath on the gallery dir too so mounts/junctions can't trick the prefix check."""
+    return any(rp == os.path.realpath(d) or rp.startswith(os.path.realpath(d) + "/")
+               for d in GALLERY_DIRS)
+
 def share_link(payload):
     """Create a share token for a gallery file, return URL + QR SVG."""
     if not _share_allowed():
         return {"ok": False, "error": "QR share is off — enable it in Settings > Privacy"}
     path = (payload or {}).get("path", "")
-    if not path or not _safe(path) or not os.path.isfile(path):
+    # Resolve symlinks before ANY check — prevents a symlink-under-gallery-dir bypass
+    # where normpath(symlink) passes the gallery prefix test but the target is outside.
+    rp = _safe(path)   # _safe() already calls os.path.realpath internally; returns rp or None
+    if not rp or not os.path.isfile(rp):
         return {"ok": False, "error": "invalid path"}
-    # path-confine: must be inside GALLERY_DIRS
-    if not any(os.path.normpath(path).startswith(os.path.normpath(d)) for d in GALLERY_DIRS):
+    # path-confine: the RESOLVED (real) path must be inside GALLERY_DIRS
+    if not _gallery_realpath_ok(rp):
         return {"ok": False, "error": "file not in gallery"}
     _share_expire()
     token = _secrets.token_hex(8)
-    _share_tokens[token] = {"path": path, "expires": time.time() + SHARE_TTL}
+    # Store the realpath so serve-time re-check is consistent
+    with _share_lock:
+        _share_tokens[token] = {"path": rp, "expires": time.time() + SHARE_TTL}
     # Build the URL.  Try tailscale first (if available), fall back to LAN/loopback.
     host = _share_host()
     url = "http://%s:8780/share/%s" % (host, token)
@@ -5947,15 +5962,19 @@ def _share_host():
 def share_serve(token):
     """Return (data_bytes, content_type) for a share token, or (None, None) if invalid."""
     _share_expire()
-    rec = _share_tokens.get(token)
+    with _share_lock:
+        rec = _share_tokens.get(token)
     if not rec:
         return None, None
-    path = rec["path"]
-    if not os.path.isfile(path):
+    path = rec["path"]   # always a realpath (set by share_link)
+    # Defense-in-depth: re-verify at serve time in case the file was replaced with a symlink
+    # after the token was created (TOCTOU).  Re-resolve and re-check gallery confinement.
+    rp = os.path.realpath(path)
+    if rp != path or not _gallery_realpath_ok(rp) or not os.path.isfile(rp):
         return None, None
-    ct = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    ct = mimetypes.guess_type(rp)[0] or "application/octet-stream"
     try:
-        with open(path, "rb") as fh:
+        with open(rp, "rb") as fh:
             return fh.read(), ct
     except Exception:
         return None, None
