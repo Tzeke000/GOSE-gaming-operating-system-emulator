@@ -105,7 +105,7 @@
   const $=id=>document.getElementById(id);
   var bgn=(location.search.match(/bg=(\d+)/)||[])[1]||"0";
   var IN_GAME=/[?&]game=1/.test(location.search);   // a game is paused behind us → show save/load state
-  $("bg").style.backgroundImage="url(_gbg.jpg?"+bgn+")";
+  // bg image is lazy-loaded after reveal (see bottom of script) — don't set it here
   function api(p,b){return fetch(p,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{cache:"no-store"}).then(r=>r.json()).catch(()=>({ok:false}));}
   function ico(n){return '<span class="ic" style="-webkit-mask:url(assets/icons/'+n+'.svg) center/contain no-repeat;mask:url(assets/icons/'+n+'.svg) center/contain no-repeat;background:currentColor;display:inline-block"></span>';}
   let S={vol:50,mute:false,bri:null,briHas:true,perf:"balanced",batt:null,charging:false,net:"—",
@@ -441,7 +441,28 @@
       else if(S.cheatsExpanded){S.cheatsExpanded=false;build();}
       else return;}
     else return;e.preventDefault();},true);
-  build();refresh();setInterval(refresh,2000);
+  // Reveal the bar IMMEDIATELY — don't wait for the frozen-frame image.
+  // body starts opacity:0 to avoid a white flash while the GTK window paints;
+  // we set .ready on the very next frame so the bar appears near-instantly.
+  requestAnimationFrame(function(){document.body.classList.add("ready");});
+  try{document.body.tabIndex=-1;window.focus();document.body.focus();}catch(e){}   // make sure keys land here
+  // Lazy-load the frozen-frame backdrop AFTER the bar is already visible.
+  // The background div starts empty (#07070f) and fills in once the image arrives.
+  (function(){var bg=$("bg");
+    var im=new Image();
+    im.onload=function(){if(bg)bg.style.backgroundImage="url(_gbg.jpg?"+bgn+")";};
+    im.onerror=function(){};   // no backdrop is fine — bar still works
+    im.src="_gbg.jpg?"+bgn;
+  })();
+  build();
+  // Fan all data fetches out in parallel — none block the reveal above.
+  Promise.all([
+    api("/status.json").then(d=>{if(d){if(d.battery_pct!=null)S.batt=d.battery_pct;S.charging=!!d.charging;}render();}),
+    api("/net.json").then(d=>{if(d&&d.ok){S.net=d.connection||(d.online?"Online":"Offline");S.hasWifi=!!d.has_wifi;}render();}),
+    api("/sys/audio").then(d=>{if(d&&d.ok){S.vol=d.volume==null?S.vol:d.volume;S.mute=!!d.mute;}render();}),
+    api("/sys/brightness").then(d=>{if(d){S.briHas=d.ok!==false;if(d.ok&&d.level!=null)S.bri=d.level;}render();}),
+  ]);
+  setInterval(refresh,2000);
   refreshPerf();setInterval(refreshPerf,1200);   // live host perf while the bar is open (stays under /sys/perf 60/60 limit)
   api("/capture/buffer").then(d=>{if(d){S.buffer=!!d.running;build();}});   // reflect replay-buffer state on open
   loadSlots();   // populate the saved-states thumbnails when the Game Bar opens over a game
@@ -450,9 +471,6 @@
   loadExtras();   // HUD/quiet/shader/bezel/cheats state for the game-bar quick controls
   loadAiPaired();  // #41 check if an AI is paired (tier-gate display)
   loadActivity();  // #115 current game name for header
-  try{document.body.tabIndex=-1;window.focus();document.body.focus();}catch(e){}   // make sure keys land here
-  (function(){var done=false;function go(){if(done)return;done=true;requestAnimationFrame(function(){document.body.classList.add("ready");});}
-    var im=new Image();im.onload=go;im.onerror=go;im.src="_gbg.jpg?"+bgn;setTimeout(go,240);})();   // reveal once the frozen frame is ready (or 240ms cap)
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>
