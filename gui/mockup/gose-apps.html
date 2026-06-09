@@ -68,6 +68,7 @@
   var _t=window.GOSE&&GOSE.t?GOSE.t.bind(GOSE):function(k,fb){return fb||k;};
   const APPS=[
     {nm:_t("apps.app.library.nm","Library"),  ds:_t("apps.app.library.ds","Your games, by system"),        ic:"library", href:"gose-library.html"},
+    {nm:_t("apps.app.steam.nm","Steam"),     ds:_t("apps.app.steam.ds","PC game store — light/retro in VM, full on real hardware"), ic:"gamepad-2", href:"gose-steam.html"},
     {nm:_t("apps.app.files.nm","Files"),    ds:_t("apps.app.files.ds","Browse, open & edit files + storage map"), ic:"files", href:"gose-files.html"},
     {nm:_t("apps.app.taskman.nm","Task Manager"), ds:_t("apps.app.taskman.ds","Processes, performance, kill tasks"), ic:"cpu", href:"gose-taskman.html"},
     {nm:_t("apps.app.peripherals.nm","Peripherals"), ds:_t("apps.app.peripherals.ds","Controllers, USB, Wi-Fi & Bluetooth"), ic:"usb", href:"gose-peripherals.html"},
@@ -122,8 +123,12 @@
     "org.chromium.Chromium":"Chromium","org.mozilla.firefox":"Firefox","com.heroicgameslauncher.hgl":"Heroic",
     "com.discordapp.Discord":"Discord","com.spotify.Client":"Spotify","org.kde.kdenlive":"Kdenlive",
     "com.obsproject.Studio":"OBS Studio","org.blender.Blender":"Blender","md.obsidian.Obsidian":"Obsidian"};
+  // Flatpak IDs that have a dedicated first-class tile above — skip dynamic duplication.
+  const SKIP_FLATPAK_IDS=new Set(["com.valvesoftware.Steam"]);
   function loadInstalled(){fetch("/apps.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-    (d.apps||[]).forEach(a=>{ if(APPS.some(x=>x.cmd==="flatpak run "+a.id))return;
+    (d.apps||[]).forEach(a=>{
+      if(SKIP_FLATPAK_IDS.has(a.id))return;  // has a dedicated tile (e.g. Steam → gose-steam.html)
+      if(APPS.some(x=>x.cmd==="flatpak run "+a.id))return;
       APPS.push({nm:NAMEMAP[a.id]||a.name||a.id, ds:"Installed app", ic:ICONMAP[a.id]||"layout-grid",
         cmd:"flatpak run "+a.id, iconUrl:"/appicon?id="+a.id});});
     filter();

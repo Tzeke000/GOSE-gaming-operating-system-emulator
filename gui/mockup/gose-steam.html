@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE &mdash; Steam</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+
+  .top{display:flex;align-items:center;gap:12px;padding:16px 30px 4px}
+  .top img{width:30px;height:30px}.top h1{font-size:18px;margin:0}
+  .top .sub{color:var(--muted);font-size:12px;margin-left:4px}
+  .top .home{margin-left:auto;background:none;border:none;color:var(--muted);font-size:13px;
+    cursor:pointer;font-family:inherit;padding:4px 8px;border-radius:8px}
+  .top .home:focus{outline:none;box-shadow:var(--focusglow);border:2px solid var(--accent)}
+
+  .body{flex:1;display:flex;gap:14px;margin:10px 30px 14px;min-height:0;overflow:hidden}
+
+  /* LEFT: status + launch */
+  .lp{display:flex;flex-direction:column;gap:10px;width:340px;flex:none;overflow-y:auto}
+
+  /* RIGHT: GPU caveat + Proton info */
+  .rp{flex:1;display:flex;flex-direction:column;gap:10px;overflow-y:auto;min-height:0}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+  .card h3{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin:0 0 10px;
+    display:flex;align-items:center;gap:6px}
+
+  /* status banner */
+  .status-banner{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:16px 18px}
+  .status-banner .sb-top{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+  .status-banner .steam-icon{width:48px;height:48px;border-radius:12px;background:#1a9fff22;
+    border:1.5px solid #1a9fff44;display:flex;align-items:center;justify-content:center;flex-none}
+  .status-banner .steam-icon .ic{font-size:24px;color:#1a9fff}
+  .status-banner .sb-text h2{font-size:18px;font-weight:700;margin:0 0 2px}
+  .status-banner .sb-text .sv{font-size:12px;color:var(--muted)}
+
+  /* status row */
+  .srow{display:flex;justify-content:space-between;align-items:center;padding:7px 0;
+    border-bottom:1px solid var(--line);font-size:13px}
+  .srow:last-child{border-bottom:none;padding-bottom:0}
+  .srow .sk{color:var(--muted)}.srow .sv{font-weight:600}
+  .sv.on{color:#3fb950}.sv.off{color:#e5534b}.sv.dim{color:var(--muted)}
+
+  /* badge */
+  .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:20px;
+    font-size:11px;font-weight:700;letter-spacing:.4px}
+  .badge.ok{background:#3fb95022;color:#3fb950;border:1px solid #3fb95044}
+  .badge.warn{background:#f5a62322;color:#f5a623;border:1px solid #f5a62344}
+  .badge.no{background:#e5534b22;color:#e5534b;border:1px solid #e5534b44}
+  .badge.info{background:#1a9fff22;color:#1a9fff;border:1px solid #1a9fff44}
+
+  /* launch button */
+  .launch-btn{width:100%;padding:14px;border:none;border-radius:11px;font-size:15px;font-weight:700;
+    cursor:pointer;font-family:inherit;transition:background .15s,opacity .15s;
+    background:var(--accent);color:#06121a;display:flex;align-items:center;justify-content:center;gap:8px}
+  .launch-btn:hover{opacity:.88}
+  .launch-btn:focus{outline:none;box-shadow:var(--focusglow)}
+  .launch-btn:disabled{opacity:.4;cursor:not-allowed}
+  .launch-btn.running{background:#3fb950}
+  .launch-btn.stop{background:#e5534b;color:#fff}
+
+  /* GPU tier card */
+  .tier-card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+  .tier-card .tc-top{display:flex;align-items:flex-start;gap:12px;margin-bottom:12px}
+  .tier-card .tier-icon{width:40px;height:40px;border-radius:10px;flex:none;
+    display:flex;align-items:center;justify-content:center}
+  .tier-icon.full{background:#3fb95022;border:1.5px solid #3fb95044}
+  .tier-icon.light{background:#f5a62322;border:1.5px solid #f5a62344}
+  .tier-icon.none{background:#e5534b22;border:1.5px solid #e5534b44}
+  .tier-icon .ic{font-size:20px}
+  .tier-icon.full .ic{color:#3fb950}
+  .tier-icon.light .ic{color:#f5a623}
+  .tier-icon.none .ic{color:#e5534b}
+  .tier-card .tc-body h3{margin:0 0 4px;font-size:15px;font-weight:700}
+  .tier-card .tc-body p{margin:0;font-size:12px;color:var(--muted);line-height:1.6}
+
+  /* detail rows */
+  .det-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;
+    border-bottom:1px solid var(--line);font-size:13px}
+  .det-row:last-child{border-bottom:none;padding-bottom:0}
+  .det-row .dk{color:var(--muted)}.det-row .dv{font-weight:600}
+
+  /* proton info */
+  .proton-row{display:flex;align-items:flex-start;gap:10px;padding:8px 0;
+    border-bottom:1px solid var(--line);font-size:13px}
+  .proton-row:last-child{border-bottom:none;padding-bottom:0}
+  .proton-row .pi{width:26px;height:26px;border-radius:6px;background:#1a9fff22;
+    border:1px solid #1a9fff33;display:flex;align-items:center;justify-content:center;flex:none}
+  .proton-row .pi .ic{font-size:13px;color:#1a9fff}
+  .proton-row .pt{flex:1}
+  .proton-row .pt .pn{font-weight:600;margin-bottom:2px}
+  .proton-row .pt .pd{font-size:11px;color:var(--muted);line-height:1.4}
+
+  /* footer */
+  .foot{padding:6px 30px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);
+    display:flex;gap:18px;flex-shrink:0}
+  .foot span{display:flex;align-items:center;gap:4px}
+
+  .toast{position:fixed;left:50%;bottom:50px;transform:translateX(-50%);background:var(--surface2);
+    border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;
+    opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
+  .toast.show{opacity:1}
+
+  /* pad focus */
+  .focusable:focus{outline:none;box-shadow:var(--focusglow);border-color:var(--accent)!important}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <img src="assets/brand/gose-crystal.png" alt="GOSE">
+  <h1>Steam</h1><span class="sub">PC game store &amp; launcher</span>
+  <button class="home focusable" id="btnBack" tabindex="1">&#x2190; Back</button>
+</div>
+
+<div class="body">
+
+  <!-- LEFT: status + launch -->
+  <div class="lp">
+
+    <div class="status-banner">
+      <div class="sb-top">
+        <div class="steam-icon"><span class="ic" style="--u:url(assets/icons/gamepad-2.svg)"></span></div>
+        <div class="sb-text">
+          <h2>Steam</h2>
+          <div class="sv" id="steamVersion">Valve Corporation &mdash; v1.0.0.85</div>
+        </div>
+      </div>
+      <div class="srow"><span class="sk">Installed</span><span class="sv" id="steamInstalled">&mdash;</span></div>
+      <div class="srow"><span class="sk">Status</span><span class="sv" id="steamRunning">&mdash;</span></div>
+      <div class="srow"><span class="sk">Account</span><span class="sv" id="steamUser">&mdash;</span></div>
+    </div>
+
+    <button class="launch-btn focusable" id="btnLaunch" tabindex="2" disabled>
+      <span class="ic" style="--u:url(assets/icons/gamepad-2.svg)"></span>
+      <span id="btnLaunchLabel">Loading&hellip;</span>
+    </button>
+
+    <div class="card">
+      <h3><span class="ic" style="--u:url(assets/icons/info.svg)"></span> FIRST LAUNCH</h3>
+      <div class="srow" style="padding-top:0"><span class="sk" style="font-size:12px;line-height:1.5">
+        Steam will open on your display. Sign in with your Steam account. Your library loads automatically
+        after login. Use a mouse or the on-screen keyboard for text entry.
+      </span></div>
+    </div>
+
+    <button class="launch-btn focusable" id="btnGpu" tabindex="3"
+      style="background:var(--surface);color:var(--text);border:1.5px solid var(--line);font-size:13px;padding:10px">
+      <span class="ic" style="--u:url(assets/icons/monitor.svg)"></span>
+      <span>View GPU Capabilities</span>
+    </button>
+
+  </div>
+
+  <!-- RIGHT: GPU tier + Proton info -->
+  <div class="rp">
+
+    <div class="tier-card" id="tierCard">
+      <div class="tc-top">
+        <div class="tier-icon" id="tierIcon">
+          <span class="ic" style="--u:url(assets/icons/monitor.svg)"></span>
+        </div>
+        <div class="tc-body">
+          <h3 id="tierTitle">Probing GPU&hellip;</h3>
+          <p id="tierDesc">Checking what this device can run&hellip;</p>
+        </div>
+      </div>
+      <div class="det-row"><span class="dk">OpenGL</span><span class="dv" id="detGL">&mdash;</span></div>
+      <div class="det-row"><span class="dk">Vulkan</span><span class="dv" id="detVulkan">&mdash;</span></div>
+      <div class="det-row"><span class="dk">Renderer</span><span class="dv" id="detRenderer">&mdash;</span></div>
+      <div class="det-row"><span class="dk">Steam on this device</span><span id="detSteamTier">&mdash;</span></div>
+    </div>
+
+    <div class="card">
+      <h3><span class="ic" style="--u:url(assets/icons/cpu.svg)"></span> PROTON &amp; WINE</h3>
+      <div class="proton-row">
+        <div class="pi"><span class="ic" style="--u:url(assets/icons/gamepad-2.svg)"></span></div>
+        <div class="pt">
+          <div class="pn">Proton (via Wine-GE + DXVK)</div>
+          <div class="pd">Batocera ships Wine-GE + DXVK in the <code>windows</code> system. Steam uses
+            this path for Windows games. Light and older titles that don&rsquo;t need Vulkan will run.</div>
+        </div>
+      </div>
+      <div class="proton-row">
+        <div class="pi"><span class="ic" style="--u:url(assets/icons/monitor.svg)"></span></div>
+        <div class="pt">
+          <div class="pn">GPU ceiling (VM)</div>
+          <div class="pd">This VM uses virgl (OpenGL 4.3, no Vulkan). DXVK needs Vulkan for modern
+            DirectX 11/12 games. Modern AAA titles won&rsquo;t run here &mdash; they need real hardware.</div>
+        </div>
+      </div>
+      <div class="proton-row">
+        <div class="pi"><span class="ic" style="--u:url(assets/icons/cpu.svg)"></span></div>
+        <div class="pt">
+          <div class="pn">Anti-cheat</div>
+          <div class="pd">Games using kernel-level anti-cheat (EAC, BattlEye) won&rsquo;t work under Proton
+            on any Linux VM &mdash; this is a vendor restriction, not a GOSE limitation.</div>
+        </div>
+      </div>
+      <div class="proton-row" id="rowFullGpu" style="display:none">
+        <div class="pi"><span class="ic" style="--u:url(assets/icons/flame.svg)"></span></div>
+        <div class="pt">
+          <div class="pn">Full GPU &mdash; Vulkan available</div>
+          <div class="pd">This device has Vulkan. Most Steam/Proton titles including DirectX 11/12 games
+            should work. Performance depends on hardware.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="ic" style="--u:url(assets/icons/info.svg)"></span> WHAT RUNS HERE</h3>
+      <div class="det-row" style="padding-top:0">
+        <span class="dk">Retro &amp; 2D indie</span>
+        <span class="badge ok" id="tierRetro">&mdash;</span>
+      </div>
+      <div class="det-row">
+        <span class="dk">Old 3D / OpenGL games</span>
+        <span class="badge" id="tierOld">&mdash;</span>
+      </div>
+      <div class="det-row">
+        <span class="dk">Modern DirectX 11/12 AAA</span>
+        <span class="badge" id="tierModern">&mdash;</span>
+      </div>
+      <div class="det-row">
+        <span class="dk">Kernel anti-cheat (EAC etc.)</span>
+        <span class="badge no">Not supported</span>
+      </div>
+      <div class="det-row">
+        <span class="dk">Modern Steam on real hardware</span>
+        <span class="badge ok">Full support</span>
+      </div>
+    </div>
+
+  </div><!-- rp -->
+</div><!-- body -->
+
+<div class="foot">
+  <span><span class="ic" style="--u:url(assets/icons/arrow-left.svg)"></span> <b>B</b> Back</span>
+  <span><span class="ic" style="--u:url(assets/icons/gamepad-2.svg)"></span> <b>A</b> Launch Steam</span>
+  <span><span class="ic" style="--u:url(assets/icons/monitor.svg)"></span> GPU Capabilities</span>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="assets/i18n.js"></script>
+<script src="assets/icons.js"></script>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
+
+  function esc(s){return(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  function paint(){if(window.GICON){GICON.paint(document);return;}
+    document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)"));}
+  function say(m,dur){const t=document.getElementById("toast");t.textContent=m;t.classList.add("show");
+    clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),dur||2200);}
+
+  // ---- navigation: three focusable buttons ----
+  const FOCUSABLE=["btnBack","btnLaunch","btnGpu"];
+  let foc=1; // start on Launch
+  function setFoc(i){foc=Math.max(0,Math.min(FOCUSABLE.length-1,i));
+    FOCUSABLE.forEach((id,j)=>{const el=document.getElementById(id);if(el)el.classList.toggle("focus",j===foc);});
+    const el=document.getElementById(FOCUSABLE[foc]);if(el)el.focus();}
+  document.addEventListener("keydown",e=>{
+    if(e.key==="ArrowUp"||e.key==="ArrowLeft"){e.preventDefault();setFoc(foc-1);}
+    else if(e.key==="ArrowDown"||e.key==="ArrowRight"){e.preventDefault();setFoc(foc+1);}
+    else if(e.key==="Enter"){e.preventDefault();const el=document.getElementById(FOCUSABLE[foc]);if(el)el.click();}
+    else if(e.key==="Escape"||e.key==="Backspace"){goBack();}
+  });
+
+  function goBack(){history.length>1?history.back():(location.href="gose-library.html");}
+  document.getElementById("btnBack").addEventListener("click",goBack);
+  document.getElementById("btnGpu").addEventListener("click",()=>{location.href="gose-gpu.html";});
+
+  // ---- Steam status ----
+  function loadSteam(){
+    fetch("/widgets/steam",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      document.getElementById("steamInstalled").innerHTML=d.installed
+        ?'<span class="badge ok">Installed</span>'
+        :'<span class="badge no">Not installed</span>';
+      document.getElementById("steamRunning").innerHTML=d.running
+        ?'<span class="badge ok">Running</span>'
+        :'<span class="badge warn">Not running</span>';
+      document.getElementById("steamUser").textContent=
+        d.logged_in?(d.user||"Signed in"):"Not signed in";
+      const btn=document.getElementById("btnLaunch"),lbl=document.getElementById("btnLaunchLabel");
+      if(!d.installed){btn.disabled=true;lbl.textContent="Steam not installed";return;}
+      btn.disabled=false;
+      if(d.running){btn.classList.add("running");lbl.textContent="Steam is running";}
+      else{btn.classList.remove("running");lbl.textContent="Launch Steam";}
+    }).catch(()=>{
+      document.getElementById("steamInstalled").textContent="Unknown";
+      document.getElementById("steamRunning").textContent="Unknown";
+    });
+  }
+
+  document.getElementById("btnLaunch").addEventListener("click",()=>{
+    const btn=document.getElementById("btnLaunch"),lbl=document.getElementById("btnLaunchLabel");
+    if(btn.disabled)return;
+    say("Launching Steam…",3000);
+    btn.disabled=true;lbl.textContent="Starting…";
+    fetch("/launch",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({app:"steam"})})
+      .then(r=>r.json()).then(d=>{
+        if(d.ok){say("Steam launched",2000);setTimeout(loadSteam,4000);}
+        else{say("Error: "+(d.error||"launch failed"));btn.disabled=false;lbl.textContent="Launch Steam";}
+      }).catch(()=>{say("Launch request failed");btn.disabled=false;lbl.textContent="Launch Steam";});
+  });
+
+  // ---- GPU tier ----
+  function loadGpu(){
+    fetch("/system/gpu",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      const tier=d.tier||"none"; // "full" | "opengl" | "none"
+      const icon=document.getElementById("tierIcon");
+      const title=document.getElementById("tierTitle");
+      const desc=document.getElementById("tierDesc");
+      const retro=document.getElementById("tierRetro");
+      const old=document.getElementById("tierOld");
+      const modern=document.getElementById("tierModern");
+      const steamTier=document.getElementById("detSteamTier");
+
+      icon.className="tier-icon "+(tier==="full"?"full":tier==="opengl"?"light":"none");
+
+      if(tier==="full"){
+        title.textContent="Full GPU — Vulkan available";
+        desc.textContent="This device has real Vulkan support. Most Steam and Proton titles should run, "
+          +"including DirectX 11/12 games. Performance depends on hardware capability.";
+        retro.className="badge ok";retro.textContent="Runs";
+        old.className="badge ok";old.textContent="Runs";
+        modern.className="badge warn";modern.textContent="Most titles";
+        steamTier.innerHTML='<span class="badge ok">Full Proton support</span>';
+        document.getElementById("rowFullGpu").style.display="flex";
+      } else if(tier==="opengl"){
+        title.textContent="OpenGL only — no Vulkan (VM)";
+        desc.textContent="This VM has OpenGL via virgl but no Vulkan. Light and older games run. "
+          +"Modern AAA titles that need Vulkan/DXVK won’t work here — "
+          +"they need real hardware (e.g. the Odin 2 or a bare-metal PC).";
+        retro.className="badge ok";retro.textContent="Runs";
+        old.className="badge warn";old.textContent="Many run";
+        modern.className="badge no";modern.textContent="Needs real hardware";
+        steamTier.innerHTML='<span class="badge warn">Light/retro only in VM</span>';
+      } else {
+        title.textContent="No GPU detected";
+        desc.textContent="No OpenGL or Vulkan GPU was found. Steam may not run correctly on this device.";
+        retro.className="badge warn";retro.textContent="May work";
+        old.className="badge no";old.textContent="Unlikely";
+        modern.className="badge no";modern.textContent="Not supported";
+        steamTier.innerHTML='<span class="badge no">Not supported</span>';
+      }
+
+      const gl=d.gl||{};const vk=d.vulkan||{};
+      document.getElementById("detGL").innerHTML=gl.available
+        ?'<span style="color:#3fb950">'+esc(gl.version_short||gl.version||"Yes")+'</span>'
+        :'<span style="color:#e5534b">Not available</span>';
+      document.getElementById("detVulkan").innerHTML=vk.available
+        ?'<span style="color:#3fb950">'+esc(vk.api_version||"Yes")+'</span>'
+        :'<span style="color:#f5a623">Not available (VM)</span>';
+      const renderer=gl.renderer||"Unknown";
+      document.getElementById("detRenderer").textContent=renderer.length>30?renderer.slice(0,30)+"…":renderer;
+
+    }).catch(()=>{
+      document.getElementById("tierTitle").textContent="GPU probe unavailable";
+      document.getElementById("tierDesc").textContent="Could not query GPU capabilities.";
+    });
+  }
+
+  paint();
+  loadSteam();
+  loadGpu();
+  setFoc(1);
+
+  // poll Steam status every 8s (Steam may launch in background)
+  setInterval(loadSteam,8000);
+</script>
+</body>
+</html>

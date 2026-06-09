@@ -221,8 +221,25 @@
       html+='<div class="rail-sec">Systems</div>';
       html+=realSys.map((s,_)=>{const i=SYS.indexOf(s);return`<div class="sys ${i===cat?'on':''}" data-i2="${i}"><span class="n">${s.logo?`<img src="${s.logo}" alt="" style="height:13px;width:auto;max-width:104px;vertical-align:-2px;margin-right:7px;opacity:.9" onerror="this.remove()">`:''}${esc(s.name)}</span><span class="c">${s.games.length}</span></div>`;}).join("");
     }
+    // PC Gaming section: Steam tile navigates to gose-steam.html
+    // GPU tier cached from last /system/gpu poll; shown as a badge on the tile.
+    const gpuTier=window._steamGpuTier||"";
+    const gpuBadge=gpuTier==="full"
+      ?'<span style="font-size:10px;color:#3fb950;font-weight:700;margin-left:auto">Vulkan</span>'
+      :gpuTier==="opengl"
+      ?'<span style="font-size:10px;color:#f5a623;font-weight:700;margin-left:auto">Light</span>'
+      :'';
+    html+='<div class="rail-sec first" style="padding-top:2px">PC Gaming</div>';
+    html+=`<div class="sys" data-href="gose-steam.html" style="cursor:pointer">
+      <span class="n" style="display:flex;align-items:center;gap:6px;width:100%">
+        <span class="ic" style="--u:url(assets/icons/gamepad-2.svg);flex:none;font-size:14px"></span>
+        Steam${gpuBadge}
+      </span></div>`;
     rail.innerHTML=html;
-    [...rail.children].forEach(el=>{if(el.dataset.i2!==undefined)el.onclick=()=>{cat=+el.dataset.i2;foc=0;filterSystem="";render();};});}
+    [...rail.children].forEach(el=>{
+      if(el.dataset.i2!==undefined) el.onclick=()=>{cat=+el.dataset.i2;foc=0;filterSystem="";render();}
+      if(el.dataset.href) el.onclick=()=>{location.href=el.dataset.href;};
+    });}
 
   // ---- sort-bar focus (separate from game/action focus) ----
   // SORT_TILES: before game grid (index < 0 = sort zone)
@@ -709,6 +726,13 @@
       });
     }).catch(()=>{$("sub").textContent="library offline";render();});
   }
+  // Background GPU tier fetch so the Steam rail badge reflects real capability.
+  // Non-blocking — first call is slow (~7s); badge fills in when it resolves.
+  fetch("/system/gpu",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    window._steamGpuTier=d.tier||"";
+    buildRail(); // re-render rail with badge now that tier is known
+  }).catch(()=>{});
+
   loadAll(false);
 </script>
 <script src="assets/a11y.js"></script>
