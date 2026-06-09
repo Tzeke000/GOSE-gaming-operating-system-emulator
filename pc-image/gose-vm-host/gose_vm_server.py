@@ -5213,8 +5213,13 @@ def play_difficulty_get():
             "params": params,
             "available": list(DIFFICULTY_TABLE.keys())}
 
-def play_difficulty_set(difficulty):
-    """POST /play/difficulty {difficulty: "easy"|"med"|"hard"|"learning"} — update difficulty."""
+def play_difficulty_set(difficulty, payload=None):
+    """POST /play/difficulty {difficulty: "easy"|"med"|"hard"|"learning"} — update difficulty.
+    Owner-gated: only the device owner (PIN or dev token) may change the global difficulty,
+    preventing an Observe-tier AI from sabotaging or manipulating the human's play experience."""
+    if not _owner_ok(payload or {}):
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner PIN or dev token required to change difficulty"}
     if not difficulty or difficulty not in DIFFICULTY_TABLE:
         return {"ok": False,
                 "error": "difficulty must be one of: " + ", ".join(DIFFICULTY_TABLE.keys())}
@@ -6820,6 +6825,13 @@ def boot_health_check():
                     "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "read": False,
                 })
+                # Record auto-rollback in update_meta so the update page banner can show
+                try:
+                    meta = _update_meta_read()
+                    meta["last_rollback"] = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "auto": True}
+                    _update_meta_write(meta)
+                except Exception:
+                    pass
                 tmp = notif_f + ".tmp"
                 with open(tmp, "w") as f:
                     json.dump(notifs[:50], f)
@@ -6860,6 +6872,7 @@ def system_update_status():
         "boot_attempts_os": att,
         "boot_threshold": _OS_THRESH,
         "last_update": meta.get("last_update"),
+        "last_rollback": meta.get("last_rollback"),   # exposed so the UI banner can show
         "pending": meta.get("pending"),
         "dry_run_mode": dry_run,
         "phase": 1,
@@ -6955,7 +6968,7 @@ def system_update_rollback(payload):
     if result.get("ok"):
         _boot_att_os_clear()
         meta = _update_meta_read()
-        meta["last_rollback"] = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        meta["last_rollback"] = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "auto": False}
         _update_meta_write(meta)
     return result
 
@@ -11073,7 +11086,7 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             if route == "/play/difficulty":
-                return self._json(play_difficulty_set(payload.get("difficulty", "")))
+                return self._json(play_difficulty_set(payload.get("difficulty", ""), payload))
             return self._json(play_history_append(payload))
         if route in ("/fs/op", "/proc/kill", "/splice/cut", "/launch",
                      "/sys/audio", "/sys/brightness", "/sys/power", "/sys/perf", "/bt"):

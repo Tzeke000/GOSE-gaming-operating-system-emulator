@@ -100,9 +100,8 @@
 </div>
 
 <div id="rollbackBanner" class="banner rollback" style="display:none;margin-top:0;margin-bottom:8px">
-  <strong>Auto-rollback fired.</strong>
-  GOSE detected repeated boot failures and restored your previous configuration automatically.
-  Your games and saves are untouched.
+  <strong id="rollbackBannerTitle">Rollback applied.</strong>
+  <span id="rollbackBannerBody">Your previous configuration was restored. Your games and saves are untouched.</span>
 </div>
 
 <div class="scroll">
@@ -234,10 +233,17 @@ function renderStatus(st){
   document.getElementById("prevTs").textContent=(prev&&prev.ts)?fmtTs(prev.ts):"no snapshot";
   document.getElementById("btnRollback").disabled=!(prev&&prev.batocera_version);
 
-  // rollback-fired banner (if boot_attempts_os was >=threshold but counter is now 0 = was cleared by auto-rollback)
-  // We check the notifications endpoint indirectly via a meta key; simpler: just check the server log.
-  // For now show/hide based on the last_rollback meta
+  // Rollback banner: show when the server reports a recent rollback.
+  // last_rollback.auto=true  → auto-rollback (repeated boot failures)
+  // last_rollback.auto=false → manual rollback (user pressed Roll Back)
   if(st.last_rollback){
+    const lr=st.last_rollback;
+    const auto=lr.auto===true;
+    document.getElementById("rollbackBannerTitle").textContent=
+      auto?"Auto-rollback fired.":"Rollback applied.";
+    document.getElementById("rollbackBannerBody").textContent=
+      auto?"GOSE detected repeated boot failures and restored your previous configuration automatically. Your games and saves are untouched."
+          :"Your previous configuration was restored manually. Your games and saves are untouched.";
     document.getElementById("rollbackBanner").style.display="";
   }
 
@@ -350,18 +356,26 @@ function _ownerToken(){
 // ---- pad nav ----
 const _btns=[btnCheck,btnApply,btnRollback,document.getElementById("btnHome")];
 let _fi=0;
-function _pfocus(){_btns.forEach((b,i)=>{if(!b.disabled){}});const b=_btns[_fi];if(b&&!b.disabled)b.focus();}
+function _pfocus(){const b=_btns[_fi];if(b&&!b.disabled)b.focus();}
+// Move to the next enabled button in the given direction (+1 or -1), skipping disabled ones.
+function _pmove(dir){
+  const n=_btns.length;
+  let next=(_fi+dir+n)%n;
+  let tries=0;
+  while(_btns[next]&&_btns[next].disabled&&tries<n){next=(next+dir+n)%n;tries++;}
+  _fi=next;_pfocus();
+}
 document.addEventListener("keydown",e=>{
-  if(e.key==="ArrowDown"||e.key==="Tab"){_fi=(_fi+1)%_btns.length;e.preventDefault();_pfocus();}
-  else if(e.key==="ArrowUp"){_fi=(_fi-1+_btns.length)%_btns.length;e.preventDefault();_pfocus();}
+  if(e.key==="ArrowDown"||e.key==="Tab"){_pmove(1);e.preventDefault();}
+  else if(e.key==="ArrowUp"){_pmove(-1);e.preventDefault();}
   else if(e.key==="Escape"||e.key==="Backspace"){history.back();}
 });
 let _pp={};
 (function pad(){
   const g=navigator.getGamepads&&[...navigator.getGamepads()].find(x=>x);
   if(g){const t=k=>g.buttons[k]&&g.buttons[k].pressed&&!_pp[k];
-    if(t(13)||t(15)){_fi=(_fi+1)%_btns.length;_pfocus();}
-    if(t(12)||t(14)){_fi=(_fi-1+_btns.length)%_btns.length;_pfocus();}
+    if(t(13)||t(15)){_pmove(1);}
+    if(t(12)||t(14)){_pmove(-1);}
     if(t(0)){const b=_btns[_fi];if(b&&!b.disabled)b.click();}
     if(t(1)){history.back();}
     g.buttons.forEach((x,k)=>_pp[k]=x.pressed);}
