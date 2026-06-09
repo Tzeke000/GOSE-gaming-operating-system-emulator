@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE &mdash; GPU Capabilities</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+
+  /* header */
+  .top{display:flex;align-items:center;gap:12px;padding:16px 30px 4px}
+  .top img{width:30px;height:30px}.top h1{font-size:18px;margin:0}
+  .top .sub{color:var(--muted);font-size:12px;margin-left:4px}
+  .top .home{margin-left:auto;background:none;border:none;color:var(--muted);font-size:13px;
+    cursor:pointer;font-family:inherit;padding:4px 8px;border-radius:8px}
+  .top .home:focus{outline:none;box-shadow:var(--focusglow);border:2px solid var(--accent)}
+
+  /* verdict banner */
+  .verdict-wrap{margin:0 30px 8px}
+  .verdict-card{background:var(--surface);border:1px solid var(--line);border-radius:11px;
+    padding:12px 16px}
+  .verdict-label{font-size:10.5px;font-weight:700;letter-spacing:.5px;color:var(--muted);
+    margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .verdict-text{font-size:13px;line-height:1.5;color:var(--text)}
+  .verdict-tier{display:inline-block;margin-top:6px;padding:3px 10px;border-radius:20px;
+    font-size:11px;font-weight:700;letter-spacing:.5px}
+  .verdict-tier.vulkan{background:#3fb95022;color:#3fb950;border:1px solid #3fb95044}
+  .verdict-tier.opengl{background:#f5a62322;color:#f5a623;border:1px solid #f5a62344}
+  .verdict-tier.none{background:#e5534b22;color:#e5534b;border:1px solid #e5534b44}
+  .probing{color:var(--muted);font-style:italic}
+
+  /* main two-column layout */
+  .main{flex:1;display:flex;gap:14px;margin:0 30px 14px;min-height:0;overflow:hidden}
+
+  /* left: capability details */
+  .lp{display:flex;flex-direction:column;gap:10px;width:320px;flex:none;overflow-y:auto}
+
+  /* right: benchmark action + live readout */
+  .rp{flex:1;display:flex;flex-direction:column;gap:10px;min-height:0;overflow-y:auto}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+  .card h3{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin:0 0 10px;
+    display:flex;align-items:center;gap:6px}
+
+  /* capability rows */
+  .cap-row{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;
+    border-bottom:1px solid var(--line);font-size:13px}
+  .cap-row:last-child{border-bottom:none}
+  .cap-row .ck{color:var(--muted)}
+  .cap-row .cv{font-weight:600;text-align:right;max-width:60%;word-break:break-word}
+  .cv.ok{color:#3fb950}.cv.warn{color:#f5a623}.cv.fail{color:#e5534b}.cv.dim{color:var(--muted)}
+
+  /* badge */
+  .badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;
+    font-size:11px;font-weight:700;letter-spacing:.4px}
+  .badge.yes{background:#3fb95022;color:#3fb950;border:1px solid #3fb95044}
+  .badge.no{background:#e5534b22;color:#e5534b;border:1px solid #e5534b44}
+  .badge.na{background:#ffffff12;color:var(--muted);border:1px solid var(--line)}
+
+  /* benchmark action area */
+  .bench-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+  .bench-header .bh-text{flex:1}
+  .bench-header .bh-text h3{margin:0 0 2px;font-size:14px;font-weight:700}
+  .bench-header .bh-text p{margin:0;font-size:12px;color:var(--muted)}
+
+  .go-btn{width:100%;padding:13px;border:none;border-radius:11px;font-size:15px;font-weight:700;
+    cursor:pointer;font-family:inherit;transition:background .15s,opacity .15s;margin-top:4px}
+  .go-btn.start{background:var(--accent);color:#fff}
+  .go-btn.stop{background:#e5534b;color:#fff}
+  .go-btn:disabled{opacity:.45;cursor:not-allowed}
+  .go-btn:focus{outline:none;box-shadow:var(--focusglow)}
+
+  /* duration/mem pickers */
+  .dur-row,.mem-row{display:flex;gap:8px;margin-bottom:6px}
+  .dur-btn,.mem-btn{flex:1;background:var(--surface2);border:2px solid transparent;color:var(--text);
+    border-radius:9px;padding:7px 0;font-size:12px;font-weight:600;cursor:pointer;
+    font-family:inherit;text-align:center;transition:border-color .15s}
+  .dur-btn.sel,.mem-btn.sel{border-color:var(--accent);background:var(--accent)22;color:var(--accent)}
+  .dur-btn:focus,.mem-btn:focus{outline:none;box-shadow:var(--focusglow)}
+
+  /* progress */
+  .prog-wrap{background:#ffffff12;border-radius:5px;height:7px;overflow:hidden;margin-top:8px}
+  .prog-bar{height:100%;background:linear-gradient(90deg,var(--accent),#7d8cff);
+    transition:width .5s linear;border-radius:5px}
+  .status-line{font-size:12px;color:var(--muted);margin-top:5px;min-height:18px;text-align:center}
+
+  /* metric tiles */
+  .tiles{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px}
+  .tile{background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+  .tile .k{font-size:10.5px;font-weight:700;letter-spacing:.4px;color:var(--muted);
+    display:flex;align-items:center;gap:5px}
+  .tile .v{font-size:20px;font-weight:700;margin-top:3px}
+  .tile .v.warn{color:#f5a623}.tile .v.ok{color:#3fb950}.tile .v.dim{color:var(--muted)}
+  .tile .bar{height:5px;border-radius:3px;background:#ffffff10;margin-top:7px;overflow:hidden}
+  .tile .bar i{display:block;height:100%;border-radius:3px;transition:width .5s}
+
+  /* summary */
+  .sum-row{display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;
+    border-bottom:1px solid var(--line);font-size:13px}
+  .sum-row:last-child{border-bottom:none}
+  .sum-row .sk{color:var(--muted)}.sum-row .sv{font-weight:600}
+  .sum-row .sv.pass{color:#3fb950}.sum-row .sv.warn{color:#f5a623}.sum-row .sv.fail{color:#e5534b}
+
+  /* footer */
+  .foot{padding:6px 30px;font-size:12px;color:var(--muted);border-top:1px solid var(--line);
+    display:flex;gap:18px;flex-shrink:0}
+  .foot span{display:flex;align-items:center;gap:4px}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <img src="assets/brand/gose-core.png" alt="GOSE">
+  <h1>GPU Capabilities</h1>
+  <span class="sub">What this device can render</span>
+  <button class="home" id="btnHome" tabindex="1">&#x2190; Back</button>
+</div>
+
+<!-- verdict banner -->
+<div class="verdict-wrap">
+  <div class="verdict-card">
+    <div class="verdict-label">
+      <span class="ic" style="--u:url(assets/icons/monitor.svg)"></span> CAPABILITY VERDICT
+    </div>
+    <div class="verdict-text" id="verdictText">
+      <span class="probing">Probing GPU&hellip; (glxinfo + vulkaninfo + FPS sample, ~6&thinsp;s)</span>
+    </div>
+    <div id="tierBadge"></div>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- LEFT: capability details -->
+  <div class="lp">
+
+    <div class="card" id="glCard">
+      <h3><span class="ic" style="--u:url(assets/icons/monitor.svg)"></span> OPENGL</h3>
+      <div class="cap-row"><span class="ck">Available</span><span class="cv dim" id="glAvail">&mdash;</span></div>
+      <div class="cap-row"><span class="ck">Renderer</span><span class="cv dim" id="glRenderer">&mdash;</span></div>
+      <div class="cap-row"><span class="ck">Vendor</span><span class="cv dim" id="glVendor">&mdash;</span></div>
+      <div class="cap-row"><span class="ck">GL Version</span><span class="cv dim" id="glVersion">&mdash;</span></div>
+      <div class="cap-row"><span class="ck">Mesa</span><span class="cv dim" id="glMesa">&mdash;</span></div>
+      <div class="cap-row"><span class="ck">Direct render</span><span class="cv dim" id="glDirect">&mdash;</span></div>
+    </div>
+
+    <div class="card" id="vkCard">
+      <h3><span class="ic" style="--u:url(assets/icons/cpu.svg)"></span> VULKAN</h3>
+      <div class="cap-row"><span class="ck">Available</span><span class="cv dim" id="vkAvail">&mdash;</span></div>
+      <div class="cap-row" id="vkDevRow" style="display:none">
+        <span class="ck">Device</span><span class="cv dim" id="vkDevice">&mdash;</span>
+      </div>
+      <div class="cap-row" id="vkApiRow" style="display:none">
+        <span class="ck">API version</span><span class="cv dim" id="vkApi">&mdash;</span>
+      </div>
+      <div class="cap-row"><span class="ck">Note</span><span class="cv dim" id="vkNote">&mdash;</span></div>
+    </div>
+
+    <div class="card">
+      <h3><span class="ic" style="--u:url(assets/icons/flame.svg)"></span> GL FPS SAMPLE</h3>
+      <div class="cap-row"><span class="ck">glxgears FPS</span><span class="cv dim" id="capFps">&mdash;</span></div>
+      <div class="cap-row"><span class="ck">Probe time</span><span class="cv dim" id="capProbeTime">&mdash;</span></div>
+      <button id="btnRefresh" class="go-btn start" style="margin-top:8px;font-size:12px;padding:8px"
+        tabindex="2">Re-probe</button>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: benchmark (reuses stress worker) -->
+  <div class="rp">
+
+    <div class="card">
+      <div class="bench-header">
+        <div class="bh-text">
+          <h3>GPU BENCHMARK</h3>
+          <p>Runs CPU + memory + GL stress and records FPS under full load.
+             Reuses the stress-test engine. Honest: in the QEMU/virgl VM the GPU
+             path is a software translation layer &mdash; that&apos;s what gets measured.</p>
+        </div>
+      </div>
+      <div>
+        <h3 style="font-size:10.5px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin:0 0 6px">DURATION</h3>
+        <div class="dur-row">
+          <button class="dur-btn sel" data-dur="60"  tabindex="3">1 min</button>
+          <button class="dur-btn"     data-dur="180" tabindex="4">3 min</button>
+          <button class="dur-btn"     data-dur="300" tabindex="5">5 min</button>
+        </div>
+      </div>
+      <div>
+        <h3 style="font-size:10.5px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin:0 0 6px">MEMORY LOAD</h3>
+        <div class="mem-row">
+          <button class="mem-btn sel" data-mem="256"  tabindex="6">256 MB</button>
+          <button class="mem-btn"     data-mem="512"  tabindex="7">512 MB</button>
+          <button class="mem-btn"     data-mem="1024" tabindex="8">1 GB</button>
+        </div>
+      </div>
+      <div id="progWrap" class="prog-wrap" style="display:none">
+        <div id="progBar" class="prog-bar" style="width:0%"></div>
+      </div>
+      <div id="statusLine" class="status-line">Ready to run benchmark</div>
+      <button id="goBtn" class="go-btn start" tabindex="9">Run Benchmark</button>
+    </div>
+
+    <!-- live tiles (shown during / after benchmark) -->
+    <div class="card" id="liveCard" style="display:none">
+      <h3>LIVE READOUT</h3>
+      <div class="tiles">
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/monitor.svg)"></span> GL FPS</div>
+          <div class="v dim" id="mFps">&mdash;</div>
+        </div>
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/cpu.svg)"></span> CPU LOAD</div>
+          <div class="v dim" id="mCpu">&mdash;</div>
+          <div class="bar"><i id="mCpuBar" style="width:0%;background:linear-gradient(90deg,#58a6ff,#7d8cff)"></i></div>
+        </div>
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/hard-drive.svg)"></span> MEM</div>
+          <div class="v dim" id="mMem">&mdash;</div>
+          <div class="bar"><i id="mMemBar" style="width:0%;background:linear-gradient(90deg,#3fb950,#58a6ff)"></i></div>
+        </div>
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/thermometer.svg)"></span> TEMP</div>
+          <div class="v dim" id="mTemp">&mdash;</div>
+        </div>
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/cpu.svg)"></span> FREQ</div>
+          <div class="v dim" id="mFreq">&mdash;</div>
+        </div>
+        <div class="tile">
+          <div class="k"><span class="ic" style="--u:url(assets/icons/triangle-alert.svg)"></span> THROTTLE</div>
+          <div class="v dim" id="mThrottle">None</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- benchmark summary (shown after run) -->
+    <div class="card" id="sumCard" style="display:none">
+      <h3>BENCHMARK SUMMARY</h3>
+      <div class="sum-row"><span class="sk">Duration</span><span class="sv" id="sDur">&mdash;</span></div>
+      <div class="sum-row"><span class="sk">Min GL FPS</span><span class="sv" id="sFps">&mdash;</span></div>
+      <div class="sum-row"><span class="sk">Peak CPU Temp</span><span class="sv" id="sTemp">&mdash;</span></div>
+      <div class="sum-row"><span class="sk">Throttle Events</span><span class="sv" id="sThrottle">&mdash;</span></div>
+      <div class="sum-row"><span class="sk">Result</span><span class="sv" id="sResult">&mdash;</span></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="foot">
+  <span><kbd>A</kbd> / Enter &mdash; select</span>
+  <span><kbd>B</kbd> / Esc &mdash; back</span>
+  <span><kbd>L1/R1</kbd> &mdash; duration</span>
+  <span><kbd>X</kbd> &mdash; run / stop</span>
+</div>
+
+<script src="assets/cursor.js"></script>
+<script src="assets/notify.js"></script>
+<script src="assets/a11y.js"></script>
+<script>
+// ---- focus list ----
+let focItems = [], focIdx = 0;
+function qs(s){ return document.querySelector(s); }
+function qsa(s){ return Array.from(document.querySelectorAll(s)); }
+
+function rebuildFocus(){
+  focItems = [
+    qs("#btnHome"),
+    qs("#btnRefresh"),
+    ...qsa(".dur-btn"),
+    ...qsa(".mem-btn"),
+    qs("#goBtn"),
+  ].filter(Boolean);
+  focIdx = Math.max(0, Math.min(focIdx, focItems.length - 1));
+}
+function applyFocus(){
+  rebuildFocus();
+  if(focItems[focIdx]) focItems[focIdx].focus();
+}
+
+// ---- GPU capability probe ----
+async function loadCapability(refresh){
+  qs("#verdictText").innerHTML = '<span class="probing">Probing GPU&hellip; (~6 s first run)</span>';
+  qs("#tierBadge").innerHTML = "";
+  try {
+    const url = "/system/gpu" + (refresh ? "?refresh=1" : "");
+    const r = await fetch(url);
+    const d = await r.json();
+    renderCapability(d);
+  } catch(e) {
+    qs("#verdictText").textContent = "Could not reach the server (" + e.message + ")";
+  }
+}
+
+function renderCapability(d){
+  // verdict
+  qs("#verdictText").textContent = d.verdict || "Unknown";
+
+  // tier badge
+  const tier = d.tier || "none";
+  const tierLabel = tier === "vulkan" ? "VULKAN" : tier === "opengl" ? "OPENGL (no Vulkan)" : "NO GPU";
+  qs("#tierBadge").innerHTML =
+    `<span class="verdict-tier ${tier}">${tierLabel}</span>`;
+
+  // OpenGL
+  const gl = d.gl || {};
+  qs("#glAvail").innerHTML  = gl.available ? '<span class="badge yes">Yes</span>' : '<span class="badge no">No</span>';
+  qs("#glAvail").className  = "cv";
+  qs("#glRenderer").textContent = gl.renderer || "—";
+  qs("#glRenderer").className = "cv" + (gl.available ? "" : " dim");
+  qs("#glVendor").textContent  = gl.vendor    || "—";
+  qs("#glVendor").className    = "cv" + (!gl.available ? " dim" : "");
+  qs("#glVersion").textContent = gl.version   || "—";
+  qs("#glVersion").className   = "cv" + (!gl.available ? " dim" : "");
+  qs("#glMesa").textContent    = gl.mesa      || "—";
+  qs("#glMesa").className      = "cv" + (!gl.available ? " dim" : "");
+  qs("#glDirect").textContent  = gl.direct_render || "—";
+  qs("#glDirect").className    = "cv" + (gl.direct_render === "Yes" ? " ok" : (gl.direct_render === "No" ? " warn" : " dim"));
+
+  // Vulkan
+  const vk = d.vulkan || {};
+  if(vk.available){
+    qs("#vkAvail").innerHTML  = '<span class="badge yes">Yes</span>';
+    qs("#vkAvail").className  = "cv";
+    qs("#vkDevRow").style.display = "";
+    qs("#vkApiRow").style.display = "";
+    qs("#vkDevice").textContent = vk.device_name || "—";
+    qs("#vkApi").textContent    = vk.api_version  || "—";
+    qs("#vkNote").textContent   = vk.note || "—";
+  } else {
+    qs("#vkAvail").innerHTML  = '<span class="badge no">No</span>';
+    qs("#vkAvail").className  = "cv";
+    qs("#vkDevRow").style.display = "none";
+    qs("#vkApiRow").style.display = "none";
+    const note = vk.note || "No Vulkan-capable GPU detected";
+    qs("#vkNote").textContent  = note;
+    qs("#vkNote").className    = "cv dim";
+  }
+
+  // FPS sample
+  const fps = d.fps || {};
+  qs("#capFps").textContent = fps.gl_fps !== null && fps.gl_fps !== undefined
+    ? fps.gl_fps + " fps (glxgears, ~5 s sample)"
+    : (fps.note || "unavailable");
+  qs("#capFps").className   = fps.gl_fps ? "cv ok" : "cv dim";
+  qs("#capProbeTime").textContent = d.elapsed_s !== undefined ? d.elapsed_s + " s" : "—";
+  qs("#capProbeTime").className   = "cv dim";
+}
+
+qs("#btnRefresh").onclick = () => loadCapability(true);
+
+// ---- benchmark (reuses stress worker) ----
+let dur = 60, mem = 256;
+let running = false, pollTimer = null;
+
+function selectDur(d){
+  dur = d;
+  qsa(".dur-btn").forEach(b => b.classList.toggle("sel", +b.dataset.dur === d));
+}
+function selectMem(m){
+  mem = m;
+  qsa(".mem-btn").forEach(b => b.classList.toggle("sel", +b.dataset.mem === m));
+}
+qsa(".dur-btn").forEach(b => b.addEventListener("click", () => { if(!running) selectDur(+b.dataset.dur); }));
+qsa(".mem-btn").forEach(b => b.addEventListener("click", () => { if(!running) selectMem(+b.dataset.mem); }));
+
+async function postJSON(url, body){
+  const r = await fetch(url, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+  return r.json();
+}
+
+async function startBench(){
+  if(running) return;
+  running = true;
+  setUIRunning(true);
+  setStatus("Starting benchmark…");
+  qs("#liveCard").style.display = "";
+  qs("#sumCard").style.display  = "none";
+  try {
+    const r = await postJSON("/stress/start", {duration_s: dur, mem_mb: mem});
+    if(!r.ok){
+      setStatus("Failed: " + (r.error || "unknown error"));
+      running = false; setUIRunning(false); return;
+    }
+    setStatus("Benchmark running…");
+    startPoll();
+  } catch(e){
+    setStatus("Error: " + e.message);
+    running = false; setUIRunning(false);
+  }
+}
+
+async function stopBench(){
+  if(!running) return;
+  setStatus("Stopping…");
+  try { await postJSON("/stress/stop", {}); } catch(e){}
+}
+
+function setUIRunning(r){
+  qsa(".dur-btn,.mem-btn").forEach(b => b.disabled = r);
+  qs("#btnRefresh").disabled = r;
+  const btn = qs("#goBtn");
+  if(r){
+    btn.textContent = "Stop Benchmark";
+    btn.className = "go-btn stop";
+    qs("#progWrap").style.display = "";
+  } else {
+    btn.textContent = "Run Benchmark";
+    btn.className = "go-btn start";
+    qs("#progWrap").style.display = "none";
+    qs("#progBar").style.width = "0%";
+  }
+  btn.onclick = r ? stopBench : startBench;
+}
+qs("#goBtn").onclick = startBench;
+
+function startPoll(){
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(poll, 1000);
+}
+function stopPoll(){
+  if(pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+}
+
+async function poll(){
+  try {
+    const d = await (await fetch("/stress/status")).json();
+    updateMetrics(d);
+    if(!d.running){
+      stopPoll(); running = false; setUIRunning(false);
+      const msg = d.summary && d.summary.completed ? "Benchmark complete." : "Stopped.";
+      setStatus(msg);
+      showSummary(d.summary || {});
+      if(typeof GOSE !== "undefined" && GOSE.notify){
+        const st = (d.summary||{}).stable;
+        GOSE.notify({
+          title: "GPU Benchmark",
+          body: st === false ? "Throttling detected — check thermals." :
+                (st ? "Stable — no throttling observed." : "Benchmark complete."),
+          icon: "monitor"
+        });
+      }
+    }
+  } catch(e){}
+}
+
+function setStatus(msg){ qs("#statusLine").textContent = msg; }
+
+function updateMetrics(d){
+  const fps = d.gl_fps, cpu = d.cpu_pct, memU = d.mem_used_mb, memT = d.mem_total_mb;
+  const temp = d.cpu_temp_c, freq = d.cpu_freq_mhz, thr = d.throttled;
+
+  const fpsEl = qs("#mFps");
+  fpsEl.textContent = fps ? fps + " fps" : (d.gl_running ? "warming…" : "n/a");
+  fpsEl.className = "v " + (fps > 30 ? "ok" : fps ? "warn" : "dim");
+
+  const cpuEl = qs("#mCpu");
+  cpuEl.textContent = cpu !== null && cpu !== undefined ? Math.round(cpu) + "%" : "—";
+  cpuEl.className = "v " + (cpu >= 90 ? "ok" : cpu >= 50 ? "" : "dim");
+  qs("#mCpuBar").style.width = (cpu || 0) + "%";
+
+  const memEl = qs("#mMem");
+  memEl.textContent = memU ? Math.round(memU) + " MB" : "—";
+  if(memU && memT) qs("#mMemBar").style.width = Math.round(memU/memT*100) + "%";
+
+  qs("#mTemp").textContent = temp ? temp + "°C" : "n/a (VM)";
+  qs("#mTemp").className = "v " + (temp > 90 ? "warn" : temp > 0 ? "" : "dim");
+
+  qs("#mFreq").textContent = freq ? freq + " MHz" : "—";
+  qs("#mFreq").className = "v";
+
+  qs("#mThrottle").textContent = thr ? "DETECTED" : (d.running ? "None" : "—");
+  qs("#mThrottle").className = "v " + (thr ? "warn" : "ok");
+
+  if(d.duration_s && d.elapsed_s !== undefined){
+    const pct = Math.min(100, Math.round(d.elapsed_s / d.duration_s * 100));
+    qs("#progBar").style.width = pct + "%";
+    if(d.running) setStatus(Math.round(d.elapsed_s) + "s / " + d.duration_s + "s elapsed");
+  }
+}
+
+function showSummary(s){
+  qs("#sumCard").style.display = "";
+  const dur = s.duration_s;
+  qs("#sDur").textContent = dur ? (dur >= 60 ? Math.round(dur/60)+"m "+Math.round(dur%60)+"s" : Math.round(dur)+"s") : "—";
+  const fpsEl = qs("#sFps");
+  fpsEl.textContent = s.fps_min ? s.fps_min + " fps" : "—";
+  fpsEl.className = "sv " + (s.fps_min > 30 ? "pass" : s.fps_min ? "warn" : "");
+  qs("#sTemp").textContent = s.temp_peak_c ? s.temp_peak_c + "°C" : "n/a (VM)";
+  const thrEl = qs("#sThrottle");
+  thrEl.textContent = s.throttle_events !== undefined ? s.throttle_events : "—";
+  thrEl.className = "sv " + (s.throttle_events > 0 ? "fail" : "pass");
+  const resEl = qs("#sResult");
+  if(s.stable === undefined){ resEl.textContent = "—"; resEl.className = "sv"; }
+  else if(s.stable){ resEl.textContent = "STABLE"; resEl.className = "sv pass"; }
+  else { resEl.textContent = "THROTTLED"; resEl.className = "sv fail"; }
+}
+
+// ---- keyboard / pad nav ----
+document.addEventListener("keydown", e => {
+  if(e.key === "Escape" || e.key === "Backspace"){
+    if(running){ stopBench(); return; }
+    location.href = "gose-settings.html#system"; return;
+  }
+  if(e.key === "Enter" || e.key === "GoseConfirm"){
+    if(document.activeElement && document.activeElement !== qs("#goBtn")){
+      document.activeElement.click(); return;
+    }
+    if(!running) startBench(); else stopBench(); return;
+  }
+  if(e.key === "x" || e.key === "X" || e.key === "GoseX"){
+    if(!running) startBench(); else stopBench(); return;
+  }
+  if(e.key === "ArrowRight" || e.key === "GoseR1"){
+    const durs = [60,180,300], idx = durs.indexOf(dur);
+    selectDur(durs[(idx+1) % durs.length]); return;
+  }
+  if(e.key === "ArrowLeft" || e.key === "GoseL1"){
+    const durs = [60,180,300], idx = durs.indexOf(dur);
+    selectDur(durs[(idx + durs.length - 1) % durs.length]); return;
+  }
+  if(e.key === "ArrowDown"){
+    rebuildFocus(); focIdx = Math.min(focIdx+1, focItems.length-1); applyFocus(); return;
+  }
+  if(e.key === "ArrowUp"){
+    rebuildFocus(); focIdx = Math.max(focIdx-1, 0); applyFocus(); return;
+  }
+});
+
+qs("#btnHome").onclick = () => { location.href = "gose-settings.html#system"; };
+
+// ---- init ----
+(async function init(){
+  rebuildFocus();
+  // restore benchmark state if already running
+  try {
+    const d = await (await fetch("/stress/status")).json();
+    if(d.running){
+      running = true; setUIRunning(true);
+      qs("#liveCard").style.display = "";
+      setStatus("Benchmark in progress…");
+      updateMetrics(d);
+      startPoll();
+    }
+  } catch(e){}
+  // load capability (fast if cached, ~6s first call)
+  await loadCapability(false);
+  rebuildFocus();
+})();
+</script>
+</body>
+</html>

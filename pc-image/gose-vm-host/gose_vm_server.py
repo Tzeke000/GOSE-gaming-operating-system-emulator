@@ -121,7 +121,10 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/diag/bundle": (4, 120),
            # coarse backstop only — the real brute-force guard is the 5-try/30s PIN lockout
            "/auth/pin": (30, 60), "/auth/pin/set": (10, 60),
-           "/ai/copilot/alert": (20, 60)}
+           "/ai/copilot/alert": (20, 60),
+           # gpu probe: first call is slow (~6-8s), subsequent are instant (cached);
+           # refresh=1 re-runs the probe — rate-limited to avoid re-running it repeatedly.
+           "/system/gpu": (30, 60)}
 
 _SKIPDIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_media"}
 # .disabled = store-placeholder marker (Game.ext.disabled). splitext only strips the LAST
@@ -9920,6 +9923,210 @@ def sys_brightness_host(level=None):
     loc = sys_brightness(level)
     return loc if loc.get("ok") else {"ok": False}
 
+# ===================== GPU CAPABILITY PROBE — #GPU/#101 extension =====================
+# Runs glxinfo + vulkaninfo + glxgears-FPS-sample once per server lifetime.
+# Results are cached in /tmp/gose-gpu-cap.json so the UI can call GET /system/gpu
+# as many times as needed without re-running the expensive probe.
+# All three tools degrade gracefully — "unavailable" is an honest answer, not a crash.
+# In the QEMU/virgl dev VM on a Windows host:
+#   glxinfo → OpenGL 4.3, renderer "virgl (AMD Radeon 780M Graphics)"
+#   vulkaninfo → no Vulkan (expected: virgl has no Vulkan path on Windows host)
+#   glxgears → ~375 fps (virgl through AMD 780M iGPU)
+
+GPU_PROBE_CACHE_F  = "/tmp/gose-gpu-cap.json"
+GPU_PROBE_SCRIPT   = "/userdata/gose-ui/gose_gpu_probe.py"
+_gpu_cap_lock      = threading.Lock()
+_gpu_cap_cache     = {}   # in-memory cache (set once)
+
+def _gpu_probe_run():
+    """Spawn gose_gpu_probe.py, wait up to 20s, return parsed JSON."""
+    import subprocess as _sp
+    try:
+        r = _sp.run(["python3", GPU_PROBE_SCRIPT],
+                    capture_output=True, timeout=20)
+        out = r.stdout.decode("utf-8", errors="replace").strip()
+        if out:
+            return json.loads(out)
+    except Exception as ex:
+        LOG.warning("gpu probe failed: %s", ex)
+    return {
+        "ok": False,
+        "error": "probe script unavailable or timed out",
+        "gl":     {"available": False, "vendor": "unavailable", "renderer": "unavailable",
+                   "version": "unavailable", "version_short": "unavailable",
+                   "mesa": "unavailable", "direct_render": "unavailable", "error": None},
+        "vulkan": {"available": False, "device_name": "unavailable",
+                   "api_version": "unavailable", "note": None},
+        "fps":    {"gl_fps": None, "tool": "glxgears", "note": "probe unavailable"},
+        "verdict": "GPU capability unavailable — probe script not deployed",
+        "tier":    "none",
+    }
+
+def gpu_capability():
+    """Return GPU capability JSON — cached after first call."""
+    global _gpu_cap_cache
+    with _gpu_cap_lock:
+        if _gpu_cap_cache:
+            return _gpu_cap_cache
+        # try the on-disk cache first (from a prior server start or explicit probe run)
+        try:
+            with open(GPU_PROBE_CACHE_F) as f:
+                d = json.load(f)
+            if d.get("ok"):
+                _gpu_cap_cache = d
+                return d
+        except Exception:
+            pass
+    # run the probe (outside the lock so we don't block other requests)
+    result = _gpu_probe_run()
+    with _gpu_cap_lock:
+        _gpu_cap_cache = result
+    return result
+
+def gpu_capability_refresh():
+    """Force a fresh probe (invalidates in-memory + disk cache)."""
+    global _gpu_cap_cache
+    try:
+        os.unlink(GPU_PROBE_CACHE_F)
+    except Exception:
+        pass
+    with _gpu_cap_lock:
+        _gpu_cap_cache = {}
+    return _gpu_probe_run()
+
+# ===================== STRESS TEST — #101 =====================
+# Safety contract (critical for a load tool):
+#   * The load runs in gose_stress_worker.py, a SEPARATE KILLABLE PROCESS (not in this server).
+#   * Duration is hard-capped: the worker exits on its own at the deadline even if stop is never called.
+#   * POST /stress/stop sends SIGTERM to the worker process group, guaranteeing teardown.
+#   * A watchdog thread here auto-kills the worker if it overruns by >10s.
+#   * The server itself is never blocked: metrics are written to a JSON file by the worker;
+#     GET /stress/status reads the file — no shared state, no blocking I/O on the hot path.
+#   * glxgears inside the worker runs in its own process group (setsid) so SIGKILL doesn't leak.
+#   * Pad still works to hit Stop: the server and kiosk are never CPU-starved (separate processes).
+
+STRESS_METRICS_F = "/tmp/gose-stress-metrics.json"
+STRESS_FLAG_F    = "/tmp/gose-stress-running.flag"
+STRESS_WORKER    = "/userdata/gose-ui/gose_stress_worker.py"
+
+_stress = {
+    "proc": None,          # subprocess.Popen for the worker
+    "deadline": 0.0,       # wall-clock time the worker should have finished
+    "duration_s": 0,
+    "lock": threading.Lock(),
+}
+
+def _stress_watchdog():
+    """Background thread: auto-kill the worker if it overruns its deadline by >10s."""
+    while True:
+        time.sleep(5)
+        with _stress["lock"]:
+            p = _stress["proc"]
+            if p is None:
+                continue
+            if p.poll() is not None:
+                _stress["proc"] = None
+                continue
+            if time.time() > _stress["deadline"] + 10:
+                LOG.warning("stress worker overran deadline — force-killing")
+                try:
+                    import signal as _sig
+                    os.killpg(os.getpgid(p.pid), _sig.SIGKILL)
+                except Exception:
+                    try: p.kill()
+                    except Exception: pass
+                _stress["proc"] = None
+
+threading.Thread(target=_stress_watchdog, daemon=True).start()
+
+def stress_start(payload):
+    """Launch the stress worker subprocess."""
+    with _stress["lock"]:
+        # reject if already running
+        p = _stress["proc"]
+        if p is not None and p.poll() is None:
+            return {"ok": False, "error": "already running — stop first"}
+
+    raw_dur = payload.get("duration_s", 60)
+    raw_mem = payload.get("mem_mb", 256)
+    try:
+        dur = int(raw_dur)
+        mem = int(raw_mem)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "duration_s and mem_mb must be integers"}
+
+    MAX_DURATION = 600  # hard cap: 10 minutes
+    dur = max(10, min(dur, MAX_DURATION))
+    mem = max(64, min(mem, 2048))
+
+    # clean up stale files
+    for f in (STRESS_METRICS_F, STRESS_FLAG_F):
+        try: os.unlink(f)
+        except Exception: pass
+
+    try:
+        proc = subprocess.Popen(
+            ["python3", STRESS_WORKER, str(dur), str(mem)],
+            preexec_fn=os.setsid,   # own process group
+            close_fds=True,
+        )
+    except Exception as ex:
+        return {"ok": False, "error": "failed to start worker: " + str(ex)}
+
+    with _stress["lock"]:
+        _stress["proc"] = proc
+        _stress["deadline"] = time.time() + dur + 10   # grace period
+        _stress["duration_s"] = dur
+
+    return {"ok": True, "pid": proc.pid, "duration_s": dur, "mem_mb": mem}
+
+def stress_stop():
+    """Stop the stress worker cleanly."""
+    with _stress["lock"]:
+        p = _stress["proc"]
+        if p is None or p.poll() is not None:
+            _stress["proc"] = None
+            return {"ok": True, "was_running": False}
+        try:
+            import signal as _sig
+            os.killpg(os.getpgid(p.pid), _sig.SIGTERM)
+        except Exception:
+            try: p.terminate()
+            except Exception: pass
+        _stress["proc"] = None
+
+    return {"ok": True, "was_running": True}
+
+def stress_status():
+    """Return the current metrics written by the worker (or a 'not running' stub)."""
+    # check if the worker proc is still alive (avoids stale metrics from a prior run)
+    with _stress["lock"]:
+        p = _stress["proc"]
+        proc_alive = p is not None and p.poll() is None
+
+    try:
+        with open(STRESS_METRICS_F) as f:
+            d = json.load(f)
+        # if the file says running but the process is dead, mark as stopped
+        if d.get("running") and not proc_alive:
+            d["running"] = False
+        return d
+    except Exception:
+        pass
+
+    # no metrics file yet (or worker never started)
+    return {
+        "ok": True,
+        "running": proc_alive,
+        "elapsed_s": 0,
+        "remaining_s": _stress["duration_s"] if proc_alive else 0,
+        "duration_s": _stress["duration_s"],
+        "cpu_pct": None, "mem_used_mb": None, "mem_total_mb": None,
+        "cpu_temp_c": None, "cpu_freq_mhz": None,
+        "gl_fps": None, "gl_running": False,
+        "throttled": False, "throttle_count": 0,
+    }
+
 # ===================== WINDOWING SPINE — docs/23 §4 / §9 Phase 0 =====================
 # ONE merged WINDOW REGISTRY over both window kinds (docs/23 §4.1):
 #   * web windows    — iframes in WinBox frames inside the kiosk WebView. The shell-side
@@ -10265,6 +10472,17 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _route_get(self):
         route = self.path.split("?")[0]
+        if route == "/stress/status":
+            return self._json(stress_status())
+        if route == "/system/gpu":
+            # GET /system/gpu — returns GPU capability JSON (cached after first probe).
+            # The first call takes ~6-8s (runs glxinfo + vulkaninfo + glxgears FPS sample).
+            # Subsequent calls return the in-memory cache instantly.
+            # Pass ?refresh=1 to force a fresh probe (invalidates both caches).
+            qs = self._qs()
+            if qs.get("refresh") == "1":
+                return self._json(gpu_capability_refresh())
+            return self._json(gpu_capability())
         if route == "/health":
             return self._json(health())
         if route == "/version":
@@ -10595,6 +10813,15 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _route_post(self):
         route = self.path.split("?")[0]
+        if route in ("/stress/start", "/stress/stop"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/stress/start":
+                return self._json(stress_start(payload))
+            return self._json(stress_stop())
         if route == "/diag/bundle":
             return self._json(diag_bundle())
         if route == "/diag/bundle/delete":
