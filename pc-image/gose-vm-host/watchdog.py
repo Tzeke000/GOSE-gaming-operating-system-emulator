@@ -135,7 +135,32 @@ def wait_port_free(port, timeout=10):
     # Timeout — proceed anyway; the server start may fail, watchdog will retry.
 
 def alive(pat):
-    return subprocess.run(["pgrep", "-f", pat], capture_output=True).returncode == 0
+    """Return True only if at least one non-zombie process matches *pat*.
+
+    pgrep -f alone matches zombie processes (their cmdline is still visible in
+    /proc/<pid>/cmdline while they wait to be reaped), causing the watchdog to
+    think the server is alive when it's actually dead-and-zombied.  We filter
+    those out by checking /proc/<pid>/status for 'State: Z'.
+    """
+    r = subprocess.run(["pgrep", "-f", pat], capture_output=True, text=True)
+    if r.returncode != 0:
+        return False
+    for pid_s in r.stdout.split():
+        try:
+            pid_s = pid_s.strip()
+            if not pid_s:
+                continue
+            status = open("/proc/%s/status" % pid_s).read()
+            # 'State:\tZ (zombie)' — skip zombies
+            for line in status.splitlines():
+                if line.startswith("State:"):
+                    if "Z" not in line:
+                        return True  # found at least one live (non-zombie) match
+                    break
+        except (IOError, OSError):
+            # Process already gone — not alive.
+            pass
+    return False
 
 def game_running():
     return subprocess.run(["pgrep", "-f", _GAME_RE], capture_output=True).returncode == 0

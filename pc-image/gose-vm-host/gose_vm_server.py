@@ -11546,6 +11546,16 @@ class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
+    def server_bind(self):
+        # SO_REUSEADDR (set by allow_reuse_address) prevents TIME_WAIT stalls but
+        # does NOT help when a departing process still holds the socket in CLOSE_WAIT
+        # or when two rapid restarts race.  SO_REUSEPORT lets the new bind succeed
+        # immediately in either case without weakening the address exclusivity contract
+        # (two concurrent servers still can't both accept on the same port).
+        import socket as _socket
+        self.socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
+        super().server_bind()
+
 h = functools.partial(H, directory=ROOT)
 ensure_user_dirs()   # Desktop/Documents/Downloads/Pictures/Music/Videos exist on boot
 threading.Thread(target=_queue_worker, daemon=True).start()   # download queue: one install at a time
