@@ -130,6 +130,7 @@
   var ORDER=[];    // sorted grant names = the roster
   var REQS=[];     // pending pairing requests [{name,tier,ts}]
   var LIVE={};     // name -> {online,mode} from /ai/players
+  var COPILOT={};  // name -> {copilot:bool} — #42 watchdog opt-in (owner-only toggle, default OFF)
   // PANEL: null | {agent:name} | {add:true,val:""} | {tok:{name,token,tier,why}}
   var PANEL=null;
   var lastSig="";
@@ -181,9 +182,11 @@
     var cards=ORDER.map(function(n){
       var p=GR[n],lv=LIVE[n]||{},on=!!lv.online;
       var st=on?("Online · "+(lv.mode==="playing"?"playing":lv.mode==="controlling"?"in control":"watching")):"Not connected";
+      var cpOn=!!(COPILOT[n]&&COPILOT[n].copilot);
+      var cpTag=cpOn?'<span style="font-size:10px;font-weight:700;border-radius:7px;padding:2px 8px;border:1px solid #5cd0ff55;color:#5cd0ff;margin-left:6px">Copilot</span>':'';
       return '<div class="card focusable" data-fk="ag:'+esc(n)+'" data-agent="'+esc(n)+'">'+
         '<div class="row1"><div class="av" style="background:'+accFor(n)+'">'+esc(n[0])+'</div>'+
-        '<div><div class="nm">'+esc(n)+'</div><div class="st"><span class="dot" style="background:'+(on?'#3fe0a0':'#3a3e4c')+'"></span>'+esc(st)+
+        '<div><div class="nm">'+esc(n)+cpTag+'</div><div class="st"><span class="dot" style="background:'+(on?'#3fe0a0':'#3a3e4c')+'"></span>'+esc(st)+
         (p.seat?' · seat P'+p.seat:'')+'</div></div>'+
         '<span class="badge '+esc(p.tier)+'">'+TLABEL[p.tier]+'</span></div>'+
         '<div class="sub">'+TDESC[p.tier]+'</div>'+
@@ -228,11 +231,26 @@
           '<span class="seat '+(!p.seat?'sel':'')+' focusable" data-fk="p:seat:0" data-seat="0">Any</span>'+
           [1,2,3,4].map(function(s){return '<span class="seat '+(p.seat===s?'sel':'')+' focusable" data-fk="p:seat:'+s+'" data-seat="'+s+'">P'+s+'</span>';}).join("")+'</div>';
       }
-      h+='<div class="prow danger focusable" data-fk="p:revoke" data-revoke="1">'+
-        '<div><div class="rnm">Revoke &amp; remove (deny)</div>'+
-        '<div class="rsub">Kills '+esc(n)+'’s token immediately and removes it from this list.</div></div></div>'+
-        '<div class="prow focusable" data-fk="p:back" data-close="1"><div class="rnm">Back to AI Players</div><span class="rval">B</span></div>'+
-        '<div class="note">Pairing token: shown once, when this AI was paired. Lost it? Revoke, then pair again — a fresh token is minted (docs/16: rotation = revoke + regrant).</div>';
+      // #42 Copilot / Watchdog toggle — opt-in, default OFF; play+ tier only
+      var cpOn=!!(COPILOT[n]&&COPILOT[n].copilot);
+      var cpCanEnable=(p.tier==="play"||p.tier==="admin");
+      h+=’<div class="sect">COPILOT / WATCHDOG — #42 (opt-in, default off)</div>’+
+        ‘<div class="prow ‘+(cpCanEnable?’focusable’:’’)+(cpOn?’ sel’:’’)+’" data-fk="p:copilot" ‘+(cpCanEnable?’data-copilot="1"’:’’)+
+        ‘ style="’+(cpCanEnable?’’:’opacity:.45;cursor:default’)+’">’ +
+        ‘<div><div class="rnm">’+(cpOn?’Copilot: ON’:’Copilot: OFF’)+’</div>’+
+        ‘<div class="rsub">’+(cpCanEnable
+          ? (cpOn
+              ? ‘This AI is watching for stuck/error states and can surface alerts via notifications. Toggle to disable.’
+              : ‘Allow this AI to surface watchdog alerts via notifications (play+ tier only; no input/screen reads unless separately enabled).’)
+          : ‘Requires play or admin tier — raise this AI\’s tier first.’
+        )+’</div></div>’+
+        (cpCanEnable?’<span class="rval">’+(cpOn?’On’:’Off’)+’</span>’:’’)+
+        ‘</div>’;
+      h+=’<div class="prow danger focusable" data-fk="p:revoke" data-revoke="1">’+
+        ‘<div><div class="rnm">Revoke &amp; remove (deny)</div>’+
+        ‘<div class="rsub">Kills ‘+esc(n)+’’s token immediately and removes it from this list.</div></div></div>’+
+        ‘<div class="prow focusable" data-fk="p:back" data-close="1"><div class="rnm">Back to AI Players</div><span class="rval">B</span></div>’+
+        ‘<div class="note">Pairing token: shown once, when this AI was paired. Lost it? Revoke, then pair again — a fresh token is minted (docs/16: rotation = revoke + regrant).</div>’;
     } else if(PANEL.add){
       h='<div class="head"><div class="av" style="background:#5cd0ff">+</div>'+
         '<div><h3>Pair a new AI</h3><div class="hs">It starts at the safe Observe tier — read-only. You can raise it after.</div></div></div>'+
@@ -282,6 +300,17 @@
       dlog("tier",name,"->",tier,"ok");
       say(name+" → "+TLABEL[tier]+(tier==="admin"?" · full OS access":""));render();
     }).catch(function(){say("Grant failed");});
+  }
+  // #42 Copilot toggle — owner flips it; server requires owner auth (PIN/dev token)
+  function setCopilot(name){
+    var cpOn=!!(COPILOT[name]&&COPILOT[name].copilot);
+    post("/ai/copilot/set",{name:name,enabled:!cpOn}).then(function(d){
+      if(!d||!d.ok){say("Copilot change failed"+(d&&d.error?": "+d.error:""));dlog("copilot",name,"FAILED");return;}
+      if(!COPILOT[name])COPILOT[name]={};
+      COPILOT[name].copilot=!!d.copilot;
+      dlog("copilot",name,"->",d.copilot?"on":"off","ok");
+      say(name+(d.copilot?" — Copilot ON: will surface watchdog alerts":" — Copilot OFF"));render();
+    }).catch(function(){say("Copilot change failed");});
   }
   function setSeat(name,seat){
     var p=GR[name];if(!p||p.tier==="observe")return;
@@ -358,6 +387,7 @@
     if(d.fk==="add"){openAdd();return;}
     if(d.close){closePanel();return;}
     if(d.revoke){if(PANEL&&PANEL.agent)revoke(PANEL.agent);return;}
+    if(d.copilot){if(PANEL&&PANEL.agent)setCopilot(PANEL.agent);return;}
     if(d.tier){if(PANEL&&PANEL.agent)setTier(PANEL.agent,d.tier);return;}
     if(d.seat!==undefined){if(PANEL&&PANEL.agent)setSeat(PANEL.agent,+d.seat||null);return;}
     if(d.pair){doPair();return;}
@@ -375,6 +405,11 @@
         fetch("/ai/players",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
           LIVE={};(((d&&d.players)||[])).forEach(function(p){LIVE[p.name]={online:!!p.online,mode:p.mode};});
         }).catch(function(){}).finally(function(){
+          // #42 Copilot status — fetched alongside the other AI state; not re-rendered mid-panel
+          fetch("/ai/copilot",{cache:"no-store"}).then(function(r){return r.json();}).then(function(d){
+            var agents=(d&&d.agents)||[];
+            agents.forEach(function(a){COPILOT[a.name]={copilot:!!a.copilot};});
+          }).catch(function(){});
           var onAis=ORDER.filter(function(n){return LIVE[n]&&LIVE[n].online;});
           $("banner-txt").innerHTML=REQS.length
             ? '<b style="color:#ffb74d">Pairing</b> — '+REQS.length+' request'+(REQS.length>1?'s':'')+' waiting for your approval below.'
@@ -383,7 +418,7 @@
                   return esc(n)+" "+(LIVE[n].mode==="playing"?"playing":"watching")+" · "+TLABEL[GR[n].tier];}).join(", ")+" on this device."
               : '<b style="color:var(--accent)">AI Players</b> — each card below is a paired agent with a real grant. Select one to change its access or revoke it.');
           // never re-render under an open panel (it would clobber typing / focus) — §3.9
-          var sig=JSON.stringify([GR,REQS,LIVE]);
+          var sig=JSON.stringify([GR,REQS,LIVE,COPILOT]);
           if(!PANEL&&sig!==lastSig){lastSig=sig;render();}
         });
         fetch("/ai/audit?limit=15",{cache:"no-store"}).then(function(r){return r.json();})
@@ -425,6 +460,17 @@
   // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above; a
   // page-level getGamepads() loop is a second input path that double-fires (docs/27 §2.1).
   paint();render();poll();setInterval(poll,5000);
+  // #copilot deep-link (from Settings): open the first paired AI's panel and scroll to the
+  // copilot section so the owner lands directly on the toggle.
+  if((location.hash||"").indexOf("copilot")>=0){
+    setTimeout(function(){
+      if(ORDER.length){openPanel(ORDER[0]);setTimeout(function(){
+        var el=document.querySelector('[data-fk="p:copilot"]');
+        if(el&&el.scrollIntoView)el.scrollIntoView({block:"nearest"});
+        setF(el||document.querySelector(".focusable"));
+      },80);}
+    },200);
+  }
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>

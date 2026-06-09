@@ -115,7 +115,8 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/store/sources/refresh": (10, 60),
            "/diag/bundle": (4, 120),
            # coarse backstop only — the real brute-force guard is the 5-try/30s PIN lockout
-           "/auth/pin": (30, 60), "/auth/pin/set": (10, 60)}
+           "/auth/pin": (30, 60), "/auth/pin/set": (10, 60),
+           "/ai/copilot/alert": (20, 60)}
 
 _SKIPDIRS = {"images", "videos", "manuals", "media", "downloaded_images", "downloaded_media"}
 # .disabled = store-placeholder marker (Game.ext.disabled). splitext only strips the LAST
@@ -3206,6 +3207,141 @@ def ai_request_clear(payload):
         if existed:
             write_json_atomic(AI_REQUESTS_F, reqs)
     return {"ok": True, "name": name, "cleared": existed}
+
+# ---- AI Copilot / Watchdog (#42): opt-in, default OFF ----------------------------
+#
+# A paired AI (play+ tier) can be enabled as a "copilot watchdog" that monitors
+# for stuck or error states and surfaces a notification to the user.  STRICTLY
+# opt-in: the feature is OFF per-AI by default; no AI can flip its own switch;
+# only the device owner can enable it; no input or screen data is read unless a
+# separate privacy switch is explicitly enabled.
+#
+# Compose-with-#117: an enabled copilot AI may attach play-map metadata to its
+# alert (game, system, context) so the notification carries useful context.
+#
+# API surface:
+#   GET  /ai/copilot              → status list (all AIs, copilot on/off)
+#   POST /ai/copilot/set          → owner toggles copilot for one AI {name, enabled}
+#   POST /ai/copilot/alert        → an AI posts a watchdog alert {title, body, context?}
+#                                   Requires X-AI-Token header (play+ tier + copilot enabled)
+# -------------------------------------------------------------------------------------
+
+AI_COPILOT_F = "/userdata/system/gose/ai_copilot.json"
+_COPILOT_LOCK = threading.Lock()
+_COPILOT_ALERT_MAX_BODY = 500    # per-alert body length cap
+_COPILOT_ALERT_TITLE_MAX = 100
+
+
+def _copilot_load():
+    """Return the copilot config dict: {name: {enabled: bool, set_at: int}}."""
+    try:
+        d = json.load(open(AI_COPILOT_F))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _copilot_save(cfg):
+    os.makedirs(os.path.dirname(AI_COPILOT_F), exist_ok=True)
+    write_json_atomic(AI_COPILOT_F, cfg)
+
+
+def ai_copilot_status():
+    """GET /ai/copilot — returns copilot on/off state for every paired AI.
+
+    An AI not in the config is treated as disabled (safe default)."""
+    cfg = _copilot_load()
+    grants = _ai_grants_load()
+    out = []
+    for name in sorted(grants.keys()):
+        rec = cfg.get(name, {})
+        out.append({
+            "name": name,
+            "tier": ai_tier(name),
+            "copilot": bool(rec.get("enabled", False)),
+            "set_at": rec.get("set_at"),
+        })
+    return {"ok": True, "agents": out}
+
+
+def ai_copilot_set(payload):
+    """POST /ai/copilot/set — owner enables or disables the copilot for one AI.
+
+    Requires owner credential in payload (same pattern as ai/grant).
+    An AI cannot flip its own or another AI's copilot switch."""
+    name = (payload.get("name") or "").strip()[:32]
+    enabled = bool(payload.get("enabled", False))
+    if not name:
+        return {"ok": False, "error": "name required"}
+    if not _ai_grants_load().get(name):
+        return {"ok": False, "error": f"no paired AI named '{name}'"}
+    with _COPILOT_LOCK:
+        cfg = _copilot_load()
+        cfg[name] = {"enabled": enabled, "set_at": int(time.time())}
+        _copilot_save(cfg)
+    LOG.info("AI copilot: %s -> %s", name, "enabled" if enabled else "disabled")
+    return {"ok": True, "name": name, "copilot": enabled}
+
+
+def ai_copilot_alert(payload, ai_token):
+    """POST /ai/copilot/alert — a paired play+ AI posts a watchdog alert.
+
+    Requirements:
+      - Valid X-AI-Token (maps to a granted AI with tier >= play)
+      - Copilot must be explicitly enabled for this AI by the owner
+      - Rate-limited (20/60s per the _LIMITS table)
+
+    The alert becomes a GOSE notification (kind=warning) surfaced via the
+    notification center.  The AI may attach optional game context
+    ({system, game, detail}) that is shown in the notification body.
+
+    Privacy gate: this endpoint does NOT grant the AI any screen-read or
+    input-read access.  It is a one-way push path only."""
+    name, tier = _ai_token_resolve(ai_token)
+    if not name:
+        return {"ok": False, "code": "ERR_AUTH",
+                "error": "invalid or revoked AI token — X-AI-Token required"}
+    # Tier gate: copilot requires at least play tier (the AI is actually watching the game)
+    if TIER_RANK_SRV.get(tier, 0) < TIER_RANK_SRV.get("play", 1):
+        return {"ok": False, "code": "ERR_TIER",
+                "error": f"copilot alerts require play tier; this AI has '{tier}'"}
+    # Opt-in gate: the owner must have explicitly enabled copilot for this AI
+    cfg = _copilot_load()
+    if not cfg.get(name, {}).get("enabled", False):
+        return {"ok": False, "code": "ERR_COPILOT_OFF",
+                "error": f"copilot is not enabled for '{name}' — the device owner enables it in Settings"}
+    title = str(payload.get("title") or "").strip()[:_COPILOT_ALERT_TITLE_MAX]
+    body = str(payload.get("body") or "").strip()[:_COPILOT_ALERT_MAX_BODY]
+    if not title:
+        return {"ok": False, "error": "title required"}
+    # Optional game context (from the AI reading the #117 play-map registry)
+    ctx = payload.get("context")
+    ctx_str = ""
+    if isinstance(ctx, dict):
+        parts = []
+        if ctx.get("game"):
+            parts.append(str(ctx["game"])[:40])
+        if ctx.get("system"):
+            parts.append(str(ctx["system"])[:20])
+        if ctx.get("detail"):
+            parts.append(str(ctx["detail"])[:80])
+        if parts:
+            ctx_str = " · ".join(parts)
+    full_body = (f"{body}\n{ctx_str}" if (body and ctx_str) else (body or ctx_str)).strip()
+    # Post to the notification center (#22)
+    notifications_post({
+        "title": f"{name}: {title}",
+        "body": full_body[:1000],
+        "kind": "warning",
+        "icon": "eye",
+    })
+    LOG.info("AI copilot alert from %s (%s): %s", name, tier, title)
+    return {"ok": True, "name": name, "posted": True}
+
+
+# Tier rank mirror for the server layer (the agent's TIER_RANK is in server.py;
+# here we need the same ordering without importing the agent package).
+TIER_RANK_SRV = {"observe": 0, "play": 1, "admin": 2}
 
 # ---- AI Assist (#41): game-bar "Ask AI" — request → queue → answer → notify.
 #
@@ -9049,6 +9185,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(ai_activity(self._qs().get("limit", 50)))
         if route == "/ai/assist/queue":
             return self._json(ai_assist_queue())
+        if route == "/ai/copilot":
+            return self._json(ai_copilot_status())
         if route == "/game/options":
             q = self._qs()
             return self._json(game_options(q.get("system", ""), q.get("game", "")))
@@ -9532,6 +9670,27 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json({"ok": False, "error": "rate limit — slow down"})
             ai_token = (self.headers.get("X-AI-Token") or "").strip()
             return self._json(ai_assist_answer(payload, ai_token))
+        if route in ("/ai/copilot/set", "/ai/copilot/alert"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/ai/copilot/set":
+                # Owner-gate: only the device owner may flip the copilot switch.
+                # Uses the same owner-credential check as ai/grant (PIN or dev token).
+                _oobe_done = os.path.exists(OOBE_DONE_FLAG)
+                if _oobe_done:
+                    ok, _cred, _kind = _owner_credential(payload)
+                    if not ok:
+                        return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                           "error": "owner PIN or dev token required to change copilot settings"})
+                return self._json(ai_copilot_set(payload))
+            # /ai/copilot/alert — AI token required (play+ tier + copilot enabled for this AI)
+            if not rate_ok(route, *_LIMITS.get(route, (20, 60))):
+                return self._json({"ok": False, "error": "rate limit — slow down"})
+            ai_token = (self.headers.get("X-AI-Token") or "").strip()
+            return self._json(ai_copilot_alert(payload, ai_token))
         if route in ("/capture/shot", "/capture/buffer", "/capture/clip"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
