@@ -235,7 +235,12 @@
       build();
       addEventListener('keydown',function(e){var k=e.key;
         if(/INPUT|TEXTAREA/.test((document.activeElement||{}).tagName||''))return;
-        if(k==='ArrowLeft'||k==='[')move(-1,0); else if(k==='ArrowRight'||k==='Tab'||k===']')move(1,0);
+        // L1/R1 ([ / ]) hop between widget zones — matches the Guide's section-hop model.
+        // PageUp/PageDown are the Guide's canonical aliases for L1/R1 on a keyboard.
+        // ←/→ are intentionally NOT bound to zone-hop here: the Guide uses ←/→ to adjust
+        // values within an item, so we reserve them for that meaning on the desktop too
+        // (no desktop widget currently has an adjustable item, so they fall through for now).
+        if(k==='['||k==='PageUp')move(-1,0); else if(k===']'||k==='PageDown'||k==='Tab')move(1,0);
         else if(k==='ArrowUp')move(0,-1); else if(k==='ArrowDown')move(0,1);
         else if(k==='Enter'||k===' ')activate(); else return; e.preventDefault();});
       // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
@@ -243,7 +248,7 @@
       highlight();
     };
     nav.rebuild=function(){build();};
-    // the REAL zone walk order (docs/25 §5b verification surface): what ←/→ cycles
+    // the REAL zone walk order (docs/25 §5b verification surface): what L1/R1 ([/]) cycles
     // through, as built — [Menu, ...widgets in spatial order..., Dock].
     nav.order=function(){return zones.map(function(zo){return zo.name;});};
     // the live focus (zone + item label) — same verification surface
