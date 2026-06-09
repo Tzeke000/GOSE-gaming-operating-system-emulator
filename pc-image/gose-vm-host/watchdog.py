@@ -13,7 +13,7 @@
 #   * a crash-loop never reaches home, so the count climbs; at THRESHOLD the watchdog trips safe mode.
 # Everything below is env-parametrized so the safe-mode path can be exercised on a throwaway
 # port/dir without touching the live UI.
-import subprocess, time, os, json, urllib.request, http.server, socketserver, threading, shutil
+import subprocess, time, os, json, urllib.request, http.server, socketserver, threading, shutil, sys, socket
 
 INTERVAL   = int(os.environ.get("GOSE_WD_INTERVAL", "15"))
 UI_DIR     = os.environ.get("GOSE_WD_UI_DIR", "/userdata/gose-ui")
@@ -31,6 +31,108 @@ SAFE_F     = UI_DIR + "/.safe_mode"
 RECENT_F   = UI_DIR + "/recent.json"
 PLAYTIME_F = UI_DIR + "/playtime.json"
 _GAME_RE = "retroarch|emulatorlauncher|ppsspp|pcsx|dolphin-emu|mupen64|duckstation|flycast|mednafen|melonds|scummvm"
+
+# ---- singleton guard ---------------------------------------------------------
+# Only one watchdog should run at a time. On startup we try to claim a lockfile
+# by writing our PID. If the file already exists AND the PID inside it belongs to
+# a live process, we exit immediately — the incumbent watchdog is still running.
+_LOCK_FILE = os.environ.get("GOSE_WD_LOCK", "/tmp/gose-watchdog.lock")
+
+def acquire_singleton():
+    """Claim the singleton lock or exit if another watchdog is already alive.
+
+    Strategy: read the existing pidfile (if any); if the PID it contains is live,
+    log and exit.  Otherwise overwrite it with our own PID and continue.
+    Uses an atomic write-then-rename so a concurrent second instance that reads
+    during our write sees either the old or the new content, never a partial file.
+    """
+    my_pid = os.getpid()
+    # Check for an existing claim.
+    try:
+        existing = open(_LOCK_FILE).read().strip()
+        if existing:
+            try:
+                other = int(existing)
+                if other != my_pid:
+                    # Signal 0 = check existence without sending a signal.
+                    os.kill(other, 0)
+                    # If we reach here the other process is alive — yield.
+                    # Write to gose.log best-effort; may not exist yet.
+                    try:
+                        with open(UI_DIR + "/gose.log", "a") as f:
+                            f.write("%s WATCHDOG singleton: PID %d already running; exiting.\n"
+                                    % (time.strftime("%Y-%m-%d %H:%M:%S"), other))
+                    except Exception:
+                        pass
+                    sys.exit(0)
+            except (ValueError, ProcessLookupError, PermissionError):
+                # Stale / unreadable PID — safe to take the lock.
+                pass
+    except (IOError, OSError):
+        pass  # File doesn't exist yet — that's fine.
+
+    # Write our own PID atomically.
+    try:
+        tmp = _LOCK_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(str(my_pid))
+        os.replace(tmp, _LOCK_FILE)
+    except Exception as e:
+        # Can't write the lock (read-only FS?). Log and continue — degraded but running.
+        try:
+            with open(UI_DIR + "/gose.log", "a") as f:
+                f.write("%s WATCHDOG warning: could not write lock file %s: %s\n"
+                        % (time.strftime("%Y-%m-%d %H:%M:%S"), _LOCK_FILE, e))
+        except Exception:
+            pass
+
+def release_singleton():
+    """Remove the lockfile on clean exit so a fresh watchdog can start immediately."""
+    try:
+        os.remove(_LOCK_FILE)
+    except Exception:
+        pass
+
+# ---- port-free helper --------------------------------------------------------
+def wait_port_free(port, timeout=10):
+    """Kill anything holding *port* and wait up to *timeout* seconds for it to close.
+
+    Used before starting a replacement server so we don't race into an
+    'address already in use' bind error.
+    """
+    # Kill by pattern first (same approach as kill_ui_server).
+    try:
+        out = subprocess.run(["pgrep", "-f", UI_PAT], capture_output=True, text=True)
+        for pid in out.stdout.split():
+            try:
+                subprocess.run(["kill", pid])
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Also ask fuser/ss to find anything else squatting on the port.
+    for killer in (
+        ["fuser", "-k", "%d/tcp" % port],
+        ["fuser", "-k", "%d/tcp6" % port],
+    ):
+        try:
+            subprocess.run(killer, capture_output=True)
+        except Exception:
+            pass
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            s = socket.socket()
+            s.settimeout(0.5)
+            s.connect(("127.0.0.1", port))
+            s.close()
+            # Port still in use — wait.
+            time.sleep(0.5)
+        except (ConnectionRefusedError, OSError):
+            return  # Port is free.
+    # Timeout — proceed anyway; the server start may fail, watchdog will retry.
 
 def alive(pat):
     return subprocess.run(["pgrep", "-f", pat], capture_output=True).returncode == 0
@@ -268,39 +370,51 @@ SERVICES = [
 ]
 
 def main():
-    snapped = False
-    while True:
-        # 1) UI server: restart if down, counting each (re)start as a boot attempt
-        if not alive(UI_PAT):
-            n = bump_attempts()
-            try:
-                subprocess.run(["/bin/sh", "-c", UI_CMD])
-                log("restarted UI server (attempt %d)" % n)
-            except Exception:
-                pass
-            snapped = False   # new (re)start = a new boot streak; allow a fresh snapshot once it's good
+    # Singleton guard: exit immediately if another watchdog instance is alive.
+    acquire_singleton()
+    log("started (PID %d)" % os.getpid())
 
-        # 2) other services (Guide overlay) — unchanged behavior
-        for pat, cmd in SERVICES:
-            if not alive(pat):
+    snapped = False
+    try:
+        while True:
+            # 1) UI server: restart if down, counting each (re)start as a boot attempt
+            if not alive(UI_PAT):
+                # Ensure the old server process and its port are fully gone before we
+                # start a replacement.  Without this, a just-exited server can hold the
+                # port for a moment, causing the fresh start to fail with EADDRINUSE and
+                # inflate the boot-attempts counter spuriously.
+                wait_port_free(UI_PORT)
+                n = bump_attempts()
                 try:
-                    subprocess.run(["/bin/sh", "-c", cmd])
-                    log("restarted %s" % pat)
+                    subprocess.run(["/bin/sh", "-c", UI_CMD])
+                    log("restarted UI server (attempt %d)" % n)
                 except Exception:
                     pass
+                snapped = False   # new (re)start = a new boot streak; allow a fresh snapshot once it's good
 
-        # 3) confirmed-good boot? snapshot a rollback target (once per streak)
-        att = read_attempts()
-        if att == 0 and not snapped and server_healthy():
-            snapshot_prev()
-            snapped = True
+            # 2) other services (Guide overlay) — unchanged behavior
+            for pat, cmd in SERVICES:
+                if not alive(pat):
+                    try:
+                        subprocess.run(["/bin/sh", "-c", cmd])
+                        log("restarted %s" % pat)
+                    except Exception:
+                        pass
 
-        # 4) crash-loop? trip safe mode
-        if (att or 0) >= THRESHOLD:
-            enter_safe_mode()
+            # 3) confirmed-good boot? snapshot a rollback target (once per streak)
+            att = read_attempts()
+            if att == 0 and not snapped and server_healthy():
+                snapshot_prev()
+                snapped = True
 
-        accrue_playtime()
-        time.sleep(INTERVAL)
+            # 4) crash-loop? trip safe mode
+            if (att or 0) >= THRESHOLD:
+                enter_safe_mode()
+
+            accrue_playtime()
+            time.sleep(INTERVAL)
+    finally:
+        release_singleton()
 
 if __name__ == "__main__":
     main()
