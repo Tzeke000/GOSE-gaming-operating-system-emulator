@@ -55,11 +55,13 @@
     <div class="pin" id="pin" style="display:none"></div>
   </div>
   <div class="pad" id="pad"></div>
-  <div class="hint" id="hint">Press any key or click to unlock</div>
+  <div class="hint" id="hint" data-i18n="lock.hint_any">Press any key or click to unlock</div>
+<script src="assets/i18n.js"></script>
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const $=id=>document.getElementById(id);
+  var _t=window.GOSE&&GOSE.t?GOSE.t.bind(GOSE):function(k,fb){return fb||k;};
   // clock honors the OS timezone + format
   function tick(){const fmt=localStorage.getItem("gose-clockfmt"),tz=localStorage.getItem("gose-tz");
     const o={hour:'numeric',minute:'2-digit',hour12:fmt!=="24"}; if(tz)o.timeZone=tz;
@@ -107,7 +109,7 @@
   function showPad(m){const was=$("pad").classList.contains("on");
     mode=m;$("pad").classList.add("on");$("pin").style.display="flex";dots();
     if(!was&&window.GOSE&&GOSE.modalPush)GOSE.modalPush();   // modal layer signal (docs/27 §3.10)
-    hint(m==="enter"?"Enter your PIN":(m==="confirm"?"Re-enter your PIN to confirm"
+    hint(m==="enter"?_t("lock.hint_pin","Enter your PIN"):(m==="confirm"?"Re-enter your PIN to confirm"
       :"Set a PIN ("+MINLEN+" digits) to finish setting up your lock"));}
   function digit(d){if(mode==="locked")return;
     if(entered.length>=MAXLEN)return;

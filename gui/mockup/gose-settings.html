@@ -202,7 +202,7 @@
       {ic:"globe", nm:"Set time zone automatically", sub:"Needs a location source", t:"dis", tag:"[needs build]", why:"No location source is wired (and it would be opt-in) — set the zone manually below"},
       {ic:"clock", nm:"Time zone", sub:"Desktop & lock clock live; the OS side (batocera.conf) applies at boot", t:"cycle", v:TZONES.map(z=>z[0]), apply:"tz"},
       {ic:"clock", nm:"Time format", sub:"How the clock reads", t:"cycle", v:["12-hour","24-hour"], apply:"clockfmt"},
-      {ic:"globe", nm:"Region & language", sub:"Formats and on-screen language", t:"dis", tag:"[needs build]", why:"GOSE has no translation layer yet — English (US) is the only real language"},
+      {ic:"globe", nm:"Language", sub:"On-screen language for the GOSE shell", t:"cycle", v:["English (US)","Español (Spanish)"], apply:"lang", _codes:["en","es"]},
     ]},
     {id:"power", ic:"battery", nm:"Power & Battery", rows:[
       {ic:"battery", nm:"Battery", sub:"Live from the host laptop (hidden on a desktop PC)", t:"info", val:"—", live:"bat"},
@@ -578,6 +578,13 @@
     else if(r.apply==="a11y_cbpalette"){prefs({"gose-cb-palette":["off","deut","prot","trit"][r.i||0]});showToast("Colorblind accent palette: "+r.v[r.i]);}
     else if(r.apply==="a11y_holdalt"){prefs({"gose-hold-alt":r.i===1?"on":"off"});
       showToast(r.i===1?"Hold-alternative chords: On — UI flag set. Bridge build needed for mechanical tap-sequences (docs/27 §1).":"Hold-alternative chords: Off");}
+    // i18n language switcher — live, no page reload needed for the Settings page itself;
+    // other pages pick it up on next navigation (GOSE.i18n.applyPage() runs at load).
+    else if(r.apply==="lang"){
+      const code=(r._codes||["en","es"])[r.i||0];
+      if(window.GOSE&&GOSE.i18n&&GOSE.i18n.setLocale)GOSE.i18n.setLocale(code);
+      else try{localStorage.setItem("gose-lang",code);}catch(e){}
+      showToast("Language: "+r.v[r.i]+" — takes effect on next page load");}
     // First-time tips (tips.js) — v:["On","Off"]. localStorage-ONLY by design: the server's
     // prefs store rejects unknown keys, so this writes gose-tips-off directly, never via prefs().
     else if(r.apply==="tips"){const off=(r.i===1);localStorage.setItem("gose-tips-off",off?"1":"0");
@@ -626,6 +633,9 @@
     const rfo=findRow("a11y_focus","apply"); if(rfo)rfo.i=onoff("gose-focus");
     const rcbp=findRow("a11y_cbpalette","apply"); if(rcbp){const k=["off","deut","prot","trit"].indexOf(localStorage.getItem("gose-cb-palette")||"off");rcbp.i=k<0?0:k;}
     const rha=findRow("a11y_holdalt","apply"); if(rha)rha.i=onoff("gose-hold-alt");
+    // language picker — restore index from localStorage
+    const rlg=findRow("lang","apply"); if(rlg){const lc=localStorage.getItem("gose-lang")||"en";
+      const k=(rlg._codes||["en","es"]).indexOf(lc); rlg.i=k<0?0:k;}
   })();
   // live readouts in Network / Power / About, pulled from the same /status.json the desktop uses
   function setLive(tag,val){let chg=false;
@@ -1133,5 +1143,6 @@
 
   render();
 </script>
+<script src="assets/i18n.js"></script>
 <script src="assets/a11y.js"></script>
 </body></html>

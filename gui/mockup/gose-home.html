@@ -93,12 +93,13 @@
        from the GW.define() declarations below — nothing is hand-placed here. -->
 
   <div class="ncenter" id="ncenter">
-    <div class="nh"><span class="ic" data-i="bell"></span><h3>Notifications</h3><span class="clr" id="n-clear">Clear all</span></div>
+    <div class="nh"><span class="ic" data-i="bell"></span><h3 data-i18n="home.notifications">Notifications</h3><span class="clr" id="n-clear" data-i18n="home.clear_all">Clear all</span></div>
     <div class="nlist" id="nlist"></div>
   </div>
 
   <div class="dock" id="dock"></div>
 
+<script src="assets/i18n.js"></script>
 <script src="assets/icons.js"></script>
 <script src="assets/notify.js"></script>
 <script src="assets/sound.js"></script>
@@ -109,15 +110,16 @@
   var esc=GW.esc, fmtPlay=GW.fmtPlay;
 
   /* ---------- page chrome: side menu + dock (navigable as nav zones) ---------- */
-  const NAV=[["library","Library","gose-library.html"],["files","Files","gose-files.html"],
-             ["terminal-app","Terminal","gose-term.html"],["emulators","Emulators","gose-library.html"],
-             ["ai","AI Players","gose-ai.html"],["settings-app","Settings","gose-settings.html"],
-             ["info","Help","gose-help.html"]];
+  var _t=window.GOSE&&GOSE.t?GOSE.t.bind(GOSE):function(k){return k;};
+  const NAV=[["library",_t("nav.library"),"gose-library.html"],["files",_t("nav.files"),"gose-files.html"],
+             ["terminal-app",_t("nav.terminal"),"gose-term.html"],["emulators",_t("nav.emulators"),"gose-library.html"],
+             ["ai",_t("nav.ai_players"),"gose-ai.html"],["settings-app",_t("nav.settings"),"gose-settings.html"],
+             ["info",_t("nav.help"),"gose-help.html"]];
   document.getElementById("side").innerHTML=NAV.map(([i,l,h],x)=>
     `<div class="nav ${x===0?'on':''}" data-go="${h}"><span class="ic" data-i="${i}"></span><span>${l}</span></div>`).join("");
   document.getElementById("dock").innerHTML=
-    `<div class="d on" data-go="gose-apps.html" title="Apps"><span class="ic" data-i="apps"></span></div>`+
-    [["store","Store","gose-store.html"],["cpu","Task Manager","gose-taskman.html"],["palette","Widgets","gose-widgets.html"],["power","Lock","gose-lock.html"]]
+    `<div class="d on" data-go="gose-apps.html" title="${_t('dock.apps')}"><span class="ic" data-i="apps"></span></div>`+
+    [["store",_t("dock.store"),"gose-store.html"],["cpu",_t("dock.taskman"),"gose-taskman.html"],["palette",_t("dock.widgets"),"gose-widgets.html"],["power",_t("dock.lock"),"gose-lock.html"]]
       .map(([i,l,h])=>`<div class="d" data-go="${h}" title="${l}"><span class="ic" data-i="${i}"></span></div>`).join("");
   // dock items use data-go; the widget-base nav handles activation, but mouse-clicks
   // outside the nav zones should still work, so give them a direct fallback too:
@@ -475,7 +477,7 @@
     var toastWrap=document.createElement("div"); toastWrap.id="nc-toast";
     (document.body||document.documentElement).appendChild(toastWrap);
     var dndEl=document.createElement("div"); dndEl.className="nc-dnd";
-    dndEl.innerHTML='<span class="ic" data-i="moon"></span><span>Do Not Disturb — a game is running</span>';
+    dndEl.innerHTML='<span class="ic" data-i="moon"></span><span data-i18n="home.dnd_game">Do Not Disturb — a game is running</span>';
     if(nh&&nh.parentNode){ nh.parentNode.insertBefore(dndEl,nh.nextSibling); }
 
     function ICON(n){ if(n&&n.icon)return n.icon;

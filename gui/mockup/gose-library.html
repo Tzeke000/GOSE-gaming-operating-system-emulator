@@ -122,12 +122,12 @@
 </style></head>
 <body>
   <div class="top"><img src="assets/brand/gose-crystal.png" alt="GOSE">
-    <div><h1>Library</h1><div class="s" id="sub">scanning your games…</div></div>
-    <div class="home"><span class="ic" data-i="library"></span> B / Esc — home</div>
+    <div><h1 data-i18n="library.title">Library</h1><div class="s" id="sub">scanning your games…</div></div>
+    <div class="home"><span class="ic" data-i="library"></span> <span data-i18n="library.b_home">B — Home</span></div>
   </div>
   <div class="sbar" id="sbar">
     <span class="ic" data-i="search"></span>
-    <input type="text" id="q" placeholder="Search games…" autocomplete="off" spellcheck="false">
+    <input type="text" id="q" placeholder="Search games…" autocomplete="off" spellcheck="false" data-i18n-placeholder="library.search_ph">
     <span class="clr" id="qclr" title="Clear">✕</span>
   </div>
   <div class="wrap"><div class="rail" id="rail"></div><div class="pane" id="pane"></div></div>
@@ -148,6 +148,7 @@
       </div>
     </div>
   </div>
+<script src="assets/i18n.js"></script>
 <script src="assets/platform.js"></script>
 <script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>

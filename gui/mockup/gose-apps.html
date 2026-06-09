@@ -46,41 +46,43 @@
 </style></head>
 <body>
   <div class="wrap">
-    <div class="head"><img src="assets/brand/gose-crystal.png" alt="GOSE"><h1>Apps</h1>
-      <span class="x"><span class="ic" data-i="apps"></span> Esc — desktop</span></div>
-    <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search apps…" autofocus></div>
-    <div class="ph" id="ph">ALL APPS</div>
+    <div class="head"><img src="assets/brand/gose-crystal.png" alt="GOSE"><h1 data-i18n="apps.title">Apps</h1>
+      <span class="x"><span class="ic" data-i="apps"></span> <span data-i18n="app.close">Esc — desktop</span></span></div>
+    <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search apps…" autofocus data-i18n-placeholder="apps.search_ph"></div>
+    <div class="ph" id="ph" data-i18n="apps.all_apps">ALL APPS</div>
     <div class="grid" id="grid"></div>
     <div class="power">
-      <button data-pw="sleep"><span class="ic" data-i="moon"></span>Sleep</button>
-      <button data-pw="restart"><span class="ic" data-i="rotate-ccw"></span>Restart</button>
-      <button data-pw="shutdown"><span class="ic" data-i="power"></span>Shut down</button>
+      <button data-pw="sleep"><span class="ic" data-i="moon"></span><span data-i18n="apps.sleep">Sleep</span></button>
+      <button data-pw="restart"><span class="ic" data-i="rotate-ccw"></span><span data-i18n="apps.restart">Restart</span></button>
+      <button data-pw="shutdown"><span class="ic" data-i="power"></span><span data-i18n="apps.shut_down">Shut down</span></button>
     </div>
   </div>
-  <div class="foot"><b>↑↓←→</b> move · <b>Enter</b> open · type to search · <b>Esc</b> desktop</div>
+  <div class="foot" data-i18n="apps.footer"><b>↑↓←→</b> move · <b>Enter</b> open · type to search · <b>Esc</b> desktop</div>
   <div class="toast" id="toast"></div>
+<script src="assets/i18n.js"></script>
 <script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const $=id=>document.getElementById(id);
+  var _t=window.GOSE&&GOSE.t?GOSE.t.bind(GOSE):function(k,fb){return fb||k;};
   const APPS=[
-    {nm:"Library",  ds:"Your games, by system",        ic:"library", href:"gose-library.html"},
-    {nm:"Files",    ds:"Browse, open & edit files + storage map", ic:"files", href:"gose-files.html"},
-    {nm:"Task Manager", ds:"Processes, performance, kill tasks", ic:"cpu", href:"gose-taskman.html"},
-    {nm:"Peripherals", ds:"Controllers, USB, Wi-Fi & Bluetooth", ic:"usb", href:"gose-peripherals.html"},
-    {nm:"Settings", ds:"Personalize the whole OS",      ic:"settings-app",   href:"gose-settings.html"},
-    {nm:"Gallery",  ds:"Screenshots & game clips",       ic:"gallery",    href:"gose-gallery.html"},
-    {nm:"Save Data", ds:"Back up, export & sync your game saves", ic:"hard-drive", href:"gose-saves.html"},
-    {nm:"Splice",   ds:"Lossless video trim",           ic:"scissors", href:"gose-splice.html"},
-    {nm:"Browser",  ds:"Couch-friendly web browser — pad + OSK",   ic:"globe", href:"gose-browser.html"},
-    {nm:"Moonlight", ds:"Stream games from your PC (Sunshine / GeForce)", ic:"monitor", app:"moonlight"},
-    {nm:"Store",    ds:"Get more apps from Flathub",     ic:"store", href:"gose-store.html"},
-    {nm:"Terminal", ds:"Command line — the real shell",  ic:"terminal-app", href:"gose-term.html"},
-    {nm:"Licenses", ds:"Open-source credits & licenses", ic:"file-text", href:"gose-licenses.html"},
-    {nm:"Beam",     ds:"Send files to phone & devices", ic:"send",     soon:true},
-    {nm:"AI Players", ds:"Your AI agents — join & play", ic:"ai", soon:true},
-    {nm:"Emulators", ds:"Cores & systems — license-aware store", ic:"emulators", href:"gose-store.html?tab=emulators"},
+    {nm:_t("apps.app.library.nm","Library"),  ds:_t("apps.app.library.ds","Your games, by system"),        ic:"library", href:"gose-library.html"},
+    {nm:_t("apps.app.files.nm","Files"),    ds:_t("apps.app.files.ds","Browse, open & edit files + storage map"), ic:"files", href:"gose-files.html"},
+    {nm:_t("apps.app.taskman.nm","Task Manager"), ds:_t("apps.app.taskman.ds","Processes, performance, kill tasks"), ic:"cpu", href:"gose-taskman.html"},
+    {nm:_t("apps.app.peripherals.nm","Peripherals"), ds:_t("apps.app.peripherals.ds","Controllers, USB, Wi-Fi & Bluetooth"), ic:"usb", href:"gose-peripherals.html"},
+    {nm:_t("apps.app.settings.nm","Settings"), ds:_t("apps.app.settings.ds","Personalize the whole OS"),      ic:"settings-app",   href:"gose-settings.html"},
+    {nm:_t("apps.app.gallery.nm","Gallery"),  ds:_t("apps.app.gallery.ds","Screenshots & game clips"),       ic:"gallery",    href:"gose-gallery.html"},
+    {nm:_t("apps.app.saves.nm","Save Data"), ds:_t("apps.app.saves.ds","Back up, export & sync your game saves"), ic:"hard-drive", href:"gose-saves.html"},
+    {nm:_t("apps.app.splice.nm","Splice"),   ds:_t("apps.app.splice.ds","Lossless video trim"),           ic:"scissors", href:"gose-splice.html"},
+    {nm:_t("apps.app.browser.nm","Browser"),  ds:_t("apps.app.browser.ds","Couch-friendly web browser — pad + OSK"),   ic:"globe", href:"gose-browser.html"},
+    {nm:_t("apps.app.moonlight.nm","Moonlight"), ds:_t("apps.app.moonlight.ds","Stream games from your PC (Sunshine / GeForce)"), ic:"monitor", app:"moonlight"},
+    {nm:_t("apps.app.store.nm","Store"),    ds:_t("apps.app.store.ds","Get more apps from Flathub"),     ic:"store", href:"gose-store.html"},
+    {nm:_t("apps.app.terminal.nm","Terminal"), ds:_t("apps.app.terminal.ds","Command line — the real shell"),  ic:"terminal-app", href:"gose-term.html"},
+    {nm:_t("apps.app.licenses.nm","Licenses"), ds:_t("apps.app.licenses.ds","Open-source credits & licenses"), ic:"file-text", href:"gose-licenses.html"},
+    {nm:_t("apps.app.beam.nm","Beam"),     ds:_t("apps.app.beam.ds","Send files to phone & devices"), ic:"send",     soon:true},
+    {nm:_t("apps.app.ai.nm","AI Players"), ds:_t("apps.app.ai.ds","Your AI agents — join & play"), ic:"ai", soon:true},
+    {nm:_t("apps.app.emulators.nm","Emulators"), ds:_t("apps.app.emulators.ds","Cores & systems — license-aware store"), ic:"emulators", href:"gose-store.html?tab=emulators"},
   ];
   let shown=APPS.slice(), foc=0;
   function paint(){if(window.GICON){GICON.paint(document);return;}document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
