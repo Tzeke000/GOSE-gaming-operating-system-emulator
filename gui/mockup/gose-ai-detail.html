@@ -18,18 +18,54 @@
   .top{display:flex;align-items:center;gap:12px;padding:18px 36px 4px}
   .top img{width:32px;height:32px}.top h1{font-size:20px;margin:0}.top .s{color:var(--muted);font-size:12px}
   .top .home{margin-left:auto;color:var(--muted);font-size:13px}
-  /* AI identity chip — the anchor of the detail view (placeholder; edit/remove freely) */
+  /* identity chip */
   .who{display:flex;align-items:center;gap:13px;margin:8px 36px 0;background:var(--surface);
     border:1px solid var(--line);border-radius:13px;padding:12px 16px}
   .who .av{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;
     font-size:19px;font-weight:700;color:#06121a;flex:none}
   .who .nm{font-size:17px;font-weight:700}
-  .who .st{color:var(--muted);font-size:12px;margin-top:3px}
+  .who .st{color:var(--muted);font-size:12px;margin-top:3px;display:flex;align-items:center;gap:6px}
+  .who .st .dot{width:9px;height:9px;border-radius:50%;display:inline-block;background:#3fe0a0}
   .who .badge{font-size:11px;font-weight:700;border-radius:9px;padding:3px 9px;color:#5cd0ff;background:#5cd0ff14;border:1px solid var(--line);margin-left:auto}
-  /* THE BLANK CANVAS — design the AI detail / management window in here */
-  .wrap{flex:1;overflow:auto;padding:14px 36px;display:flex}
-  .canvas{flex:1;border:2px dashed var(--line);border-radius:16px;display:flex;align-items:center;
-    justify-content:center;color:var(--muted);font-size:14px;text-align:center;line-height:1.7;padding:24px}
+  /* scroll column */
+  .wrap{flex:1;overflow:auto;padding:6px 36px 14px}
+  .col{max-width:780px;margin:0 auto}
+  .sect{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin:18px 0 7px}
+  /* generic row */
+  .row{display:flex;align-items:center;gap:12px;background:var(--surface2);border:2px solid var(--line);
+    border-radius:12px;padding:12px 15px;margin:7px 0;font-size:14px}
+  .row.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .row.sel{background:#5cd0ff12}
+  .rnm{font-weight:700}.rsub{color:var(--muted);font-size:12px;line-height:1.45;margin-top:2px}
+  .rval{margin-left:auto;color:var(--accent);font-size:12px;font-weight:700;white-space:nowrap}
+  .rdot{width:15px;height:15px;border-radius:50%;border:2px solid var(--line);flex:none}
+  .row.sel .rdot{border-color:var(--accent);background:var(--accent)}
+  .tag{margin-left:auto;font-size:10px;font-weight:700;letter-spacing:.4px;color:#3fe0a0;background:#3fe0a014;border:1px solid #3fe0a055;border-radius:7px;padding:3px 8px}
+  /* the big play action */
+  .playbtn{display:flex;align-items:center;gap:15px;background:var(--accent);color:#06121a;
+    border:2px solid transparent;border-radius:14px;padding:15px 20px;margin:10px 0 2px;cursor:pointer}
+  .playbtn .pi{font-size:22px;line-height:1}
+  .playbtn .pt{font-size:16px;font-weight:700}
+  .playbtn .psub{font-size:12px;font-weight:600;color:#06121abb;margin-top:2px}
+  .playbtn.focus{box-shadow:var(--focusglow);border-color:#fff}
+  /* segmented toggle (2+ options) */
+  .seg{display:flex;gap:6px;background:var(--surface2);border:2px solid var(--line);border-radius:12px;padding:5px;margin:7px 0}
+  .seg.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .seg .opt{flex:1;text-align:center;font-size:13px;font-weight:700;border-radius:8px;padding:9px 10px;color:var(--muted)}
+  .seg .opt.sel{background:#5cd0ff;color:#06121a}
+  /* chip rows: seats + difficulty */
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:7px 0}
+  .chip{font-size:13px;font-weight:700;border-radius:9px;padding:9px 16px;border:2px solid var(--line);
+    background:var(--surface2);color:var(--muted);cursor:pointer}
+  .chip.sel{color:#06121a;background:#5cd0ff;border-color:transparent}
+  .chip.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  /* toggle switch */
+  .sw{width:44px;height:25px;border-radius:13px;background:var(--surface);border:1px solid var(--line);
+    position:relative;margin-left:auto;flex:none}
+  .sw::after{content:"";position:absolute;width:19px;height:19px;border-radius:50%;background:var(--muted);top:2px;left:2px;transition:.15s}
+  .sw.on{background:#3fe0a033;border-color:#3fe0a0}
+  .sw.on::after{left:21px;background:#3fe0a0}
+  .note{color:var(--muted);font-size:12px;line-height:1.5;margin:2px 2px 0}
   .foot{margin:8px 36px 16px;display:flex;gap:10px;color:var(--muted);font-size:13px;
     background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
   .foot .h{margin-left:auto}.foot b{color:var(--text)}
@@ -43,14 +79,56 @@
   <div class="who">
     <div class="av" id="ai-av" style="background:#ffce5c">W</div>
     <div><div class="nm" id="ai-name2">Wren</div>
-      <div class="st">Online · watching · seat P2</div></div>
+      <div class="st"><span class="dot"></span>Online · watching · seat P2</div></div>
     <span class="badge" id="ai-tier">Play</span>
   </div>
 
-  <div class="wrap">
-    <div class="canvas">Blank canvas — the AI detail / management window goes here.<br>
-      (The header and identity chip above are placeholders; design the body however you picture it.)</div>
-  </div>
+  <div class="wrap"><div class="col">
+
+    <div class="sect">CURRENT GAME</div>
+    <div class="row"><div><div class="rnm" id="cur-game">Desktop</div>
+      <div class="rsub">Changes to whatever you launch — shows "Desktop" when you're not in a game.</div></div>
+      <span class="tag">LIVE</span></div>
+
+    <div class="playbtn focusable focus" data-fk="play"><span class="pi">▶</span>
+      <div><div class="pt">Ready to play with Wren</div>
+        <div class="psub">Tap to arm — the AI starts the moment you back out of the Guide.</div></div></div>
+
+    <div class="sect">PERMISSIONS</div>
+    <div class="row focusable" data-fk="t:observe"><div class="rdot"></div>
+      <div><div class="rnm">Observe</div><div class="rsub">Read-only — can watch the screen &amp; game state.</div></div></div>
+    <div class="row sel focusable" data-fk="t:play"><div class="rdot"></div>
+      <div><div class="rnm">Play</div><div class="rsub">Can launch &amp; control games.</div></div><span class="rval">Current ✓</span></div>
+    <div class="row focusable" data-fk="t:admin"><div class="rdot"></div>
+      <div><div class="rnm">Admin</div><div class="rsub">Full OS control — settings, install, shell, power.</div></div></div>
+
+    <div class="sect">OPPONENT</div>
+    <div class="seg focusable" data-fk="opp"><span class="opt sel">Play vs Human</span><span class="opt">AI vs AI</span></div>
+    <div class="note">Human always takes P1. The first AI set up becomes P2; a second AI (in games that allow 3+) becomes P3.</div>
+
+    <div class="sect">SEAT</div>
+    <div class="chips"><span class="chip focusable" data-fk="s1">P1</span><span class="chip sel focusable" data-fk="s2">P2</span>
+      <span class="chip focusable" data-fk="s3">P3</span><span class="chip focusable" data-fk="s4">P4</span></div>
+    <div class="note">Which seat this AI is currently set to play.</div>
+
+    <div class="sect">MODE</div>
+    <div class="seg focusable" data-fk="mode"><span class="opt sel">VS</span><span class="opt">Co-Op</span></div>
+    <div class="note">Only the modes the current game supports appear — if it has just one, only that one shows.</div>
+
+    <div class="sect">DIFFICULTY</div>
+    <div class="chips"><span class="chip focusable" data-fk="d-easy">Easy</span><span class="chip focusable" data-fk="d-med">Medium</span>
+      <span class="chip sel focusable" data-fk="d-hard">Hard</span><span class="chip focusable" data-fk="d-learn">Learning</span></div>
+    <div class="note">Learning studies the play-by-play, the result, and your history to adapt and predict.</div>
+
+    <div class="sect">INPUT READING — PRIVACY</div>
+    <div class="row focusable" data-fk="rv"><div><div class="rnm">Read my inputs in VS games</div>
+      <div class="rsub">Lets the AI watch your controller while you compete against it. Off by default.</div></div>
+      <span class="sw off"></span></div>
+    <div class="row focusable" data-fk="rc"><div><div class="rnm">Read my inputs in Co-Op games</div>
+      <div class="rsub">Lets the AI coordinate with you as a teammate. On by default.</div></div>
+      <span class="sw on"></span></div>
+
+  </div></div>
 
   <div class="foot"><span class="ic" data-i="sparkles"></span> Detail view for a paired AI — opens when you select its card on the AI&nbsp;Players page
     <span class="h"><b>↑↓←→</b> move · <b>A/Enter</b> select · <b>B/Esc</b> back</span></div>
@@ -58,12 +136,12 @@
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
-  // When wired from the card click, ?name=Wren&tier=Play&seat=2 would populate the identity chip:
   (function(){try{var p=new URLSearchParams(location.search),n=p.get("name");
     if(n){document.getElementById("ai-name").textContent=n;
       document.getElementById("ai-name2").textContent=n;
       document.getElementById("ai-av").textContent=(n[0]||"?").toUpperCase();}
     var t=p.get("tier"); if(t) document.getElementById("ai-tier").textContent=t;
+    var g=p.get("game"); if(g) document.getElementById("cur-game").textContent=g;
   }catch(e){}})();
 </script>
 </body>
