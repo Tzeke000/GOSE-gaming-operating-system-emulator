@@ -402,7 +402,12 @@ async function startBench(){
 async function stopBench(){
   if(!running) return;
   setStatus("Stopping…");
-  try { await postJSON("/stress/stop", {}); } catch(e){}
+  try { await postJSON("/stress/stop", {}); } catch(e){
+    // stop failed (server unreachable) — clear running flag anyway so Escape
+    // can navigate back; the worker's hard deadline + watchdog will kill it.
+    setStatus("Stop request failed — watchdog will clean up.");
+    running = false; setUIRunning(false);
+  }
 }
 
 function setUIRunning(r){
