@@ -165,6 +165,7 @@
       {ic:"battery", nm:"Battery alerts", sub:"Charging, low & critical battery", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_battery"},
       {ic:"gamepad-2", nm:"UI & navigation sounds", sub:"Clicks and cursor feedback (auto-ducked while a game is open)", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_ui"},
       {ic:"music", nm:"Menu music", sub:"Shell soundtrack volume", t:"cycle", v:["Mute","25%","50%","75%","100%"], apply:"snd_music"},
+      {ic:"layers", nm:"Sound pack", sub:"UI sound theme — drop custom packs in assets/sounds/<packname>/", t:"cycle", v:["default"], i:0, apply:"snd_pack", _packs:["default"]},
     ]},
     {id:"net", ic:"wifi", nm:"Network & internet", rows:[
       {ic:"globe", nm:"Status", sub:"Active connection (live, via connman)", t:"info", val:"—", live:"net"},
@@ -218,6 +219,7 @@
       {ic:"monitor", nm:"Allow screen capture", sub:"Never blocks captures & the replay buffer; Ask behaves as Always until prompts land", t:"cycle", v:["Ask","Always","Never"], apply:"cap", i:1},
       {ic:"image", nm:"Download missing cover art", sub:"Sends game names to thumbnails.libretro.com when on (opt-in, docs/24)", t:"cycle", v:["Off","On"], apply:"boxart"},
       {ic:"sparkles", nm:"Usage diagnostics", sub:"Records your choice — GOSE sends nothing today", t:"cycle", v:["Off","On"], apply:"diag"},
+      {ic:"share-2", nm:"QR share (#60)", sub:"Allow sharing gallery files to a nearby phone via LAN URL + QR code (off by default, docs/31)", t:"cycle", v:["Off","On"], apply:"share_qr", i:0},
       {ic:"hard-drive", nm:"Clear UI data", sub:"Reset theme, accent, sounds & UI prefs to defaults (press twice) — games & saves untouched", t:"action", val:"clear", clear:true, confirm:true},
     ]},
     {id:"security", ic:"shield", nm:"Security", rows:[
@@ -525,6 +527,16 @@
       showToast((x&&x.ok)?("Cover art download: "+r.v[r.i]):"Cover art: failed");})();}
     else if(r.apply==="diag"){(async()=>{const x=await postJSON("/privacy",{diagnostics:r.i===1});
       showToast((x&&x.ok)?("Diagnostics: "+r.v[r.i]+" — GOSE sends nothing today"):"Diagnostics: failed");})();}
+    // #60 QR share privacy toggle
+    else if(r.apply==="share_qr"){(async()=>{const x=await postJSON("/privacy",{share_qr:r.i===1});
+      showToast((x&&x.ok)?("QR share: "+r.v[r.i]+(r.i===0?" — links won't be created":"")):"QR share: failed");})();}
+    // #57 sound pack picker — applies live, server-syncs the key so it persists across devices
+    else if(r.apply==="snd_pack"){
+      const name=r._packs?r._packs[r.i||0]:"default";
+      if(window.GOSESOUND)GOSESOUND.setPack(name);
+      prefs({"gose-sound-pack":name});
+      showToast("Sound pack: "+name+(name==="default"?" (built-in)":""));
+      if(window.GOSESOUND)GOSESOUND.play("select");}
     else if(r.apply==="uiscale"){prefs({"gose-uiscale":["0.9","1","1.1","1.25"][r.i||0]});showToast("UI scale: "+r.v[r.i]);}
     else if(r.apply==="a11y_scale"){prefs({"gose-ui-scale":["1","1.15","1.3","1.5"][r.i||0]});showToast("Text size: "+r.v[r.i]);}
     else if(r.apply==="a11y_contrast"){prefs({"gose-contrast":r.i===1?"on":"off"});showToast("High contrast: "+r.v[r.i]);}
@@ -568,6 +580,10 @@
       return v<=0?0:v<37?1:v<63?2:v<88?3:4; }
     const rq=findRow("snd_quiet","apply"); if(rq)rq.i=(localStorage.getItem("gose-snd-quiet")==="1")?1:0;
     ["system","notify","battery","ui","music"].forEach(sc=>{const rr=findRow("snd_"+sc,"apply"); if(rr)rr.i=volIdxLS(sc);});
+    // #57 sound pack — set index from localStorage; the server will update .v in initBackend
+    const rsp=findRow("snd_pack","apply");
+    if(rsp){const cur=localStorage.getItem("gose-sound-pack")||"default";
+      const k=rsp._packs?rsp._packs.indexOf(cur):0; rsp.i=k<0?0:k;}
     const rtp=findRow("tips","apply"); if(rtp){const tv=localStorage.getItem("gose-tips-off");rtp.i=(tv==="1"||tv==="on"||tv==="true")?1:0;}
     const onoff=(k)=>localStorage.getItem(k)==="on"?1:0;
     const rus=findRow("uiscale","apply"); if(rus){const k=["0.9","1","1.1","1.25"].indexOf(localStorage.getItem("gose-uiscale")||"1");rus.i=k<0?1:k;}
@@ -640,7 +656,18 @@
       if(p&&p.ok&&p.privacy){const c=findRow("cap","apply");
         if(c){const k=["ask","always","never"].indexOf(p.privacy.screen_capture||"always");c.i=k<0?1:k;}
         const b=findRow("boxart","apply"); if(b)b.i=p.privacy.boxart_scrape?1:0;
-        const g=findRow("diag","apply"); if(g)g.i=p.privacy.diagnostics?1:0; rerowIf("privacy");}}catch(e){}
+        const g=findRow("diag","apply"); if(g)g.i=p.privacy.diagnostics?1:0;
+        // #60 QR share toggle
+        const sq=findRow("share_qr","apply"); if(sq)sq.i=p.privacy.share_qr?1:0;
+        rerowIf("privacy");}}catch(e){}
+    // #57 sound pack picker — load available packs from server, seed with current selection
+    try{const sp=await(await fetch("/sound/packs",{cache:"no-store"})).json();
+      if(sp&&sp.ok&&sp.packs&&sp.packs.length){
+        const r=findRow("snd_pack","apply");
+        if(r){r._packs=sp.packs; r.v=sp.packs;
+          const cur=localStorage.getItem("gose-sound-pack")||"default";
+          const k=sp.packs.indexOf(cur); r.i=k<0?0:k;
+          rerowIf("sound");}}}catch(e){}
     try{const o=await(await fetch("/oobe/status",{cache:"no-store"})).json();
       const u=o&&o.owner; if(u)setLive("owner",(u.username||u.display||"Owner")+" — owner");
       else setLive("owner","Owner (run first-time setup)");}catch(e){}

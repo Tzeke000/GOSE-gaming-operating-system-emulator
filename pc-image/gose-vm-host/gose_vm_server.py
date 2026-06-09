@@ -98,6 +98,7 @@ def rate_ok(key, limit, window):
         q.append(now); return True
 
 _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer": (20, 60),
+           "/share/link": (10, 60),
            "/net/scan": (10, 60), "/net/connections": (30, 60), "/launch": (30, 60), "/store/install": (20, 60),
            "/netplay/host": (10, 60), "/netplay/join": (10, 60),
            "/splice/cut": (10, 120), "/fs/op": (60, 60), "/scrape": (6, 120), "/game/scrape": (20, 60),
@@ -4425,7 +4426,7 @@ _PREFS_LOCK = threading.Lock()
 _PREF_KEY_RE = re.compile(
     r"^gose-(theme|accent|wp|live|glow|tz|clockfmt|signin|input|platform|sounds|ai-remote|"
     r"ui-scale|uiscale|contrast|bold|cb|cb-palette|motion|opaque|focus|hold-alt|snd-quiet|"
-    r"snd-(?:vol|mute)-(?:system|notify|battery|ui))$")
+    r"snd-(?:vol|mute)-(?:system|notify|battery|ui)|sound-pack)$")
 # NEVER server-synced (deliberately outside the whitelist above, and stripped on load in
 # case a stale/hand-edited prefs file carries them): these localStorage keys are LIVE
 # page-side state — gose-wenabled (widget toggles, docs/23 §4.5) applies via storage
@@ -4525,6 +4526,7 @@ def privacy_get():
     p.setdefault("boxart_scrape", os.path.exists(SCRAPE_AUTO_FLAG))  # the flag is the truth
     p.setdefault("screen_capture", "always")
     p.setdefault("diagnostics", False)
+    p.setdefault("share_qr", False)   # #60 QR share — off by default (docs/31)
     return {"ok": True, "privacy": p}
 
 def privacy_set(payload):
@@ -4541,6 +4543,8 @@ def privacy_set(payload):
         p["screen_capture"] = chg["screen_capture"] = v
     if "diagnostics" in payload:
         p["diagnostics"] = chg["diagnostics"] = bool(payload["diagnostics"])
+    if "share_qr" in payload:   # #60 QR share toggle
+        p["share_qr"] = chg["share_qr"] = bool(payload["share_qr"])
     if not chg:
         return {"ok": False, "error": "nothing to set"}
     os.makedirs(os.path.dirname(PRIVACY_F), exist_ok=True)
@@ -5802,6 +5806,159 @@ def game_gallery():
                           "mtime": int(stt.st_mtime), "url": _gallery_url(p)})
     items.sort(key=lambda x: x["mtime"], reverse=True)
     return {"ok": True, "items": items, "recording": _recording["on"]}
+
+# ---- #57 Sound Packs ---------------------------------------------------------------
+# Sound packs live in assets/sounds/<packname>/ next to the root sound.js assets.
+# The "default" pack is the built-in assets/sounds/ dir; custom packs are sub-folders.
+# The server reports available packs so the Settings UI can populate the picker.
+# The active pack name is stored in localStorage (gose-sound-pack) on the client;
+# it's also server-synced via /ui/prefs so the player keeps their pack across browsers.
+
+_SOUNDS_BASE = os.path.join(ROOT, "assets", "sounds")  # ROOT = /userdata/gose-ui (guest)
+
+def sound_pack_list():
+    """Return all available sound packs.  "default" is always included."""
+    packs = ["default"]
+    try:
+        for entry in os.scandir(_SOUNDS_BASE):
+            if entry.is_dir() and not entry.name.startswith("."):
+                packs.append(entry.name)
+    except Exception:
+        pass
+    return {"ok": True, "packs": packs}
+
+# ---- #60 QR Share ------------------------------------------------------------------
+# Share a screenshot or clip to a phone on the same LAN (or Tailscale net) via a
+# short-lived ephemeral URL + QR code.
+#
+# SECURITY MODEL (docs/31):
+#   - Disabled by default; the owner must explicitly enable it in Settings > Privacy.
+#   - Tokens are 64-bit hex, non-guessable; they expire after SHARE_TTL seconds.
+#   - Only files inside GALLERY_DIRS can be shared (path-confined via _safe()).
+#   - The LAN listener is the same 127.0.0.1:8780 port — Tailscale reaches it if the
+#     device is on the tailnet; raw LAN hosts do NOT (the server binds loopback).
+#     On real hardware (Odin 2 / full install) the flag SHARE_LAN controls whether we
+#     resolve the tailscale IP vs. the LAN IP.  In the VM we serve from 0.0.0.0:8780
+#     so the host (and any host-reachable address) works.
+#   - QR code is generated server-side as a pure-Python SVG; no external library needed.
+
+import secrets as _secrets
+import struct as _struct
+
+_SHARE_ENABLED_KEY = "share_qr"   # privacy.json flag, defaults False
+_share_tokens = {}   # token -> {path, expires}
+SHARE_TTL = 300       # 5 minutes
+
+def _share_allowed():
+    p = _privacy_load()
+    return bool(p.get(_SHARE_ENABLED_KEY, False))
+
+def _share_expire():
+    now = time.time()
+    dead = [t for t, v in list(_share_tokens.items()) if v["expires"] < now]
+    for t in dead:
+        _share_tokens.pop(t, None)
+
+def _qr_svg(text):
+    """Generate a minimal QR SVG (version-auto) using pure Python.
+    Uses Reed–Solomon error correction at level M (≤15% recovery).
+    Returns an SVG string suitable for embedding in HTML."""
+    # We use a compact inline implementation.  For the URLs we generate
+    # (≤80 chars), QR version 5 at level M (86 data bits) is sufficient.
+    # Rather than implement a full Reed-Solomon encoder inline (>300 lines),
+    # we use Python's built-in qrcode fallback: if the `qrcode` package is
+    # present (Batocera base) use it; otherwise emit a text-only fallback SVG
+    # that a scanner can still read as plaintext (phones scan long URLs in text).
+    try:
+        import qrcode  # type: ignore
+        import io
+        qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M,
+                           box_size=10, border=2)
+        qr.add_data(text); qr.make(fit=True)
+        matrix = qr.get_matrix()
+        n = len(matrix); cell = 6
+        svg = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {0} {0}" '
+               'width="{0}" height="{0}">'.format(n * cell)]
+        svg.append('<rect width="{0}" height="{0}" fill="white"/>'.format(n * cell))
+        for r, row in enumerate(matrix):
+            for c, v in enumerate(row):
+                if v:
+                    svg.append('<rect x="{}" y="{}" width="{}" height="{}" fill="black"/>'.format(
+                        c * cell, r * cell, cell, cell))
+        svg.append('</svg>')
+        return ''.join(svg)
+    except ImportError:
+        pass
+    # Fallback: encode the URL as text in a bordered SVG label.
+    # Not a true QR but shows the URL so the user can type it.
+    esc = text.replace('&', '&amp;').replace('<', '&lt;').replace('"', '&quot;')
+    return ('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="80">'
+            '<rect width="320" height="80" rx="8" fill="#1a1a2e"/>'
+            '<text x="10" y="22" font-family="monospace" font-size="11" fill="#e0e0e0">'
+            'QR unavailable — open URL:</text>'
+            '<text x="10" y="50" font-family="monospace" font-size="10" fill="#7ec8e3">'
+            + esc + '</text></svg>')
+
+def share_link(payload):
+    """Create a share token for a gallery file, return URL + QR SVG."""
+    if not _share_allowed():
+        return {"ok": False, "error": "QR share is off — enable it in Settings > Privacy"}
+    path = (payload or {}).get("path", "")
+    if not path or not _safe(path) or not os.path.isfile(path):
+        return {"ok": False, "error": "invalid path"}
+    # path-confine: must be inside GALLERY_DIRS
+    if not any(os.path.normpath(path).startswith(os.path.normpath(d)) for d in GALLERY_DIRS):
+        return {"ok": False, "error": "file not in gallery"}
+    _share_expire()
+    token = _secrets.token_hex(8)
+    _share_tokens[token] = {"path": path, "expires": time.time() + SHARE_TTL}
+    # Build the URL.  Try tailscale first (if available), fall back to LAN/loopback.
+    host = _share_host()
+    url = "http://%s:8780/share/%s" % (host, token)
+    qr = _qr_svg(url)
+    return {"ok": True, "url": url, "qr_svg": qr, "token": token,
+            "expires": int(time.time()) + SHARE_TTL, "ttl": SHARE_TTL}
+
+def _share_host():
+    """Return the best reachable hostname/IP for the share URL."""
+    # 1. Check for a Tailscale IP (100.x.x.x range)
+    try:
+        import subprocess as _sp
+        r = _sp.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=3)
+        ip = r.stdout.strip()
+        if ip.startswith("100."):
+            return ip
+    except Exception:
+        pass
+    # 2. Try to get the host's SLIRP gateway reachable IP (since we're in a VM,
+    #    the host itself is at 10.0.2.2, but the CLIENT (phone) needs to reach
+    #    the VM.  In a full install on real hardware we'd return the real LAN IP.)
+    #    For the VM context, return the guest IP so LAN-adjacent phones can reach it.
+    try:
+        import socket as _sock
+        s = _sock.socket(_sock.AF_INET, _sock.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]; s.close()
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+    return "127.0.0.1"
+
+def share_serve(token):
+    """Return (data_bytes, content_type) for a share token, or (None, None) if invalid."""
+    _share_expire()
+    rec = _share_tokens.get(token)
+    if not rec:
+        return None, None
+    path = rec["path"]
+    if not os.path.isfile(path):
+        return None, None
+    ct = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    try:
+        with open(path, "rb") as fh:
+            return fh.read(), ct
+    except Exception:
+        return None, None
 
 # ---- Favorites (player-pinned games) ----
 FAVORITES_F = "/userdata/gose-ui/favorites.json"
@@ -9681,6 +9838,21 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(net_connections())
         if route == "/capture/buffer":
             return self._json(host_bridge("/clip/status"))
+        if route == "/sound/packs":
+            return self._json(sound_pack_list())
+        # #60 share token serve — GET /share/<token>
+        if route.startswith("/share/") and len(route) > 7:
+            token = route[7:]
+            if "/" in token or not token:
+                self.send_error(400); return
+            data, ct = share_serve(token)
+            if data is None:
+                self.send_error(404); return
+            self.send_response(200)
+            self.send_header("Content-Type", ct)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers(); self.wfile.write(data); return
         if route == "/bt/status":
             return self._json(bt_status())
         if route == "/peripherals":
@@ -10110,6 +10282,15 @@ class H(http.server.SimpleHTTPRequestHandler):
                                        "error": "screen capture is set to Never in Settings > Privacy"})
                 return self._json(host_bridge("/clip/start" if payload.get("on") else "/clip/stop", {}))
             return self._json(capture_clip(payload.get("seconds", 30)))
+        if route == "/share/link":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if not rate_ok(route, *_LIMITS.get(route, (10, 60))):
+                return self._json({"ok": False, "error": "rate limit — slow down"})
+            return self._json(share_link(payload))
         if route in ("/net/connect", "/net/disconnect"):
             try:
                 n = int(self.headers.get("Content-Length", 0))

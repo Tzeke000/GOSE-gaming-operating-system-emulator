@@ -32,12 +32,15 @@
     font-size:10px;font-weight:700;color:#fff;display:flex;align-items:center;gap:4px}
   .shot .sub{color:var(--muted);font-size:11px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .empty{color:var(--muted);font-size:14px;padding:30px}
-  /* pad-reachable capture actions (docs/27 §3.5) — live in the same focus space as the grid */
-  .acts{display:flex;gap:10px;margin-top:16px}
+  /* action buttons — capture row + clip chord row */
+  .acts{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
   .acts .ab{display:flex;align-items:center;gap:8px;background:var(--surface2);border:2px solid var(--line);
-    border-radius:11px;padding:10px 16px;font-weight:600;font-size:13px;cursor:pointer}
+    border-radius:11px;padding:10px 16px;font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap}
   .acts .ab:hover{border-color:var(--accent)}
   .acts .ab.focus{border-color:var(--accent);box-shadow:var(--focusglow,0 0 0 2px var(--accent))}
+  .acts .ab.danger{border-color:#ff5a6e22;color:#ff5a6e}
+  .acts .ab.danger.focus{border-color:#ff5a6e;box-shadow:0 0 0 2px #ff5a6e44}
+  .acts-label{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);width:100%;margin-top:8px}
   .foot{margin:8px 36px 14px;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:13px;
     background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
   .foot .h{margin-left:auto}.foot b{color:var(--text)}
@@ -47,13 +50,33 @@
   .toast{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);background:var(--surface2);
     border:1px solid var(--accent);border-radius:11px;padding:9px 16px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:70}
   .toast.show{opacity:1}
+  /* lightbox */
   .lb{position:fixed;inset:0;background:#06060ce8;display:none;align-items:center;justify-content:center;z-index:60;
     backdrop-filter:blur(6px);flex-direction:column;gap:12px}
   .lb.on{display:flex}
-  .lb img{max-width:90vw;max-height:80vh;border-radius:12px;box-shadow:0 8px 40px #000a}
+  .lb img{max-width:90vw;max-height:72vh;border-radius:12px;box-shadow:0 8px 40px #000a}
   .lb .cap{color:var(--muted);font-size:13px}
   .lb .vbox{width:70vw;max-width:720px;background:var(--surface);border:1px solid var(--line);border-radius:14px;
     padding:26px;text-align:center}.lb .vbox .ic{font-size:54px;color:var(--accent)}
+  .lb .lb-acts{display:flex;gap:10px;margin-top:4px}
+  .lb .lb-acts .ab{display:flex;align-items:center;gap:7px;background:var(--surface2);border:2px solid var(--line);
+    border-radius:10px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer}
+  .lb .lb-acts .ab:hover,.lb .lb-acts .ab.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  /* #60 QR share modal */
+  .qr-modal{position:fixed;inset:0;background:#06060cf0;display:none;align-items:center;justify-content:center;z-index:80;
+    backdrop-filter:blur(8px)}
+  .qr-modal.on{display:flex}
+  .qr-box{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px 32px;
+    display:flex;flex-direction:column;align-items:center;gap:14px;max-width:400px;width:90vw}
+  .qr-box h2{margin:0;font-size:16px}
+  .qr-box .qr-img{background:#fff;border-radius:8px;padding:6px;display:flex;align-items:center;justify-content:center;
+    min-height:160px;min-width:160px}
+  .qr-box .qr-url{font-size:11px;color:var(--muted);word-break:break-all;text-align:center;
+    background:var(--surface2);border-radius:8px;padding:6px 10px;width:100%}
+  .qr-box .qr-note{font-size:11px;color:var(--muted);text-align:center}
+  .qr-box .ab{display:flex;align-items:center;gap:7px;background:var(--surface2);border:2px solid var(--line);
+    border-radius:10px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer}
+  .qr-box .ab:hover{border-color:var(--accent);box-shadow:var(--focusglow)}
 </style></head>
 <body>
   <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
@@ -63,28 +86,66 @@
   <div class="pane" id="pane"></div>
   <div class="foot"><span class="ic" data-i="image"></span> GOSE Gallery
     <span class="rec" id="recind"><i></i> REC</span>
-    <span class="h">D-pad move · <b>A</b> open/activate · <b>B</b> home · kbd: <b>S</b> shot · <b>R</b> record</span></div>
+    <span class="h">D-pad · <b>A</b> open/activate · <b>B</b> home · kbd: <b>S</b> shot · <b>R</b> record · <b>C</b> clip 30s</span></div>
   <div class="toast" id="toast"></div>
-  <div class="lb" id="lb"><div id="lb-body"></div><div class="cap" id="lb-cap"></div></div>
+
+  <!-- lightbox (image/clip preview) -->
+  <div class="lb" id="lb">
+    <div id="lb-body"></div>
+    <div class="cap" id="lb-cap"></div>
+    <div class="lb-acts">
+      <div class="ab" id="lb-share"><span class="ic" data-i="share-2"></span>Share QR</div>
+      <div class="ab" id="lb-close"><span class="ic" data-i="x"></span>Close</div>
+    </div>
+  </div>
+
+  <!-- #60 QR share modal -->
+  <div class="qr-modal" id="qr-modal">
+    <div class="qr-box">
+      <h2>Share to phone</h2>
+      <div class="qr-img" id="qr-img">…</div>
+      <div class="qr-url" id="qr-url"></div>
+      <div class="qr-note" id="qr-note">Scan to open on your phone. Link expires in 5 min.</div>
+      <div class="ab" id="qr-close"><span class="ic" data-i="x"></span>Close</div>
+    </div>
+  </div>
+
 <script src="assets/platform.js"></script>
 <script src="assets/cursor.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const pane=document.getElementById("pane"),toast=document.getElementById("toast"),$=id=>document.getElementById(id);
-  let ITEMS=[],foc=0,recording=false,COLS=5;
+  // focus grid: indices 0..N-1 = gallery items; then action buttons:
+  //   N   = Screenshot
+  //   N+1 = Record toggle (RetroArch in-game)
+  //   N+2 = BG record toggle (replay buffer, always available)  #63
+  //   N+3 = Clip 30s                                            #63
+  //   N+4 = Clip 1m                                            #63
+  //   N+5 = Clip 2m                                            #63
+  const ACT_SHOT=0,ACT_REC=1,ACT_BGREC=2,ACT_C30=3,ACT_C60=4,ACT_C120=5,ACT_COUNT=6;
+  let ITEMS=[],foc=0,recording=false,bgOn=false,COLS=5;
+  function total(){return ITEMS.length+ACT_COUNT;}
   function say(m){toast.textContent=m;toast.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>toast.classList.remove("show"),1700);}
   function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
   function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function fmtSize(n){if(n<1024)return n+" B";if(n<1048576)return Math.round(n/1024)+" KB";return (n/1048576).toFixed(1)+" MB";}
   function fmtWhen(t){const d=new Date(t*1000);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+" "+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}
-  // focus space = grid items 0..N-1, then the action buttons (Screenshot = N, Record = N+1)
-  // — same wrap-modulo walk, so the pad reaches capture even with an EMPTY gallery (§3.5).
-  function total(){return ITEMS.length+2;}
+  function actIdx(offset){return ITEMS.length+offset;}
   function render(){
+    // #63 clip chord row (BG record + clip shortcuts)
+    const bgrLabel=bgOn?'Stop BG rec':'Start BG rec';
+    const bgrDanger=bgOn?' danger':'';
     const actHtml='<div class="acts">'+
-      `<div class="ab ${foc===ITEMS.length?'focus':''}" id="a-shot"><span class="ic" data-i="image"></span>Take screenshot</div>`+
-      `<div class="ab ${foc===ITEMS.length+1?'focus':''}" id="a-rec"><span class="ic" data-i="film"></span>${recording?'Stop recording':'Start recording'}</div></div>`;
-    if(!ITEMS.length){pane.innerHTML='<div class="empty">No captures yet. Launch a game, then take a screenshot from here (or the in-game Guide).</div>'+actHtml;}
+      '<div class="acts-label">CAPTURE</div>'+
+      `<div class="ab ${foc===actIdx(ACT_SHOT)?'focus':''}" id="a-shot"><span class="ic" data-i="image"></span>Screenshot</div>`+
+      `<div class="ab ${foc===actIdx(ACT_REC)?'focus':''}" id="a-rec"><span class="ic" data-i="film"></span>${recording?'Stop rec':'Record'}</div>`+
+      '<div class="acts-label">REPLAY BUFFER (#63)</div>'+
+      `<div class="ab${bgrDanger} ${foc===actIdx(ACT_BGREC)?'focus':''}" id="a-bgrec"><span class="ic" data-i="circle"></span>${bgrLabel}</div>`+
+      `<div class="ab ${foc===actIdx(ACT_C30)?'focus':''}" id="a-c30"><span class="ic" data-i="scissors"></span>Clip 30s</div>`+
+      `<div class="ab ${foc===actIdx(ACT_C60)?'focus':''}" id="a-c60"><span class="ic" data-i="scissors"></span>Clip 1m</div>`+
+      `<div class="ab ${foc===actIdx(ACT_C120)?'focus':''}" id="a-c120"><span class="ic" data-i="scissors"></span>Clip 2m</div>`+
+      '</div>';
+    if(!ITEMS.length){pane.innerHTML='<div class="empty">No captures yet. Launch a game, then take a screenshot from here or the in-game Guide.</div>'+actHtml;}
     else{
       pane.innerHTML='<div class="ph">CAPTURES — '+ITEMS.length+' ITEM'+(ITEMS.length!=1?'S':'')+'</div><div class="grid" id="grid"></div>'+actHtml;
       const g=$("grid");
@@ -96,26 +157,43 @@
       }).join("");
       [...g.children].forEach(el=>el.onclick=()=>{foc=+el.dataset.s;render();open();});
     }
-    $("a-shot").onclick=()=>{foc=ITEMS.length;render();shoot();};
-    $("a-rec").onclick=()=>{foc=ITEMS.length+1;render();recToggle();};
+    $("a-shot").onclick=()=>{foc=actIdx(ACT_SHOT);render();shoot();};
+    $("a-rec").onclick=()=>{foc=actIdx(ACT_REC);render();recToggle();};
+    $("a-bgrec").onclick=()=>{foc=actIdx(ACT_BGREC);render();bgRecToggle();};
+    $("a-c30").onclick=()=>{foc=actIdx(ACT_C30);render();clip(30);};
+    $("a-c60").onclick=()=>{foc=actIdx(ACT_C60);render();clip(60);};
+    $("a-c120").onclick=()=>{foc=actIdx(ACT_C120);render();clip(120);};
     paint();
     const f=pane.querySelector(".shot.focus,.ab.focus");if(f)f.scrollIntoView({block:"nearest"});
   }
+
+  // ---- lightbox ----
   function open(){const it=ITEMS[foc];if(!it)return;
     if(it.kind==="image"){$("lb-body").innerHTML=`<img src="${it.url}" alt="">`;}
     else{$("lb-body").innerHTML=`<div class="vbox"><span class="ic" data-i="film"></span><div style="margin-top:10px;font-weight:600">${esc(it.name)}</div><div style="color:var(--muted);font-size:12px;margin-top:6px">Game clip — open in Files or Splice to play/trim</div></div>`;}
     $("lb-cap").textContent=it.name+" · "+fmtSize(it.size)+" · "+fmtWhen(it.mtime);
-    if(!$("lb").classList.contains("on")&&window.GOSE&&GOSE.modalPush)GOSE.modalPush();  // docs/27 §3.10
+    // show share button only when QR sharing is reachable (non-blocking check)
+    $("lb-share").style.display='';
+    if(!$("lb").classList.contains("on")&&window.GOSE&&GOSE.modalPush)GOSE.modalPush();
     $("lb").classList.add("on");paint();}
   function closeLb(){if($("lb").classList.contains("on")&&window.GOSE&&GOSE.modalPop)GOSE.modalPop();
     $("lb").classList.remove("on");}
+  $("lb-close").onclick=closeLb;
+  $("lb-share").onclick=()=>{const it=ITEMS[foc];if(it)shareQr(it.path);};
+
+  // ---- data load ----
   function load(){fetch("/game/gallery",{cache:"no-store"}).then(r=>r.json()).then(d=>{
-    ITEMS=(d.items||[]);recording=!!d.recording;updateRec();
+    ITEMS=(d.items||[]);recording=!!d.recording;
+    // also fetch BG record (replay buffer) status
+    fetch("/capture/buffer",{cache:"no-store"}).then(r=>r.json()).then(b=>{bgOn=!!(b&&b.running);updateRec();}).catch(()=>{});
+    updateRec();
     $("sub").textContent=ITEMS.length?(ITEMS.length+" captures · newest first"):"no captures yet";
-    if(foc>=total())foc=total()-1;   // clamp, never reset — the poll must not steal focus (§3.9)
+    if(foc>=total())foc=total()-1;
     render();
   }).catch(()=>{$("sub").textContent="gallery offline";render();});}
-  function updateRec(){$("recind").classList.toggle("on",recording);}
+  function updateRec(){$("recind").classList.toggle("on",recording||bgOn);}
+
+  // ---- capture actions ----
   function shoot(){say("Taking screenshot…");
     fetch("/game/screenshot",{method:"POST"}).then(r=>r.json()).then(d=>{
       if(d.ok){say("Saved "+d.name);setTimeout(load,400);}else say(d.error||"Screenshot failed — is a game running?");
@@ -124,29 +202,91 @@
     if(d.ok){recording=!!d.recording;updateRec();say(recording?"Recording started":"Recording saved");if(!recording)setTimeout(load,600);}
     else say(d.error||"Record failed — is a game running?");
   }).catch(()=>say("Record failed"));}
+
+  // #63 background recording (replay buffer — always-on, no game required)
+  function bgRecToggle(){
+    const on=!bgOn;
+    say(on?"Starting replay buffer…":"Stopping replay buffer…");
+    fetch("/capture/buffer",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({on:on})}).then(r=>r.json()).then(d=>{
+      if(d.ok||d.running!=null){
+        bgOn=!!(d.running!=null?d.running:on);
+        updateRec();render();say(bgOn?"Replay buffer ON":"Replay buffer OFF");
+      }else say(d.error||"Buffer error");
+    }).catch(()=>say("Buffer error"));}
+
+  // #63 clip chord — save last N seconds from the replay buffer
+  function clip(seconds){
+    if(!bgOn){say("Turn on replay buffer first (Start BG rec)");return;}
+    say("Saving clip ("+seconds+"s)…");
+    fetch("/capture/clip",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({seconds:seconds})}).then(r=>r.json()).then(d=>{
+      if(d.ok){say("Clip saved: "+d.name);setTimeout(load,600);}
+      else say(d.error||"Clip failed");
+    }).catch(()=>say("Clip failed"));}
+
+  // #60 QR share
+  function shareQr(path){
+    $("qr-img").innerHTML='<span style="color:var(--muted);font-size:12px">Generating…</span>';
+    $("qr-url").textContent='';$("qr-note").textContent='Checking share settings…';
+    $("qr-modal").classList.add("on");paint();
+    fetch("/share/link",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({path:path})}).then(r=>r.json()).then(d=>{
+      if(!d.ok){
+        $("qr-img").innerHTML='<span style="color:#ff5a6e;font-size:12px">'+(d.error||"Share failed")+'</span>';
+        $("qr-url").textContent='';
+        $("qr-note").textContent=d.error&&d.error.includes("Privacy")
+          ?'Enable QR Share in Settings > Privacy to use this feature.'
+          :'Share unavailable.';
+        return;
+      }
+      $("qr-img").innerHTML=d.qr_svg||'';
+      $("qr-url").textContent=d.url||'';
+      const ttl=d.ttl||300;
+      $("qr-note").textContent='Scan to open on your phone. Link expires in '+Math.round(ttl/60)+' min.';
+    }).catch(e=>{
+      $("qr-img").innerHTML='<span style="color:#ff5a6e;font-size:12px">Network error</span>';
+      $("qr-url").textContent='';$("qr-note").textContent='Could not reach server.';
+    });}
+  function closeQr(){$("qr-modal").classList.remove("on");}
+  $("qr-close").onclick=closeQr;
+
+  // ---- keyboard / pad nav ----
   function moveFoc(d){const n=total();foc=(foc+d+n)%n;render();}
-  function rowJump(dir){            // ↓/↑ between grid rows, then into/out of the action row
-    if(foc<ITEMS.length){           // in the grid
+  function rowJump(dir){
+    if(foc<ITEMS.length){
       const t=foc+dir*COLS;
-      foc=(t>=0&&t<ITEMS.length)?t:ITEMS.length;            // off either edge → the action row
-    }else if(ITEMS.length){foc=dir>0?0:ITEMS.length-1;}     // action row → wrap into the grid
-    else{foc=foc===ITEMS.length?ITEMS.length+1:ITEMS.length;}  // empty gallery: toggle buttons
+      foc=(t>=0&&t<ITEMS.length)?t:ITEMS.length;
+    }else if(ITEMS.length){foc=dir>0?0:ITEMS.length-1;}
+    else{foc=(foc-ITEMS.length+dir*1+ACT_COUNT)%ACT_COUNT+ITEMS.length;}
     render();}
   function activate(){
-    if(foc===ITEMS.length)shoot();
-    else if(foc===ITEMS.length+1)recToggle();
-    else open();}
+    const ai=foc-ITEMS.length;
+    if(foc<ITEMS.length)open();
+    else if(ai===ACT_SHOT)shoot();
+    else if(ai===ACT_REC)recToggle();
+    else if(ai===ACT_BGREC)bgRecToggle();
+    else if(ai===ACT_C30)clip(30);
+    else if(ai===ACT_C60)clip(60);
+    else if(ai===ACT_C120)clip(120);}
   addEventListener("keydown",e=>{const k=e.key;
-    if($("lb").classList.contains("on")){if(k==="Escape"||k==="Backspace"||k==="Enter"||k===" ")closeLb();else return;e.preventDefault();return;}
+    // QR modal open
+    if($("qr-modal").classList.contains("on")){
+      if(k==="Escape"||k==="Backspace"||k==="Enter"||k===" ")closeQr();
+      e.preventDefault();return;}
+    // lightbox open
+    if($("lb").classList.contains("on")){
+      if(k==="Escape"||k==="Backspace")closeLb();
+      else if(k==="Enter"||k===" "){const it=ITEMS[foc];if(it)shareQr(it.path);}
+      else return;e.preventDefault();return;}
     if(k==="ArrowRight")moveFoc(1);else if(k==="ArrowLeft")moveFoc(-1);
     else if(k==="ArrowDown")rowJump(1);else if(k==="ArrowUp")rowJump(-1);
     else if(k==="Enter"||k===" ")activate();
-    else if(k==="s"||k==="S")shoot();     // keyboard conveniences (also focusable buttons above)
+    else if(k==="s"||k==="S")shoot();
     else if(k==="r"||k==="R")recToggle();
+    else if(k==="c"||k==="C")clip(30);   // #63 quick clip chord
     else if(k==="Escape"||k==="Backspace"){location.href="gose-home.html";}
     else return;e.preventDefault();});
-  // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
-  // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
   paint();load();setInterval(load,8000);
 </script>
 <script src="assets/a11y.js"></script>

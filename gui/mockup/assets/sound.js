@@ -61,11 +61,38 @@
   function gameForeground(){ if(Date.now()-_gameAt>1500) pollGame(); return _game; }
   try{ pollGame(); setInterval(pollGame, 2000); }catch(e){}
 
-  var cache={};
-  function audio(ev){ var a=cache[ev];
-    if(!a){ var stem=FILE[ev]||ev, ext=WAV[ev]?'wav':'ogg';
-      a=cache[ev]=new Audio('assets/sounds/'+stem+'.'+ext); a.preload='auto'; }
-    return a; }
+  // ---- #57 Sound Packs: a named sub-folder of assets/sounds/ (e.g. "default", "retro", "minimal").
+  // The special name "default" (or empty) resolves to assets/sounds/ (the built-in owner clips).
+  // A pack folder must have the same event filenames; missing files fall back to the default.
+  // Pack name is persisted in localStorage gose-sound-pack and live-read each play().
+  function currentPack(){
+    var p=(localStorage.getItem('gose-sound-pack')||'').trim();
+    return (p&&p!=='default')?p:'';
+  }
+  function packPath(ev){
+    var pack=currentPack(), stem=FILE[ev]||ev, ext=WAV[ev]?'wav':'ogg';
+    if(!pack) return 'assets/sounds/'+stem+'.'+ext;
+    return 'assets/sounds/'+pack+'/'+stem+'.'+ext;
+  }
+
+  var cache={}, cacheKey={};  // keyed by "pack:event"
+  function audio(ev){
+    var key=(currentPack()||'default')+':'+ev;
+    var a=cache[key];
+    if(!a){
+      var src=packPath(ev);
+      a=new Audio(src); a.preload='auto';
+      // fallback to default if the pack file fails to load
+      if(currentPack()){
+        var defSrc='assets/sounds/'+(FILE[ev]||ev)+'.'+(WAV[ev]?'wav':'ogg');
+        a.addEventListener('error',function(){
+          a.src=defSrc; try{a.load();}catch(e){}
+        },{once:true});
+      }
+      cache[key]=a;
+    }
+    return a;
+  }
 
   function play(ev, opts){ opts=opts||{};
     var cat=EVENTS[ev]; if(!cat) return false;
@@ -79,13 +106,24 @@
     }catch(e){ return false; }
   }
 
+  // #57 setPack — switch the active sound pack and clear the audio cache so
+  // the next play() loads from the new pack directory.
+  function setPack(name){
+    var n=(name||'').trim()||'default';
+    localStorage.setItem('gose-sound-pack', n);
+    cache={};   // clear cache so next play() reloads from new pack path
+  }
+  function getPack(){ return localStorage.getItem('gose-sound-pack')||'default'; }
+
   window.GOSESOUND = {
     play:play, cats:CATS, events:Object.keys(EVENTS),
     catOf:function(e){return EVENTS[e];},
     vol:vol, setVol:setVol, muted:muted, setMute:setMute,
     quiet:quiet, setQuiet:setQuiet,
     defaultVol:function(c){return DEFV[c];},
-    isGame:function(){return _game;}
+    isGame:function(){return _game;},
+    // #57 sound packs
+    setPack:setPack, getPack:getPack
   };
 
   // Menu music (looping shell soundtrack) lives in its own player module so this file
