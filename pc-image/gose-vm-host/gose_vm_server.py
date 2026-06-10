@@ -1887,6 +1887,10 @@ def launch_game(system, game, players=None):
         except Exception as e:
             LOG.warning("#112 could not delete auto-save %s: %s", _auto, e)
         _clear_gameover_flag(system, game)
+    # Kill any running emulator before spawning a new one — prevents a second retroarch
+    # instance from stealing the NCI UDP port (127.0.0.1:55355) and returning all-zero
+    # RAM reads.  _kill_emulator_procs() is idempotent when nothing is running.
+    _kill_emulator_procs()
     try:
         _spawn(["emulatorlauncher"] + _virtual_pad_args(order=players) + ["-system", system, "-rom", rom])
         record_recent(system, game)
@@ -3279,7 +3283,8 @@ def ai_play_arm(payload):
         LOG.info("ai_play_arm: no play-map for %s/%s — armed=false", system, game)
         return {"ok": True, "armed": False, "playmap": False,
                 "note": "no play-map for %s/%s yet — %s can't play it autonomously" % (system, game, name)}
-    # Optional seat (1-4); absent = no seat override (AI uses whatever its grant says)
+    # Optional seat (1-4); absent = fall back to the seat pinned in the AI's grant record
+    # so the arm record always carries the real seat when one has been assigned.
     seat = payload.get("seat")
     try:
         seat = int(seat) if seat is not None else None
@@ -3287,6 +3292,8 @@ def ai_play_arm(payload):
             seat = None
     except (TypeError, ValueError):
         seat = None
+    if seat is None:
+        seat = g[name].get("seat")   # grant seat is already int-or-None from _ai_grants_write
     arm = {"name": name, "system": system, "game": game, "seat": seat,
            "profile": profile, "ts": time.time()}
     try:
@@ -5209,6 +5216,18 @@ def guide_toggle():
 
 _GAME_PATS = ["retroarch", "emulatorlauncher", "ppsspp", "pcsx", "dolphin-emu", "mupen64",
               "duckstation", "flycast", "mednafen", "melonds", "scummvm", "bwrap", "glxgears"]
+
+def _kill_emulator_procs():
+    """Kill any running emulator processes (retroarch, emulatorlauncher, etc.) and wait
+    briefly for the NCI UDP port to release.  Idempotent — safe to call when nothing is
+    running.  Does NOT touch the overlay, play-arm, or kiosk window; use game_exit() for
+    a full user-facing exit."""
+    for pat in _GAME_PATS:
+        try:
+            subprocess.run(["pkill", "-f", pat], capture_output=True, text=True, timeout=5)
+        except Exception:
+            pass
+    time.sleep(1.5)   # let RetroArch release UDP 127.0.0.1:55355 before the next launch
 
 # #37 time-control mirror: RetroArch NCI is fire-and-forget and reports neither the
 # active save slot nor the fast-forward state back, so the Game Bar (the pad-first
