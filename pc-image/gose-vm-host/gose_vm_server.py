@@ -345,18 +345,25 @@ def _clear_activity():
         LOG.warning("activity clear failed: %s", e)
 
 def game_activity():
-    """GET /game/activity — current game state for the Guide header and AI."""
+    """GET /game/activity — current game state for the Guide header and AI.
+    Includes ai_playable: true iff a game is running AND it has a verified RAM play-map.
+    The detail page (gose-ai-detail.html) reads this to enable/disable the Play button.
+    """
     try:
         d = json.load(open(ACTIVITY_F))
         if isinstance(d, dict) and d.get("game"):
+            system = d.get("system", "")
+            game   = d.get("game", "")
+            ai_playable = _spectate_profile(system, game) is not None
             return {"ok": True, "playing": True,
-                    "system": d.get("system", ""), "game": d.get("game", ""),
-                    "since": d.get("since"), "state": d.get("state", "playing")}
+                    "system": system, "game": game,
+                    "since": d.get("since"), "state": d.get("state", "playing"),
+                    "ai_playable": ai_playable}
     except FileNotFoundError:
         pass
     except Exception:
         pass
-    return {"ok": True, "playing": False, "state": "desktop"}
+    return {"ok": True, "playing": False, "state": "desktop", "ai_playable": False}
 
 def _playstats():
     """Load playstats.json; migrate from legacy playtime.json if playstats is empty/absent."""
@@ -3111,6 +3118,7 @@ def ai_leave(payload):
 #      This is the persisted grant store; per-tool token enforcement (Capframe/macaroons) is the next phase. ----
 AI_GRANTS_F = "/userdata/gose-ui/ai_grants.json"
 AI_TIERS = ["observe", "play", "admin"]   # observe = read-only (default), play = games, admin = full OS
+AI_PLAY_ARM_F = "/userdata/system/gose/ai_play_arm.json"   # ephemeral: owner arms an AI for one play session
 
 def _ai_grants_load():
     try:
@@ -3212,6 +3220,166 @@ def ai_revoke(payload):
             _sync_ai_tokens(g)    # <-- token vanishes from the agent's map → access dies immediately
     LOG.info("AI revoke: %s -> observe (token removed)", name)
     return {"ok": True, "name": name, "tier": "observe", "revoked": existed}
+
+# ---- AI play arm: the "Play with [AI]" flow.  Owner arms one AI for a specific game; the AI polls
+#      GET /ai/play/queue to see it; auto-clears on game_exit (or owner calls POST /ai/play/disarm). ----
+
+_AI_PLAY_ARM_WINDOW = 180   # seconds the arm record stays valid before the AI must re-arm
+
+def _ai_play_arm_load():
+    """Load the arm record; return {} on missing/corrupt."""
+    try:
+        return json.load(open(AI_PLAY_ARM_F))
+    except Exception:
+        return {}
+
+def _ai_play_arm_clear():
+    """Delete the arm file (game-exit + disarm path); silent if missing."""
+    try:
+        os.remove(AI_PLAY_ARM_F)
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        LOG.warning("ai_play_arm clear failed: %s", e)
+
+def ai_play_arm(payload):
+    """POST /ai/play/arm (owner-gated).
+    Body: {name, system, game, seat?}
+    Arms the named AI for the current game so it can take its seat when the Guide closes.
+    Validates the AI is paired (present in grants); checks a play-map exists; writes
+    AI_PLAY_ARM_F.  The AI polls GET /ai/play/queue to discover it's armed.
+    """
+    name = (payload.get("name") or "").strip()[:32]
+    if not name or not re.match(r"^[\w][\w .\-]*$", name):
+        return {"ok": False, "error": "name required (letters/digits/space/.-_, max 32)"}
+    # Validate the AI is paired (must be in grants — unpaired = no token = no enforcement path)
+    g = _ai_grants_load()
+    if name not in g:
+        return {"ok": False, "error": "%s is not paired — pair it in the AI Hub first" % name}
+    system = (payload.get("system") or "").strip()
+    game   = (payload.get("game") or "").strip()
+    if not game:
+        return {"ok": False, "error": "game required — launch a game first"}
+    # Path-safety: reject any traversal characters in system/game
+    for v, label in ((system, "system"), (game, "game")):
+        if ".." in v or "/" in v or "\\" in v:
+            return {"ok": False, "error": "%s must not contain path separators" % label}
+    # Check for a play-map — the same gate the UI uses for the Play button
+    profile = _spectate_profile(system, game)
+    if not profile:
+        LOG.info("ai_play_arm: no play-map for %s/%s — armed=false", system, game)
+        return {"ok": True, "armed": False, "playmap": False,
+                "note": "no play-map for %s/%s yet — %s can't play it autonomously" % (system, game, name)}
+    # Optional seat (1-4); absent = no seat override (AI uses whatever its grant says)
+    seat = payload.get("seat")
+    try:
+        seat = int(seat) if seat is not None else None
+        if seat is not None and not 1 <= seat <= 4:
+            seat = None
+    except (TypeError, ValueError):
+        seat = None
+    arm = {"name": name, "system": system, "game": game, "seat": seat,
+           "profile": profile, "ts": time.time()}
+    try:
+        os.makedirs(os.path.dirname(AI_PLAY_ARM_F), exist_ok=True)
+        write_json_atomic(AI_PLAY_ARM_F, arm)
+    except Exception as e:
+        LOG.error("ai_play_arm write failed: %s", e)
+        return {"ok": False, "error": "server error writing arm record"}
+    LOG.info("AI play arm: %s → %s/%s seat=%s profile=%s", name, system, game, seat, profile)
+    return {"ok": True, "armed": True, "name": name, "system": system,
+            "game": game, "seat": seat, "profile": profile}
+
+def ai_play_queue(name):
+    """GET /ai/play/queue?name= — an AI polls this to see if it has been armed.
+    NOT owner-gated: the AI process calls this, not the owner.  Tokens are NOT included
+    in the response — the AI already holds its own token; returning it here would be noise
+    and would leak it to anyone probing this endpoint.
+    """
+    if not name:
+        return {"ok": False, "error": "name query parameter required"}
+    arm = _ai_play_arm_load()
+    if not arm:
+        return {"ok": True, "armed": False}
+    # Only the addressed AI sees an armed record
+    if arm.get("name") != name:
+        return {"ok": True, "armed": False}
+    # Stale arm records (owner never came back to disarm and game-exit didn't fire).
+    # Guard: arm["ts"] must be numeric; a crafted/corrupt file with a non-numeric ts
+    # would throw TypeError on the subtraction and return a 500 — treat as stale instead.
+    try:
+        age = time.time() - float(arm.get("ts", 0))
+    except (TypeError, ValueError):
+        LOG.warning("ai_play_queue: corrupt ts in arm record for %s — treating as stale", name)
+        _ai_play_arm_clear()
+        return {"ok": True, "armed": False}
+    if age > _AI_PLAY_ARM_WINDOW:
+        LOG.info("ai_play_queue: stale arm for %s (age=%.0fs) — auto-clearing", name, age)
+        _ai_play_arm_clear()
+        return {"ok": True, "armed": False}
+    # Load per-AI play config (opponent, mode, difficulty, read_vs, read_coop).
+    # Key-filter to _AI_PLAY_CFG_KEYS so any extra keys accidentally written into the stored
+    # dict (e.g. a future migration bug) cannot leak unexpected data to the polling AI.
+    pc = _play_config()
+    raw_cfg = (pc.get("ai_play") or {}).get(name, {})
+    cfg = {k: v for k, v in raw_cfg.items() if k in _AI_PLAY_CFG_KEYS}
+    return {"ok": True, "armed": True,
+            "name": arm["name"], "system": arm["system"], "game": arm["game"],
+            "seat": arm.get("seat"), "profile": arm.get("profile"), "config": cfg}
+
+def ai_play_disarm(payload):
+    """POST /ai/play/disarm (owner-gated).
+    Clears the arm record immediately (owner cancels before the AI has taken the seat,
+    or wants to swap configs before re-arming).
+    """
+    _ai_play_arm_clear()
+    LOG.info("AI play disarm (owner request)")
+    return {"ok": True, "armed": False}
+
+# ---- AI play config: per-AI {opponent, mode, difficulty, read_vs, read_coop}, backed by
+#      PLAY_CONFIG_F["ai_play"][name].  GET is open (no secrets); POST is owner-gated. ----
+
+_AI_PLAY_CFG_DEFAULTS = {
+    "opponent": "human",
+    "mode": "vs",
+    "difficulty": "med",
+    "read_vs": False,
+    "read_coop": True,
+}
+_AI_PLAY_CFG_KEYS = set(_AI_PLAY_CFG_DEFAULTS)
+
+def ai_playconfig_get(name):
+    """GET /ai/playconfig?name= — returns the stored config for this AI (no secrets)."""
+    if not name:
+        return {"ok": False, "error": "name query parameter required"}
+    pc = _play_config()
+    stored = (pc.get("ai_play") or {}).get(name, {})
+    # Merge with defaults so the UI always gets a complete object
+    cfg = dict(_AI_PLAY_CFG_DEFAULTS)
+    cfg.update({k: v for k, v in stored.items() if k in _AI_PLAY_CFG_KEYS})
+    return {"ok": True, "name": name, "config": cfg}
+
+def ai_playconfig_set(payload):
+    """POST /ai/playconfig (owner-gated).
+    Body: {name, opponent?, mode?, difficulty?, read_vs?, read_coop?}
+    Merges posted fields into play_config.json["ai_play"][name].
+    Returns {ok, name, config} with the full merged config.
+    """
+    name = (payload.get("name") or "").strip()[:32]
+    if not name or not re.match(r"^[\w][\w .\-]*$", name):
+        return {"ok": False, "error": "name required (letters/digits/space/.-_, max 32)"}
+    patch = {k: payload[k] for k in _AI_PLAY_CFG_KEYS if k in payload}
+    with _PLAY_CONFIG_LOCK:
+        pc = _play_config()
+        ai_play = pc.get("ai_play") or {}
+        current = dict(_AI_PLAY_CFG_DEFAULTS)
+        current.update({k: v for k, v in (ai_play.get(name) or {}).items() if k in _AI_PLAY_CFG_KEYS})
+        current.update(patch)
+        ai_play[name] = current
+        pc["ai_play"] = ai_play
+        _play_config_save(pc)
+    LOG.info("AI playconfig set: %s → %s", name, patch)
+    return {"ok": True, "name": name, "config": current}
 
 # ---- AI pairing requests: an unauthenticated AI may ASK for a tier; the owner approves or
 #      denies it in the AI Hub. A request NEVER grants anything by itself — approval is the
@@ -7838,8 +8006,10 @@ def fps_set(on):
 
 def game_exit():
     # exit the running game/app back to the GOSE desktop: kill known launchers, hide the
-    # overlay, and raise the kiosk to the front
+    # overlay, and raise the kiosk to the front.  Also disarms any pending play-arm so the
+    # AI doesn't re-enter a seat after the game has exited.
     _finalize_session()   # record playtime before killing the process
+    _ai_play_arm_clear()  # clear any armed play session (game is gone)
     killed = []
     for pat in _GAME_PATS:
         try:
@@ -10501,6 +10671,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(ai_assist_queue())
         if route == "/ai/copilot":
             return self._json(ai_copilot_status())
+        if route == "/ai/play/queue":
+            # NOT owner-gated — the AI process polls this endpoint with its own token.
+            # Tokens are NOT returned in the response; see ai_play_queue() for the security notes.
+            return self._json(ai_play_queue((self._qs().get("name") or "").strip()))
+        if route == "/ai/playconfig":
+            # GET is open (no secrets — config fields are opponent/mode/difficulty/privacy toggles)
+            return self._json(ai_playconfig_get((self._qs().get("name") or "").strip()))
         if route == "/game/options":
             q = self._qs()
             return self._json(game_options(q.get("system", ""), q.get("game", "")))
@@ -11178,6 +11355,33 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json({"ok": False, "error": "rate limit — slow down"})
             ai_token = (self.headers.get("X-AI-Token") or "").strip()
             return self._json(ai_copilot_alert(payload, ai_token))
+        if route in ("/ai/play/arm", "/ai/play/disarm", "/ai/playconfig"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/ai/play/arm":
+                # Owner-gate: arming an AI for play seizes a controller seat — only the device
+                # owner (PIN or dev token) may initiate this.  An AI token is intentionally not
+                # accepted (an AI must not be able to arm itself).  No pre-OOBE carve-out needed:
+                # play-arm requires a paired AI which can't exist before OOBE completes.
+                if not _owner_ok(payload):
+                    return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                       "error": "owner PIN or dev token required to arm an AI for play"})
+                return self._json(ai_play_arm(payload))
+            if route == "/ai/play/disarm":
+                # Owner-gate: disarming clears the arm record — same reasoning as arm.
+                if not _owner_ok(payload):
+                    return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                       "error": "owner PIN or dev token required to disarm"})
+                return self._json(ai_play_disarm(payload))
+            # /ai/playconfig POST — owner-gated (changes how the AI plays; the AI must not
+            # be able to lower its own difficulty or flip its own privacy toggles).
+            if not _owner_ok(payload):
+                return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                   "error": "owner PIN or dev token required to change play config"})
+            return self._json(ai_playconfig_set(payload))
         if route in ("/capture/shot", "/capture/buffer", "/capture/clip"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
