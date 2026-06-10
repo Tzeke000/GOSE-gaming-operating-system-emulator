@@ -486,6 +486,7 @@ def _game_stats_one(system, game):
 def _session_watcher():
     import time as _time
     GAME_OVER_SCORE = 9   # pong1k2p: first to 9 (only verified profile so far)
+    LAUNCH_GRACE_S = 20   # emulators take several seconds to bring up the NCI
     while True:
         _time.sleep(10)
         try:
@@ -494,6 +495,14 @@ def _session_watcher():
                     continue
                 sys_ = _SESSION["system"]
                 game_ = _SESSION["game"]
+                started = _SESSION["t"]
+            # Grace window: game_running() is NCI-based and reads False until RetroArch is
+            # fully up (~7s after launch). Without this, a watcher poll landing in that
+            # startup gap finalizes the just-launched session and WRONGLY clears the activity
+            # file — which the Guide's "Play with AI" gate (ai_playable) depends on. Don't
+            # finalize a session younger than the grace window; the emulator may still be starting.
+            if _time.time() - started < LAUNCH_GRACE_S:
+                continue
             gr = game_running()
             if not gr.get("running"):
                 # Final score read before the process fully exits (best-effort).
