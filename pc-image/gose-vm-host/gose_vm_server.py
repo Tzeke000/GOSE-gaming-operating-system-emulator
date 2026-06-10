@@ -6610,10 +6610,23 @@ def clear_boot_attempts():
     except Exception:
         return False
 
+BACKUP_KEEP = int(os.environ.get("GOSE_BACKUP_KEEP", "10"))
+
 def gose_backup(reason="manual"):
     """Atomic tar.gz of GOSE UI/state under /userdata/backups. Excludes logs/caches; never roms/saves."""
     try:
         os.makedirs(BACKUP_DIR, exist_ok=True)
+        # Sweep stale .tmp- files from any previous interrupted run BEFORE writing a new one.
+        try:
+            for _stale in os.listdir(BACKUP_DIR):
+                if _stale.startswith(".tmp-") and _stale.endswith(".tar.gz"):
+                    try:
+                        os.remove(os.path.join(BACKUP_DIR, _stale))
+                        LOG.info("backup: removed stale tmp %s", _stale)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         members = [m for m in _BACKUP_INCLUDE if os.path.exists("/userdata/" + m)]
         if not members:
             return {"ok": False, "error": "nothing to back up"}
@@ -6633,6 +6646,19 @@ def gose_backup(reason="manual"):
         os.replace(tmp, final)
         size = os.path.getsize(final)
         LOG.info("BACKUP %s (%d bytes, reason=%s)", name, size, reason)
+        # Retention: keep newest BACKUP_KEEP archives, remove the rest.
+        try:
+            archives = sorted(
+                [f for f in os.listdir(BACKUP_DIR) if f.endswith(".tar.gz") and not f.startswith(".tmp-")],
+                reverse=True)
+            for old in archives[BACKUP_KEEP:]:
+                try:
+                    os.remove(os.path.join(BACKUP_DIR, old))
+                    LOG.info("backup prune: removed %s", old)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         return {"ok": True, "file": name, "path": final, "size": size, "reason": reason}
     except Exception as e:
         LOG.error("backup failed: %s", e)
@@ -6678,6 +6704,7 @@ def gose_restore(payload):
                 return {"ok": False, "error": "unsafe path in archive: " + m}
             if not (mm == "gose-ui" or mm.startswith("gose-ui/") or
                     mm in ("system/gose/ai_tokens.json", "system/gose/ai_audit.jsonl",
+                           "system/gose/collections.json",
                            "system/gose", "system/gose/")):
                 return {"ok": False, "error": "archive escapes GOSE state: " + m}
         ex = subprocess.run(["tar", "-xzf", path, "-C", "/userdata"],
@@ -10822,6 +10849,9 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             if route == "/system/backup":
+                if not _owner_ok(payload):
+                    return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                       "error": "owner PIN or dev token required to create a backup"})
                 return self._json(gose_backup("manual"))
             if route == "/system/restore":
                 return self._json(gose_restore(payload))
