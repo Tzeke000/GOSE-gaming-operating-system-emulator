@@ -65,6 +65,11 @@ RO_PATHS: List[str] = [
     "/usr", "/etc", "/bin", "/sbin", "/lib", "/lib64", "/boot",
     "/userdata/gose-ui",            # the GOSE shell/UI dir
     "/userdata/system/gose/agent",  # the agent's own code
+    "/userdata/system/.ssh",        # root's SSH dir (root home == /userdata/system):
+                                    # writing authorized_keys here grants root SSH, so an
+                                    # admin-token system.run could escalate to root and
+                                    # clobber everything above. RO-bind it so only an
+                                    # out-of-band holder of the existing key (dev) gets in.
 ]
 _SHADOW_FILE = "/tmp/.gose_sandbox_blocked"
 
