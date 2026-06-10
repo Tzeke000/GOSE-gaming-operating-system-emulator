@@ -501,17 +501,30 @@ def _session_watcher():
             # startup gap finalizes the just-launched session and WRONGLY clears the activity
             # file — which the Guide's "Play with AI" gate (ai_playable) depends on. Don't
             # finalize a session younger than the grace window; the emulator may still be starting.
-            if _time.time() - started < LAUNCH_GRACE_S:
-                continue
             gr = game_running()
-            if not gr.get("running"):
-                # Final score read before the process fully exits (best-effort).
-                # Only meaningful for pong1k2p (the one verified profile).
+            if gr.get("running"):
+                # #112: while the game is LIVE (NCI is up), track the game-over flag — SET it at
+                # game-over, CLEAR it while in-progress — so the flag reflects the latest state.
+                # The on-exit read alone is unreliable: NCI dies with the process, so a match left
+                # frozen at game-over would otherwise be auto-resumed on the next launch. Clearing
+                # while in-progress handles a fresh game started (RESET) after a finished one.
                 if sys_ and game_ and "pong" in (game_ or "").lower():
                     sc = _nci_score_pong()
-                    if sc and (sc[0] >= GAME_OVER_SCORE or sc[1] >= GAME_OVER_SCORE):
-                        _set_gameover_flag(sys_, game_, sc[0], sc[1])
-                _finalize_session()
+                    if sc:
+                        if sc[0] >= GAME_OVER_SCORE or sc[1] >= GAME_OVER_SCORE:
+                            _set_gameover_flag(sys_, game_, sc[0], sc[1])
+                        else:
+                            _clear_gameover_flag(sys_, game_)
+                continue
+            # Game not running: don't finalize during the startup grace window (NCI not up yet).
+            if _time.time() - started < LAUNCH_GRACE_S:
+                continue
+            # Genuinely stopped — best-effort final score read (NCI may already be gone) + finalize.
+            if sys_ and game_ and "pong" in (game_ or "").lower():
+                sc = _nci_score_pong()
+                if sc and (sc[0] >= GAME_OVER_SCORE or sc[1] >= GAME_OVER_SCORE):
+                    _set_gameover_flag(sys_, game_, sc[0], sc[1])
+            _finalize_session()
         except Exception:
             pass
 
@@ -1874,19 +1887,10 @@ def launch_game(system, game, players=None):
                    _files, "them" if len(_missing_bios) != 1 else "it")
             ),
         }
-    # #112 auto-resume guard: if the previous session of this game ended in a game-over
-    # state (flag written by the session watcher or play scripts), delete the stale
-    # auto-save so RetroArch starts a fresh game instead of resuming a frozen 9-0 screen.
+    # #112 auto-resume guard: compute the stale-save + game-over flag paths now; the actual
+    # deletion happens INSIDE the lock AFTER the kill (a SIGTERM'd retroarch re-saves on exit).
     _auto = _auto_save_path(system, game)
     _flag = _gameover_flag_path(system, game)
-    if os.path.exists(_flag):
-        try:
-            if os.path.exists(_auto):
-                os.remove(_auto)
-                LOG.info("#112 deleted stale auto-save %s (previous session ended at game-over)", _auto)
-        except Exception as e:
-            LOG.warning("#112 could not delete auto-save %s: %s", _auto, e)
-        _clear_gameover_flag(system, game)
     # Kill any running emulator before spawning a new one — prevents a second retroarch
     # instance from stealing the NCI UDP port (127.0.0.1:55355) and returning all-zero
     # RAM reads.  _kill_emulator_procs() is idempotent when nothing is running.
@@ -1894,6 +1898,21 @@ def launch_game(system, game, players=None):
     # POST /launch requests can't both pass the guard and race to own the UDP port.
     with _LAUNCH_LOCK:
         _kill_emulator_procs()
+        # #112: delete the stale auto-save AFTER the kill. RetroArch killed with SIGTERM
+        # auto-saves on exit, RE-CREATING this file — so deleting it BEFORE the kill is
+        # undone and the finished match resumes anyway. Deleting post-kill makes a game-over
+        # match start fresh; a non-game-over relaunch has no flag and keeps its save.
+        if os.path.exists(_flag):
+            try:
+                if os.path.exists(_auto):
+                    os.remove(_auto)
+                    LOG.info("#112 deleted stale auto-save %s (previous session ended at game-over)", _auto)
+                _png = _auto + ".png"
+                if os.path.exists(_png):
+                    os.remove(_png)
+            except Exception as e:
+                LOG.warning("#112 could not delete auto-save %s: %s", _auto, e)
+            _clear_gameover_flag(system, game)
         try:
             _spawn(["emulatorlauncher"] + _virtual_pad_args(order=players) + ["-system", system, "-rom", rom])
         except Exception as e:
