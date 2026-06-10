@@ -166,6 +166,12 @@ class AgentServer:
             return args
         op = msg.get("op") or ""
         if op in ("input.button", "input.combo", "input.axis", "input.type"):
+            # Reject only an EXPLICIT cross-seat request; an omitted seat means
+            # "my assigned seat" (the common drive pattern) and is pinned below —
+            # defaulting omit to seat 1 would wrongly deny a seat>=2 AI's own input.
+            if "seat" in args and int(args["seat"]) != int(seat):
+                raise P.AgentError(P.ERR_DENIED,
+                    f"this AI is assigned seat {seat}; it cannot send input to another seat")
             args = dict(args); args["seat"] = int(seat)
         elif op in ("input.seat_open", "input.seat_close"):
             if int(args.get("seat", 0)) != int(seat):

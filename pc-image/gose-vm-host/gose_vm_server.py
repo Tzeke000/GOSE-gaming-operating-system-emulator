@@ -1890,15 +1890,18 @@ def launch_game(system, game, players=None):
     # Kill any running emulator before spawning a new one — prevents a second retroarch
     # instance from stealing the NCI UDP port (127.0.0.1:55355) and returning all-zero
     # RAM reads.  _kill_emulator_procs() is idempotent when nothing is running.
-    _kill_emulator_procs()
-    try:
-        _spawn(["emulatorlauncher"] + _virtual_pad_args(order=players) + ["-system", system, "-rom", rom])
-        record_recent(system, game)
-        _session_start(system, game)   # playtime tracking: finalize prior, start new
-        _TIMECTL["slot"] = 0; _TIMECTL["ff"] = False   # #37 RetroArch launch defaults
-        return {"ok": True, "rom": rom}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    # _LAUNCH_LOCK makes the running-check + kill + spawn atomic so two concurrent
+    # POST /launch requests can't both pass the guard and race to own the UDP port.
+    with _LAUNCH_LOCK:
+        _kill_emulator_procs()
+        try:
+            _spawn(["emulatorlauncher"] + _virtual_pad_args(order=players) + ["-system", system, "-rom", rom])
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+    record_recent(system, game)
+    _session_start(system, game)   # playtime tracking: finalize prior, start new
+    _TIMECTL["slot"] = 0; _TIMECTL["ff"] = False   # #37 RetroArch launch defaults
+    return {"ok": True, "rom": rom}
 
 _TERM = {"cwd": "/userdata"}
 
@@ -3083,6 +3086,8 @@ def peripherals():
 # ---- AI players: real presence registry (an AI joins/heartbeats; the hub reflects who's live) ----
 AI_F = "/userdata/gose-ui/ai_players.json"
 _AI_LOCK = threading.Lock()
+_LAUNCH_LOCK = threading.Lock()   # serialise launch_game: check+kill+spawn must be atomic
+_ARM_LOCK = threading.Lock()      # serialise ai_play_arm: read-check-write must be atomic
 
 def _ai_load():
     try:
@@ -3211,6 +3216,12 @@ def ai_grant(payload):
                     seat = None
             except (TypeError, ValueError):
                 seat = None
+            # One-AI-per-seat: if seat is being assigned, clear it from any OTHER
+            # AI that already holds it — last-writer-wins, no two grants share a seat.
+            if seat is not None:
+                for other, rec in g.items():
+                    if other != name and rec.get("seat") == seat:
+                        rec["seat"] = None
             g[name] = {"tier": tier, "granted_at": int(time.time()),
                        "expires": (int(time.time()) + int(days) * 86400) if days else None,
                        "seat": seat,
@@ -3294,14 +3305,15 @@ def ai_play_arm(payload):
         seat = None
     if seat is None:
         seat = g[name].get("seat")   # grant seat is already int-or-None from _ai_grants_write
-    arm = {"name": name, "system": system, "game": game, "seat": seat,
-           "profile": profile, "ts": time.time()}
-    try:
-        os.makedirs(os.path.dirname(AI_PLAY_ARM_F), exist_ok=True)
-        write_json_atomic(AI_PLAY_ARM_F, arm)
-    except Exception as e:
-        LOG.error("ai_play_arm write failed: %s", e)
-        return {"ok": False, "error": "server error writing arm record"}
+    with _ARM_LOCK:
+        arm = {"name": name, "system": system, "game": game, "seat": seat,
+               "profile": profile, "ts": time.time()}
+        try:
+            os.makedirs(os.path.dirname(AI_PLAY_ARM_F), exist_ok=True)
+            write_json_atomic(AI_PLAY_ARM_F, arm)
+        except Exception as e:
+            LOG.error("ai_play_arm write failed: %s", e)
+            return {"ok": False, "error": "server error writing arm record"}
     LOG.info("AI play arm: %s → %s/%s seat=%s profile=%s", name, system, game, seat, profile)
     return {"ok": True, "armed": True, "name": name, "system": system,
             "game": game, "seat": seat, "profile": profile}
@@ -3416,6 +3428,10 @@ def ai_request(payload):
         return {"ok": False, "error": "name required (letters/digits/space/.-_, max 32)"}
     if tier not in AI_TIERS:
         return {"ok": False, "error": "tier must be one of %s" % AI_TIERS}
+    # Reject name squatting: if this name already has a grant, refuse the pairing request —
+    # the name is taken and a duplicate would either shadow it or create confusion at approval.
+    if _ai_grants_load().get(name):
+        return {"ok": False, "error": "name '%s' is already paired — choose a different name" % name}
     with _AI_LOCK:
         reqs = _ai_requests_load()
         if name not in reqs and len(reqs) >= _AI_REQ_MAX:
@@ -10679,6 +10695,16 @@ class H(http.server.SimpleHTTPRequestHandler):
         if route == "/ai/players":
             return self._json(ai_players())
         if route == "/ai/grants":
+            # Gate the grants LISTING behind a valid paired token OR owner proof (PIN/dev
+            # token in the X-Owner-Token header).  The OOBE pairing-REQUEST path (pair.request
+            # on the agent socket) does NOT go through this endpoint, so OOBE is unaffected.
+            # Reuses the same helpers as /ai/assist/queue (token) and /ai/play/arm (owner).
+            _grants_token = (self.headers.get("X-AI-Token") or "").strip()
+            _grants_name, _grants_tier = _ai_token_resolve(_grants_token)
+            _grants_owner_tok = (self.headers.get("X-Owner-Token") or "").strip()
+            if not _grants_name and not _owner_ok({"owner_token": _grants_owner_tok}):
+                return self._json({"ok": False, "code": "ERR_AUTH",
+                                   "error": "X-AI-Token (paired AI) or X-Owner-Token required to list grants"})
             return self._json(ai_grants())
         if route == "/ai/requests":
             return self._json(ai_requests())
