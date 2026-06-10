@@ -117,7 +117,7 @@ class Agent:
             # play-map registry (#117): baked per-game knowledge (controls, RAM semantics,
             # seat assignment, game-flow) so a memory-less AI can orient without guessing.
             "games.playmaps": lambda ar: self.play_maps.list_maps(),
-            "games.playmap":  lambda ar: self.play_maps.get_map(a(ar, "id")),
+            "games.playmap":  lambda ar: self.play_maps.get_map(ar.get("id") or ar.get("game") or a(ar, "id")),
         }
 
 

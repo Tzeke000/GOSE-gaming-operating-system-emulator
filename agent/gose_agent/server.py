@@ -76,31 +76,34 @@ async def _play_wait(caller_name: str, args: dict) -> dict:
     poll_interval = 0.5
 
     def _sample():
-        """Return (armed:bool, rev:str, system:str, game:str, seat) for caller_name."""
+        """Return (armed, rev, system, game, seat, playing, has_map) for caller_name."""
         rec = _read_arm_record()
         if rec and rec.get("name") == caller_name:
             try:
                 rev = str(rec.get("ts", ""))
             except Exception:
                 rev = ""
-            return True, rev, rec.get("system", ""), rec.get("game", ""), rec.get("seat")
-        return False, "0", "", "", None
+            return (True, rev, rec.get("system", ""), rec.get("game", ""),
+                    rec.get("seat"), bool(rec.get("playing", False)),
+                    bool(rec.get("has_map", False)))
+        return False, "0", "", "", None, False, False
 
-    armed, rev, system, game, seat = _sample()
+    armed, rev, system, game, seat, playing, has_map = _sample()
 
     while True:
         if rev != since:
             # State changed (or first call with no "since") — report it immediately.
             if armed:
                 return {"event": "armed", "system": system, "game": game,
-                        "seat": seat, "rev": rev}
+                        "seat": seat, "playing": playing, "has_map": has_map,
+                        "rev": rev}
             else:
                 return {"event": "released", "rev": "0"}
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return {"event": "idle", "rev": rev}
         await asyncio.sleep(min(poll_interval, remaining))
-        armed, rev, system, game, seat = _sample()
+        armed, rev, system, game, seat, playing, has_map = _sample()
 
 
 def _load_ai_tokens() -> dict:
@@ -299,7 +302,13 @@ class AgentServer:
                             f"'{op}' needs '{need}' access; this connection has '{tier}'. "
                             f"The device owner grants access in GOSE → AI Hub.")
                     args = self._pin_seat(msg, msg.get("args") or {})
-                    if op == "play.wait":
+                    if op == "agent.info":
+                        # Augment the static info dict with the per-request tier + name so an AI
+                        # can self-identify ("am I observe or play?") without provoking ERR_DENIED.
+                        result = self.agent.info()
+                        result["caller_tier"] = tier
+                        result["caller_name"] = ai_name  # None for admin/dev tokens
+                    elif op == "play.wait":
                         # Async long-poll: must NOT be offloaded to the executor (it sleeps
                         # on asyncio.sleep, which would block the thread pool).  Resolve the
                         # caller's name from the token — the ai_name field is set only for

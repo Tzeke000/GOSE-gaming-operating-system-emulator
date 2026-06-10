@@ -3282,18 +3282,16 @@ def ai_play_arm(payload):
         return {"ok": False, "error": "%s is not paired — pair it in the AI Hub first" % name}
     system = (payload.get("system") or "").strip()
     game   = (payload.get("game") or "").strip()
-    if not game:
-        return {"ok": False, "error": "game required — launch a game first"}
-    # Path-safety: reject any traversal characters in system/game
+    # Path-safety: reject any traversal characters in system/game (only when non-empty)
     for v, label in ((system, "system"), (game, "game")):
-        if ".." in v or "/" in v or "\\" in v:
+        if v and (".." in v or "/" in v or "\\" in v):
             return {"ok": False, "error": "%s must not contain path separators" % label}
-    # Check for a play-map — the same gate the UI uses for the Play button
-    profile = _spectate_profile(system, game)
-    if not profile:
-        LOG.info("ai_play_arm: no play-map for %s/%s — armed=false", system, game)
-        return {"ok": True, "armed": False, "playmap": False,
-                "note": "no play-map for %s/%s yet — %s can't play it autonomously" % (system, game, name)}
+    # Check for a play-map (None when game is empty or unknown)
+    profile = _spectate_profile(system, game) if game else None
+    has_map = profile is not None
+    # Determine whether the armed game is actually running right now
+    gr = game_running()
+    playing = bool(gr.get("running") and gr.get("game") == game and game)
     # Optional seat (1-4); absent = fall back to the seat pinned in the AI's grant record
     # so the arm record always carries the real seat when one has been assigned.
     seat = payload.get("seat")
@@ -3305,18 +3303,23 @@ def ai_play_arm(payload):
         seat = None
     if seat is None:
         seat = g[name].get("seat")   # grant seat is already int-or-None from _ai_grants_write
+    # Always write the arm record — an empty/desktop call is still a valid "call the AI"
+    # signal; the AI learns playing/has_map from the record and branches accordingly.
     with _ARM_LOCK:
         arm = {"name": name, "system": system, "game": game, "seat": seat,
-               "profile": profile, "ts": time.time()}
+               "profile": profile or "", "playing": playing, "has_map": has_map,
+               "ts": time.time()}
         try:
             os.makedirs(os.path.dirname(AI_PLAY_ARM_F), exist_ok=True)
             write_json_atomic(AI_PLAY_ARM_F, arm)
         except Exception as e:
             LOG.error("ai_play_arm write failed: %s", e)
             return {"ok": False, "error": "server error writing arm record"}
-    LOG.info("AI play arm: %s → %s/%s seat=%s profile=%s", name, system, game, seat, profile)
+    LOG.info("AI play arm: %s → %s/%s seat=%s profile=%s playing=%s has_map=%s",
+             name, system, game, seat, profile, playing, has_map)
     return {"ok": True, "armed": True, "name": name, "system": system,
-            "game": game, "seat": seat, "profile": profile}
+            "game": game, "seat": seat, "profile": profile or "",
+            "playing": playing, "has_map": has_map}
 
 def ai_play_queue(name):
     """GET /ai/play/queue?name= — an AI polls this to see if it has been armed.
