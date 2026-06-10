@@ -44,8 +44,63 @@ OP_TIER = {
     "input.pt_list": "observe",
     "games.launch": "play", "games.stop": "play", "state.write_raw": "play",
     "system.run": "admin", "system.service": "admin",
+    # push primitive: an armed AI holds this open to learn immediately when the owner
+    # arms or disarms it, without polling /ai/play/queue over HTTP.
+    "play.wait": "observe",
 }
 _AI_TOKENS_PATH = os.environ.get("GOSE_AGENT_AI_TOKENS", "/userdata/system/gose/ai_tokens.json")
+# Same path the VM server writes; agent reads it to deliver play.wait events.
+_AI_PLAY_ARM_F = "/userdata/system/gose/ai_play_arm.json"
+
+
+def _read_arm_record() -> dict:
+    """Return the arm record dict, or {} on missing/corrupt."""
+    try:
+        with open(_AI_PLAY_ARM_F, "r", encoding="utf-8") as fh:
+            d = json.load(fh)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+async def _play_wait(caller_name: str, args: dict) -> dict:
+    """Async long-poll: resolves immediately on state change; times out to 'idle'.
+
+    The caller holds this open after connecting so the armed/released event arrives
+    as a push instead of a poll.  Must stay async (asyncio.sleep) so it doesn't
+    block the event loop or other connections.
+    """
+    timeout_ms = int(args.get("timeout_ms", 25000))
+    since = str(args.get("since", ""))
+    deadline = time.monotonic() + timeout_ms / 1000.0
+    poll_interval = 0.5
+
+    def _sample():
+        """Return (armed:bool, rev:str, system:str, game:str, seat) for caller_name."""
+        rec = _read_arm_record()
+        if rec and rec.get("name") == caller_name:
+            try:
+                rev = str(rec.get("ts", ""))
+            except Exception:
+                rev = ""
+            return True, rev, rec.get("system", ""), rec.get("game", ""), rec.get("seat")
+        return False, "0", "", "", None
+
+    armed, rev, system, game, seat = _sample()
+
+    while True:
+        if rev != since:
+            # State changed (or first call with no "since") — report it immediately.
+            if armed:
+                return {"event": "armed", "system": system, "game": game,
+                        "seat": seat, "rev": rev}
+            else:
+                return {"event": "released", "rev": "0"}
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return {"event": "idle", "rev": rev}
+        await asyncio.sleep(min(poll_interval, remaining))
+        armed, rev, system, game, seat = _sample()
 
 
 def _load_ai_tokens() -> dict:
@@ -244,9 +299,25 @@ class AgentServer:
                             f"'{op}' needs '{need}' access; this connection has '{tier}'. "
                             f"The device owner grants access in GOSE → AI Hub.")
                     args = self._pin_seat(msg, msg.get("args") or {})
-                    # Run (possibly blocking) dispatch off the event loop.
-                    result = await asyncio.get_event_loop().run_in_executor(
-                        None, self.agent.dispatch, op, args)
+                    if op == "play.wait":
+                        # Async long-poll: must NOT be offloaded to the executor (it sleeps
+                        # on asyncio.sleep, which would block the thread pool).  Resolve the
+                        # caller's name from the token — the ai_name field is set only for
+                        # per-AI tokens; admin/dev connections get None, which is fine (they
+                        # can still call play.wait using their own token lookup).
+                        caller_name = ai_name
+                        if caller_name is None:
+                            # admin / dev token — resolve name the same way _load_ai_tokens does
+                            ai_rec = _load_ai_tokens().get(msg.get("token") or "")
+                            caller_name = str(ai_rec.get("name")) if isinstance(ai_rec, dict) else None
+                        if not caller_name:
+                            raise P.AgentError(P.ERR_DENIED,
+                                "play.wait requires a per-AI token with a registered name")
+                        result = await _play_wait(caller_name, args)
+                    else:
+                        # Run (possibly blocking) dispatch off the event loop.
+                        result = await asyncio.get_event_loop().run_in_executor(
+                            None, self.agent.dispatch, op, args)
                     writer.write(P.encode(P.ok_response(req_id, result)))
                     if ai_name:
                         audit_append(ai_name, op, True)

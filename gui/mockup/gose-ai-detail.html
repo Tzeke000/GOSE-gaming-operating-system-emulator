@@ -94,6 +94,11 @@
       <div><div class="pt" id="play-title">Ready to play</div>
         <div class="psub" id="play-sub">Tap to arm — the AI starts the moment you back out of the Guide.</div></div></div>
 
+    <div class="playbtn focusable" data-fk="release" id="releasebtn"
+         style="background:var(--surface2);border:2px solid var(--line);display:none"><span class="pi" style="color:var(--muted)">■</span>
+      <div><div class="pt" style="color:var(--text)">Release AI</div>
+        <div class="psub" style="color:var(--muted)">Disarm — lets the AI unhook from this game session.</div></div></div>
+
     <div class="sect">PERMISSIONS</div>
     <div class="row focusable" data-fk="t:observe" data-tier="observe"><div class="rdot"></div>
       <div><div class="rnm">Observe</div><div class="rsub">Read-only — can watch the screen &amp; game state.</div></div><span class="rval"></span></div>
@@ -164,7 +169,7 @@
   var GAME=Q.get("game")||"";                    // current game name hint
   var SYSTEM="";                                  // resolved from /game/activity
   var CFG={opponent:"human",mode:"vs",difficulty:"med",read_vs:false,read_coop:true};
-  var ONLINE=false, AIMODE="watching", PLAYMAP=false, ARMING=false;
+  var ONLINE=false, AIMODE="watching", PLAYMAP=false, ARMING=false, ARMED=false;
 
   var ACCENTS=["#5cd0ff","#7d8cff","#37d39b","#ff7a9c","#ffce5c","#b388ff"];
   function accFor(n){ var h=0; n=n||"?"; for(var i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))>>>0; return ACCENTS[h%ACCENTS.length]; }
@@ -265,6 +270,9 @@
     $("sw-rv").className="sw "+(CFG.read_vs?"on":"off");
     $("sw-rc").className="sw "+(CFG.read_coop?"on":"off");
 
+    // release button: shown when this AI is currently armed (owner can cancel)
+    $("releasebtn").style.display=ARMED?"flex":"none";
+
     // play button label (dynamic per AI) + honest state
     var canPlay=(TIER==="play"||TIER==="admin");
     $("play-title").textContent=ARMING?("Arming "+disp+"…"):("Play with "+disp);
@@ -359,6 +367,13 @@
     });
   }
 
+  function disarmPlay(){
+    ownerPost("/ai/play/disarm",{}).then(function(d){
+      if(!d||!d.ok){say("Release failed"+(d&&d.error?": "+d.error:""));return;}
+      ARMED=false; ARMING=false; say(NAME+" released"); render();
+    });
+  }
+
   function back(){location.href="gose-ai.html";}
 
   function pinOpen(){return $("pinmask")&&$("pinmask").style.display!=="none";}
@@ -368,6 +383,7 @@
     if(d.fk==="pinok"){closePin(($("pininp").value||"").trim());return;}
     if(d.fk==="pincancel"){closePin(null);return;}
     if(d.fk==="play"){armPlay();return;}
+    if(d.fk==="release"){disarmPlay();return;}
     if(d.tier){setTier(d.tier);return;}
     if(d.seat!==undefined){setSeat(+d.seat);return;}
     if(d.fk==="opp"){saveCfg({opponent:CFG.opponent==="human"?"ai":"human"},"Opponent: "+(CFG.opponent==="human"?"AI vs AI":"Play vs Human"));return;}
@@ -427,6 +443,12 @@
       else if(!GAME){GAME="";SYSTEM="";PLAYMAP=false;}
     });
   }
+  function loadArmed(){
+    if(!NAME)return Promise.resolve();
+    return getJSON("/ai/play/queue?name="+encodeURIComponent(NAME)).then(function(d){
+      ARMED=!!(d&&d.ok&&d.armed);
+    });
+  }
   function loadGrant(){
     return getJSON("/ai/grants").then(function(d){
       var g=(d&&d.grants)||{};
@@ -447,7 +469,7 @@
     });
   }
   function refresh(){
-    Promise.all([loadActivity(),loadGrant(),loadLive(),loadCfg()]).then(function(){render();});
+    Promise.all([loadActivity(),loadGrant(),loadLive(),loadCfg(),loadArmed()]).then(function(){render();});
   }
 
   // first paint from query hints (instant), then hydrate from the server
