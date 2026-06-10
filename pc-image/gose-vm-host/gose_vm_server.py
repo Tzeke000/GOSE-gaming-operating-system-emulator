@@ -1851,6 +1851,28 @@ def _virtual_pad_args(max_players=5, order=None):
                  "-p%dnbbuttons" % n, "11", "-p%dnbhats" % n, "1", "-p%dnbaxes" % n, "6"]
     return args
 
+def _ai_vc_path(seat: int):
+    """Return the /dev/input/eventNN path for 'AI virtual controller <seat>', or None.
+
+    Parses /proc/bus/input/devices for a block whose Name field matches the
+    per-seat VC name created by the agent's SeatManager / make_input factory.
+    Returns None on any read error or if the VC hasn't been created yet.
+    """
+    target = "AI virtual controller %d" % seat
+    try:
+        txt = open("/proc/bus/input/devices").read()
+    except Exception:
+        return None
+    for blk in txt.split("\n\n"):
+        name_m = re.search(r'Name="([^"]*)"', blk)
+        if not name_m or name_m.group(1) != target:
+            continue
+        evs = re.findall(r"event(\d+)", blk)
+        if evs:
+            return "/dev/input/event" + evs[0]
+    return None
+
+
 def launch_game(system, game, players=None):
     d = os.path.join(ROMS, system)
     if not os.path.isdir(d):
@@ -1887,6 +1909,41 @@ def launch_game(system, game, players=None):
                    _files, "them" if len(_missing_bios) != 1 else "it")
             ),
         }
+    # FIX 5: when no explicit players list is given, check the arm record and wire the
+    # armed AI's virtual controller into the correct seat position automatically.
+    # An explicit players list (from the lobby or spectate) is always respected unchanged.
+    if players is None:
+        _arm = _ai_play_arm_load()
+        _arm_seat = _arm.get("seat") if _arm else None
+        if _arm_seat:
+            try:
+                _arm_seat = int(_arm_seat)
+                _vc_path = _ai_vc_path(_arm_seat)
+                if _vc_path:
+                    _, _devs = _player_devices()
+                    # Only the ARMED AI plays — other AI virtual controllers (other seats /
+                    # idle grants) must NOT be wired in. Treat any non-AI-VC pad as a human
+                    # (physical / passthrough) and let it fill the lowest seats; put the armed
+                    # AI's VC at its own seat. So a human + an AI armed for seat 2 -> [human, vc2].
+                    _vc_all = set(p for p in (_ai_vc_path(_n) for _n in range(1, 5)) if p)
+                    _humans = [d["path"] for d in _devs if d["path"] not in _vc_all]
+                    _slots = {_arm_seat: _vc_path}
+                    _s = 1
+                    for _h in _humans:
+                        while _s == _arm_seat:
+                            _s += 1
+                        _slots[_s] = _h
+                        _s += 1
+                    _maxs = max(_slots)
+                    players = [_slots[_i] for _i in range(1, _maxs + 1) if _i in _slots]
+                    LOG.info("FIX5: armed AI seat %d VC %s wired; players=%s",
+                             _arm_seat, _vc_path, players)
+                else:
+                    LOG.warning("FIX5: armed AI seat %d — VC not found in /proc/bus/input/devices "
+                                "(grant exists but agent hasn't opened the pad yet)", _arm_seat)
+            except Exception as _e:
+                LOG.warning("FIX5: arm-seat wiring failed: %s", _e)
+
     # #112 auto-resume guard: compute the stale-save + game-over flag paths now; the actual
     # deletion happens INSIDE the lock AFTER the kill (a SIGTERM'd retroarch re-saves on exit).
     _auto = _auto_save_path(system, game)

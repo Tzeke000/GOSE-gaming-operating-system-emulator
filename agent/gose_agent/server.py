@@ -348,11 +348,45 @@ class AgentServer:
                 pass
             log.info("client disconnected: %s", peer)
 
+    async def _vc_ensure_loop(self):
+        """Background task: ensure a virtual controller exists for every seated AI token.
+
+        Reads ai_tokens.json every 4 s, collects distinct seat values, and calls
+        seat_open for each seat not yet open.  seat_open is idempotent — if the VC
+        already exists it returns immediately without recreating the pad.  Errors in
+        any iteration are caught so a transient read failure never kills the loop or
+        the event loop.
+        """
+        while True:
+            try:
+                tokens = _load_ai_tokens()
+                seats_needed: set = set()
+                for rec in tokens.values():
+                    if isinstance(rec, dict):
+                        s = rec.get("seat")
+                        if s is not None:
+                            try:
+                                seats_needed.add(int(s))
+                            except (TypeError, ValueError):
+                                pass
+                open_seats: set = set(self.agent.input._seats.keys())
+                for seat in seats_needed:
+                    if seat not in open_seats:
+                        try:
+                            self.agent.input.seat_open(seat)
+                            log.info("vc_ensure: opened VC for seat %d", seat)
+                        except Exception as exc:
+                            log.warning("vc_ensure: seat_open(%d) failed: %s", seat, exc)
+            except Exception as exc:
+                log.warning("vc_ensure: iteration error: %s", exc)
+            await asyncio.sleep(4)
+
     async def serve(self):
         self._loop = asyncio.get_event_loop()
         server = await asyncio.start_server(self._handle, self.config.host, self.config.port)
         addrs = ", ".join(str(s.getsockname()) for s in server.sockets)
         log.info("GOSE Agent listening on %s", addrs)
+        asyncio.ensure_future(self._vc_ensure_loop())
         async with server:
             await server.serve_forever()
 
