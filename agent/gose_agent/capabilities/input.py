@@ -103,8 +103,14 @@ class EvdevInput(BaseInput):
             "start": e.BTN_START, "select": e.BTN_SELECT, "guide": e.BTN_MODE,
         }
         # D-pad + triggers go through ABS axes (hat / Z / RZ).
+        # EV_KEY capability set: declare PT_KEYS (the full 17-key passthrough set)
+        # rather than just the 11 buttons this pad actively fires. This aligns the
+        # udev/SDL ascending-keycode button indices with the PT pad so the shared
+        # Xbox-360 GUID has one consistent es_input entry for both pad types.
+        # The _btn map (11 keys) is unchanged — we only DECLARE the extras, never
+        # fire them. BTN_START lands at index 9 in both pad types this way.
         cap = {
-            e.EV_KEY: list(self._btn.values()),
+            e.EV_KEY: list(PT_KEYS),
             e.EV_ABS: [
                 (e.ABS_X, evdev.AbsInfo(0, -32768, 32767, 0, 0, 0)),
                 (e.ABS_Y, evdev.AbsInfo(0, -32768, 32767, 0, 0, 0)),
@@ -652,7 +658,21 @@ def make_input(force_mock: bool = False) -> SeatManager:
             try:
                 if os.access("/dev/uinput", os.W_OK):
                     import evdev  # noqa: F401
-                    return EvdevInput(name=name)
+                    pad = EvdevInput(name=name)
+                    # Auto-register the seat pad's GUID with the launcher so a fresh
+                    # state (no PT pad opened yet) still gets a correct es_input entry.
+                    # Uses PT_KEYS (same as EvdevInput.cap now) so indices agree with
+                    # any PT-pad entry for the same GUID; ensure_es_input_entry is
+                    # idempotent and self-heals stale entries. Xbox-360 bustype = BUS_USB (3).
+                    try:
+                        if "GOSE_ES_INPUT_CFG" in os.environ or os.path.isdir(
+                                os.path.dirname(ES_INPUT_CFG)):
+                            cfg = os.environ.get("GOSE_ES_INPUT_CFG", ES_INPUT_CFG)
+                            ensure_es_input_entry(name, 0x045e, 0x028e, 0x0110, 3, cfg)
+                    except Exception as exc:
+                        log.error("es_input auto-register failed for seat pad '%s': %s",
+                                  name, exc)
+                    return pad
             except Exception:
                 pass
         return MockInput()
