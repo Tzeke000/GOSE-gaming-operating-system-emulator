@@ -5,7 +5,7 @@
   "core": "fceumm",
   "crc": "8b5f35d9",
 
-  "_verified": "2026-06-08 — empirically verified by Wren playing the RIGHT paddle against Zeke; all fields cross-checked against the rendered display and a 5Hz RAM log across a full 9-0 match.",
+  "_verified": "2026-06-08 — empirically verified by Wren playing the RIGHT paddle against Zeke; all fields cross-checked against the rendered display and a 5Hz RAM log across a full 9-0 match. 2026-06-10 — RECONFIRMED end-to-end via a self-contained AI-vs-AI match (Wren=RIGHT=score_right won 9-0, then a tuned rematch): score_left==LEFT==P1, score_right==RIGHT==P2; NCI reads 25/25 on a clean single launch.",
 
   "launch": {
     "system": "nes",
@@ -44,6 +44,32 @@
     "new_game":      "after game-over: send NCI RESET (UDP to RetroArch :55355) then tap 'start'; RESET sometimes needs 2-4 sends",
     "paddle_height": 32,
     "paddle_center": "paddle_y + 16 (half of height)"
+  },
+
+  "play_methods": {
+    "_summary": "Two verified ways to seat an AI on a paddle. The board is READ the same way for both. Verified 2026-06-10 end-to-end (a memory-less AI can replay these steps with no rediscovery).",
+    "read": {
+      "channel": "RetroArch NCI — UDP to 127.0.0.1:55355 (retroarchcustom.cfg has network_cmd_enable=\"true\", network_cmd_port=\"55355\").",
+      "command": "Send 'READ_CORE_RAM 0 23'. Reply: 'READ_CORE_RAM 0 <b00> <b01> ... <b16>' (hex bytes). Index the reply bytes: ball_x=byte[7], ball_y=byte[9], p1_paddle_y=byte[16] (0x10), p2_paddle_y=byte[17] (0x11), score_left=byte[20] (0x14), score_right=byte[21] (0x15), frame_counter=byte[0].",
+      "reliability": "On a CLEAN single launch this is 100% reliable (25/25 verified 2026-06-10). The 'flaky NCI' seen on 2026-06-09 was the symptom of a midnight tangle (multiple retroarch instances + rushed relaunches), NOT an inherent fault. Rule: launch ONCE, confirm exactly one retroarch, don't pile up resets.",
+      "liveness": "frame_counter (0x00) advances every frame; static value == emulator paused/dead."
+    },
+    "vs_human": {
+      "launch": "POST http://127.0.0.1:8780/launch {\"system\":\"nes\",\"game\":\"pong1k2p\"} with NO 'players' arg. The default seat order is humans-first (see seats): a physical pad (DualSense passthrough) takes P1=LEFT, the dev AI pad (js0, 'AI virtual controller 1') takes P2=RIGHT. The server's /lobby/state shows the authoritative order before you launch.",
+      "drive_ai": "Drive the RIGHT paddle (P2) via the agent: input.button(button='up'|'down', action='press'|'release') with NO seat arg (routes to js0). 'up' DECREASES p2_paddle_y.",
+      "verify_before_serve": "Read the board: nudge 'up' and confirm p2_paddle_y moves; confirm the human reports THEIR pad moves the LEFT paddle. Only then serve. (The human-physical-pad half is the one seam only the human can confirm.)"
+    },
+    "ai_vs_ai": {
+      "summary": "Two AIs, no physical pad, no grants/tokens needed — self-contained.",
+      "step1_pads": "Create TWO pads via the agent: input.pt_open(name='GOSE AI Left', vendor=0x045e, product=0x028e, version=0x0110, bustype=3) and again for 'GOSE AI Right'. Each is an Xbox360-identity uinput pad whose es_input binds auto-register with the correct ascending-keycode START index (the 2026-06-07 shifted-label bug is handled by pt_open). Returns {pt_id}.",
+      "step2_paths": "Resolve each pad's /dev/input/eventN by name-scanning /proc/bus/input/devices (match Name=\"GOSE AI Left/Right\").",
+      "step3_launch": "POST /launch {\"system\":\"nes\",\"game\":\"pong1k2p\",\"players\":[<Left eventpath>, <Right eventpath>]}. The explicit order forces P1=LEFT, P2=RIGHT and excludes any physical pad.",
+      "step4_start": "Press start on a pad: input.pt_event(pt_id, events=[{type:1(EV_KEY), code:315(BTN_START), value:1}]) then value:0. Re-press if the ball stays at 0,0 for >4s.",
+      "step5_drive": "Per pad, steer with the d-pad Y axis: input.pt_event(pt_id, events=[{type:3(EV_ABS), code:17(ABS_HAT0Y), value:-1(up) | +1(down) | 0(neutral)}]). 'up' DECREASES paddle_y on both sides.",
+      "step6_teardown": "On game-over: input.pt_close(pt_id) BOTH pads + kill retroarch/emulatorlauncher, so the topology returns clean (DualSense + vc1) for a later human game. Write a .gameover flag (see game_flow.new_game / #112) so the next launch starts fresh.",
+      "policy": "Sharp player: trajectory PREDICTION — project the ball to your x-plane with velocity + top/bottom wall-fold, dead-band ±5, ~15 Hz. Weaker player: track the live ball or predict sloppily (every 2nd tick, dead-band ~9). Asymmetry produces a real finish; two perfect predictors rally forever."
+    },
+    "reference_scripts": "Verified implementations in Wren's tree: vs-human = D:\\gose-vm\\wren_pong_p2.py (auto-calibrating, prediction); AI-vs-AI = D:\\Wren\\scratch\\wren_ai_vs_ai.py (the steps above). The steps in this play-map are self-contained — no external file is required to replay them."
   },
 
   "ai_play_notes": [
