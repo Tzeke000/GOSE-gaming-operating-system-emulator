@@ -1979,6 +1979,63 @@ def launch_game(system, game, players=None):
     _TIMECTL["slot"] = 0; _TIMECTL["ff"] = False   # #37 RetroArch launch defaults
     return {"ok": True, "rom": rom}
 
+def upload_rom(qs, rfile, headers):
+    """POST /upload?system=<sys>&name=<file>[&kind=rom|bios] — the file is the RAW request body,
+    streamed to disk in 1 MB chunks (no multipart, so a multi-GB ISO never blows memory). Lands a
+    ROM in /userdata/roms/<system>/ or a BIOS in /userdata/bios. This is the network "add a game
+    from another device" path — on the VM the host browser reaches it via the 8780 hostfwd; on
+    bare-metal/Odin2/Deck a phone or PC on the LAN does. It is the same convenience as dropping a
+    USB stick (storage auto-import), so it is intentionally NOT owner-gated, but it is STRICTLY
+    confined: basename-only filename (no traversal), the system must be a known one, and the
+    resolved destination must stay under the roms/bios root."""
+    system = (qs.get("system") or "").strip()
+    kind = (qs.get("kind") or "rom").strip().lower()
+    name = os.path.basename((qs.get("name") or "").strip())   # basename: strips any path traversal
+    if not name or name in (".", ".."):
+        return {"ok": False, "error": "a file name is required"}
+    if kind == "bios":
+        dest_dir = BIOS_ROOT
+    elif system in _SYS:
+        dest_dir = os.path.join(ROMS, system)
+    else:
+        return {"ok": False, "error": "unknown system '%s' — kind=rom needs a known system" % system}
+    dest = os.path.join(dest_dir, name)
+    base = os.path.realpath(dest_dir)
+    rp = os.path.realpath(dest)
+    if rp != base and not rp.startswith(base + "/"):
+        return {"ok": False, "error": "invalid destination"}
+    try:
+        length = int(headers.get("Content-Length", 0))
+    except Exception:
+        length = 0
+    if length <= 0:
+        return {"ok": False, "error": "empty upload (need a Content-Length and a body)"}
+    if length > 8 * 1024 * 1024 * 1024:                       # 8 GB cap (covers PS2/GC ISOs)
+        return {"ok": False, "error": "file too large (max 8 GB)"}
+    os.makedirs(dest_dir, exist_ok=True)
+    tmp = dest + ".part"
+    got = 0
+    try:
+        with open(tmp, "wb") as f:
+            remaining = length
+            while remaining > 0:
+                chunk = rfile.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                f.write(chunk); got += len(chunk); remaining -= len(chunk)
+    except Exception as e:
+        try: os.remove(tmp)
+        except Exception: pass
+        return {"ok": False, "error": "write failed: %s" % e}
+    if got != length:
+        try: os.remove(tmp)
+        except Exception: pass
+        return {"ok": False, "error": "incomplete upload (%d of %d bytes)" % (got, length)}
+    os.replace(tmp, dest)                                     # atomic: no half-written ROM in the dir
+    LOG.info("upload: '%s' -> %s (%d bytes, kind=%s)", name, dest, got, kind)
+    return {"ok": True, "path": dest, "system": system, "kind": kind,
+            "game": os.path.splitext(name)[0], "bytes": got}
+
 _TERM = {"cwd": "/userdata"}
 
 def term_exec(cmd):
@@ -11199,6 +11256,11 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _route_post(self):
         route = self.path.split("?")[0]
+        if route == "/upload":
+            # Stream the raw body to a ROM/BIOS file — the network "add a game from another
+            # device" path (VM host browser via the 8780 hostfwd; a phone/PC on the LAN for
+            # bare-metal/Odin2/Deck). Confined to roms/<system> or bios — see upload_rom().
+            return self._json(upload_rom(self._qs(), self.rfile, self.headers))
         if route in ("/stress/start", "/stress/stop"):
             try:
                 n = int(self.headers.get("Content-Length", 0))

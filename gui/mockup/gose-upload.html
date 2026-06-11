@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — Add a Game from your PC/phone</title>
+<style>
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#07070f;color:#e9edf6;
+    font-family:Inter,system-ui,Segoe UI,Roboto,sans-serif}
+  .wrap{max-width:560px;margin:0 auto;padding:32px 22px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:#9aa3b2;font-size:13px;line-height:1.5;margin-bottom:22px}
+  label{display:block;font-size:12px;font-weight:700;letter-spacing:.4px;color:#9aa3b2;margin:16px 0 6px}
+  select,input[type=file]{width:100%;background:#11131b;border:2px solid #2a2e3c;border-radius:11px;
+    padding:12px 14px;color:#e9edf6;font-size:15px;font-family:inherit;outline:none}
+  select:focus,input[type=file]:focus{border-color:#5cd0ff}
+  .row{display:flex;gap:10px;align-items:center;margin-top:8px}
+  .kind{display:flex;gap:8px;margin-top:6px}
+  .kind button{flex:1;background:#11131b;border:2px solid #2a2e3c;border-radius:10px;padding:10px;
+    color:#9aa3b2;font-weight:700;font-size:13px;cursor:pointer}
+  .kind button.sel{background:#5cd0ff;color:#06121a;border-color:transparent}
+  .go{margin-top:22px;width:100%;background:#5cd0ff;color:#06121a;border:none;border-radius:12px;
+    padding:15px;font-size:16px;font-weight:700;cursor:pointer}
+  .go:disabled{opacity:.4;cursor:default}
+  .bar{height:10px;background:#222634;border-radius:6px;overflow:hidden;margin-top:16px;display:none}
+  .bar > i{display:block;height:100%;width:0;background:#5cd0ff;transition:width .15s}
+  .msg{margin-top:14px;font-size:14px;line-height:1.5;min-height:20px}
+  .msg.ok{color:#3fe0a0}.msg.err{color:#ff8a8a}
+  .hint{margin-top:24px;color:#5a6072;font-size:12px;line-height:1.6}
+  code{background:#11131b;border:1px solid #2a2e3c;border-radius:6px;padding:2px 6px;color:#cdd2ea}
+</style></head>
+<body>
+  <div class="wrap">
+    <h1>Add a Game</h1>
+    <div class="sub">Send a ROM (or a BIOS file) to GOSE straight from this device — your PC or phone.
+      It lands in the right folder and shows up in your Library. On the VM, open this page from the
+      host at <code>http://127.0.0.1:8780/gose-upload.html</code>; on a real device, browse to its IP.</div>
+
+    <div class="kind" id="kind">
+      <button data-kind="rom" class="sel">Game ROM</button>
+      <button data-kind="bios">BIOS file</button>
+    </div>
+
+    <div id="sysrow">
+      <label>System</label>
+      <select id="system"></select>
+    </div>
+
+    <label>File</label>
+    <input type="file" id="file">
+
+    <button class="go" id="go" disabled>Upload</button>
+    <div class="bar" id="bar"><i id="barfill"></i></div>
+    <div class="msg" id="msg"></div>
+
+    <div class="hint">Provide your own legally-obtained game files — GOSE never ships ROMs or BIOS.
+      Large discs (PS2/GameCube) can take a while; keep this tab open until it finishes.</div>
+  </div>
+<script>
+  // System list mirrors the server's _SYS allowlist (kind=rom must target a known system).
+  var SYS=[["nes","NES"],["snes","SNES"],["megadrive","Genesis"],["gba","Game Boy Advance"],
+    ["gb","Game Boy"],["gbc","Game Boy Color"],["n64","Nintendo 64"],["psx","PlayStation"],
+    ["ps2","PlayStation 2"],["psp","PSP"],["gamecube","GameCube"],["dreamcast","Dreamcast"],
+    ["c64","Commodore 64"],["pcengine","PC Engine"],["nds","Nintendo DS"],["mame","Arcade"],
+    ["tyrian","Tyrian"]];
+  var $=function(id){return document.getElementById(id);};
+  var KIND="rom";
+  var sel=$("system");
+  SYS.forEach(function(s){var o=document.createElement("option");o.value=s[0];o.textContent=s[1]+" ("+s[0]+")";sel.appendChild(o);});
+
+  $("kind").addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(!b)return;
+    KIND=b.dataset.kind;
+    [].forEach.call($("kind").children,function(x){x.classList.toggle("sel",x===b);});
+    $("sysrow").style.display=(KIND==="bios")?"none":"";   // BIOS goes to one shared dir
+    refresh();
+  });
+  $("file").addEventListener("change",refresh);
+  function refresh(){ $("go").disabled = !$("file").files.length; $("msg").textContent=""; $("msg").className="msg"; }
+
+  $("go").addEventListener("click",function(){
+    var f=$("file").files[0]; if(!f)return;
+    var q="/upload?kind="+encodeURIComponent(KIND)+"&name="+encodeURIComponent(f.name);
+    if(KIND==="rom") q+="&system="+encodeURIComponent(sel.value);
+    $("go").disabled=true; $("bar").style.display="block";
+    var msg=$("msg"); msg.className="msg"; msg.textContent="Uploading "+f.name+" …";
+    var xhr=new XMLHttpRequest();
+    xhr.open("POST",q,true);
+    xhr.upload.onprogress=function(e){ if(e.lengthComputable) $("barfill").style.width=Math.round(e.loaded/e.total*100)+"%"; };
+    xhr.onload=function(){
+      $("go").disabled=false;
+      var d={}; try{d=JSON.parse(xhr.responseText);}catch(e){}
+      if(d.ok){ msg.className="msg ok";
+        msg.textContent="✓ Added "+(d.game||f.name)+(KIND==="rom"?(" to "+sel.options[sel.selectedIndex].text+" — open your Library to play."):" — BIOS installed.");
+        $("file").value=""; $("go").disabled=true;
+      } else { msg.className="msg err"; msg.textContent="Upload failed: "+(d.error||("HTTP "+xhr.status)); }
+    };
+    xhr.onerror=function(){ $("go").disabled=false; msg.className="msg err"; msg.textContent="Upload failed — couldn't reach GOSE."; };
+    xhr.setRequestHeader("Content-Type","application/octet-stream");
+    xhr.send(f);
+  });
+</script>
+</body></html>
