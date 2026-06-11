@@ -2489,7 +2489,140 @@ def _owner_credential(payload):
 def _owner_ok(payload):
     """Owner-gate as a plain bool (the proof, not the credential) — for the paths where only the gate
     matters (check / disable / the legacy /sys/ssh toggle). Same two proofs as _owner_credential."""
-    return _owner_credential(payload)[0]
+    return _owner_credential(payload)[0] or _confirm_token_ok((payload or {}).get("confirm_token"))
+
+# ---- Owner physical-presence confirm (docs/16): on a shipped device the owner has no dev token
+#      and no keyboard, and the device PIN can be unset - so an owner-gated AI action (grant / seat /
+#      arm) is authorized by a PHYSICAL HOLD of the X/South button on the OS-ADMIN controller, read
+#      here straight from that one device. Forgery-resistant: an AI's pad is never the OS-admin pad,
+#      and a play/observe AI cannot inject into the owner's physical controller, so it cannot satisfy
+#      the hold. The dev/owner token still works too (devs do not need this). ----
+_CONFIRM_HOLD_MS    = 1200      # hold the button continuously this long to confirm
+_CONFIRM_DEADLINE_S = 25        # stop watching the pad after this
+_CONFIRM_TOKEN_TTL  = 120       # a minted confirm token is reusable for this window (one sitting)
+_confirm_lock       = threading.Lock()
+_confirm_challenges = {}        # id -> {state, progress, token?, started}
+_confirm_tokens     = {}        # token -> expiry epoch
+
+def _confirm_admin_path():
+    """The /dev/input/eventN of the current OS-admin controller, or None.
+    SECURITY (anti-forgery): never return a VIRTUAL/AI pad. Owner-confirm proves a *physical*
+    human is present by reading a held X off this device; a software-driven virtual pad must never
+    be watchable as the confirm device, or an AI that repointed os-admin at its own pad could
+    'hold' X in software and forge a real owner token."""
+    try:
+        pads = _parse_controllers()
+        admin, _ = _effective_admin(pads)
+        for p in pads:
+            if p.get("id") == admin:
+                if p.get("source") == "virtual":
+                    LOG.warning("owner confirm: os-admin points at a VIRTUAL pad — refusing (anti-forgery)")
+                    return None
+                return _pad_event_path(p)
+    except Exception:
+        pass
+    return None
+
+def _confirm_watch(cid, path):
+    """Watch ONLY the OS-admin device for a sustained X/South hold. Runs in its own daemon thread."""
+    import evdev, select as _sel
+    from evdev import ecodes as _e
+    deadline = time.time() + _CONFIRM_DEADLINE_S
+    held_since = None
+    seen_btn = False
+    dev = None
+    try:
+        dev = evdev.InputDevice(path)
+        while time.time() < deadline:
+            with _confirm_lock:
+                ch = _confirm_challenges.get(cid)
+                if not ch or ch.get("state") != "waiting":
+                    return
+            r, _, _ = _sel.select([dev.fd], [], [], 0.2)
+            now = time.time()
+            if r:
+                try:
+                    for ev in dev.read():
+                        if ev.type == _e.EV_KEY and ev.code == _e.BTN_SOUTH:
+                            if not seen_btn:
+                                seen_btn = True
+                                LOG.info("owner confirm: BTN_SOUTH seen on os-admin pad")
+                            held_since = now if ev.value else None
+                except OSError:
+                    break
+            if held_since is not None:
+                held_ms = (now - held_since) * 1000.0
+                with _confirm_lock:
+                    ch = _confirm_challenges.get(cid)
+                    if ch:
+                        ch["progress"] = min(1.0, held_ms / _CONFIRM_HOLD_MS)
+                if held_ms >= _CONFIRM_HOLD_MS:
+                    tok = secrets.token_hex(16)
+                    with _confirm_lock:
+                        _confirm_tokens[tok] = now + _CONFIRM_TOKEN_TTL
+                        ch = _confirm_challenges.get(cid)
+                        if ch:
+                            ch.update(state="confirmed", token=tok, progress=1.0)
+                    LOG.info("owner confirm: hold satisfied -> token minted")
+                    return
+        with _confirm_lock:
+            ch = _confirm_challenges.get(cid)
+            if ch and ch.get("state") == "waiting":
+                ch["state"] = "timeout"
+    except Exception as ex:
+        LOG.warning("owner confirm watch failed: %s", ex)
+        with _confirm_lock:
+            ch = _confirm_challenges.get(cid)
+            if ch and ch.get("state") == "waiting":
+                ch.update(state="error", error=str(ex))
+    finally:
+        if dev:
+            try: dev.close()
+            except Exception: pass
+
+def owner_confirm_begin(payload):
+    """Start a presence-confirm on the OS-admin controller; returns a challenge id to poll. Anyone
+    on loopback may START it (incl. an AI) - but only a real hold on the owner's pad mints a token."""
+    path = _confirm_admin_path()
+    if not path:
+        return {"ok": False, "error": "no OS-admin controller detected - connect your controller"}
+    cid = secrets.token_hex(8)
+    now = time.time()
+    with _confirm_lock:
+        for k in [k for k, v in _confirm_challenges.items() if now - v.get("started", 0) > 90]:
+            _confirm_challenges.pop(k, None)
+        _confirm_challenges[cid] = {"state": "waiting", "progress": 0.0, "started": now}
+    threading.Thread(target=_confirm_watch, args=(cid, path), daemon=True).start()
+    return {"ok": True, "id": cid, "hold_ms": _CONFIRM_HOLD_MS}
+
+def owner_confirm_poll(qs):
+    cid = (qs or {}).get("id")
+    with _confirm_lock:
+        ch = _confirm_challenges.get(cid)
+        if not ch:
+            return {"ok": True, "state": "unknown"}
+        out = {"ok": True, "state": ch["state"], "progress": round(ch.get("progress", 0.0), 3)}
+        if ch["state"] == "confirmed":
+            out["confirm_token"] = ch.get("token")
+        return out
+
+def owner_confirm_cancel(payload):
+    cid = (payload or {}).get("id")
+    with _confirm_lock:
+        ch = _confirm_challenges.get(cid)
+        if ch and ch.get("state") == "waiting":
+            ch["state"] = "cancelled"
+    return {"ok": True}
+
+def _confirm_token_ok(tok):
+    """True if tok is a live owner-confirm token (reusable until its TTL expires)."""
+    if not tok:
+        return False
+    now = time.time()
+    with _confirm_lock:
+        for k in [k for k, exp in _confirm_tokens.items() if exp < now]:
+            _confirm_tokens.pop(k, None)
+        return tok in _confirm_tokens
 
 def _credential_is_weak(cred):
     """Honest remote-SSH strength check on the credential that will become the root password.
@@ -9921,8 +10054,14 @@ def controllers_admin_set(payload):
     cid = (payload or {}).get("id")
     if not cid:
         return {"ok": False, "error": "id required"}
-    if cid not in {p["id"] for p in _parse_controllers()}:
+    match = next((p for p in _parse_controllers() if p["id"] == cid), None)
+    if not match:
         return {"ok": False, "error": "no connected controller with id '%s'" % cid}
+    # SECURITY (anti-forgery): the OS-admin pad is the owner's PHYSICAL-presence anchor — a held X
+    # on it mints an owner token. A virtual/AI controller must NEVER be it, or an AI could repoint
+    # os-admin at its own pad and 'hold' X in software to forge owner authority. Refuse virtual.
+    if match.get("source") == "virtual":
+        return {"ok": False, "error": "an AI/virtual controller cannot be the OS-admin pad"}
     try:
         os.makedirs(os.path.dirname(OS_ADMIN_F), exist_ok=True)
         write_json_atomic(OS_ADMIN_F, {"id": cid, "t": int(time.time())})
@@ -10693,6 +10832,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(platform_detect())
         if route == "/health":
             return self._json(health())
+        if route == "/owner/confirm/poll":
+            return self._json(owner_confirm_poll(self._qs()))
         if route == "/version":
             return self._json(VERSION)
         if route == "/boot/ok":
@@ -11411,6 +11552,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/game/scrape":
                 return self._json(scrape_game(payload.get("system", ""), payload.get("game", "")))
             return self._json(scrape_system(payload.get("system", ""), force=True))
+        if route in ("/owner/confirm/begin", "/owner/confirm/cancel"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/owner/confirm/begin":
+                return self._json(owner_confirm_begin(payload))
+            return self._json(owner_confirm_cancel(payload))
         if route in ("/ai/join", "/ai/heartbeat", "/ai/leave", "/ai/grant", "/ai/revoke",
                      "/ai/request", "/ai/request/clear"):
             try:
@@ -11428,6 +11578,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 _oobe_done = os.path.exists(OOBE_DONE_FLAG)
                 if _oobe_done:
                     ok, _cred, _kind = _owner_credential(payload)
+                    if not ok and _confirm_token_ok(payload.get("confirm_token")):
+                        ok = True
                     if not ok:
                         LOG.warning("ai/grant REFUSED — owner proof required (post-OOBE)")
                         return self._json({"ok": False, "code": "ERR_NOT_OWNER",
@@ -11442,6 +11594,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 _oobe_done = os.path.exists(OOBE_DONE_FLAG)
                 if _oobe_done:
                     ok, _cred, _kind = _owner_credential(payload)
+                    if not ok and _confirm_token_ok(payload.get("confirm_token")):
+                        ok = True
                     if not ok:
                         LOG.warning("ai/revoke REFUSED — owner proof required (post-OOBE)")
                         return self._json({"ok": False, "code": "ERR_NOT_OWNER",
@@ -11479,6 +11633,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 _oobe_done = os.path.exists(OOBE_DONE_FLAG)
                 if _oobe_done:
                     ok, _cred, _kind = _owner_credential(payload)
+                    if not ok and _confirm_token_ok(payload.get("confirm_token")):
+                        ok = True
                     if not ok:
                         return self._json({"ok": False, "code": "ERR_NOT_OWNER",
                                            "error": "owner PIN or dev token required to change copilot settings"})

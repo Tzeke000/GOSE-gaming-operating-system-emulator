@@ -107,6 +107,7 @@
     <span class="h"><b>↑↓←→</b> move · <b>A/Enter</b> open / apply · <b>B/Esc</b> back · <b>X</b> revoke (shortcut)</span></div>
   <div class="toast" id="toast"></div>
 <script src="assets/cursor.js"></script>
+<script src="assets/owner-confirm.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   var $=function(id){return document.getElementById(id);};
@@ -260,7 +261,7 @@
   function setTier(name,tier){
     // Observe keeps the roster entry + stable token (pair) — removal is the explicit Revoke.
     var body=tier==="observe"?{name:name,tier:"observe",pair:true,via:"hub"}:{name:name,tier:tier};
-    post("/ai/grant",body).then(function(d){
+    GOSE_OWNER.ownerPost("/ai/grant",body, name+" → "+TLABEL[tier]).then(function(d){
       if(!d||!d.ok){say("Grant failed"+(d&&d.error?": "+d.error:""));dlog("tier",name,tier,"FAILED");return;}
       var p=GR[name];if(p){p.tier=tier;if(tier==="observe")p.seat=null;else if(d.seat!==undefined)p.seat=d.seat;}
       dlog("tier",name,"->",tier,"ok");
@@ -270,7 +271,7 @@
   // #42 Copilot toggle — owner flips it; server requires owner auth (PIN/dev token)
   function setCopilot(name){
     var cpOn=!!(COPILOT[name]&&COPILOT[name].copilot);
-    post("/ai/copilot/set",{name:name,enabled:!cpOn}).then(function(d){
+    GOSE_OWNER.ownerPost("/ai/copilot/set",{name:name,enabled:!cpOn}, "Copilot for "+name).then(function(d){
       if(!d||!d.ok){say("Copilot change failed"+(d&&d.error?": "+d.error:""));dlog("copilot",name,"FAILED");return;}
       if(!COPILOT[name])COPILOT[name]={};
       COPILOT[name].copilot=!!d.copilot;
@@ -280,7 +281,7 @@
   }
   function setSeat(name,seat){
     var p=GR[name];if(!p||p.tier==="observe")return;
-    post("/ai/grant",{name:name,tier:p.tier,seat:seat||null}).then(function(d){
+    GOSE_OWNER.ownerPost("/ai/grant",{name:name,tier:p.tier,seat:seat||null}, name+(seat?" → seat P"+seat:" → any seat")).then(function(d){
       if(!d||!d.ok){say("Seat change failed");return;}
       p.seat=d.seat||null;dlog("seat",name,"->",seat||"any","ok");
       say(name+(seat?" → seat P"+seat+" only":" → any seat"));render();
@@ -288,7 +289,7 @@
   }
   function revoke(name){
     if(!GR[name])return;
-    post("/ai/revoke",{name:name}).then(function(d){
+    GOSE_OWNER.ownerPost("/ai/revoke",{name:name}, "Revoke "+name).then(function(d){
       if(!d||!d.ok){say("Revoke failed");dlog("revoke",name,"FAILED");return;}
       delete GR[name];ORDER=ORDER.filter(function(x){return x!==name;});
       dlog("revoke",name,"ok");say(name+" revoked — token removed");
@@ -299,7 +300,7 @@
   function approveReq(name){
     var r=null;REQS.forEach(function(x){if(x.name===name)r=x;});if(!r)return;
     var body={name:r.name,tier:r.tier};if(r.tier==="observe"){body.pair=true;body.via="request";}
-    post("/ai/grant",body).then(function(d){
+    GOSE_OWNER.ownerPost("/ai/grant",body, "Approve "+r.name+" → "+r.tier).then(function(d){
       if(!d||!d.ok){say("Approve failed"+(d&&d.error?": "+d.error:""));return;}
       dlog("approve",r.name,"->",r.tier,"ok");
       clearReq(r.name);
@@ -321,7 +322,7 @@
     if(!name){if(hint)hint.textContent="Enter a name for the AI first.";return;}
     if(GR[name]){if(hint)hint.textContent=name+" is already paired — pick another name.";return;}
     if(hint)hint.textContent="Pairing "+name+"…";
-    post("/ai/grant",{name:name,tier:"observe",pair:true,via:"hub"}).then(function(d){
+    GOSE_OWNER.ownerPost("/ai/grant",{name:name,tier:"observe",pair:true,via:"hub"}, "Pair "+name).then(function(d){
       if(!d||!d.ok||!d.token){if(hint)hint.textContent="Pairing failed"+(d&&d.error?" — "+d.error:"")+".";dlog("pair",name,"FAILED");return;}
       dlog("pair",d.name||name,"ok");
       // the name field is about to leave the DOM — close the OSK with it, or its

@@ -155,6 +155,7 @@
   </div>
 
 <script src="assets/cursor.js"></script>
+<script src="assets/owner-confirm.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   var $=function(id){return document.getElementById(id);};
@@ -198,27 +199,7 @@
 
   // ownerPost(path, body) -> resolves the server JSON. Injects the cached PIN; if the server
   // says ERR_NOT_OWNER it prompts for the PIN and retries exactly once.
-  function ownerPost(path,body){
-    function attempt(){
-      var b={};for(var k in body)b[k]=body[k];
-      if(OWNERPIN)b.pin=OWNERPIN;
-      return post(path,b);
-    }
-    return attempt().then(function(d){
-      if(d&&d.code==="ERR_NOT_OWNER"){
-        OWNERPIN=null;
-        return promptPin().then(function(pin){
-          if(!pin)return d;       // user cancelled — surface the original refusal
-          OWNERPIN=pin;
-          return attempt().then(function(d2){
-            if(d2&&d2.code==="ERR_NOT_OWNER"){OWNERPIN=null;say("Wrong PIN — try again");}
-            return d2;
-          });
-        });
-      }
-      return d;
-    });
-  }
+  function ownerPost(path,body,summary){ return GOSE_OWNER.ownerPost(path,body,summary||("Confirm change for "+NAME)); }
   // promptPin() -> Promise<pin|null>. A tiny modal PIN entry (pad + OSK friendly).
   function promptPin(){
     return new Promise(function(resolve){
