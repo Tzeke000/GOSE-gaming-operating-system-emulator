@@ -177,7 +177,7 @@
     <span class="dots" id="dots"></span>
     <span id="stepname"></span>
     <span class="btns" id="footbtns"></span>
-    <span class="keys">D-pad move · <b>A</b> select · <b>B</b> back · <b>R1</b> next · <b>L1</b> back</span>
+    <span class="keys"><b style="color:var(--accent);font-size:13.5px">R1 ▷ Continue</b> &nbsp;·&nbsp; D-pad move &nbsp;·&nbsp; <b>A</b> select &nbsp;·&nbsp; <b>B</b> / <b>L1</b> back</span>
   </div>
 <script src="assets/i18n.js"></script>
 <script src="assets/platform.js"></script>
@@ -568,7 +568,7 @@
     var s=STEPS[idx], fb=document.getElementById("footbtns");
     if(s.id==="welcome"||s.id==="ready"){ fb.innerHTML=""; return; }
     var last = (idx===STEPS.length-2); // step before "ready"
-    var contLbl = last ? "Finish ›" : "Continue ›";
+    var contLbl = last ? "Finish ▷ R1" : "Continue ▷ R1";
     var html='<span class="btn ghost focusable" data-act="back">‹ Back</span>';
     if(s.skip) html+='<span class="btn ghost focusable" data-act="skip">'+(s.skipLabel||"Skip")+' ›</span>';
     html+='<span class="btn focusable" data-act="continue" id="contbtn" data-osk-primary>'+contLbl+'</span>';
