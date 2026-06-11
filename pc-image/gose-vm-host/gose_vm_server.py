@@ -4784,10 +4784,24 @@ def users_remove(payload):
     return {"ok": True, "removed": uname}
 
 
+def _user_pin_ok(user, pin):
+    """Constant-time check of a supplied PIN against ONE user's stored scrypt hash."""
+    import hmac
+    h, s = user.get("pin_hash"), user.get("pin_salt")
+    if not (h and s and pin):
+        return False
+    try:
+        return hmac.compare_digest(_pin_compute(str(pin), s), h)
+    except Exception:
+        return False
+
 def users_switch(payload):
-    """POST /users/switch {username} — switch active user; no credential needed (family model).
-    Switching to 'guest' is the same as users_guest_start().
-    Setting username to '' or the owner's name resets to owner."""
+    """POST /users/switch {username, pin?, owner_token?, confirm_token?} — switch the active user.
+    Signing IN to a credentialed profile requires that credential: owner proof (PIN / dev token /
+    hold-X confirm) to become the OWNER, or the profile's own PIN for a PIN-protected user. Guest
+    and passwordless profiles stay open (the limited / no-secret sessions). The owner may always
+    override (an admin switching between accounts). Owner decision 2026-06-11: a profile's PIN is
+    required to log into it — a switch is no longer a free escalation (was the 'family model')."""
     global _GUEST_SESSION
     p = payload or {}
     uname = str(p.get("username") or "").strip()
@@ -4797,7 +4811,11 @@ def users_switch(payload):
     o = _owner_record(acc)
     owner_name = o.get("username", "owner") if o else "owner"
     if not uname or uname == owner_name:
-        # switching to owner — end any guest session
+        # Signing in as the OWNER requires owner proof — without it, anyone on the box could
+        # silently seize the owner's session (and the owner-facing UI affordances).
+        if not _owner_ok(p):
+            return {"ok": False, "code": "ERR_NEEDS_OWNER",
+                    "error": "owner proof required to sign in as %s" % owner_name}
         _GUEST_SESSION = {}
         _active_user_write(owner_name)
         LOG.info("users/switch: switched to owner (%s)", owner_name)
@@ -4806,6 +4824,11 @@ def users_switch(payload):
     target = next((u for u in users if u.get("username") == uname), None)
     if not target:
         return {"ok": False, "error": "profile not found: %s" % uname}
+    # A PIN-protected profile needs that profile's PIN (or an owner override — owner is admin).
+    if target.get("pin_hash") and target.get("pin_salt"):
+        if not (_owner_ok(p) or _user_pin_ok(target, p.get("pin"))):
+            return {"ok": False, "code": "ERR_NEEDS_PIN",
+                    "error": "PIN required to sign in to %s" % uname}
     _GUEST_SESSION = {}
     _active_user_write(uname)
     LOG.info("users/switch: switched to %s (role %s)", uname, target.get("role"))
@@ -10915,16 +10938,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         if route == "/ai/players":
             return self._json(ai_players())
         if route == "/ai/grants":
-            # Gate the grants LISTING behind a valid paired token OR owner proof (PIN/dev
-            # token in the X-Owner-Token header).  The OOBE pairing-REQUEST path (pair.request
-            # on the agent socket) does NOT go through this endpoint, so OOBE is unaffected.
-            # Reuses the same helpers as /ai/assist/queue (token) and /ai/play/arm (owner).
-            _grants_token = (self.headers.get("X-AI-Token") or "").strip()
-            _grants_name, _grants_tier = _ai_token_resolve(_grants_token)
-            _grants_owner_tok = (self.headers.get("X-Owner-Token") or "").strip()
-            if not _grants_name and not _owner_ok({"owner_token": _grants_owner_tok}):
-                return self._json({"ok": False, "code": "ERR_AUTH",
-                                   "error": "X-AI-Token (paired AI) or X-Owner-Token required to list grants"})
+            # The roster LISTING is token-REDACTED (ai_grants() returns only name/tier/seat/
+            # granted_at/expires — never the secret AI tokens), and the same name+tier is already
+            # public on /ai/players. So it is safe to read WITHOUT auth — and it MUST be, because
+            # the owner's AI Hub (gose-ai.html) + detail page poll this tokenless every 5s to
+            # render the roster; gating it left a freshly-paired AI invisible to the owner (the
+            # roster wall, 2026-06-11). The privileged GRANT / REVOKE / SEAT actions stay owner-
+            # gated (POSTs through _owner_ok / confirm_token) — only the read is opened here.
             return self._json(ai_grants())
         if route == "/ai/requests":
             return self._json(ai_requests())
