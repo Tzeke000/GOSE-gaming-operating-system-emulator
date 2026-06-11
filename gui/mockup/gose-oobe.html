@@ -359,8 +359,9 @@
       h='<div class="step-eyebrow">Step 4 — controller</div>'+
         '<h1>Press any button on the controller you want to use</h1>'+
         '<p class="sub">Every connected pad can drive first-time setup — if a controller moves this '+
-        'screen, it already works. The <b>highlighted</b> one below becomes this device\'s owner when '+
-        'you continue. Recognized pads are translated to one standard layout automatically — '+
+        'screen, it already works. The <b>highlighted physical</b> controller below becomes this device\'s '+
+        'owner when you continue (an AI controller can drive setup but can\'t be the owner). Recognized '+
+        'pads are translated to one standard layout automatically — '+
         'no mapping needed.</p>'+
         '<div class="scroll"><div id="pads"><div class="opt"><span class="ic" data-i="gamepad-2"></span>'+
         '<div class="nm">Looking for controllers…</div></div></div>'+
@@ -1265,8 +1266,8 @@
       // A on the highlighted (would-be owner) pad = confirm it and move on — same as Continue.
       if(el.dataset.admin==="1"){ next(); return; }
       var ph=document.getElementById("padhint");
-      if(ph) ph.textContent="Any connected pad can drive setup. The highlighted controller becomes "+
-        "the owner when you continue — change it anytime in Settings.";
+      if(ph) ph.textContent="Any connected pad can drive setup, but only a physical controller can be "+
+        "the owner — an AI controller can't. Highlight your real pad and continue; change it anytime in Settings.";
       return; }
     if(el.dataset.net!==undefined){
       if(S.net===el.dataset.net) return;                       // already connected
