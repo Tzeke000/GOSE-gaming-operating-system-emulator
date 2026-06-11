@@ -200,6 +200,7 @@
     ]},
     {id:"time", ic:"clock", nm:"Time & Language", rows:[
       {ic:"globe", nm:"Set time zone automatically", sub:"Needs a location source", t:"dis", tag:"[needs build]", why:"No location source is wired (and it would be opt-in) — set the zone manually below"},
+      {ic:"clock", nm:"Set date & time", sub:"Set the clock manually", t:"datetime", val:"…"},
       {ic:"clock", nm:"Time zone", sub:"Desktop & lock clock live; the OS side (batocera.conf) applies at boot", t:"cycle", v:TZONES.map(z=>z[0]), apply:"tz"},
       {ic:"clock", nm:"Time format", sub:"How the clock reads", t:"cycle", v:["12-hour","24-hour"], apply:"clockfmt"},
       {ic:"globe", nm:"Language", sub:"On-screen language for the GOSE shell", t:"cycle", v:["English (US)","Español (Spanish)"], apply:"lang", _codes:["en","es"]},
@@ -244,6 +245,7 @@
       {ic:"shield", nm:"Parental Controls (#71)", sub:"PIN-gated: restrict by content rating, hide systems, cap daily play time", t:"link", go:"gose-parental.html"},
       {ic:"users", nm:"Friends & Devices (#73)", sub:"See which GOSE devices on your Tailscale network are online and what they're playing", t:"link", go:"gose-friends.html"},
       {ic:"lock", nm:"Sign-in", sub:"What the lock screen asks for — real credential auth lands with docs/24 §1.5", t:"cycle", v:["None","PIN","Password"], apply:"signin"},
+      {ic:"lock", nm:"Set / Change PIN", sub:"8-digit device PIN for the lock screen", t:"setpin", val:"…"},
     ]},
     {id:"ai", ic:"sparkles", nm:"AI & Remote", rows:[
       {ic:"sparkles", nm:"What your AI can do", sub:"Capabilities, permission tiers, and recent AI activity", t:"link", go:"gose-ai-about.html"},
@@ -325,6 +327,9 @@
       const label={pin:"Device PIN",oobe_password:"OOBE password",key:"SSH public key",key_deferred:"Key (add later)"}[src]||src;
       return `<span class="val"><span>${label}</span>`+(can_reveal?` <span style="color:#ffce5c;font-size:12px;font-weight:700">REVEAL</span>`:``)
         +` <span class="ic" data-i="chevron-right"></span></span>`;}
+    if(r.t==="datetime") return `<span class="val"><span>${r.val||"…"}</span> <span class="ic" data-i="chevron-right"></span></span>`;
+    if(r.t==="setpin"){const set=(r.pinSet===true), kn=(r.pinSet==null);
+      return `<span class="val"><span class="${set?'':'off'}">${kn?'…':(set?'Change':'Set')}</span> <span class="ic" data-i="chevron-right"></span></span>`;}
     const i=r.i||0, cur=r.v[i];
     const isOff=/^(off|disabled)$/i.test(cur);
     const dot=(r.apply==="accent"&&ACCENTS[i][1])?`<span class="sw" style="background:${ACCENTS[i][1]}"></span>`:"";
@@ -393,6 +398,8 @@
     else if(r.t==="core"){openCorePicker(r);}
     else if(r.t==="ssh2"){openSshModal(r);}
     else if(r.t==="ssh-cred"){openCredModal(r);}
+    else if(r.t==="datetime"){openDateTimeModal(r);}
+    else if(r.t==="setpin"){openPinModal(r);}
     else if(r.t==="link"){location.href=r.go;}
     else if(r.t==="agents"){location.href="gose-ai.html";}
     else if(r.t==="dis"){showToast(r.why||r.tag);}   // honest: say WHY it can't apply yet
@@ -756,6 +763,14 @@
     }catch(e){}
     // lock_on_idle from localStorage
     try{const liR=findRow("lock_on_idle","apply"); if(liR){liR.i=localStorage.getItem("gose-lock-on-idle")==="1"?1:0; rerowIf("privacy");}}catch(e){}
+    // #9 manual clock — seed the "Set date & time" row with the current device time
+    try{const dt=await(await fetch("/sys/datetime",{cache:"no-store"})).json();
+      const r=CATS.find(c=>c.id==="time")&&CATS.find(c=>c.id==="time").rows.find(rr=>rr.t==="datetime");
+      if(r&&dt&&dt.ok&&dt.iso){r.val=dt.iso; rerowIf("time");}}catch(e){}
+    // #11 set-PIN — show "Set" vs "Change" based on whether a PIN already exists
+    try{const ps=await(await fetch("/auth/pin",{cache:"no-store"})).json();
+      const r=CATS.find(c=>c.id==="accounts")&&CATS.find(c=>c.id==="accounts").rows.find(rr=>rr.t==="setpin");
+      if(r){r.pinSet=!!(ps&&ps.set); rerowIf("accounts");}}catch(e){}
   })();
   async function refreshAgents(){
     try{const d=await(await fetch("/ai/grants",{cache:"no-store"})).json();
@@ -782,7 +797,7 @@
   // tab shows). A opens a pad-drivable picker; pick -> POST /emulators/default; row reflects.
   // Only systems with >1 core get a picker (a single-core system has nothing to choose).
   const scrim=document.getElementById("scrim");
-  scrim.onclick=(e)=>{if(e.target===scrim){if(CRED.open)closeCredModal();else if(SSH.open)closeSshModal();else closeCorePicker();}};   // click the backdrop to dismiss
+  scrim.onclick=(e)=>{if(e.target===scrim){if(DT.open)closeDateTimeModal();else if(PIN.open)closePinModal();else if(CRED.open)closeCredModal();else if(SSH.open)closeSshModal();else closeCorePicker();}};   // click the backdrop to dismiss
   const PICK={open:false,row:null,foc:0};
   async function loadCores(){
     try{const d=await(await fetch("/emulators",{cache:"no-store"})).json();
@@ -1089,11 +1104,154 @@
   // If the server doesn't handle it yet (returns ok:false), the reveal button shows an honest
   // error. No new endpoint is added — this is one more action param on /security/ssh.
 
+  // ===== Set date & time modal (#9) =====
+  // Manual clock set. Prefills from GET /sys/datetime, lets the owner type "YYYY-MM-DD HH:MM"
+  // (shared OSK auto-opens on the field; data-osk-primary points the OSK chain at Confirm),
+  // POSTs /sys/datetime. Pad-drivable; layered-Escape per docs/27 §3.10 (reuses the scrim).
+  const DT={open:false,row:null,foc:0,items:[],busy:false};
+  const DT_RE=/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
+  async function openDateTimeModal(r){
+    if(SSH.open||PICK.open||CRED.open||PIN.open)return;   // one modal at a time
+    DT.open=true; DT.row=r; DT.foc=0; DT.busy=false; DT.prefill="";
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush(); else document.body.dataset.goseModal="1"; // docs/27 §3.10
+    try{const s=await(await fetch("/sys/datetime",{cache:"no-store"})).json();
+      if(s&&s.ok&&s.iso){DT.prefill=s.iso; r.val=s.iso;}}catch(e){}
+    dtRender(); scrim.classList.add("show");
+  }
+  function closeDateTimeModal(){ if(!DT.open)return; DT.open=false; scrim.classList.remove("show");
+    if(window.GOSE&&GOSE.modalPop)GOSE.modalPop(); else delete document.body.dataset.goseModal;
+    buildPane(); paintIcons(); }
+  function dtItems(){return [{label:"Confirm",act:"confirm",kind:"primary"},{label:"Cancel",act:"close"}];}
+  function dtRender(){
+    DT.items=dtItems(); if(DT.foc>=DT.items.length)DT.foc=0;
+    const body=`<div class="mh">Type the date and time as <b>YYYY-MM-DD HH:MM</b> (24-hour). The on-screen keyboard opens — or use a connected keyboard.</div>`+
+      `<input id="dtin" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" data-osk-primary `+
+      `placeholder="YYYY-MM-DD HH:MM" value="${(DT.prefill||"").replace(/"/g,"&quot;")}" `+
+      `style="width:calc(100% - 16px);margin:8px;padding:11px 12px;border-radius:10px;`+
+      `border:2px solid var(--line);background:var(--surface2);color:var(--text);font-size:16px">`+
+      `<div id="dt-err" style="color:#ff8e8e;font-size:12.5px;margin:0 8px 4px;min-height:16px"></div>`;
+    scrim.innerHTML=`<div class="modal" role="dialog" aria-modal="true"><h2>Set date &amp; time</h2>${body}`+
+      `<div class="body" id="dtbody"></div>`+
+      `<div class="mf">↑↓ choose · A select · B / Esc back</div></div>`;
+    const b=scrim.querySelector("#dtbody");
+    DT.items.forEach((it,i)=>{const el=document.createElement("div");
+      el.className="pick"+(i===DT.foc?" focus":"");
+      el.innerHTML=`<span class="nm">${it.label}</span>`;
+      el.onclick=()=>{DT.foc=i;dtActivate();}; b.appendChild(el);});
+    paintIcons();
+    const inp=scrim.querySelector("#dtin");
+    if(inp){inp.onkeydown=(ev)=>{if(ev.key==="Enter"){ev.preventDefault();dtDo("confirm");}};
+      try{inp.focus();inp.selectionStart=inp.selectionEnd=inp.value.length;}catch(e){}}
+  }
+  function dtMove(d){const n=DT.items.length; if(!n)return; DT.foc=(DT.foc+d+n)%n; dtRender();}
+  function dtActivate(){const it=DT.items[DT.foc]; if(it)dtDo(it.act);}
+  async function dtDo(act){
+    if(DT.busy)return;
+    if(act==="close"){closeDateTimeModal();return;}
+    if(act==="confirm"){
+      const iso=((scrim.querySelector("#dtin")||{}).value||"").trim();
+      const errEl=scrim.querySelector("#dt-err");
+      if(!DT_RE.test(iso)){if(errEl)errEl.textContent="Use the format YYYY-MM-DD HH:MM (24-hour).";return;}
+      DT.busy=true;
+      const x=await postJSON("/sys/datetime",{iso});
+      DT.busy=false;
+      if(x&&x.ok){DT.row.val=iso;showToast("Clock set: "+iso);closeDateTimeModal();}
+      else{if(errEl)errEl.textContent="Couldn't set the clock: "+((x&&x.error)||"failed");}
+      return;}
+  }
+
+  // ===== Set / Change PIN modal (#11) =====
+  // The Sign-in cycle picks WHAT the lock screen asks for; this is where the 8-digit PIN is actually
+  // SET. First-set takes just a new PIN; if one already exists, the current PIN is required too.
+  // POST /auth/pin/set {pin, current?}. Shared OSK auto-opens on the numeric fields; the chain ends
+  // on Confirm (data-osk-primary). Pad-drivable; layered-Escape per docs/27 §3.10 (reuses the scrim).
+  const PIN={open:false,row:null,foc:0,items:[],busy:false,pinSet:false};
+  const PIN_RE=/^\d{8}$/;
+  async function openPinModal(r){
+    if(SSH.open||PICK.open||CRED.open||DT.open)return;   // one modal at a time
+    PIN.open=true; PIN.row=r; PIN.foc=0; PIN.busy=false;
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush(); else document.body.dataset.goseModal="1"; // docs/27 §3.10
+    try{const ps=await(await fetch("/auth/pin",{cache:"no-store"})).json(); PIN.pinSet=!!(ps&&ps.set); r.pinSet=PIN.pinSet;}catch(e){PIN.pinSet=false;}
+    pinRender(); scrim.classList.add("show");
+  }
+  function closePinModal(){ if(!PIN.open)return; PIN.open=false; scrim.classList.remove("show");
+    if(window.GOSE&&GOSE.modalPop)GOSE.modalPop(); else delete document.body.dataset.goseModal;
+    buildPane(); paintIcons(); }
+  function pinItems(){return [{label:"Confirm",act:"confirm",kind:"primary"},{label:"Cancel",act:"close"}];}
+  function pinRender(){
+    PIN.items=pinItems(); if(PIN.foc>=PIN.items.length)PIN.foc=0;
+    const cur=PIN.pinSet
+      ? `<input id="pincur" type="password" inputmode="numeric" autocomplete="off" `+
+        `placeholder="Current PIN" `+
+        `style="width:calc(100% - 16px);margin:8px;padding:11px 12px;border-radius:10px;`+
+        `border:2px solid var(--line);background:var(--surface2);color:var(--text);font-size:16px">`
+      : "";
+    const body=`<div class="mh">${PIN.pinSet?"Enter your current PIN, then a new <b>8-digit</b> PIN.":"Set an <b>8-digit</b> device PIN for the lock screen."} The on-screen keyboard opens — or use a connected keyboard.</div>`+
+      cur+
+      `<input id="pinnew" type="password" inputmode="numeric" autocomplete="off" data-osk-primary `+
+      `placeholder="New 8-digit PIN" `+
+      `style="width:calc(100% - 16px);margin:8px;padding:11px 12px;border-radius:10px;`+
+      `border:2px solid var(--line);background:var(--surface2);color:var(--text);font-size:16px">`+
+      `<div id="pin-err" style="color:#ff8e8e;font-size:12.5px;margin:0 8px 4px;min-height:16px"></div>`;
+    scrim.innerHTML=`<div class="modal" role="dialog" aria-modal="true"><h2>${PIN.pinSet?"Change device PIN":"Set device PIN"}</h2>${body}`+
+      `<div class="body" id="pinbody"></div>`+
+      `<div class="mf">8 digits · used at the lock screen · ↑↓ choose · A select · B / Esc back</div></div>`;
+    const b=scrim.querySelector("#pinbody");
+    PIN.items.forEach((it,i)=>{const el=document.createElement("div");
+      el.className="pick"+(i===PIN.foc?" focus":"");
+      el.innerHTML=`<span class="nm">${it.label}</span>`;
+      el.onclick=()=>{PIN.foc=i;pinActivate();}; b.appendChild(el);});
+    paintIcons();
+    const first=scrim.querySelector(PIN.pinSet?"#pincur":"#pinnew");
+    [scrim.querySelector("#pincur"),scrim.querySelector("#pinnew")].forEach(el=>{
+      if(el)el.onkeydown=(ev)=>{if(ev.key==="Enter"){ev.preventDefault();pinDo("confirm");}};});
+    if(first){try{first.focus();}catch(e){}}
+  }
+  function pinMove(d){const n=PIN.items.length; if(!n)return; PIN.foc=(PIN.foc+d+n)%n; pinRender();}
+  function pinActivate(){const it=PIN.items[PIN.foc]; if(it)pinDo(it.act);}
+  async function pinDo(act){
+    if(PIN.busy)return;
+    if(act==="close"){closePinModal();return;}
+    if(act==="confirm"){
+      const np=((scrim.querySelector("#pinnew")||{}).value||"").trim();
+      const cp=((scrim.querySelector("#pincur")||{}).value||"").trim();
+      const errEl=scrim.querySelector("#pin-err");
+      if(!PIN_RE.test(np)){if(errEl)errEl.textContent="The new PIN must be exactly 8 digits.";return;}
+      if(PIN.pinSet&&!cp){if(errEl)errEl.textContent="Enter your current PIN to change it.";return;}
+      PIN.busy=true;
+      const body={pin:np}; if(PIN.pinSet)body.current=cp;
+      const x=await postJSON("/auth/pin/set",body);
+      PIN.busy=false;
+      if(x&&x.ok){PIN.row.pinSet=true;showToast(PIN.pinSet?"PIN changed":"PIN set");closePinModal();}
+      else{if(errEl)errEl.textContent="Couldn't set the PIN: "+((x&&x.error)||"failed");}
+      return;}
+  }
+
   // Pad nav per docs/27: L1/R1 own section switching; ←/→ change the focused value
   // (← NEVER jumps to the rail — the rail double-drove tab switching, owner walkthrough
   // 2026-06-07); B/Esc backs out one level (pane → rail → desktop) and never traps.
   addEventListener("keydown",e=>{
     let k=e.key; if(/^(Up|Down|Left|Right)$/.test(k))k="Arrow"+k;   // accept both spellings (docs/27 §3.8)
+    if(DT.open){   // date/time modal owns the pad while open (docs/27 §3.10)
+      const onIn=document.activeElement&&document.activeElement.id==="dtin";
+      if(k==="Escape"||k==="Backspace"){closeDateTimeModal();}
+      else if(onIn){return;}   // typing the date — let the field/OSK have the keys
+      else if(k==="ArrowDown")dtMove(1);
+      else if(k==="ArrowUp")dtMove(-1);
+      else if(k==="Enter"||k===" "||k==="ArrowRight")dtActivate();
+      else return;
+      e.preventDefault();e.stopPropagation();return;
+    }
+    if(PIN.open){   // set-PIN modal owns the pad while open (docs/27 §3.10)
+      const ae=document.activeElement, onIn=ae&&(ae.id==="pinnew"||ae.id==="pincur");
+      if(k==="Escape"||k==="Backspace"){closePinModal();}
+      else if(onIn){return;}   // typing the PIN — let the field/OSK have the keys
+      else if(k==="ArrowDown")pinMove(1);
+      else if(k==="ArrowUp")pinMove(-1);
+      else if(k==="Enter"||k===" "||k==="ArrowRight")pinActivate();
+      else return;
+      e.preventDefault();e.stopPropagation();return;
+    }
     if(CRED.open){   // credential modal owns the pad while open (docs/27 §3.10)
       const onPw=document.activeElement&&document.activeElement.id==="credpw";
       if(k==="Escape"||k==="Backspace"){if(CRED.state==="set-pw"){CRED.state=null;CRED.foc=0;credRender();}else closeCredModal();}

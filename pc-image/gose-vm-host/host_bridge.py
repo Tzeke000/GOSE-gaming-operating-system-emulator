@@ -90,6 +90,22 @@ def wifi_disconnect():
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+def wifi_forget(ssid):
+    # Remove a saved Wi-Fi profile (netsh wlan delete profile). On a real GOSE device this is the
+    # device's own Wi-Fi; on the VM it proxies to the HOST's saved networks (same as connect/
+    # disconnect already do). netsh prints "... is deleted ..." on success / "... is not found ..."
+    # when no such profile — surfaced as a clean error so the UI can say "no saved network".
+    ssid = (ssid or "").strip()
+    if not ssid:
+        return {"ok": False, "error": "ssid required"}
+    try:
+        out = (_netsh(["delete", "profile", "name=" + ssid]) or "")
+        if "not found" in out.lower():
+            return {"ok": False, "error": "no saved network named '%s'" % ssid}
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 def screencap():
     # capture the QEMU window from the HOST (PrintWindow grabs GL game frames the guest can't).
     # capture.ps1 saves as JPEG when -Out ends in .jpg (System.Drawing infers from extension).
@@ -671,6 +687,8 @@ class H(http.server.BaseHTTPRequestHandler):
             return self._send(wifi_connect(payload.get("ssid"), payload.get("password")))
         if route == "/wifi/disconnect":
             return self._send(wifi_disconnect())
+        if route == "/wifi/forget":
+            return self._send(wifi_forget(payload.get("ssid")))
         if route == "/usb/claim":
             return self._send(usb_claim(payload.get("vid"), payload.get("pid")))
         if route == "/usb/release":

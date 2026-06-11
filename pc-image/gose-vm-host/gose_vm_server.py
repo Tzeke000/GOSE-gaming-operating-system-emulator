@@ -3292,6 +3292,27 @@ def sys_timezone(tz=None):
         LOG.info("timezone set: %s", tz)
     return {"ok": True, "timezone": _bconf_get("system.timezone")}
 
+def sys_datetime(iso=None):
+    # GET /sys/datetime — current local clock; POST /sys/datetime {iso} — set system clock.
+    # Uses `date -s "YYYY-MM-DD HH:MM"` (busybox date, available on Batocera).
+    # Note: the QEMU guest clock is slaved to the host; a VM host with NTP may re-sync
+    # seconds after this call — warn the caller so the UI can explain the behaviour.
+    import datetime as _dt
+    if iso is not None:
+        if not re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$", str(iso)):
+            return {"ok": False, "error": "iso must be YYYY-MM-DD HH:MM"}
+        try:
+            subprocess.run(["date", "-s", str(iso)], capture_output=True, text=True,
+                           timeout=8, check=True)
+            LOG.info("datetime set: %s", iso)
+        except subprocess.CalledProcessError as e:
+            return {"ok": False, "error": (e.stderr or "date -s failed").strip()[:200]}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+    now = _dt.datetime.now()
+    return {"ok": True, "iso": now.strftime("%Y-%m-%d %H:%M"), "epoch": int(now.timestamp()),
+            "note": "VM guest clock may be re-synced by the host shortly after a manual set"}
+
 # ---- Bluetooth (pairing UI lives in Settings → Network, next to Wi-Fi) ----
 def _bt(args, t=8):
     return subprocess.run(["bluetoothctl"] + args, capture_output=True, text=True, timeout=t).stdout
@@ -6160,6 +6181,14 @@ def net_wifi_toggle(on=None):
     except Exception as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "powered": target, "has_wifi": True}
+
+def net_forget(ssid):
+    # POST /net/forget {ssid} — remove saved credentials for a Wi-Fi network.
+    # Mirrors /net/connect / /net/disconnect: proxied to the host bridge so it reaches
+    # the real radio (netsh on Windows host) rather than the VM's virtual NIC.
+    if not ssid or not str(ssid).strip():
+        return {"ok": False, "error": "ssid required"}
+    return host_bridge("/wifi/forget", {"ssid": str(ssid).strip()}, timeout=20)
 
 # ---- save-state thumbnails (task 53): RetroArch writes <game>.state[N].png beside each state.
 # The "continue where you left off" picture for library/home resume cards. Path-confined to SAVES. ----
@@ -11215,6 +11244,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(sys_vsync())
         if route == "/sys/timezone":
             return self._json(sys_timezone())
+        if route == "/sys/datetime":
+            return self._json(sys_datetime())
         if route == "/ui/prefs":
             return self._json(ui_prefs_get())
         if route == "/privacy":
@@ -11918,6 +11949,13 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/net/connect":
                 return self._json(host_bridge("/wifi/connect", payload, timeout=30))
             return self._json(host_bridge("/wifi/disconnect", {}, timeout=20))
+        if route == "/net/forget":
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}")
+            except Exception:
+                payload = {}
+            return self._json(net_forget(payload.get("ssid", "")))
         if route == "/ra/credentials":
             try:
                 n = int(self.headers.get("Content-Length", 0))
@@ -11950,7 +11988,7 @@ class H(http.server.SimpleHTTPRequestHandler):
                 payload = {}
             return self._json(sys_audio_device_set(payload.get("device")))
         if route in ("/ui/prefs", "/privacy", "/sys/ssh", "/sys/display", "/sys/vsync",
-                     "/sys/timezone"):
+                     "/sys/timezone", "/sys/datetime"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
@@ -11972,6 +12010,8 @@ class H(http.server.SimpleHTTPRequestHandler):
                 return self._json(sys_display(payload.get("mode")))
             if route == "/sys/vsync":
                 return self._json(sys_vsync(payload.get("on")))
+            if route == "/sys/datetime":
+                return self._json(sys_datetime(payload.get("iso")))
             return self._json(sys_timezone(payload.get("tz")))
         if route == "/security/ssh":
             try:
