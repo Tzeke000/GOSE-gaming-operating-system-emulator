@@ -100,6 +100,7 @@
     <span class="h"><b>L1/R1</b> view · <b>↑↓</b> select · <b>→</b> end-task actions (<b>A</b>×2 confirms) · <b>B</b> home · kbd: X/F</span></div>
   <div class="toast" id="toast"></div>
 <script src="assets/cursor.js"></script>
+<script src="assets/owner-confirm.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const $=id=>document.getElementById(id);
@@ -179,8 +180,8 @@
     if(focPid==null)return;
     if(armPid===focPid&&armSig===sig&&Date.now()-armT<3500){
       const nm=curName();
-      fetch("/proc/kill",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({pid:focPid,sig})})
-        .then(r=>r.json()).then(d=>{say(d.ok?(`Ended ${nm} (PID ${focPid})`):("Couldn't end: "+(d.error||"?")),!d.ok);armPid=null;poll();});
+      GOSE_OWNER.ownerPost("/proc/kill",{pid:focPid,sig},"End "+nm)
+        .then(d=>{say(d.ok?(`Ended ${nm} (PID ${focPid})`):("Couldn't end: "+(d.error||"?")),!d.ok);armPid=null;poll();});
     }else{armPid=focPid;armSig=sig;armT=Date.now();
       say(`${sig===9?'Force-kill':'End'} ${curName()} (PID ${focPid})? Activate again to confirm`,true);}
   }

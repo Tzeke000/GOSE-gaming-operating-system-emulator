@@ -118,6 +118,7 @@
   <div id="toast"></div>
 <script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
+<script src="assets/owner-confirm.js"></script>
 <script>
   document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
   const body = document.getElementById("body");
@@ -209,7 +210,7 @@
       const row = $(t.id); if(!row) return;
       row.querySelector(".chip").onclick = () => {
         const on = !RA[t.key];
-        postJSON("/ra/credentials", {[t.key]: on}).then(d => { if(d&&d.ok){ RA=d; buildAccount(); paint(); }
+        GOSE_OWNER.ownerPost("/ra/credentials", {[t.key]: on}, "Update RetroAchievements").then(d => { if(d&&d.ok){ RA=d; buildAccount(); paint(); }
           showToast(t.nm + ": " + (on?"ON":"OFF")); });
       };
     });
@@ -224,13 +225,13 @@
     if(!uname){ showToast("Username is required"); return; }
     const payload = { username: uname, enabled: true };
     if(pw) payload.password = pw;   // only send if the field was filled
-    const d = await postJSON("/ra/credentials", payload).catch(() => null);
+    const d = await GOSE_OWNER.ownerPost("/ra/credentials", payload, "Save RetroAchievements account").catch(() => null);
     if(d && d.ok){ RA = d; buildAccount(); paint(); showToast("Saved — applies on next launch"); }
     else showToast("Save failed");
   }
 
   async function doClear(){
-    const d = await postJSON("/ra/credentials", { username:"", password:"", enabled:false }).catch(() => null);
+    const d = await GOSE_OWNER.ownerPost("/ra/credentials", { username:"", password:"", enabled:false }, "Clear RetroAchievements account").catch(() => null);
     if(d && d.ok){ RA = d; buildAccount(); paint(); showToast("Account cleared"); }
     else showToast("Clear failed");
   }

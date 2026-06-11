@@ -2556,7 +2556,9 @@ def _owner_ok(payload):
 #      the hold. The dev/owner token still works too (devs do not need this). ----
 _CONFIRM_HOLD_MS    = 1200      # hold the button continuously this long to confirm
 _CONFIRM_DEADLINE_S = 25        # stop watching the pad after this
-_CONFIRM_TOKEN_TTL  = 120       # a minted confirm token is reusable for this window (one sitting)
+_CONFIRM_TOKEN_TTL  = 300       # owner-elevation session: SLIDING idle window (Mac/sudo/polkit model,
+                                # ~5 min). One hold-✕ covers routine admin until 5 min idle; _confirm_token_ok
+                                # refreshes it on each use. (Was a flat 120s one-sitting token.)
 _confirm_lock       = threading.Lock()
 _confirm_challenges = {}        # id -> {state, progress, token?, started}
 _confirm_tokens     = {}        # token -> expiry epoch
@@ -2672,14 +2674,19 @@ def owner_confirm_cancel(payload):
     return {"ok": True}
 
 def _confirm_token_ok(tok):
-    """True if tok is a live owner-confirm token (reusable until its TTL expires)."""
+    """True if tok is a live owner-elevation token. SLIDING: a valid check REFRESHES the token's
+    expiry, so an active elevation session stays alive as long as it's used within the window
+    (the Mac/sudo/polkit model). Idle past _CONFIRM_TOKEN_TTL → it dies."""
     if not tok:
         return False
     now = time.time()
     with _confirm_lock:
         for k in [k for k, exp in _confirm_tokens.items() if exp < now]:
             _confirm_tokens.pop(k, None)
-        return tok in _confirm_tokens
+        if tok in _confirm_tokens:
+            _confirm_tokens[tok] = now + _CONFIRM_TOKEN_TTL   # slide the window on use
+            return True
+        return False
 
 def _credential_is_weak(cred):
     """Honest remote-SSH strength check on the credential that will become the root password.
@@ -11348,9 +11355,16 @@ class H(http.server.SimpleHTTPRequestHandler):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}")
-                return self._json(term_exec(payload.get("cmd")))
             except Exception as e:
                 return self._json({"ok": False, "out": str(e)})
+            # SHIP-BLOCKER fix: the terminal is a root shell. Owner-gate it (elevation session /
+            # dev token) — a kiosk web page or any loopback caller must NOT get a shell. The
+            # _cmd_is_dangerous heuristic stays as a second layer for the owner's own typos.
+            if not _owner_ok(payload):
+                return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                   "out": "🔒 The terminal needs owner elevation — hold ✕ on your "
+                                          "controller to confirm it's you.", "cwd": _TERM["cwd"]})
+            return self._json(term_exec(payload.get("cmd")))
         if route in ("/saves/backup", "/saves/export", "/saves/import",
                      "/saves/schedule", "/saves/cloud", "/saves/cloud/sync"):
             try:
@@ -11641,6 +11655,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 payload = {}
             if route == "/owner/confirm/begin":
+                # AI HARD-BLOCK: elevation proves a PHYSICAL human is present. A paired AI must
+                # never be able to even START a confirm challenge (it can't hold the pad, but
+                # refusing here + auditing keeps the guarantee explicit). The dev/owner token is
+                # the human dev's equivalent and is allowed through _owner_ok on the gated routes.
+                _ai_tok = (self.headers.get("X-AI-Token") or "").strip()
+                if _ai_tok and _ai_token_resolve(_ai_tok)[0]:
+                    LOG.warning("owner/confirm/begin REFUSED — AI token may not elevate (ERR_AI_FORBIDDEN)")
+                    return self._json({"ok": False, "code": "ERR_AI_FORBIDDEN",
+                                       "error": "an AI cannot prove owner presence"})
                 return self._json(owner_confirm_begin(payload))
             return self._json(owner_confirm_cancel(payload))
         if route in ("/ai/join", "/ai/heartbeat", "/ai/leave", "/ai/grant", "/ai/revoke",
@@ -11686,6 +11709,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/ai/request":
                 return self._json(ai_request(payload))
             if route == "/ai/request/clear":
+                # Owner-gate: clearing pending pair requests is an owner action — an unguarded
+                # clear lets any loopback caller hide an AI's knock from the owner / DoS the queue.
+                # Pre-OOBE carve-out matches grant/revoke (the wizard manages requests then).
+                if os.path.exists(OOBE_DONE_FLAG) and not _owner_ok(payload):
+                    return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                       "error": "owner proof required to clear pairing requests"})
                 return self._json(ai_request_clear(payload))
             return self._json(ai_leave(payload) if route == "/ai/leave" else ai_join(payload))
         if route in ("/ai/assist/request", "/ai/assist/answer"):
@@ -11791,6 +11820,10 @@ class H(http.server.SimpleHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
             except Exception:
                 payload = {}
+            # Owner-gate: this writes the RetroAchievements account credential — only the owner.
+            if not _owner_ok(payload):
+                return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                   "error": "owner proof required to change RetroAchievements credentials"})
             return self._json(ra_credentials_set(payload))
         if route in ("/netplay/config", "/netplay/host", "/netplay/join", "/netplay/stop"):
             try:
@@ -11849,6 +11882,12 @@ class H(http.server.SimpleHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
             except Exception:
                 payload = {}
+            # SHIP-BLOCKER fix: ENABLING Samba exposes ALL of /userdata (ROMs, saves, AND the
+            # owner/AI tokens) to the LAN, guest-readable. Owner-gate the enable. Disable/state
+            # stay open (turning exposure OFF or reading status is always safe).
+            if str((payload or {}).get("action", "")).lower() == "enable" and not _owner_ok(payload):
+                return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                   "error": "owner proof required to enable the network share"})
             return self._json(security_smb(payload))
         if route in ("/notifications", "/notifications/read", "/notifications/clear"):
             try:
@@ -11884,6 +11923,12 @@ class H(http.server.SimpleHTTPRequestHandler):
             try:
                 n = int(self.headers.get("Content-Length", 0))
                 payload = json.loads(self.rfile.read(n).decode() or "{}")
+                # Owner-gate the two destructive ones: /fs/op mutates the filesystem
+                # (delete/move/write/mkdir) and /proc/kill can SIGKILL any process incl. the
+                # server/watchdog. Game launch + audio/brightness/power stay open (couch actions).
+                if route in ("/fs/op", "/proc/kill") and not _owner_ok(payload):
+                    return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                       "error": "owner proof required for file changes / killing a process"})
                 if route == "/fs/op":
                     return self._json(fs_op(payload))
                 if route == "/splice/cut":

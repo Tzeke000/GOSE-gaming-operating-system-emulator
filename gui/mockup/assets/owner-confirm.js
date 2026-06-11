@@ -7,7 +7,17 @@
 */
 (function(){
   "use strict";
-  var TOKEN=null, TOKEN_EXP=0;
+  // Owner-elevation SESSION: one hold-✕ opens a ~5-min sliding window so routine admin doesn't
+  // re-prompt (Mac/sudo/polkit model). Stored in sessionStorage so it survives a page navigation
+  // (Hub -> detail, Settings -> a tool) but dies when the tab/kiosk closes. The SERVER also slides
+  // its own copy of the token on each use, so client + server windows stay in sync. Fails safe:
+  // if the session is missing/expired, ownerPost just re-runs the hold flow — never locks the owner out.
+  var SKEY="gose_owner_session", SESSION_MS=300000;   // 5 min, matches server _CONFIRM_TOKEN_TTL
+  function getSession(){ try{ var s=JSON.parse(sessionStorage.getItem(SKEY)||"null");
+    return (s&&s.token&&Date.now()<s.exp)?s:null; }catch(e){ return null; } }
+  function setSession(tok){ try{ sessionStorage.setItem(SKEY,JSON.stringify({token:tok,exp:Date.now()+SESSION_MS})); }catch(e){} }
+  function slideSession(){ var s=getSession(); if(s) setSession(s.token); }   // refresh window on use
+  function clearSession(){ try{ sessionStorage.removeItem(SKEY); }catch(e){} }
   var XGLYPH="✕";
 
   function post(path,body){return fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},
@@ -56,8 +66,8 @@
           getJSON("/owner/confirm/poll?id="+encodeURIComponent(id)).then(function(s){
             if(!s||!s.ok){ setTimeout(loop,300); return; }
             setBar(s.progress||0);
-            if(s.state==="confirmed"){ TOKEN=s.confirm_token; TOKEN_EXP=Date.now()+100000;
-              setBar(1); setTxt("Confirmed ✓"); setTimeout(function(){cleanup();resolve(TOKEN);},350); return; }
+            if(s.state==="confirmed"){ setSession(s.confirm_token);
+              setBar(1); setTxt("Confirmed ✓"); setTimeout(function(){cleanup();resolve(s.confirm_token);},350); return; }
             if(s.state==="timeout"||s.state==="cancelled"||s.state==="error"||s.state==="unknown"){
               setTxt(s.state==="timeout"?"Timed out — try again":"Cancelled");
               setTimeout(function(){cleanup();resolve(null);},900); return; }
@@ -73,14 +83,17 @@
   // ERR_NOT_OWNER runs the controller confirm and retries the call exactly once.
   function ownerPost(path,body,summary){
     function attempt(){ var b={}; for(var k in body)b[k]=body[k];
-      if(TOKEN&&Date.now()<TOKEN_EXP)b.confirm_token=TOKEN; return post(path,b); }
+      var s=getSession(); if(s)b.confirm_token=s.token; return post(path,b); }
     return attempt().then(function(d){
-      if(d&&d.code==="ERR_NOT_OWNER"){ TOKEN=null;
+      if(d&&d.code==="ERR_NOT_OWNER"){ clearSession();
         return confirm(summary).then(function(tok){ if(!tok)return d;
-          return attempt().then(function(d2){ if(d2&&d2.code==="ERR_NOT_OWNER")TOKEN=null; return d2; }); }); }
+          return attempt().then(function(d2){ if(d2&&d2.code==="ERR_NOT_OWNER")clearSession(); else slideSession(); return d2; }); }); }
+      if(d&&d.ok)slideSession();   // a served request keeps the elevation window alive
       return d;
     });
   }
 
-  window.GOSE_OWNER={confirm:confirm, ownerPost:ownerPost};
+  // True if an elevation session is currently live (for pages that want to show an "elevated" hint).
+  function isElevated(){ return !!getSession(); }
+  window.GOSE_OWNER={confirm:confirm, ownerPost:ownerPost, isElevated:isElevated, clear:clearSession};
 })();

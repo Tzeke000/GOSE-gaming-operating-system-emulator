@@ -130,6 +130,7 @@
     <div class="btns"><button id="rn-cancel">Cancel</button><button class="ok" id="rn-ok">Rename</button></div></div></div>
   <div class="toast" id="toast"></div>
 <script src="assets/cursor.js"></script>
+<script src="assets/owner-confirm.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const ROOT="/userdata", HOMEDIR="/userdata/home", GAMESDIR="/userdata/roms";
@@ -284,8 +285,8 @@
       const actions=`<button class="vbtn" id="ed-save">Save</button>`+(isMd?`<button class="vbtn" id="ed-rend">Render</button>`:"");
       openViewer(name,`<textarea id="ed" spellcheck="false">${esc(d.text)}</textarea><div class="mdview" id="mdview" style="display:none"></div>`,actions);
       const ta=$("ov-body").querySelector("#ed"), mv=$("ov-body").querySelector("#mdview");
-      $("ed-save").onclick=()=>fetch("/fs/op",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({op:"write",path,text:ta.value})}).then(r=>r.json()).then(x=>{say(x.ok?"Saved "+name:"Save failed: "+x.error);});
+      $("ed-save").onclick=()=>GOSE_OWNER.ownerPost("/fs/op",{op:"write",path,text:ta.value},"Save "+name)
+        .then(x=>{say(x.ok?"Saved "+name:"Save failed: "+(x.error||"not allowed"));});
       if(isMd){let on=false;$("ed-rend").onclick=()=>{on=!on;if(on){mv.innerHTML=md(ta.value);mv.style.display="";ta.style.display="none";$("ed-rend").textContent="Edit";}
         else{mv.style.display="none";ta.style.display="";$("ed-rend").textContent="Render";}};}
       if(d.truncated)say("Large file — showing first 256 KB");
@@ -295,8 +296,8 @@
   function closeViewer(){if(viewing)mPop();viewing=false;$("ov").classList.remove("on");$("ov-body").innerHTML="";$("ov-actions").innerHTML="";}
   function atPC(){return cur==="THISPC";}
   function up(){if(parent==="THISPC")loadPlaces();else if(parent)load(parent);}
-  function op(body,after){fetch("/fs/op",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)})
-    .then(r=>r.json()).then(d=>{if(d.ok){after&&after();}else say("Failed: "+(d.error||"?"));}).catch(e=>say("op failed"));}
+  function op(body,after){GOSE_OWNER.ownerPost("/fs/op",body,"File change")
+    .then(d=>{if(d.ok){after&&after();}else say("Failed: "+(d.error||"?"));}).catch(e=>say("op failed"));}
   // delete always goes through a pad-drivable confirm (it's the one unrecoverable op)
   let cfFoc=0,cfOpen=false;
   function del(){if(atPC())return;const e=entries[foc];if(!e)return;

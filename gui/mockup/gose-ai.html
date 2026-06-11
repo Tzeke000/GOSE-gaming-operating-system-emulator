@@ -313,7 +313,7 @@
   function denyReq(name){dlog("deny-request",name);say(name+" denied");clearReq(name);}
   function clearReq(name){
     REQS=REQS.filter(function(x){return x.name!==name;});render();
-    post("/ai/request/clear",{name:name}).then(function(){poll();}).catch(function(){poll();});
+    GOSE_OWNER.ownerPost("/ai/request/clear",{name:name},"Clear "+name+"'s request").then(function(){poll();}).catch(function(){poll();});
   }
   function doPair(){
     var inp=$("add-name");var name=(inp?inp.value:"").trim();

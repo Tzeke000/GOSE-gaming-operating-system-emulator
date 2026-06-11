@@ -33,6 +33,7 @@
   <div class="inp"><span class="p" id="prompt">/userdata $</span><input id="cmd" autofocus spellcheck="false" autocomplete="off"></div>
   <div class="foot">Real shell in the GOSE VM · <b>Enter</b> run · <b>↑/↓</b> history · type <b>clear</b> to reset</div>
 <script src="assets/cursor.js"></script>
+<script src="assets/owner-confirm.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const $=id=>document.getElementById(id);
@@ -46,8 +47,10 @@
   }
   function run(cmd){
     if(cmd==="clear"||cmd==="cls"){term.innerHTML="";return;}
-    fetch("/term/exec",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd})})
-      .then(r=>r.json()).then(d=>{ echo(cmd, (d.out||"").replace(/\n$/,"")); if(d.cwd){cwd=d.cwd;$("prompt").textContent=cwd+" $";} })
+    // The terminal is owner-gated (root shell). ownerPost opens/uses the elevation session
+    // (one hold-✕ covers the whole sitting); a non-owner just gets the "hold ✕" prompt.
+    GOSE_OWNER.ownerPost("/term/exec",{cmd:cmd},"Run a terminal command")
+      .then(d=>{ echo(cmd, (d.out||"").replace(/\n$/,"")); if(d.cwd){cwd=d.cwd;$("prompt").textContent=cwd+" $";} })
       .catch(e=>echo(cmd,"(terminal offline)"));
   }
   inp.addEventListener("keydown",e=>{
