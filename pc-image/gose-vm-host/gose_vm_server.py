@@ -5529,6 +5529,87 @@ def guide_toggle():
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+def guide_close():
+    """Force-HIDE the Guide overlay (SIGUSR2 → overlay_window.py hide()). Idempotent — used after
+    arming an AI / any 'dismiss the Guide' flow so the caller needn't know the toggle state. Was a
+    404 (the detail page POSTed /guide/close on arm)."""
+    try:
+        subprocess.run(["pkill", "-USR2", "-f", "overlay_window.py"], capture_output=True, text=True, timeout=5)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# ---- Device prefs (idle policy, charge limit) + per-game perf — persisted settings the shell
+#      reads/writes. These were UI rows POSTing to routes that didn't exist (silent 404 → the
+#      toggle never stuck). They PERSIST now so the UI is honest; some only take physical effect on
+#      real hardware (a battery for charge-limit), which we flag with `note`. ----
+GOSE_PREFS_F = "/userdata/system/gose/prefs.json"
+GAME_PERF_F  = "/userdata/system/gose/game_perf.json"
+
+def _json_file_load(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _device_has_battery():
+    try:
+        return any(n.startswith("BAT") for n in os.listdir("/sys/class/power_supply"))
+    except Exception:
+        return False
+
+def sys_idle_policy_get():
+    p = _json_file_load(GOSE_PREFS_F)
+    return {"ok": True, "dim_secs": int(p.get("dim_secs", 0) or 0),
+            "sleep_secs": int(p.get("sleep_secs", 0) or 0),
+            "pause_on_idle": bool(p.get("pause_on_idle", False))}
+
+def sys_idle_policy_set(payload):
+    p = _json_file_load(GOSE_PREFS_F); pl = payload or {}
+    for k in ("dim_secs", "sleep_secs"):
+        if k in pl:
+            try: p[k] = int(pl[k])
+            except Exception: pass
+    if "pause_on_idle" in pl:
+        p["pause_on_idle"] = bool(pl["pause_on_idle"])
+    write_json_atomic(GOSE_PREFS_F, p)
+    return {"ok": True}
+
+def sys_charge_limit_get():
+    p = _json_file_load(GOSE_PREFS_F)
+    return {"ok": True, "charge_limit_pct": int(p.get("charge_limit_pct", 0) or 0)}
+
+def sys_charge_limit_set(payload):
+    p = _json_file_load(GOSE_PREFS_F)
+    try: p["charge_limit_pct"] = int((payload or {}).get("charge_limit_pct", 0) or 0)
+    except Exception: p["charge_limit_pct"] = 0
+    write_json_atomic(GOSE_PREFS_F, p)
+    # No battery here (e.g. the VM) → the cap persists but only takes effect on real hardware.
+    return {"ok": True, "note": (not _device_has_battery())}
+
+def game_perf_get(qs):
+    d = _json_file_load(GAME_PERF_F)
+    rec = d.get((qs.get("system") or "") + "/" + (qs.get("game") or ""), {})
+    return {"ok": True, "perf_mode": rec.get("perf_mode", "default"), "fps_cap": int(rec.get("fps_cap", 0) or 0)}
+
+def game_perf_set(payload):
+    pl = payload or {}; system = pl.get("system", ""); game = pl.get("game", "")
+    if not system or not game:
+        return {"ok": False, "error": "system and game required"}
+    d = _json_file_load(GAME_PERF_F); key = system + "/" + game; rec = d.get(key, {})
+    if "perf_mode" in pl: rec["perf_mode"] = str(pl["perf_mode"])
+    if "fps_cap" in pl:
+        try: rec["fps_cap"] = int(pl["fps_cap"])
+        except Exception: rec["fps_cap"] = 0
+    d[key] = rec; write_json_atomic(GAME_PERF_F, d)
+    return {"ok": True, "perf_mode": rec.get("perf_mode", "default"), "fps_cap": int(rec.get("fps_cap", 0) or 0)}
+
+def controllers_raw_get():
+    # The padtest page checks this to show a raw-input indicator; return the connected pads (real,
+    # harmless data). Was a 404 → the indicator was permanently disabled.
+    return {"ok": True, "controllers": _parse_controllers()}
+
 _GAME_PATS = ["retroarch", "emulatorlauncher", "ppsspp", "pcsx", "dolphin-emu", "mupen64",
               "duckstation", "flycast", "mednafen", "melonds", "scummvm", "bwrap", "glxgears"]
 
@@ -10901,6 +10982,14 @@ class H(http.server.SimpleHTTPRequestHandler):
         route = self.path.split("?")[0]
         if route == "/stress/status":
             return self._json(stress_status())
+        if route == "/sys/idle-policy":
+            return self._json(sys_idle_policy_get())
+        if route == "/sys/charge-limit":
+            return self._json(sys_charge_limit_get())
+        if route == "/game/perf":
+            return self._json(game_perf_get(self._qs()))
+        if route == "/controllers/raw":
+            return self._json(controllers_raw_get())
         if route == "/system/gpu":
             # GET /system/gpu — returns GPU capability JSON (cached after first probe).
             # The first call takes ~6-8s (runs glxinfo + vulkaninfo + glxgears FPS sample).
@@ -11268,6 +11357,21 @@ class H(http.server.SimpleHTTPRequestHandler):
             # device" path (VM host browser via the 8780 hostfwd; a phone/PC on the LAN for
             # bare-metal/Odin2/Deck). Confined to roms/<system> or bios — see upload_rom().
             return self._json(upload_rom(self._qs(), self.rfile, self.headers))
+        if route in ("/sys/idle-policy", "/sys/charge-limit", "/game/perf", "/guide/close"):
+            # Persisted device prefs + per-game perf + the Guide force-close. Open (couch settings /
+            # UI dismiss — no secrets, no privilege). Were silent 404s before.
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/sys/idle-policy":
+                return self._json(sys_idle_policy_set(payload))
+            if route == "/sys/charge-limit":
+                return self._json(sys_charge_limit_set(payload))
+            if route == "/game/perf":
+                return self._json(game_perf_set(payload))
+            return self._json(guide_close())
         if route in ("/stress/start", "/stress/stop"):
             try:
                 n = int(self.headers.get("Content-Length", 0))
