@@ -22,13 +22,16 @@
   var _px=0, _py=0, _rafId=null, _needShow=false;
 
   function init(){
-    // style: body cursor:none + the #gose-ptr arrow element.
-    // GOSE crystal cursor: accent-blue fill (#5cd0ff, the --accent token from themes.css/onyx),
-    // dark stroke via drop-shadow so it reads on any background color or image.
-    // Clip-path is a clean 4-point arrowhead (top-left origin, pointing top-left):
-    //   tip at (0,0) → right edge at (100%,32%) → notch at (40%,32%) → tail-tip at (58%,100%)
-    //   → inner-notch at (32%,58%) → bottom edge at (32%,100%) [truncated at tail join]
-    // A 28px box gives a crisp 14-18 px visible tip region that scales with HiDPI.
+    // style: body cursor:none + the #gose-ptr crystal-shard element.
+    // GOSE crystal-shard cursor (2026-06-13 reshape — the old arrow polygon read as a squat
+    // flag; Zeke: "the mouse picture currently looks an odd shape"). The shard is a clean
+    // 4-point kite aimed at the top-left tip — symmetric about the 45° diagonal so it reads
+    // unambiguously as a pointer:
+    //   tip (0,0) → lower wing (40%,90%) → inner waist (50%,50%) → right wing (90%,40%)
+    // Faceting: the body wears the GOSE crystal gradient (#7ce4ff tip → #5cd0ff → #6a4dff
+    // tail, the same ramp as the Quick-Access sliders), and an ::after mini-kite near the
+    // tip adds a pale facet highlight so it reads as cut crystal, not a flat decal.
+    // A 28px box gives a ~25px diagonal shard that scales with HiDPI.
     var st=document.createElement('style');
     st.textContent=
       'body,body *{cursor:none!important}'+
@@ -38,13 +41,16 @@
       // subsequent moves reuse that layer (no repaint). will-change pre-declares intent.
       'transform:translate3d(0px,0px,0);will-change:transform;'+
       'display:none;'+
-      // GOSE crystal arrow: accent-blue body with a dark drop-shadow outline.
-      // Polygon: standard left-ptr arrow (tip top-left, tail bottom-right notch).
-      'background:#5cd0ff;'+
-      'clip-path:polygon(0% 0%,0% 82%,22% 63%,42% 100%,56% 93%,36% 56%,100% 56%);'+
+      // crystal-shard body: gradient flows tip→tail (135deg = top-left to bottom-right)
+      'background:linear-gradient(135deg,#7ce4ff 0%,#5cd0ff 45%,#6a4dff 100%);'+
+      'clip-path:polygon(0% 0%,40% 90%,50% 50%,90% 40%);'+
       // drop-shadow provides the dark contrast outline readable on any bg.
       // Second shadow adds a subtle glow matching the GOSE focus ring colour.
-      'filter:drop-shadow(0 0 1px #06121a) drop-shadow(0 0 1px #06121a) drop-shadow(0 0 4px #5cd0ff66);}';
+      'filter:drop-shadow(0 0 1px #06121a) drop-shadow(0 0 1px #06121a) drop-shadow(0 0 4px #5cd0ff66);}'+
+      // facet highlight: a smaller kite hugging the tip, pale crystal — parent clip-path
+      // clips it, so it can never escape the shard silhouette.
+      '#gose-ptr::after{content:"";position:absolute;inset:0;'+
+      'clip-path:polygon(0% 0%,24% 56%,30% 30%,56% 24%);background:#eafaffd9;}';
     document.head.appendChild(st);
     ptr=document.createElement('div'); ptr.id='gose-ptr';
     document.body.appendChild(ptr);
