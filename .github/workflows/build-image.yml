@@ -1,0 +1,166 @@
+# GOSE-PC image build — GitHub Actions CI
+#
+# SB-1.1 (ship audit 2026-06-13): build-gose-pc.sh has never produced a real
+# artifact (Linux host + root + loop mounts required; dev machine is Windows).
+# This workflow provides that Linux host via ubuntu-latest.
+#
+# DISK-SPACE CAVEAT: the full build downloads Batocera (~900 MB compressed),
+# decompresses it to ~8 GB, grows the image to 32 GB, and repacks a squashfs.
+# A standard GitHub-hosted ubuntu-latest runner ships ~14 GB free — enough for
+# GROW_TO=8G but NOT for the default 32G. Two mitigations are applied here:
+#   1. maximize-build-space (jlumbroso/free-disk-space) frees ~30 GB by removing
+#      large pre-installed tool suites (Android SDK, .NET runtimes, etc.).
+#   2. GROW_TO=8G is used for CI to stay within the freed budget. A real release
+#      build (32G) should run on a self-hosted runner with >=80 GB free (the image
+#      content is the Batocera base + GOSE layer, not 32 GB of actual data, but
+#      truncate(1) pre-allocates the virtual disk size even if it stays sparse).
+#
+# BUILD TRIGGERS:
+#   - Manual: Actions tab → "Build GOSE-PC image" → Run workflow
+#   - Tag push: git tag v0.6 && git push origin v0.6
+#
+# ARTIFACT: the built .img.gz + .ova are uploaded and retained for 7 days on
+# manual runs; 30 days on tag pushes (the release candidate path).
+
+name: Build GOSE-PC image
+
+on:
+  workflow_dispatch:
+    inputs:
+      ship_safe:
+        description: 'SHIP_SAFE (1=strip non-commercial cores, 0=dev/all-cores)'
+        required: false
+        default: '1'
+      grow_to:
+        description: 'Image virtual disk size (e.g. 8G for CI, 32G for release)'
+        required: false
+        default: '8G'
+  push:
+    tags:
+      - 'v*'
+
+env:
+  # Reasonable defaults for CI runs — override via workflow_dispatch inputs or
+  # env on a self-hosted runner for a real release build.
+  SHIP_SAFE: ${{ github.event.inputs.ship_safe || '1' }}
+  GROW_TO: ${{ github.event.inputs.grow_to || '8G' }}
+
+jobs:
+  build-image:
+    name: Build GOSE-PC image (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 0. Free disk space ────────────────────────────────────────────────────
+      # A standard ubuntu-latest runner has ~14 GB free. The Batocera image
+      # decompresses to ~8 GB and we grow the virtual disk to $GROW_TO, so we
+      # need at least ~25 GB to be comfortable. free-disk-space removes Android
+      # SDK, .NET, Haskell, large apt packages, and Docker images — recovering
+      # ~30 GB. After this step expect ~40-50 GB free.
+      - name: Free disk space (recover ~30 GB from pre-installed tooling)
+        uses: jlumbroso/free-disk-space@v1.3.0
+        with:
+          tool-cache: false   # keep the runner tool cache (Python, Node, etc.)
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: Report available disk space after cleanup
+        run: df -h /
+
+      # ── 1. Checkout ───────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. System dependencies ────────────────────────────────────────────────
+      # squashfs-tools: unsquashfs + mksquashfs (needed for SHIP_SAFE core strip)
+      # qemu-utils: qemu-img (needed by make_ova.py)
+      # python3: make_ova.py
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            squashfs-tools \
+            qemu-utils \
+            python3 \
+            curl \
+            rsync
+
+      # ── 3. Cache the Batocera base image ─────────────────────────────────────
+      # Batocera 43.1 x86_64 is ~900 MB. Caching it avoids re-downloading on
+      # every run (the cache key is the pinned URL in build-gose-pc.sh).
+      - name: Extract Batocera download URL (for cache key)
+        id: batocera_url
+        run: |
+          url=$(grep '^BATOCERA_IMG_URL=' pc-image/build-gose-pc.sh \
+                | head -1 | cut -d= -f2- | tr -d '"' | sed 's/.*:-//' | tr -d '}')
+          # Fallback: the default URL baked in the script
+          echo "url=${url:-https://mirrors.o2switch.fr/batocera/x86_64/stable/43.1/batocera-x86_64-43.img.gz}" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Cache Batocera base image
+        id: batocera_cache
+        uses: actions/cache@v4
+        with:
+          path: pc-image/build/batocera.img.gz
+          # Cache key: hash of the URL so any URL change busts the cache
+          key: batocera-base-${{ hashFiles('pc-image/build-gose-pc.sh') }}
+
+      - name: Pre-place cached base image (skip download if cached)
+        if: steps.batocera_cache.outputs.cache-hit == 'true'
+        run: |
+          mkdir -p pc-image/build
+          echo "Cache hit — Batocera base image already at pc-image/build/batocera.img.gz"
+          ls -lh pc-image/build/batocera.img.gz
+
+      # ── 4. Run the build ──────────────────────────────────────────────────────
+      # --dry-run mode is NOT used here: this is the real build, on a real Linux
+      # host with root. That is the point of this workflow — it was never run for
+      # real before (SB-1.1 in the 2026-06-13 ship audit).
+      #
+      # GROW_TO is overridden to ${{ env.GROW_TO }} (8G in CI) to fit within the
+      # freed disk budget. A real release build should use a self-hosted runner
+      # with >=80 GB and set GROW_TO=32G.
+      - name: Build GOSE-PC image
+        run: |
+          cd pc-image
+          sudo GROW_TO="${GROW_TO}" SHIP_SAFE="${SHIP_SAFE}" \
+            bash build-gose-pc.sh
+        env:
+          GROW_TO: ${{ env.GROW_TO }}
+          SHIP_SAFE: ${{ env.SHIP_SAFE }}
+
+      # ── 5. Compress the output image ─────────────────────────────────────────
+      - name: Compress image
+        run: |
+          cd pc-image/build
+          ls -lh gose-pc-x86_64.img
+          gzip -9 --keep gose-pc-x86_64.img
+          ls -lh gose-pc-x86_64.img.gz
+
+      # ── 6. Upload artifacts ───────────────────────────────────────────────────
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gose-pc-image-${{ github.sha }}
+          path: |
+            pc-image/build/gose-pc-x86_64.img.gz
+            pc-image/GOSE-PC.ova
+          retention-days: ${{ startsWith(github.ref, 'refs/tags/') && 30 || 7 }}
+          if-no-files-found: error
+
+      # ── 7. Create GitHub Release on tag push ─────────────────────────────────
+      - name: Create release (tag push only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            pc-image/build/gose-pc-x86_64.img.gz
+            pc-image/GOSE-PC.ova
+          generate_release_notes: true
+          draft: true     # manual review before publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

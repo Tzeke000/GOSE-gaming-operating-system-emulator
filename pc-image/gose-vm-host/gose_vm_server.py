@@ -65,7 +65,20 @@ def _load_agent_token():
 TOKEN = _load_agent_token()
 
 # ---- production hardening: logging / error-tracking / rate-limit / atomic writes / version ----
-VERSION = {"version": "0.6", "build": "2026-06-05", "base": "Batocera 43.1 (x86_64)"}
+def _load_version():
+    """Read version from a VERSION file co-located with this script (repo-root file deployed alongside it).
+    Falls back to the literal dict if the file is missing or unparseable."""
+    _fallback = {"version": "0.6", "build": "2026-06-05", "base": "Batocera 43.1 (x86_64)"}
+    try:
+        _vpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+        with open(_vpath) as _f:
+            _raw = _f.read().strip()
+        if _raw:
+            _fallback["version"] = _raw.splitlines()[0].strip()
+    except OSError:
+        pass
+    return _fallback
+VERSION = _load_version()
 START_T = time.time()
 LOG = logging.getLogger("gose")
 LOG.setLevel(logging.INFO)
@@ -3487,6 +3500,15 @@ def ai_grant(payload):
     with _AI_LOCK:
         g = _ai_grants_load()
         prev = g.get(name, {})
+        # Carry the claim secret from any pending request so the AI can collect its token
+        # via GET /ai/token?name=<name>&claim=<secret> after the owner approves.
+        # The claim is a one-time nonce the AI received at /ai/request time; it is never
+        # shown to the owner, so it binds token delivery to the specific AI that asked.
+        # A claim on a previous grant record is preserved so a tier-upgrade doesn't
+        # revoke the AI's ability to collect — it can still call GET /ai/token if it
+        # hasn't consumed the claim yet.
+        reqs = _ai_requests_load()
+        pending_claim = reqs.get(name, {}).get("claim")
         if tier == "observe":
             if payload.get("pair") or prev:
                 # Paired roster entry at the safe floor tier. Two ways here: OOBE/Hub first
@@ -3522,6 +3544,11 @@ def ai_grant(payload):
                        "token": prev.get("token") or secrets.token_hex(16)}  # stable per-AI token
             if prev.get("paired_via"):
                 g[name]["paired_via"] = prev["paired_via"]
+        # Attach the pending claim to the grant so GET /ai/token can deliver the token.
+        # Prefer a fresh pending claim; fall back to whatever was already on the grant (a
+        # previous claim not yet consumed, e.g. during a tier-upgrade grant).
+        if name in g:
+            g[name]["claim_secret"] = pending_claim or prev.get("claim_secret")
         write_json_atomic(AI_GRANTS_F, g)
         _sync_ai_tokens(g)        # <-- push the token->tier map to the agent so it enforces NOW
     LOG.info("AI grant: %s -> %s (token issued + enforced)", name, tier)
@@ -3733,10 +3760,16 @@ def ai_request(payload):
         reqs = _ai_requests_load()
         if name not in reqs and len(reqs) >= _AI_REQ_MAX:
             return {"ok": False, "error": "too many pending requests — ask the owner to clear some"}
-        reqs[name] = {"tier": tier, "ts": int(time.time())}
+        # Issue a one-time claim secret so the AI can retrieve its token after approval
+        # via GET /ai/token?name=<name>&claim=<secret>.  This is the only delivery path for
+        # an AI that came through the request flow (not the Hub direct-pair, where the owner
+        # reads the token off screen).  The claim is stable — re-requesting the same name
+        # preserves the previous claim so the AI can keep polling.
+        claim = reqs.get(name, {}).get("claim") or secrets.token_hex(24)
+        reqs[name] = {"tier": tier, "ts": int(time.time()), "claim": claim}
         write_json_atomic(AI_REQUESTS_F, reqs)
     LOG.info("AI pairing request: %s asks for %s (pending owner approval)", name, tier)
-    return {"ok": True, "name": name, "tier": tier, "pending": True}
+    return {"ok": True, "name": name, "tier": tier, "pending": True, "claim": claim}
 
 def ai_requests():
     reqs = _ai_requests_load()
@@ -3752,6 +3785,57 @@ def ai_request_clear(payload):
         if existed:
             write_json_atomic(AI_REQUESTS_F, reqs)
     return {"ok": True, "name": name, "cleared": existed}
+
+def ai_token_claim(name, claim):
+    """GET /ai/token?name=<name>&claim=<secret>
+
+    Delivers the AI bearer token to a requesting AI after the owner approves its pairing
+    request.  This is the only server-side path that gives the token to an AI that went
+    through the /ai/request → owner-approves → /ai/grant flow (as opposed to the Hub-direct
+    pair path, where the owner reads the token off the screen and passes it out-of-band).
+
+    Security properties:
+    - The claim secret was issued by /ai/request and held only by the requesting AI process.
+      No other party (owner UI, sibling AI, anonymous loopback caller) can satisfy it.
+    - One-time: after a successful claim the claim_secret is nulled in the grant so it
+      cannot be replayed (the AI now holds the real bearer token and uses that instead).
+    - Only works once a grant exists for this name — a request that has not yet been approved
+      returns a 'not yet approved' response so the AI can keep polling.
+    - An AI token (X-AI-Token) cannot be used here; this endpoint is for bootstrapping.
+    - Claim secrets are NOT included in /ai/grants roster responses so they cannot be
+      harvested by an observe-tier AI watching the grants listing.
+    """
+    if not name or not claim:
+        return {"ok": False, "error": "name and claim required"}
+    with _AI_LOCK:
+        g = _ai_grants_load()
+        rec = g.get(name)
+        if rec is None:
+            # No grant yet — request may still be pending
+            return {"ok": False, "code": "ERR_NOT_APPROVED",
+                    "error": "not approved yet — poll again after the owner approves in the AI Hub"}
+        stored = rec.get("claim_secret")
+        if not stored:
+            # No claim on this grant — it was paired via Hub/OOBE, not via /ai/request.
+            # The token was shown to the owner; the AI must receive it out of band.
+            return {"ok": False, "code": "ERR_NO_CLAIM",
+                    "error": "this AI was paired directly (no claim secret) — "
+                             "the owner provided the token on the Hub screen"}
+        import hmac
+        if not hmac.compare_digest(claim, stored):
+            LOG.warning("ai_token_claim: wrong claim for %s", name)
+            return {"ok": False, "code": "ERR_CLAIM",
+                    "error": "invalid claim secret"}
+        tok = rec.get("token")
+        if not tok:
+            return {"ok": False, "code": "ERR_NO_TOKEN",
+                    "error": "grant exists but has no token — re-pair via the AI Hub"}
+        # Consume the claim (one-time) so replay is impossible
+        g[name]["claim_secret"] = None
+        write_json_atomic(AI_GRANTS_F, g)
+        # No _sync_ai_tokens needed — the token/tier map is unchanged
+    LOG.info("AI token claimed: %s (claim consumed)", name)
+    return {"ok": True, "name": name, "token": tok, "tier": rec.get("tier", "observe")}
 
 # ---- AI Copilot / Watchdog (#42): opt-in, default OFF ----------------------------
 #
@@ -11130,6 +11214,20 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(ai_grants())
         if route == "/ai/requests":
             return self._json(ai_requests())
+        if route == "/ai/token":
+            # Claim-based token retrieval for the /ai/request → approve flow.
+            # The requesting AI holds its claim secret (returned by /ai/request); once the
+            # owner approves in the Hub the AI polls here to collect its bearer token.
+            # SECURITY: claim is single-use; wrong claims are rejected with constant-time
+            # compare; an AI token in X-AI-Token is explicitly NOT accepted here (an already-
+            # paired AI has no reason to use this endpoint, and accepting it would let a
+            # compromised bearer token bootstrap a second identity).
+            _ai_tok = (self.headers.get("X-AI-Token") or "").strip()
+            if _ai_tok and _ai_token_resolve(_ai_tok)[0]:
+                return self._json({"ok": False, "code": "ERR_AI_FORBIDDEN",
+                                   "error": "a bearer token cannot be used to claim another token"})
+            q = self._qs()
+            return self._json(ai_token_claim(q.get("name", ""), q.get("claim", "")))
         if route == "/ai/audit":
             return self._json(ai_audit(self._qs().get("limit", 100)))
         if route == "/ai/activity":

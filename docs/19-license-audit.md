@@ -357,5 +357,35 @@ trademark-laden filenames (Fix-It Felix, Donkey Kong) regardless of code license
 > `.info` license string read on the device; the four non-commercial headliners
 > (snes9x, genesisplusgx, fbneo, + bsnes-as-replacement) were additionally verified against
 > upstream LICENSE files. Anything not directly verifiable is parked in this section.
+
+---
+
+## 9. Build resolution — SB-1.4 (2026-06-13)
+
+**Status: RESOLVED in `build-gose-pc.sh` (ship-safe exclusion baked in).**
+
+`build-gose-pc.sh` now implements the §5A/§5B/§5C plan at build time:
+
+- **`SHIP_SAFE=1` (default for any distribution build):** the script unpacks the
+  Batocera squashfs from the boot partition (`p1`), removes every `.so` + `.info`
+  for the 11 EXCLUDE cores AND the 3 REVIEW cores (picodrive, hatarib, zc210 —
+  treated as excluded pending legal review per §5D), repacks the squashfs, and
+  replaces it in the image. Result: the shipped binary image contains **zero
+  non-commercial cores**.
+- **`SHIP_SAFE=0`:** skips the strip. Documented as DEV_ONLY. Do not distribute.
+- **Trademark/unconfirmed ROMs** (Fix-It-Felix, DonkeyKongClassic, Old-Towers,
+  SpaceTwins, Reflectron, Santatlantean) are also deleted from the userdata ROM
+  dirs under `SHIP_SAFE=1` via a `find -iname` sweep. The Doom shareware WAD
+  (license file bundled), prboom.wad (GPL), pong1k2p.nes, 2048.nes, and Mr.Boom
+  are retained (redistribution rights confirmed or open-source).
+- The exclusion list is maintained as `NONCOMMERCIAL_CORES` in `build-gose-pc.sh`;
+  the trademark-ROM list as `TRADEMARK_ROMS`. Both are the single source of truth
+  for what ships.
+
+**Remaining obligations before any paid distribution:**
+- Items 1-8 above (§8 UNKNOWNs) are not cleared by the build fix — they are
+  pre-conditions on the distribution decision, not on the build.
+- The corresponding-source artifact (§4/§5E) must be hosted before distribution.
+- Batocera redistribution terms (§8 item 4) must be confirmed with the Batocera team.
 </content>
 </invoke>
