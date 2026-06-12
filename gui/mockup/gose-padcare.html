@@ -83,6 +83,7 @@
 <script src="assets/platform.js"></script>
 <script src="assets/icons.js"></script>
 <script src="assets/cursor.js"></script>
+<script src="assets/owner-confirm.js"></script>
 <script>
   document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
 
@@ -270,7 +271,11 @@
   }
 
   async function doSetAdmin(pad) {
-    const r = await post("/controllers/admin", { id: pad.id });
+    // Owner-gated: changing the OS-admin anchor proves physical ownership.
+    // Route through GOSE_OWNER.ownerPost so the hold-✕ overlay fires if needed.
+    const r = await (window.GOSE_OWNER
+      ? GOSE_OWNER.ownerPost("/controllers/admin", { id: pad.id }, "Set " + pad.name + " as OS controller")
+      : post("/controllers/admin", { id: pad.id }));
     if (!r.ok) { say("Admin: " + (r.error || "failed")); return; }
     // refresh care data to reflect new admin
     await loadCare();

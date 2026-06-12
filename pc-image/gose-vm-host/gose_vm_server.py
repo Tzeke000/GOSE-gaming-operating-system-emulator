@@ -11555,6 +11555,11 @@ class H(http.server.SimpleHTTPRequestHandler):
                 payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
             except Exception:
                 payload = {}
+            # SECURITY: the OS-admin pad is the owner's physical-presence anchor — whoever controls
+            # this pad can mint owner tokens. Redirect it = forge ownership. Owner-gate the set.
+            if not _owner_ok(payload):
+                return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                   "error": "owner proof required to change the OS-admin controller"})
             return self._json(controllers_admin_set(payload))
         if route in ("/controllers/rumble", "/controllers/led",
                      "/game/remap", "/game/remap/delete"):
