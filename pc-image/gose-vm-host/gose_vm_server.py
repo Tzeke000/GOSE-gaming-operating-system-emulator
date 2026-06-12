@@ -65,7 +65,20 @@ def _load_agent_token():
 TOKEN = _load_agent_token()
 
 # ---- production hardening: logging / error-tracking / rate-limit / atomic writes / version ----
-VERSION = {"version": "0.6", "build": "2026-06-05", "base": "Batocera 43.1 (x86_64)"}
+def _load_version():
+    """Read version from a VERSION file co-located with this script (repo-root file deployed alongside it).
+    Falls back to the literal dict if the file is missing or unparseable."""
+    _fallback = {"version": "0.6", "build": "2026-06-05", "base": "Batocera 43.1 (x86_64)"}
+    try:
+        _vpath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")
+        with open(_vpath) as _f:
+            _raw = _f.read().strip()
+        if _raw:
+            _fallback["version"] = _raw.splitlines()[0].strip()
+    except OSError:
+        pass
+    return _fallback
+VERSION = _load_version()
 START_T = time.time()
 LOG = logging.getLogger("gose")
 LOG.setLevel(logging.INFO)
