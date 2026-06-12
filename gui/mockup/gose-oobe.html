@@ -572,7 +572,7 @@
     var contLbl = last ? "Finish ▷ R1" : "Continue ▷ R1";
     var html='<span class="btn ghost focusable" data-act="back">‹ Back</span>';
     if(s.skip) html+='<span class="btn ghost focusable" data-act="skip">'+(s.skipLabel||"Skip")+' ›</span>';
-    html+='<span class="btn focusable" data-act="continue" id="contbtn" data-osk-primary>'+contLbl+'</span>';
+    html+='<span class="btn focusable" data-act="continue" id="contbtn" data-osk-primary tabindex="0">'+contLbl+'</span>';
     fb.innerHTML=html;
     refreshGate();  // required steps start with Continue disabled until satisfied
   }

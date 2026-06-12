@@ -1,9 +1,55 @@
-// GOSE cursor — the REAL X hardware cursor (docs/27 §1.1, fake cursor retired 2026-06-07).
-// The page-drawn #gose-cursor + `cursor:none` scheme is GONE: the left stick now drives the
-// real X pointer (XTEST @>=60Hz, XFixes auto-hide — gose-pad-nav.py), and the hardware cursor
-// is composited by the X server ABOVE every window, so it can never freeze at a web-window
-// frame edge or go "under" anything the way the page-drawn one did. If the default X arrow is
-// too faint for the dark UI, the fix is an X cursor THEME in the guest — not a fake cursor.
+// GOSE software cursor (2026-06-12 — replaces the "use the real X cursor" approach).
+// The WebKit2GTK kiosk renders via virgl/OpenGL and the X server CANNOT composite the hardware
+// cursor above the GL surface — the same reason fbgrab is blind to the UI. So the X cursor is
+// invisible even when XFixes "shows" it. The fix is a DOM element (#gose-ptr) that tracks
+// mousemove/pointermove: XTEST motion events (from pad-nav.py's left-stick driver) are real X
+// input events and DO trigger mousemove in WebKit, so the DOM cursor follows the stick exactly.
+// cursor.js sets body { cursor: none } and renders the custom element instead.
+// Auto-hides after CURSOR_HIDE_S (5 s) of pointer idle, matching the XFixes behavior in pad-nav.
+// The original "XFixes hide/show" in pad-nav continues to work (harmlessly) alongside this.
+(function(){
+  if(window.__goseCursor) return; window.__goseCursor=true;
+  var HIDE_S=5000;  // ms of idle before the DOM cursor hides (matches CURSOR_HIDE_S in pad-nav)
+  var ptr=null, hideTimer=null, visible=false, cx=0, cy=0;
+  function init(){
+    // style: body cursor:none + the #gose-ptr arrow element
+    var st=document.createElement('style');
+    st.textContent=
+      'body,body *{cursor:none!important}'+
+      // #gose-ptr: CSS-only arrow cursor (white triangle + dark outline via box-shadow)
+      // Using clip-path polygon so it works without SVG/image — simple white left-ptr shape
+      '#gose-ptr{position:fixed;top:0;left:0;z-index:2147483647;pointer-events:none;'+
+      'width:24px;height:24px;transform:translate(0,0);display:none;'+
+      'background-color:#fff;'+
+      'clip-path:polygon(0% 0%,0% 100%,25% 75%,50% 100%,62% 94%,37% 68%,100% 68%);'+
+      'filter:drop-shadow(1px 1px 0 #222);}';
+    document.head.appendChild(st);
+    ptr=document.createElement('div'); ptr.id='gose-ptr';
+    document.body.appendChild(ptr);
+  }
+  function show(x,y){
+    cx=x; cy=y;
+    if(ptr){ ptr.style.transform='translate('+x+'px,'+y+'px)'; ptr.style.display='block'; }
+    visible=true;
+    if(hideTimer){ clearTimeout(hideTimer); hideTimer=null; }
+    hideTimer=setTimeout(function(){ hide('idle'); }, HIDE_S);
+  }
+  function hide(){ if(ptr) ptr.style.display='none'; visible=false;
+    if(hideTimer){ clearTimeout(hideTimer); hideTimer=null; } }
+  function onMove(e){
+    // clientX/Y gives position relative to the viewport — perfect for a fixed element
+    var x=(e.clientX!=null?e.clientX:(e.touches&&e.touches[0]?e.touches[0].clientX:cx));
+    var y=(e.clientY!=null?e.clientY:(e.touches&&e.touches[0]?e.touches[0].clientY:cy));
+    show(x,y);
+  }
+  if(document.body){ init(); }
+  else { document.addEventListener('DOMContentLoaded',init); }
+  // capture-phase so we see the event before any page handler can stop it
+  document.addEventListener('mousemove', onMove, true);
+  document.addEventListener('pointermove', onMove, true);
+  // expose for pages/tests
+  window.GOSECURSOR={ show:show, hide:hide };
+})();
 
 // GOSE layered-modal signal (docs/27 §3.10) — the page-side half of the Escape contract.
 // While ANY modal / sub-layer is open the page sets  document.body.dataset.goseModal="1"
@@ -41,7 +87,7 @@
     var osk=document.createElement('div'); osk.id='osk'; document.body.appendChild(osk);
     var last=null;
     function isField(t){return t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable);}
-    document.addEventListener('focusin',function(e){ if(isField(e.target)){ last=e.target; show(); }});   // auto-appears in any text field (terminal, URL bars, search)
+    document.addEventListener('focusin',function(e){ if(isField(e.target)){ last=e.target; show(); updateEnterLabel(); }});   // auto-appears in any text field (terminal, URL bars, search)
     document.addEventListener('focusout',function(e){ if(isField(e.target)) setTimeout(function(){ if(!isField(document.activeElement)) hide(); }, 150); });
     var rows=['1234567890'.split(''),'qwertyuiop'.split(''),'asdfghjkl'.split(''),'zxcvbnm'.split('')];
     var shift=false, fr=0, fc=0, grid=[];
@@ -81,6 +127,9 @@
         return el.offsetParent!==null; }); }
     function primaryControl(){ return document.querySelector('[data-osk-primary]')
       || document.querySelector('button[type="submit"],input[type="submit"]'); }
+    function isFocusable(el){ if(!el) return false;
+      return el.tagName==='BUTTON'||el.tagName==='INPUT'||el.tagName==='A'||el.tagName==='SELECT'||
+             el.tagName==='TEXTAREA'||(el.hasAttribute&&el.hasAttribute('tabindex')); }
     function gone(el){ return !el||!document.contains(el)||el.offsetParent===null; }
     function commitField(){
       if(gone(last)){ hide(); return; }
@@ -89,12 +138,18 @@
       if(gone(fld)){ hide(); return; }          // the commit closed its surface -> the page owns focus
       var t=textTargets(), i=t.indexOf(fld);
       if(i>-1&&i<t.length-1){ var nx=t[i+1]; nx.focus(); last=nx;   // chain: next field, OSK stays
-        try{ nx.selectionStart=nx.selectionEnd=nx.value.length; }catch(e){} return; }
+        try{ nx.selectionStart=nx.selectionEnd=nx.value.length; }catch(e){}
+        updateEnterLabel(); return; }
       hide(); fld.blur();                       // last field -> primary continue/submit control
       var prim=primaryControl();
       fld.dispatchEvent(new CustomEvent('gose-osk-chain-end',{bubbles:true,detail:{primary:prim||null}}));
-      if(prim&&(prim.tagName==='BUTTON'||prim.tagName==='INPUT'||prim.tagName==='A'||prim.hasAttribute('tabindex'))){
-        try{ prim.focus(); }catch(e){} } }
+      if(prim){ try{ prim.focus(); }catch(e){} } }
+    // update the OSK Enter-key label: "Next →" when there are more fields, "Done ↵" on the last
+    function updateEnterLabel(){
+      var enterK=osk.querySelector('.k[data-fn="enter"]'); if(!enterK) return;
+      if(gone(last)){ enterK.textContent='Done ↵'; return; }
+      var t=textTargets(), i=t.indexOf(last);
+      enterK.textContent=(i>-1&&i<t.length-1)?'Next →':'Done ↵'; }
     function tabKey(){ if(gone(last)) return;
       var ev=sendKey(last,'Tab'); if(ev.defaultPrevented) return;  // page consumed it (e.g. completion)
       var t=textTargets(), i=t.indexOf(last); if(t.length<2) return;
@@ -103,7 +158,7 @@
     // the OSK is a modal layer: signal it (docs/27 §3.10) so Escape closes the
     // OSK first — never the window the page lives in. Refcounted via GOSE.modal*.
     function show(){ if(!osk.classList.contains('on')&&window.GOSE&&GOSE.modalPush)GOSE.modalPush();
-      osk.classList.add('on');mark();}
+      osk.classList.add('on');mark();updateEnterLabel();}
     function hide(){ if(osk.classList.contains('on')&&window.GOSE&&GOSE.modalPop)GOSE.modalPop();
       osk.classList.remove('on');}
     function toggle(){ if(osk.classList.contains('on'))hide(); else show(); }
