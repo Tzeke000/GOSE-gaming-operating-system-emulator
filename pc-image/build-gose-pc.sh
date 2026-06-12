@@ -20,13 +20,69 @@ LAYER="$HERE/gose-layer"
 OUT_IMG="$WORK/gose-pc-x86_64.img"
 OUT_OVA="${OUT_OVA:-$HERE/GOSE-PC.ova}"
 
-# Pinned base: Batocera 42 "Papilio Ulysses" (released 2025-10-12), x86_64 stable.
+# --- VERSION: single source of truth ------------------------------------------
+# The VERSION file at the repo root is the canonical version for both the build
+# and the running OS. Read it once here; the integrator must also update the
+# VERSION constant in gose_vm_server.py to match (see docs/18 §SB-1.3).
+GOSE_VERSION="$(cat "$REPO/VERSION" 2>/dev/null || echo "unknown")"
+
+# Pinned base: Batocera 43.1 (reconciled with gose_vm_server.py VERSION, SB-1.3).
 # Override via env. For a frozen, reproducible build set BATOCERA_IMG_URL to a
 # versioned archive file (e.g. the Internet Archive "all versions" item) and
 # BATOCERA_SHA256 to its published checksum.
-BATOCERA_VERSION="${BATOCERA_VERSION:-42}"
-BATOCERA_IMG_URL="${BATOCERA_IMG_URL:-https://mirrors.o2switch.fr/batocera/x86_64/stable/last/batocera-x86_64.img.gz}"
+BATOCERA_VERSION="${BATOCERA_VERSION:-43.1}"
+BATOCERA_IMG_URL="${BATOCERA_IMG_URL:-https://mirrors.o2switch.fr/batocera/x86_64/stable/43.1/batocera-x86_64-43.img.gz}"
 BATOCERA_SHA256="${BATOCERA_SHA256:-}"   # empty -> try sidecar .sha256, else warn
+
+# --- License / distribution mode ----------------------------------------------
+# SHIP_SAFE=1 (default): strip non-commercial libretro cores and trademark-laden
+#   ROMs. Required for any paid/public distribution (Steam, GitHub Releases, etc.).
+#   See docs/19-license-audit.md §1 and §5 for the full rationale.
+# SHIP_SAFE=0: keep all stock Batocera cores. Use ONLY for local dev / testing on
+#   a private machine. NEVER distribute a SHIP_SAFE=0 build commercially.
+SHIP_SAFE="${SHIP_SAFE:-1}"
+
+# Libretro cores that carry a non-commercial license and MUST be removed from any
+# commercial/public distribution (docs/19 §1 and §5A). These are the 11 EXCLUDE
+# entries from the full 117-core inventory audit (2026-06-06, verified against
+# upstream LICENSE files). Removing them does not drop whole systems because
+# commercial-OK alternatives exist on the same image (docs/19 §5B).
+#
+# REVIEW cores (picodrive, hatarib, zc210) are also excluded here pending legal
+# review — they will join the OK set only after upstream license confirmation
+# (docs/19 §3 and §5D).
+#
+# Core naming convention: <name>_libretro.so + <name>_libretro.info
+NONCOMMERCIAL_CORES="
+  snes9x
+  snes9x_next
+  genesisplusgx
+  genesisplusgx_expanded
+  genesisplusgx-expanded
+  genesisplusgx_wide
+  genesisplusgx-wide
+  fbneo
+  fmsx
+  mame078plus
+  opera
+  px68k
+  quasi88
+  picodrive
+  hatarib
+  zc210
+"
+
+# ROM files to exclude from a SHIP_SAFE distribution (trademark or redistribution
+# right unconfirmed per docs/19 §7). The Doom shareware WAD, prboom.wad, Mr.Boom,
+# pong1k2p.nes, and 2048.nes are retained (confirmed-OK redistribution terms).
+TRADEMARK_ROMS="
+  DonkeyKongClassic
+  fix_it_felix
+  Old-Towers
+  SpaceTwins
+  Reflectron
+  Santatlantean
+"
 
 GROW_TO="${GROW_TO:-32G}"      # final virtual disk size
 MEMORY_MB="${MEMORY_MB:-6144}"
@@ -103,6 +159,32 @@ run "chmod +x '$WORK/mnt/system/gose/provision-baked-apps.sh'"
 # Security hardener (Task #83) ships alongside the provisioner; same exec-bit fixup.
 run "chmod +x '$WORK/mnt/system/gose/harden-firstboot.sh'"
 
+step "4/a Stamp version metadata into the image (SB-1.3)"
+# Write the canonical GOSE_VERSION (from repo root VERSION file) into the image
+# so the running OS can report it independently of gose_vm_server.py's VERSION
+# constant (which the integrator must also update — see report note).
+run "echo '$GOSE_VERSION' > '$WORK/mnt/system/gose/GOSE_VERSION'"
+run "echo 'BATOCERA_VERSION=$BATOCERA_VERSION' >> '$WORK/mnt/system/gose/GOSE_VERSION'"
+
+step "4/b Strip trademark/unconfirmed ROMs for SHIP_SAFE distribution (SB-1.4)"
+# Remove ROM files whose redistribution right is unconfirmed or trademark-laden.
+# Retained: doom1_shareware.wad (license file ships with it), prboom.wad (GPL),
+# pong1k2p.nes + 2048.nes (homebrew, confirmed open-source), MrBoom.libretro (MIT).
+# See docs/19-license-audit.md §7 for per-file rationale.
+if [[ "$SHIP_SAFE" == "1" ]]; then
+  for pattern in $TRADEMARK_ROMS; do
+    # Use find to match any system subdirectory; the names are unique across systems
+    if [[ $DRY_RUN -eq 1 ]]; then
+      printf '  $ find %s/roms -iname "*%s*" -delete\n' "$WORK/mnt" "$pattern"
+    else
+      find "$WORK/mnt/roms" -iname "*${pattern}*" -delete 2>/dev/null || true
+    fi
+  done
+  echo "  SHIP_SAFE ROM exclusion done (trademark/unconfirmed titles removed)"
+else
+  echo "  SHIP_SAFE=0 — skipping ROM exclusion (DEV_ONLY mode; do NOT distribute)"
+fi
+
 step "4b/6 Bake the GOSE shell (product UI + server) into /userdata/gose-ui [Task #90]"
 # THE ship-blocker fix: the build previously baked ONLY system/ + agent/, so a clean
 # image booted hardened Batocera with NO GOSE UI and packaging fell back to the dev disk.
@@ -135,7 +217,7 @@ run "mkdir -p '$WORK/mnt/system/logs'"
 
 run "umount '$WORK/mnt'"
 
-step "4c/6 Install the pre-ES shell autostart hook on the BOOT partition"
+step "4c/6 Install the pre-ES shell autostart hook + strip non-commercial cores [BOOT partition]"
 # How the shell AUTOSTARTS: Batocera launches the front-end via /usr/bin/emulationstation-
 # standalone; GOSE swaps that script's ES launch line for `sh /userdata/gose-ui/gose-session.sh`.
 # On the dev disk that edit lived in the Batocera overlay; a clean build has none, so we
@@ -144,6 +226,67 @@ step "4c/6 Install the pre-ES shell autostart hook on the BOOT partition"
 run "mount \${LOOP}p1 '$WORK/mnt'"
 run "rsync -a '$LAYER/boot/boot-custom.sh' '$WORK/mnt/boot-custom.sh'"
 run "sed -i 's/\\r\$//' '$WORK/mnt/boot-custom.sh'"
+
+# SB-1.4: Strip non-commercial libretro cores from the Batocera squashfs.
+# Batocera's root filesystem is a squashfs at /boot/boot/batocera (or
+# /boot/boot/linux) on p1. The libretro cores live at /usr/lib/libretro/ inside
+# it. We unpack the squashfs, remove the NONCOMMERCIAL_CORES, and repack.
+#
+# This is the build-time exclusion: the resulting image contains ZERO non-
+# commercial cores. Users who want them for personal use can install them from
+# libretro's own buildbot at runtime (they're not shipped in our paid depot).
+# See docs/19-license-audit.md §5C for the "optional add-on" design.
+#
+# SHIP_SAFE=0 (dev-only): skips the strip; all stock Batocera cores present.
+if [[ "$SHIP_SAFE" == "1" ]]; then
+  # Locate the Batocera squashfs (name varies by release: batocera, linux, etc.)
+  SQUASHFS=""
+  for candidate in "$WORK/mnt/boot/batocera" "$WORK/mnt/boot/linux" "$WORK/mnt/batocera" "$WORK/mnt/linux"; do
+    if [[ -f "$candidate" ]]; then SQUASHFS="$candidate"; break; fi
+  done
+
+  if [[ -z "$SQUASHFS" ]]; then
+    echo "  WARNING: Batocera squashfs not found on p1 — cannot strip non-commercial cores."
+    echo "           Check the boot partition layout for the pinned Batocera version."
+    echo "           The image will contain all stock cores (including non-commercial ones)."
+    echo "           Do NOT distribute this build commercially until the squashfs is stripped."
+  elif [[ $DRY_RUN -eq 1 ]]; then
+    echo "  [dry-run] Would strip non-commercial cores from squashfs: $SQUASHFS"
+    for core in $NONCOMMERCIAL_CORES; do
+      printf '    rm -f squashfs-root/usr/lib/libretro/%s_libretro.so\n' "$core"
+      printf '    rm -f squashfs-root/usr/share/libretro/info/%s_libretro.info\n' "$core"
+    done
+  else
+    SQWORK="$WORK/squashfs-strip"
+    run "rm -rf '$SQWORK'"
+    # Unpack the squashfs (requires squashfs-tools: unsquashfs)
+    run "unsquashfs -d '$SQWORK' '$SQUASHFS'"
+
+    stripped=0
+    for core in $NONCOMMERCIAL_CORES; do
+      so="$SQWORK/usr/lib/libretro/${core}_libretro.so"
+      info="$SQWORK/usr/share/libretro/info/${core}_libretro.info"
+      if [[ -f "$so" ]]; then rm -f "$so"; stripped=$((stripped+1)); fi
+      if [[ -f "$info" ]]; then rm -f "$info"; fi
+    done
+    echo "  stripped $stripped non-commercial core(s) from squashfs"
+
+    # Repack (same compression as Batocera — gzip or lzo; mksquashfs defaults to gzip)
+    SQUASHFS_NEW="${SQUASHFS}.new"
+    run "mksquashfs '$SQWORK' '$SQUASHFS_NEW' -comp gzip -noappend -no-progress"
+    run "mv -f '$SQUASHFS_NEW' '$SQUASHFS'"
+    run "rm -rf '$SQWORK'"
+
+    # Write a manifest of stripped cores to the userdata partition for auditability.
+    # (p2 is already unmounted at this point — write to a temp file, copy when we
+    #  can access userdata again. For now, log to build output only.)
+    echo "  SHIP_SAFE core strip complete. Stripped cores (see docs/19 §5A):"
+    for core in $NONCOMMERCIAL_CORES; do echo "    $core"; done
+  fi
+else
+  echo "  SHIP_SAFE=0 — DEV_ONLY mode: non-commercial cores retained. Do NOT distribute."
+fi
+
 run "umount '$WORK/mnt'"
 run "losetup -d \$LOOP"
 
