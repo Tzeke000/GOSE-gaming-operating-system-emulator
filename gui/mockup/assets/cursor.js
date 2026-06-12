@@ -7,35 +7,70 @@
 // cursor.js sets body { cursor: none } and renders the custom element instead.
 // Auto-hides after CURSOR_HIDE_S (5 s) of pointer idle, matching the XFixes behavior in pad-nav.
 // The original "XFixes hide/show" in pad-nav continues to work (harmlessly) alongside this.
+//
+// 2026-06-12 low-latency + theme pass:
+//   - Position via transform:translate3d(x,y,0) (GPU-composited layer, no layout reflow).
+//   - Moves coalesced in requestAnimationFrame — one style write per frame maximum.
+//   - will-change:transform pre-promotes the element onto its own composited layer.
+//   - Cursor restyled to match the GOSE crystal theme: accent-blue (#5cd0ff) arrow
+//     with a dark contrast outline, matching the focus-glow and accent token from themes.css.
 (function(){
   if(window.__goseCursor) return; window.__goseCursor=true;
   var HIDE_S=5000;  // ms of idle before the DOM cursor hides (matches CURSOR_HIDE_S in pad-nav)
   var ptr=null, hideTimer=null, visible=false, cx=0, cy=0;
+  // rAF coalescing: pending coords, rAF id, and whether display:block is needed
+  var _px=0, _py=0, _rafId=null, _needShow=false;
+
   function init(){
-    // style: body cursor:none + the #gose-ptr arrow element
+    // style: body cursor:none + the #gose-ptr arrow element.
+    // GOSE crystal cursor: accent-blue fill (#5cd0ff, the --accent token from themes.css/onyx),
+    // dark stroke via drop-shadow so it reads on any background color or image.
+    // Clip-path is a clean 4-point arrowhead (top-left origin, pointing top-left):
+    //   tip at (0,0) → right edge at (100%,32%) → notch at (40%,32%) → tail-tip at (58%,100%)
+    //   → inner-notch at (32%,58%) → bottom edge at (32%,100%) [truncated at tail join]
+    // A 28px box gives a crisp 14-18 px visible tip region that scales with HiDPI.
     var st=document.createElement('style');
     st.textContent=
       'body,body *{cursor:none!important}'+
-      // #gose-ptr: CSS-only arrow cursor (white triangle + dark outline via box-shadow)
-      // Using clip-path polygon so it works without SVG/image — simple white left-ptr shape
       '#gose-ptr{position:fixed;top:0;left:0;z-index:2147483647;pointer-events:none;'+
-      'width:24px;height:24px;transform:translate(0,0);display:none;'+
-      'background-color:#fff;'+
-      'clip-path:polygon(0% 0%,0% 100%,25% 75%,50% 100%,62% 94%,37% 68%,100% 68%);'+
-      'filter:drop-shadow(1px 1px 0 #222);}';
+      'width:28px;height:28px;'+
+      // translate3d(0,0,0) kicks the element onto a composited GPU layer immediately;
+      // subsequent moves reuse that layer (no repaint). will-change pre-declares intent.
+      'transform:translate3d(0px,0px,0);will-change:transform;'+
+      'display:none;'+
+      // GOSE crystal arrow: accent-blue body with a dark drop-shadow outline.
+      // Polygon: standard left-ptr arrow (tip top-left, tail bottom-right notch).
+      'background:#5cd0ff;'+
+      'clip-path:polygon(0% 0%,0% 82%,22% 63%,42% 100%,56% 93%,36% 56%,100% 56%);'+
+      // drop-shadow provides the dark contrast outline readable on any bg.
+      // Second shadow adds a subtle glow matching the GOSE focus ring colour.
+      'filter:drop-shadow(0 0 1px #06121a) drop-shadow(0 0 1px #06121a) drop-shadow(0 0 4px #5cd0ff66);}';
     document.head.appendChild(st);
     ptr=document.createElement('div'); ptr.id='gose-ptr';
     document.body.appendChild(ptr);
   }
-  function show(x,y){
-    cx=x; cy=y;
-    if(ptr){ ptr.style.transform='translate('+x+'px,'+y+'px)'; ptr.style.display='block'; }
-    visible=true;
-    if(hideTimer){ clearTimeout(hideTimer); hideTimer=null; }
-    hideTimer=setTimeout(function(){ hide('idle'); }, HIDE_S);
+
+  function _applyFrame(){
+    _rafId=null;
+    if(!ptr) return;
+    if(_needShow){ ptr.style.display='block'; _needShow=false; }
+    ptr.style.transform='translate3d('+_px+'px,'+_py+'px,0)';
   }
-  function hide(){ if(ptr) ptr.style.display='none'; visible=false;
-    if(hideTimer){ clearTimeout(hideTimer); hideTimer=null; } }
+
+  function show(x,y){
+    cx=x; cy=y; _px=x; _py=y;
+    if(!visible){ visible=true; _needShow=true; }
+    // schedule at most one rAF write per frame
+    if(!_rafId) _rafId=requestAnimationFrame(_applyFrame);
+    if(hideTimer){ clearTimeout(hideTimer); hideTimer=null; }
+    hideTimer=setTimeout(function(){ hide(); }, HIDE_S);
+  }
+  function hide(){
+    if(ptr) ptr.style.display='none';
+    visible=false;
+    if(hideTimer){ clearTimeout(hideTimer); hideTimer=null; }
+    if(_rafId){ cancelAnimationFrame(_rafId); _rafId=null; }
+  }
   function onMove(e){
     // clientX/Y gives position relative to the viewport — perfect for a fixed element
     var x=(e.clientX!=null?e.clientX:(e.touches&&e.touches[0]?e.touches[0].clientX:cx));
