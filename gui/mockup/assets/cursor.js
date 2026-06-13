@@ -65,11 +65,24 @@
 
   function show(x,y){
     cx=x; cy=y; _px=x; _py=y;
-    if(!visible){ visible=true; _needShow=true; }
-    // schedule at most one rAF write per frame
-    if(!_rafId) _rafId=requestAnimationFrame(_applyFrame);
     if(hideTimer){ clearTimeout(hideTimer); hideTimer=null; }
     hideTimer=setTimeout(function(){ hide(); }, HIDE_S);
+    // 2026-06-13 lag fix: write the transform SYNCHRONOUSLY in the same task as the
+    // pointer event instead of deferring to the next rAF. The old rAF hop cost a full
+    // frame (~16ms) of visible lag — the drawn cursor always trailed the real pointer by
+    // one frame. transform-only writes on a will-change:transform element are
+    // compositor-only (no layout/paint reflow), and the browser already coalesces
+    // pointermove to ~one dispatch per frame, so a direct write is cheap and removes the
+    // trailing frame. (Residual lag, if any, is the WebKit2GTK/virgl GL compositor
+    // pipeline on the VM — not fixable from JS; see the header note on fbgrab/GL.)
+    if(ptr){
+      if(!visible){ visible=true; ptr.style.display='block'; }
+      ptr.style.transform='translate3d('+x+'px,'+y+'px,0)';
+    } else {
+      // not yet initialised — fall back to the rAF path for this one event
+      if(!visible){ visible=true; _needShow=true; }
+      if(!_rafId) _rafId=requestAnimationFrame(_applyFrame);
+    }
   }
   function hide(){
     if(ptr) ptr.style.display='none';
