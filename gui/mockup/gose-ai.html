@@ -230,7 +230,7 @@
       var t=PANEL.tok;
       h='<div class="head"><div class="av" style="background:'+accFor(t.name)+'">'+esc(t.name[0])+'</div>'+
         '<div><h3>'+esc(t.name)+' — paired</h3><div class="hs">'+(TLABEL[t.tier]||esc(t.tier))+' tier · '+esc(t.why||"token issued")+'</div></div></div>'+
-        ‘<div class="tokbox"><div><b style="color:var(--text)">’+esc(t.name)+’’s pairing token</b> · connect to the GOSE Agent on this device, TCP port <b style="color:var(--text)">8731</b></div>’+
+        ‘<div class="tokbox"><div><b style="color:var(--text)">’+esc(t.name)+"’s pairing token</b> · connect to the GOSE Agent on this device, TCP port <b style=\"color:var(--text)\">8731</b></div>"+
         ‘<code>’+esc(t.token)+’</code>’+
         ‘<div>Give this token to your AI (e.g. GoseClient(host, 8731, token=…)). Keep it secret — it IS the key, and it is shown <b style="color:var(--text)">only this once</b>. ‘+
         ‘If your AI used <b style="color:var(--text)">POST /ai/request</b> to ask for pairing, it can also collect its token via <b style="color:var(--text)">GET /ai/token?name=…&amp;claim=…</b> (one-time claim).</div></div>’+

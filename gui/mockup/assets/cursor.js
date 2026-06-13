@@ -36,7 +36,7 @@
     st.textContent=
       'body,body *{cursor:none!important}'+
       '#gose-ptr{position:fixed;top:0;left:0;z-index:2147483647;pointer-events:none;'+
-      'width:28px;height:28px;'+
+      'width:34px;height:34px;'+
       // translate3d(0,0,0) kicks the element onto a composited GPU layer immediately;
       // subsequent moves reuse that layer (no repaint). will-change pre-declares intent.
       'transform:translate3d(0px,0px,0);will-change:transform;'+
