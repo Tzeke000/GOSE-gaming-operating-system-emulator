@@ -438,6 +438,23 @@
   (document.head||document.documentElement).appendChild(s);
 })();
 
+// GOSE kiosk freshness heartbeat (W-PRE 2026-06-13).
+// The WebKit kiosk can freeze after long uptime (JS scheduler halts; clock stops; CPU spikes).
+// The watchdog only detects process crashes — not a live-but-frozen kiosk.
+// Fix: POST /kiosk/tick every 30 s so the server knows the JS event loop is alive.
+// The server (gose_vm_server.py) stamps a lastTick timestamp; watchdog.py checks staleness
+// (>2 min tick gap while the kiosk process is alive) and kills the kiosk so the session
+// loop restarts it fresh.
+(function(){
+  if(window.__goseTick) return; window.__goseTick=true;
+  var TICK_INTERVAL=30000;   // 30 s — fast enough to catch a freeze within 2-3 min
+  function tick(){
+    try{ fetch('/kiosk/tick',{method:'POST',cache:'no-store'}).catch(function(){}); }catch(e){}
+  }
+  tick();   // send one immediately on page load so the server sees the kiosk woke up
+  setInterval(tick, TICK_INTERVAL);
+})();
+
 // GOSE UI sounds — subtle nav/select/back blips on EVERY screen (the owner supplies the .wav set in
 // assets/sounds/). Mute via Settings → Sound → UI sounds (localStorage gose-sounds='off').
 (function(){

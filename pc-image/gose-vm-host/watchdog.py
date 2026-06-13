@@ -31,6 +31,9 @@ SAFE_F     = UI_DIR + "/.safe_mode"
 RECENT_F   = UI_DIR + "/recent.json"
 PLAYTIME_F = UI_DIR + "/playtime.json"
 _GAME_RE = "retroarch|emulatorlauncher|ppsspp|pcsx|dolphin-emu|mupen64|duckstation|flycast|mednafen|melonds|scummvm"
+_KIOSK_PAT   = "kiosk.py"
+TICK_F       = UI_DIR + "/.kiosk_tick"
+TICK_STALE_S = int(os.environ.get("GOSE_WD_TICK_STALE", "120"))   # 2 min default
 
 # ---- singleton guard ---------------------------------------------------------
 # Only one watchdog should run at a time. On startup we try to claim a lockfile
@@ -164,6 +167,48 @@ def alive(pat):
 
 def game_running():
     return subprocess.run(["pgrep", "-f", _GAME_RE], capture_output=True).returncode == 0
+
+def kiosk_frozen():
+    """Return True if the kiosk is alive but has not posted a tick recently.
+
+    The JS event loop in cursor.js posts POST /kiosk/tick every 30 s; the server writes
+    /userdata/gose-ui/.kiosk_tick with the epoch.  A gap > TICK_STALE_S (default 120 s)
+    while the kiosk process is alive signals a frozen JS scheduler.
+    Skip the check while a game is running (kiosk is in the background, ticks pause).
+    """
+    if not alive(_KIOSK_PAT):
+        return False   # not running — not our job here (session loop restarts it)
+    if game_running():
+        return False   # game is active; kiosk is backgrounded — ticks are paused, that's fine
+    try:
+        with open(TICK_F) as f:
+            last = float(f.read().strip() or "0")
+    except Exception:
+        # Tick file absent: the kiosk just started OR cursor.js hasn't loaded yet.
+        # Give it up to 2× the stale threshold before complaining so a slow first-boot
+        # doesn't false-trigger.
+        return False
+    age = time.time() - last
+    return age > TICK_STALE_S
+
+def restart_kiosk():
+    """Kill the kiosk process — the gose-session.sh emulationstation-standalone loop
+    will relaunch it within seconds, restoring the JS scheduler fresh."""
+    log("kiosk appears frozen (tick stale > %ds) — killing to trigger relaunch" % TICK_STALE_S)
+    try:
+        out = subprocess.run(["pgrep", "-f", _KIOSK_PAT], capture_output=True, text=True)
+        for pid_s in out.stdout.split():
+            pid_s = pid_s.strip()
+            if pid_s:
+                subprocess.run(["kill", "-9", pid_s])
+        log("killed stale kiosk process(es): %s" % out.stdout.strip())
+    except Exception as e:
+        log("restart_kiosk failed: %s" % e)
+    # Remove the stale tick file so the next boot starts with a clean slate.
+    try:
+        os.remove(TICK_F)
+    except Exception:
+        pass
 
 def accrue_playtime():
     if not game_running():
@@ -425,6 +470,11 @@ def main():
                         log("restarted %s" % pat)
                     except Exception:
                         pass
+
+            # 2b) Freeze detection: kiosk alive but JS tick stale → kill it so the
+            #     emulationstation-standalone session loop restarts a fresh kiosk.
+            if kiosk_frozen():
+                restart_kiosk()
 
             # 3) confirmed-good boot? snapshot a rollback target (once per streak)
             att = read_attempts()

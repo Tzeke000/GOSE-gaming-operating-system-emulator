@@ -2277,6 +2277,37 @@ def health():
     return {"ok": True, "version": VERSION["version"], "uptime_s": round(time.time() - START_T),
             "agent": agent_status().get("ok", False), "host_bridge": bool(host_info())}
 
+# ---- Kiosk freshness heartbeat (W-PRE 2026-06-13) ----
+# The JS event loop in the WebKit kiosk posts here every 30 s.  The watchdog reads
+# _KIOSK_LAST_TICK to detect a live-but-frozen kiosk (tick gap > 2 min → restart).
+_KIOSK_TICK_F = ROOT + "/.kiosk_tick"
+_KIOSK_LAST_TICK = [0.0]   # [0] so watchdog can read via the running process's exported attr too
+
+def kiosk_tick():
+    """POST /kiosk/tick — called by cursor.js every 30 s while the kiosk JS loop is alive."""
+    t = time.time()
+    _KIOSK_LAST_TICK[0] = t
+    try:
+        tmp = _KIOSK_TICK_F + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(str(t))
+        os.replace(tmp, _KIOSK_TICK_F)
+    except Exception:
+        pass
+    # Reset the boot-attempts counter — a tick proves the kiosk is serving pages fine.
+    try:
+        boot_f = ROOT + "/.boot_attempts"
+        with open(boot_f) as f:
+            n = int(f.read().strip() or "0")
+        if n > 0:
+            tmp2 = boot_f + ".tmp"
+            with open(tmp2, "w") as f:
+                f.write("0")
+            os.replace(tmp2, boot_f)
+    except Exception:
+        pass
+    return {"ok": True, "t": t}
+
 def host_bridge(path, body=None, timeout=16):
     # proxy to the host bridge (Wi-Fi uses the laptop's real radio via netsh on Windows)
     try:
@@ -3520,7 +3551,13 @@ def ai_grant(payload):
                            "paired_via": prev.get("paired_via") or payload.get("via", "oobe"),
                            "token": prev.get("token") or secrets.token_hex(16)}
             else:
-                g.pop(name, None)     # never-paired observe — nothing to keep (== no grant)
+                # Never-paired observe with no prior grant: the caller omitted pair=True.
+                # Silently deleting the grant here would mask the bug at the call site —
+                # return an explicit error instead so the caller knows to pass pair=True.
+                return {"ok": False, "code": "ERR_NEED_PAIR",
+                        "error": "Observe grants require pair=true to create a roster entry. "
+                                 "Pass pair=true to pair the agent, or omit tier=observe "
+                                 "to grant a higher tier directly."}
         else:
             days = payload.get("expires_days")    # None/0 = permanent until revoked (the default)
             # optional controller seat (1-4) — pins the AI to it; ABSENT key = keep the
@@ -11807,6 +11844,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/friends/remove":
                 return self._json(friends_remove(payload))
             return self._json(friends_save(payload))
+        if route == "/kiosk/tick":
+            return self._json(kiosk_tick())
         if route == "/guide/toggle":
             return self._json(guide_toggle())
         if route == "/game/exit":
