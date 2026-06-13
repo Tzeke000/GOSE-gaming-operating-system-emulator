@@ -48,7 +48,7 @@
   <div class="wrap">
     <div class="head"><img src="assets/brand/gose-crystal.png" alt="GOSE"><h1 data-i18n="apps.title">Apps</h1>
       <span class="x"><span class="ic" data-i="apps"></span> <span data-i18n="app.close">Esc — desktop</span></span></div>
-    <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search apps…" autofocus data-i18n-placeholder="apps.search_ph"></div>
+    <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search apps…" data-i18n-placeholder="apps.search_ph"></div>
     <div class="ph" id="ph" data-i18n="apps.all_apps">ALL APPS</div>
     <div class="grid" id="grid"></div>
     <div class="power">
@@ -80,12 +80,20 @@
     {nm:_t("apps.app.moonlight.nm","Moonlight"), ds:_t("apps.app.moonlight.ds","Stream games from your PC (Sunshine / GeForce)"), ic:"monitor", app:"moonlight"},
     {nm:_t("apps.app.store.nm","Store"),    ds:_t("apps.app.store.ds","Get more apps from Flathub"),     ic:"store", href:"gose-store.html"},
     {nm:_t("apps.app.terminal.nm","Terminal"), ds:_t("apps.app.terminal.ds","Command line — the real shell"),  ic:"terminal-app", href:"gose-term.html"},
-    {nm:_t("apps.app.licenses.nm","Licenses"), ds:_t("apps.app.licenses.ds","Open-source credits & licenses"), ic:"file-text", href:"gose-licenses.html"},
-    {nm:_t("apps.app.stress.nm","Stress Test"), ds:_t("apps.app.stress.ds","CPU, memory & GL stability and thermal check"), ic:"flame", href:"gose-stress.html"},
+    // Licenses and Stress Test are developer/diagnostic surfaces — hidden from the default
+    // user-facing Apps grid behind a dev flag.  Access: Settings → About → Developer Tools,
+    // or set localStorage gose-dev-mode="1" in the browser console.
+    // {nm:_t("apps.app.licenses.nm","Licenses"), ds:_t("apps.app.licenses.ds","Open-source credits & licenses"), ic:"file-text", href:"gose-licenses.html"},
+    // {nm:_t("apps.app.stress.nm","Stress Test"), ds:_t("apps.app.stress.ds","CPU, memory & GL stability and thermal check"), ic:"flame", href:"gose-stress.html"},
     {nm:_t("apps.app.beam.nm","Beam"),     ds:_t("apps.app.beam.ds","Send files to phone & devices"), ic:"send",     soon:true},
     {nm:_t("apps.app.ai.nm","AI Players"), ds:_t("apps.app.ai.ds","Your AI agents — join & play"), ic:"ai", soon:true},
     {nm:_t("apps.app.emulators.nm","Emulators"), ds:_t("apps.app.emulators.ds","Cores & systems — license-aware store"), ic:"emulators", href:"gose-store.html?tab=emulators"},
   ];
+  // Re-insert dev-only apps when gose-dev-mode is active (Settings → About → Developer Tools).
+  if(localStorage.getItem("gose-dev-mode")==="1"){
+    APPS.push({nm:_t("apps.app.licenses.nm","Licenses"), ds:_t("apps.app.licenses.ds","Open-source credits & licenses"), ic:"file-text", href:"gose-licenses.html"});
+    APPS.push({nm:_t("apps.app.stress.nm","Stress Test"), ds:_t("apps.app.stress.ds","CPU, memory & GL stability and thermal check"), ic:"flame", href:"gose-stress.html"});
+  }
   let shown=APPS.slice(), foc=0;
   function esc(s){return(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
   function paint(){if(window.GICON){GICON.paint(document);return;}document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}

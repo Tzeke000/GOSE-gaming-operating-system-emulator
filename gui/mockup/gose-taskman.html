@@ -108,7 +108,7 @@
   function fmt(b){if(b==null)return"—";const u=["B","KB","MB","GB","TB"];let i=0,n=b;while(n>=1024&&i<4){n/=1024;i++;}return (n>=100||i==0?Math.round(n):n.toFixed(1))+" "+u[i];}
   function say(m,warn){const t=$("toast");t.textContent=m;t.className="toast show"+(warn?" warn":"");clearTimeout(say._t);say._t=setTimeout(()=>t.className="toast",2200);}
   function paint(){document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
-  let procs=[], focPid=null, armPid=null, armSig=15, armT=0, actFoc=null;
+  let procs=null, focPid=null, armPid=null, armSig=15, armT=0, actFoc=null;
   const HIST={cpu:[],gpu:[],mem:[],gmem:[]}; let curTab="proc", lastS={};
 
   function renderHeader(d){
@@ -128,6 +128,10 @@
       +(m.SwapTotal?`<span><span class="sw" style="background:#b0683a"></span>Swap <b>${fmt((m.SwapTotal-(m.SwapFree||0)))} / ${fmt(m.SwapTotal)}</b></span>`:"");
   }
   function renderRows(){
+    if(procs===null){
+      $("rows").innerHTML='<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">Loading…</td></tr>';
+      return;
+    }
     $("t-proc").textContent=procs.length;
     if(focPid==null&&procs.length)focPid=procs[0].pid;
     $("rows").innerHTML=procs.map(p=>`<tr class="${p.pid===focPid?'focus':''}" data-pid="${p.pid}">
@@ -148,8 +152,13 @@
     HIST.gmem.push(s.gpu_mem_total_mb?Math.round((s.gpu_mem_used_mb||0)/s.gpu_mem_total_mb*100):0);
     for(const k in HIST)if(HIST[k].length>cap)HIST[k].shift();}
   function drawGraph(id,data,color){const cv=$(id);if(!cv)return;
-    const r=cv.getBoundingClientRect();cv.width=r.width;cv.height=r.height;
-    const x=cv.getContext("2d"),W=cv.width,Hh=cv.height;x.clearRect(0,0,W,Hh);
+    const r=cv.getBoundingClientRect();
+    // getBoundingClientRect() returns 0×0 while the perf pane is hidden (display:none).
+    // Fall back to the CSS-declared size so the canvas has real dimensions on first draw.
+    const W=r.width||cv.parentElement.clientWidth||300;
+    const Hh=r.height||130;
+    cv.width=W;cv.height=Hh;
+    const x=cv.getContext("2d");x.clearRect(0,0,W,Hh);
     x.strokeStyle="#ffffff10";x.lineWidth=1;for(let i=1;i<4;i++){const y=Hh*i/4;x.beginPath();x.moveTo(0,y);x.lineTo(W,y);x.stroke();}
     if(data.length<2)return;const step=W/59;
     x.beginPath();data.forEach((v,i)=>{const px=i*step,py=Hh-(Math.min(100,v)/100*Hh);i?x.lineTo(px,py):x.moveTo(px,py);});
@@ -165,14 +174,17 @@
   function setTab(t){curTab=t;
     document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
     const proc=t==="proc";$("memrow").style.display=proc?"":"none";$("procpane").style.display=proc?"":"none";$("perf").style.display=proc?"none":"";
-    if(t==="perf")drawAll(lastS);}
+    if(t==="perf"){
+      // rAF ensures the pane has layout before we read getBoundingClientRect() in drawGraph.
+      requestAnimationFrame(function(){drawAll(lastS);});
+    }}
   document.querySelectorAll(".tab").forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
   async function poll(){
     try{
       const s=await(await fetch("/status.json",{cache:"no-store"})).json(); lastS=s; renderHeader(s); pushHist(s);
       if(curTab==="perf")drawAll(s);
       const d=await(await fetch("/procs.json",{cache:"no-store"})).json();
-      if(d.ok){procs=d.procs;renderMem(d.mem);if(curTab==="proc")renderRows();}
+      if(d.ok){procs=d.procs||[];renderMem(d.mem);if(curTab==="proc")renderRows();}
     }catch(e){}
   }
   function curName(){const p=procs.find(x=>x.pid===focPid);return p?p.name:focPid;}
@@ -185,7 +197,7 @@
     }else{armPid=focPid;armSig=sig;armT=Date.now();
       say(`${sig===9?'Force-kill':'End'} ${curName()} (PID ${focPid})? Activate again to confirm`,true);}
   }
-  function move(d){if(!procs.length)return;actFoc=null;let i=procs.findIndex(p=>p.pid===focPid);i=(i+d+procs.length)%procs.length;focPid=procs[i].pid;renderRows();}
+  function move(d){if(!procs||!procs.length)return;actFoc=null;let i=procs.findIndex(p=>p.pid===focPid);i=(i+d+procs.length)%procs.length;focPid=procs[i].pid;renderRows();}
   addEventListener("keydown",e=>{const k=e.key;
     if(k==="Tab"||k==="["||k==="]"){setTab(curTab==="proc"?"perf":"proc");}   // [ ] = pad L1/R1 (two tabs → both toggle)
     else if(k==="Escape"||k==="Backspace"){
@@ -201,7 +213,7 @@
     else return;e.preventDefault();});
   // No raw-gamepad poll — the bridge (gose-pad-nav.py) synthesizes the keys above;
   // a page-level getGamepads() loop is a second input path that double-fires (docs/27).
-  paint(); if(/tab=perf/.test(location.hash))setTab("perf"); poll(); setInterval(poll,2000);
+  paint(); renderRows(); if(/tab=perf/.test(location.hash))setTab("perf"); poll(); setInterval(poll,2000);
 </script>
 <script src="assets/a11y.js"></script>
 </body></html>
