@@ -72,6 +72,20 @@
   .sys-row{display:flex;justify-content:space-between;font-size:12px;color:#aeb4d2;margin:5px 0}
   .sys-row b{color:#eaf0ff;font-weight:600}
   .dotw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:0}
+  /* AI Players widget — real agent cards (match gose-ai.html card style, onyx-themed) */
+  .aip-grid{display:flex;flex-direction:column;gap:8px;padding:4px 2px}
+  .aip-card{display:flex;align-items:center;gap:11px;background:var(--surface,#111124);
+    border:2px solid transparent;border-radius:13px;padding:10px 13px;cursor:pointer}
+  .aip-card.focus{border-color:var(--accent,#5cd0ff);box-shadow:0 0 0 3px #5cd0ff22}
+  .aip-av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:15px;font-weight:700;color:#06121a;flex:none}
+  .aip-tx{flex:1;min-width:0}
+  .aip-nm{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .aip-st{display:flex;align-items:center;gap:5px;font-size:11px;color:#9aa0c0;margin-top:2px}
+  .aip-dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .aip-badge{font-size:10px;font-weight:700;border-radius:7px;padding:2px 7px;border:1px solid #ffffff18;white-space:nowrap;flex:none}
+  .aip-empty{color:#9aa0c0;font-size:12px;line-height:1.5;padding:10px 4px;text-align:center}
+  .aip-empty a{color:var(--accent,#5cd0ff);text-decoration:none}
 </style></head>
 <body>
   <div class="horizon"></div>
@@ -205,27 +219,49 @@
       if((d.games||[]).length)secs.push({label:"GAMES",items:d.games.slice(0,2).map(g=>t(g.name,g.sysname||g.cat,'games','gamepad-2'))});
       return {sections:secs, footer:{icon:"store",label:"Open Store",go:"gose-store.html"}}; } });
 
-  // ---- AI PLAYERS (content): your AI agents — status + tier + revoke ----
-  const AIS=['Agent A','Agent B','Agent C'], TC={observe:'#9aa3b8',play:'#5cd0ff',admin:'#ffb74d'}, TL={observe:'Observe',play:'Play',admin:'Admin'};
+  // ---- AI PLAYERS (content): real paired agents from /ai/grants + /ai/players ----
+  // No placeholder roster — shows actual grant names, tier chips (TC colors), online/offline
+  // status dots, and a revoke action. Empty state links to the AI Hub. Cards use .gw-item
+  // so the nav system picks them up as focusable targets (widget.js §nav.build line 213).
+  const TC={observe:'#9aa3b8',play:'#5cd0ff',admin:'#ffb74d'}, TL={observe:'Observe',play:'Play',admin:'Admin'};
+  const AICOLS=['#5cd0ff','#7d8cff','#37d39b','#ff7a9c','#ffce5c','#b388ff'];
+  function aiAccent(n){var h=0;for(var i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))>>>0;return AICOLS[h%AICOLS.length];}
   GW.define({ id:"aiplayers", title:"AI Players", icon:"ai", size:{w:300}, pos:{x:770,y:440}, poll:5000,
     load:()=>Promise.all([fetch('/ai/grants',{cache:'no-store'}).then(r=>r.json()).catch(()=>({})),
                           fetch('/ai/players',{cache:'no-store'}).then(r=>r.json()).catch(()=>({}))])
             .then(([g,p])=>({grants:(g&&g.grants)||{},live:((p&&p.players)||[])})),
     render:(d)=>{ d=d||{grants:{},live:[]};
-      const items=AIS.map(n=>{ const tier=(d.grants[n]&&d.grants[n].tier)||'observe', on=d.live.some(x=>x.name===n&&x.online);
-        const it={icon:"ai",label:n,go:"gose-ai.html",
-          chip:{text:TL[tier],color:TC[tier]} };
-        it._dot=on; return it; });
-      // online dot is drawn into the sub line via a tiny inline marker
-      items.forEach(it=>{ it.sub=(it._dot?'● online':'○ offline'); });
-      // revoke is a second action — expose as a per-row chip when tier>observe
-      AIS.forEach((n,i)=>{ const tier=(d.grants[n]&&d.grants[n].tier)||'observe';
-        if(tier!=='observe') items[i].chip={text:'Revoke',onActivate:()=>{
-          fetch('/ai/revoke',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:n})})
-            .then(()=>{ if(window.GOSE&&GOSE.notify)GOSE.notify({title:'AI access',body:n+' revoked → Observe only'}); GW.refresh('aiplayers'); }).catch(()=>{}); }};
+      const names=Object.keys(d.grants||{});
+      const liveMap={};
+      (d.live||[]).forEach(x=>{if(x&&x.name)liveMap[x.name]=x;});
+      const online=names.filter(n=>(liveMap[n]&&liveMap[n].online)).length;
+      if(!names.length){
+        // no paired agents yet — friendly empty state with a hub link
+        const body='<div class="aip-grid"><div class="aip-empty">No AI paired yet.<br>'+
+          '<a href="gose-ai.html">Open the AI Hub to pair one ›</a></div></div>';
+        return {body, footer:{icon:'ai',label:'Open AI Hub',go:'gose-ai.html'}}; }
+      // build one mini-card per real grant — .gw-item makes each focusable via widget nav
+      let html='<div class="aip-grid">';
+      names.forEach(n=>{
+        const g=d.grants[n]||{}, tier=g.tier||'observe';
+        const lv=liveMap[n]||{}, on=!!lv.online;
+        const tc=TC[tier]||'#9aa3b8', tl=TL[tier]||tier;
+        const bg=aiAccent(n);
+        const tcBg=tier==='observe'?'transparent':(TC[tier]+'22');
+        // data-go wires the card activation to gose-ai.html (widget.js wireAction reads data-go)
+        html+='<div class="aip-card gw-item" data-label="'+GW.esc(n)+'" data-go="gose-ai.html">'+
+          '<div class="aip-av" style="background:'+bg+'">'+GW.esc(n[0].toUpperCase())+'</div>'+
+          '<div class="aip-tx">'+
+            '<div class="aip-nm">'+GW.esc(n)+'</div>'+
+            '<div class="aip-st"><span class="aip-dot" style="background:'+(on?'#3fe0a0':'#3a3e4c')+'"></span>'+
+            GW.esc(on?(lv.mode==='playing'?'Playing':'Online'):'Offline')+'</div>'+
+          '</div>'+
+          '<span class="aip-badge" style="color:'+tc+';background:'+tcBg+';border-color:'+tc+'44">'+GW.esc(tl)+'</span>'+
+        '</div>';
       });
-      const online=d.live.filter(x=>x.online).length;
-      return {items, badge: online?{text:online+' live',dot:true}:null}; } });
+      html+='</div>';
+      return {body:html, footer:{icon:'ai',label:'Open AI Hub',go:'gose-ai.html'},
+              badge:online?{text:online+' live',dot:true}:null}; } });
 
   // ---- STEAM (content, opt-in): status + recent library ----
   GW.define({ id:"steam", title:"Steam", icon:"gamepad-2", size:{w:300}, pos:{x:1100,y:440}, poll:6000,
