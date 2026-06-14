@@ -79,7 +79,10 @@ $a = @(
   # LOOPBACK-ONLY binding (was tcp:: = all interfaces = LAN-exposed on hotel wifi, found 2026-06-06).
   # Remote access goes through tailscale serve (tailnet -> 127.0.0.1), never raw LAN. A firewall
   # block rule "GOSE VM - block LAN access to agent+SSH" exists as the second layer.
-  '-netdev','user,id=net0,hostfwd=tcp:127.0.0.1:8731-:8731,hostfwd=tcp:127.0.0.1:2222-:22',
+  # 8780 = the GOSE UI server, forwarded 127.0.0.1-only so the HOST browser can reach the in-VM
+  # UI + the /upload ROM-drop page (http://127.0.0.1:8780/gose-upload.html). Host-loopback only,
+  # never the LAN (same posture as 8731/2222). Added 2026-06-11 for host->guest ROM upload.
+  '-netdev','user,id=net0,hostfwd=tcp:127.0.0.1:8731-:8731,hostfwd=tcp:127.0.0.1:2222-:22,hostfwd=tcp:127.0.0.1:8780-:8780',
   '-device','virtio-net-pci,netdev=net0',
   '-device','virtio-vga-gl','-display',$Display,     # virgl GPU passthrough via host OpenGL
   # host audio passthrough: speakers + mic (hda-duplex = playback + capture) via DirectSound
@@ -110,10 +113,36 @@ $a = @(
   '-device','usb-redir,chardev=usbredir4,id=usbredirdev4'
 )
 Write-Host "Booting GOSE-PC VM (virgl/$Display) via MSYS2 qemu..."
-# -PassThru returns the Process object so callers (gose-launcher.ps1) can Wait-Process on it for
-# clean-exit: when the user closes the GOSE window the launcher exits and closes its console.
-$script:GoseVmProcess = Start-Process -FilePath $qemu -ArgumentList $a -WorkingDirectory $bin -PassThru
-Write-Host "Launched. Agent reachable at 127.0.0.1:8731 (token in .mcp.json) once booted."
+# 2026-06-13: capture QEMU stderr + verify it actually STAYS up, with one display
+# fallback. Before, QEMU was Start-Process'd with NO output capture and NO survival
+# check, so a failed GL-context init just vanished silently — "I press GOSE and nothing
+# pops up", zero trace (the 2026-06-13 no-show Zeke hit). Now: log stderr to qemu.err.log,
+# and if QEMU exits within ~4s, retry ONCE on gtk,gl=on so a transient sdl/GL init failure
+# self-heals instead of leaving a dead icon.
+$qemuErr = Join-Path $PSScriptRoot 'qemu.err.log'
+function Start-GoseQemu([string]$displayValue) {
+  $args2 = $a.Clone()                              # copy so we can swap -display per attempt
+  for ($i = 0; $i -lt $args2.Count; $i++) {
+    if ($args2[$i] -eq '-display') { $args2[$i + 1] = $displayValue }
+  }
+  return Start-Process -FilePath $qemu -ArgumentList $args2 -WorkingDirectory $bin -PassThru -RedirectStandardError $qemuErr
+}
+$script:GoseVmProcess = Start-GoseQemu $Display
+Start-Sleep -Seconds 4
+if ($script:GoseVmProcess.HasExited) {
+  $errTxt = (Get-Content $qemuErr -Raw -ErrorAction SilentlyContinue)
+  Write-Warning "QEMU exited immediately on '$Display' (rc=$($script:GoseVmProcess.ExitCode)). stderr:`n$errTxt"
+  Write-Host "Retrying once with gtk,gl=on ..."
+  $script:GoseVmProcess = Start-GoseQemu 'gtk,gl=on'
+  Start-Sleep -Seconds 4
+  if ($script:GoseVmProcess.HasExited) {
+    $errTxt2 = (Get-Content $qemuErr -Raw -ErrorAction SilentlyContinue)
+    Write-Error "QEMU failed to start on both '$Display' and 'gtk,gl=on'. See $qemuErr`n$errTxt2"
+    exit 1
+  }
+  Write-Host "GOSE came up on the gtk,gl=on fallback (pid $($script:GoseVmProcess.Id))."
+}
+Write-Host "Launched (pid $($script:GoseVmProcess.Id)). Agent reachable at 127.0.0.1:8731 once booted."
 
 # Bridge the laptop's Bluetooth radio into the VM via USBDk (usb-redir). Wait for QEMU's
 # usbredir socket (14000) to listen, then connect usbredirect to it. Requires USBDk installed.
