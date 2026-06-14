@@ -100,7 +100,7 @@ def subsample(pts, col, n):
 # Render one frame
 # ---------------------------------------------------------------------------
 
-def render_frame(frame_idx, pts_centered, col, scale_h, scale_v, N_FRAMES):
+def render_frame(frame_idx, pts_centered, col, scale_h, scale_v, N_FRAMES, core_pts=None):
     """
     pts_centered: (N,3) float32, already centered on bbox midpoint.
     scale_h, scale_v: mapping from world units to grid cells.
@@ -229,23 +229,40 @@ def render_frame(frame_idx, pts_centered, col, scale_h, scale_v, N_FRAMES):
     # centre (= the rotation axis + the bbox mid, i.e. the gem's heart) so it stays put
     # instead of wandering with the per-frame centroid (that wander read as a "weird +").
     # A soft cyan lift on the surrounding facet cells makes it glow like a heart.
-    # The core+plus sits on the FRONT (and back) face only. Show it when the broad face
-    # is toward the camera (|sin(angle)| high) and hide it when the crystal turns edge-on
-    # (left/right profile, angle ~0/180). Zeke 2026-06-14.
-    face = abs(math.sin(angle))
-    if face > 0.6:
-        pulse = 0.5 + 0.5 * math.sin(frame_idx / N_FRAMES * 2.0 * math.pi)
-        core_color = lerp_color_hex(CORE_CYAN, CORE_WHITE, pulse)
-        cr = GRID_ROWS // 2
-        cc = GRID_COLS // 2
-        for dr in (-1, 0, 1):
-            for dc in (-1, 0, 1):
-                r2, c2 = cr + dr, cc + dc
-                if 0 <= r2 < GRID_ROWS and 0 <= c2 < GRID_COLS and filled_2d[r2, c2]:
-                    color_buf[r2][c2] = lerp_color_hex(color_buf[r2][c2], CORE_CYAN, (0.15 + 0.45 * pulse) * face)
-        if 0 <= cr < GRID_ROWS and 0 <= cc < GRID_COLS:
-            shade_buf[cr][cc] = '+'
-            color_buf[cr][cc] = core_color
+    # CORE: surface the mesh's OWN white core+plus vertices (no stamped symbol). The opaque
+    # point cloud would hide them behind the front facet, but his render is translucent so the
+    # core shows through — so we overlay the actual white verts here, intensity by how densely
+    # they land per cell. They concentrate on the front/back faces (that's where the white
+    # geometry is) and thin out edge-on, so the core naturally only shows front/back. The
+    # white is already in the mesh; we're just making it visible. (Zeke 2026-06-14.)
+    if core_pts is not None and len(core_pts):
+        cxr = cos_a * core_pts[:, 0] - sin_a * core_pts[:, 2]
+        cyr = core_pts[:, 1]
+        czr = sin_a * core_pts[:, 0] + cos_a * core_pts[:, 2]   # depth (smaller = nearer cam)
+        cci = np.round(cxr * scale_h + GRID_COLS / 2.0).astype(np.int32)
+        cri = np.round(-cyr * scale_v + GRID_ROWS / 2.0).astype(np.int32)
+        cv = (cci >= 0) & (cci < GRID_COLS) & (cri >= 0) & (cri < GRID_ROWS)
+        ci2, ri2, cz2 = cci[cv], cri[cv], czr[cv]
+        # OPAQUE like the real 3D model: only surface core verts that are at/in front of the
+        # frontmost surface at their cell. Edge-on, the core sits BEHIND the body, so it's
+        # occluded — you do NOT see the plus through the left/right sides. (Zeke 2026-06-14.)
+        zb_at = zbuf_2d[ri2, ci2]
+        vis = cz2 <= (zb_at + 0.03)
+        ci2, ri2 = ci2[vis], ri2[vis]
+        wd = np.zeros(GRID_ROWS * GRID_COLS, dtype=np.int32)
+        np.add.at(wd, ri2 * GRID_COLS + ci2, 1)
+        wd = wd.reshape(GRID_ROWS, GRID_COLS)
+        wmax = int(wd.max()) if wd.max() > 0 else 1
+        for row in range(GRID_ROWS):
+            for col_idx in range(GRID_COLS):
+                if wd[row, col_idx] and filled_2d[row, col_idx]:
+                    inten = wd[row, col_idx] / wmax
+                    if inten >= 0.5:
+                        shade_buf[row][col_idx] = '@'
+                        color_buf[row][col_idx] = CORE_WHITE
+                    elif inten >= 0.22:
+                        shade_buf[row][col_idx] = '#'
+                        color_buf[row][col_idx] = CORE_CYAN
 
     return shade_buf, color_buf
 
@@ -379,6 +396,11 @@ def main():
         pts_s, col_s = pts_c, col
         print(f"Using all {n_total:,} points (under subsample cap)")
 
+    # White core+plus verts (baked into the mesh) — surfaced in render_frame so the opaque
+    # point cloud doesn't hide the core behind the front facet.
+    core_pts = pts_s[col_s.min(axis=1) > 0.70]
+    print(f"white core verts (for overlay): {len(core_pts):,}")
+
     # --- Render frames ---
     frame_html = []
     frame_bufs = []
@@ -388,7 +410,7 @@ def main():
     for i in range(N_FRAMES):
         if i % 10 == 0:
             print(f"  frame {i}/{N_FRAMES} ...", flush=True)
-        sb, cb = render_frame(i, pts_s, col_s, scale_h, scale_v, N_FRAMES)
+        sb, cb = render_frame(i, pts_s, col_s, scale_h, scale_v, N_FRAMES, core_pts)
         frame_bufs.append((sb, cb))
         frame_html.append(buf_to_html(sb, cb))
 

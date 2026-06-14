@@ -4,35 +4,52 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>GOSE</title>
 <style>
-  /* Stage-1 boot: pure black, the rotating ASCII GOSE Core centered. Plays one full
-     rotation (~5s) then hands off to the existing boot splash (gose-boot.html).
-     Frames are generated from the real GOSE crystal mesh by tools/crystal_ascii.py. */
+  /* Stage-1 boot: pure black, the rotating ASCII GOSE Core centered + SCALED to fill
+     whatever screen it's on (Odin 2 / desktop / any aspect). Plays ~one rotation, then
+     hands off to the existing boot splash (gose-boot.html). Frames are generated from the
+     real GOSE crystal mesh by tools/crystal_ascii.py (white core is the mesh's own,
+     depth-occluded so it shows on front/back faces only). */
   html,body{margin:0;height:100%;background:#000;overflow:hidden}
-  body{display:flex;align-items:center;justify-content:center;
-       transition:opacity .4s ease}
+  body{display:flex;align-items:center;justify-content:center;transition:opacity .4s ease}
   body.out{opacity:0}
+  #wrap{transform-origin:center center}
   #crystal{
     font-family:"DejaVu Sans Mono","Liberation Mono","Courier New",monospace;
-    /* cell aspect ~2:1 (0.6em advance × 1.2 line-height) matches the generator's CHAR_ASPECT=2 */
+    font-size:14px;          /* fixed base; JS scales #wrap to fit the viewport */
     line-height:1.2;
-    font-size:min(1.3vh,1.6vw);
     letter-spacing:0;
     white-space:pre;
-    color:#9fe4ff;                 /* fallback; per-char colors come from the spans */
+    margin:0;
+    color:#9fe4ff;           /* fallback; per-char colors come from the spans */
     text-shadow:0 0 5px rgba(120,150,255,.30);
     filter:drop-shadow(0 0 16px rgba(106,77,255,.22));
   }
 </style></head>
 <body>
-  <pre id="crystal"></pre>
+  <div id="wrap"><pre id="crystal"></pre></div>
 <script src="crystal-frames.js"></script>
 <script>
-  var el = document.getElementById('crystal');
-  var F  = window.CRYSTAL_FRAMES || [];
-  var i  = 0;
+  var el   = document.getElementById('crystal');
+  var wrap = document.getElementById('wrap');
+  var F    = window.CRYSTAL_FRAMES || [];
+  var i    = 0;
   function tick(){ if(F.length){ el.innerHTML = F[i % F.length]; i++; } }
-  tick();
-  var timer = F.length ? setInterval(tick, 80) : null;   // 60 frames × 80ms ≈ 4.8s / rotation
+
+  // Scale the crystal to FILL whatever screen it's on (measure natural size, then scale to
+  // ~94% of the limiting viewport dimension — works on any resolution/aspect/font metrics).
+  function fit(){
+    wrap.style.transform = 'none';
+    var w = el.offsetWidth, h = el.offsetHeight;
+    if(!w || !h) return;
+    var s = Math.min(window.innerWidth * 0.94 / w, window.innerHeight * 0.94 / h);
+    wrap.style.transform = 'scale(' + s + ')';
+  }
+
+  tick(); fit();
+  var timer = F.length ? setInterval(tick, 80) : null;   // ~60 frames x 80ms = one rotation
+  window.addEventListener('resize', fit);
+  setTimeout(fit, 200); setTimeout(fit, 800);            // re-fit once fonts settle
+
   // Hold for one full rotation, then hand off to the existing boot splash.
   setTimeout(function(){ document.body.classList.add('out'); }, 4800);
   setTimeout(function(){ location.href = 'gose-boot.html'; }, 5200);
