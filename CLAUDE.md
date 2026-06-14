@@ -1,110 +1,187 @@
 # CLAUDE.md — GOSE project memory (read me first, every session)
 
 > This file is auto-loaded at the start of every Claude Code session. It is the
-> project's **persistent memory**: the cloud container is ephemeral and wiped
-> between sessions, so anything not written here (or in `docs/`) and committed is
-> lost. Keep this current. When you make a meaningful decision, log it in
-> `docs/04-decision-log.md` and update the relevant section here.
+> project's **persistent memory**: keep it current. When you make a meaningful
+> decision, log it in `docs/04-decision-log.md` and update the relevant section here.
+> Current as of **2026-06-14**.
 
 ## What this project is
-**GOSE = Gaming Operating System Emulator.** Turn an **AYN Odin 2** (Snapdragon 8
-Gen 2) into a console-like, controller-driven gaming + tinkering device running a
-**flashable Linux OS**, with a Windows-style controller-only GUI, broad emulation,
-universal controller support, and the ability to be **driven by the owner's AI
-agents** over Wi-Fi or cable.
 
-Full original brief: `docs/00-project-brief.md`
+**GOSE = Gaming Operating System Emulator.** A Batocera-based QEMU virtual machine
+with a fully custom browser-shell UI, a permission-tiered AI-control layer, a local
+multiplayer seat manager, and a play pipeline that lets an AI join a game as a real
+player.
 
-**This is NOT writing an OS from scratch.** It is: flash a mature handheld Linux
-distro (ROCKNIX or Batocera) to SD, then *configure + extend* it. Only a few
-pieces are genuinely custom (flagged `[CUSTOM]`): the Windows-like front-end, the
-AI control agent, and the reproducible setup scripts.
+The **shell** is ~50 `gose-*.html` pages served by `gose_vm_server.py` (port 8780,
+loopback-only) and rendered by `kiosk.py` (WebKit kiosk). "Mockup" in the path name
+is historical — these pages ARE the live OS. They deploy to `/userdata/gose-ui/` in
+the guest. The guest also runs the GOSE Agent on port 8731 (token-gated).
 
-## Verified facts (as of 2026-06, see docs/01-research-findings.md for sources)
-- **ROCKNIX**: officially stable on all three Odin 2 variants (2, Mini, Portal).
-  Boots from microSD, leaves Android intact. **Recommended base for "works now."**
-- **Batocera v42**: supports Odin 2 via the **SM8550** image; biggest emulation
-  coverage. Good second option / can dual-experiment on a 2nd SD card.
-- Both need a **one-time bootloader (abl) modification** + a fastboot
-  **"switch boot mode"** to boot Linux off SD. Android stays on internal storage.
-- Front-ends: **Batocera uses `batocera-emulationstation`** (its OWN fork; XML
-  theme format **v7**) — NOT ES-DE. ROCKNIX also uses an EmulationStation fork.
-  (The original brief said "EmulationStation-DE" — that was inaccurate.)
-- GPU accel = Freedreno/Turnip (Vulkan). Wi-Fi + Bluetooth work. Xbox pads via
-  `xpadneo`; PS4/PS5 native; Switch pads fussiest.
-- Known gotcha to design around: **dock HDMI on Linux can fail** (driver gaps) —
-  keep a direct USB-C→HDMI adapter as fallback. Dock USB/Ethernet more reliable.
+**Handheld target:** the same GOSE layer will run on an **AYN Odin 2** (Snapdragon 8
+Gen 2) under **ROCKNIX** (Linux on microSD, Android stays on internal). Device not
+yet acquired — keep code variant-agnostic.
 
-## Current decision (revisit anytime)
-- **Base distro: ROCKNIX only + Android** (owner, 2026-06-03, ADR-0012 — supersedes
-  the earlier "both in parallel" plan). One Linux slot, pick the best → **ROCKNIX**
-  (verified-stable, officially supported on Odin 2). Dual-boot = ROCKNIX (microSD) +
-  stock Android (internal). **Batocera = documented fallback** only. Custom code
-  stays **distro-agnostic** so a swap stays cheap.
-- **Device not yet acquired** (owner, 2026-06-03) — keep everything
-  **variant-agnostic** (Odin 2 / Mini / Portal all viable). No hardware-specific
-  assumptions until the unit is in hand.
-- **GOSE on PC = a virtual machine** (owner, 2026-06-03, ADR-0013) — a separate
-  **x86_64 GOSE image** (base Batocera x86_64 + GOSE layer) booted in **QEMU**, not
-  a web wrapper or ARM emulation. The owner uses the PC app first until the Odin 2
-  arrives. Launcher `scripts/gose_vm.py`; UI-only preview `scripts/gose-preview.py`.
-  Image build = next milestone `[needs build]`.
-- **Boot-time input chooser** (ADR-0013): device default **Native** (auto-accepts
-  peripherals), PC default **Keyboard** (can pick Controller). `scripts/gose_input.py`.
-- **AI control agent language: Python** (best `evdev`/`uinput` support, readable).
-- **Control transport v0: newline-delimited JSON over asyncio TCP** (zero external
-  deps, identical over Wi-Fi and USB-net, fully testable). Upgrade to WebSocket/TLS
-  later. See `docs/05-ai-control-protocol.md`.
+Full original brief: `docs/00-project-brief.md`.
+
+## Current decisions (append-only; see `docs/04-decision-log.md` for full ADRs)
+
+| ADR | Decision | Status |
+|-----|----------|--------|
+| ADR-0014 | `global.autosave=1` ships by default (auto-resume on every libretro game) | accepted, live |
+| ADR-0013 | GOSE on PC = a QEMU VM (Batocera x86_64 + GOSE layer); boot-time input chooser | accepted; image build needs a Linux host |
+| ADR-0012 | Single Linux = ROCKNIX (dual-boot + Android); Batocera = documented fallback | accepted |
+| ADR-0011 | GOSE Boot Menu ("BIOS") on L1+R1 at power-on; POST-style countdown | accepted; I/O at hardware bring-up |
+| ADR-0010 | Onyx (sleek black) default theme + Midnight/Neon/Light alternates | accepted, live |
+
+**Device not yet acquired.** Stay variant-agnostic (Odin 2 / Mini / Portal all viable).
+Mark anything that can't be validated here as `[needs hardware]`.
+
+## Verified facts (2026-06; see `docs/01-research-findings.md` for sources)
+
+- ROCKNIX: officially stable on all three Odin 2 variants. Boots from microSD.
+- Batocera v42 (SM8550 image): good emulation coverage; the PC-VM uses Batocera x86_64.
+- Both need a one-time bootloader (abl) modification to boot Linux off SD.
+- GPU accel = Freedreno/Turnip (Vulkan). Wi-Fi + Bluetooth work.
+- **VM GPU ceiling:** modern Steam/Wine is structurally impossible in the VM (no GPU
+  passthrough on Windows host — VFIO is Linux-only; no Vulkan/DXVK). The VM handles
+  retro + light/old-GL games. Don't re-litigate; don't promise modern Steam on the VM.
+- Known hardware gotcha: dock HDMI on Linux can fail (driver gaps) — keep USB-C→HDMI.
+
+## How the shell runs (the live VM stack)
+
+```
+boot-gose-vm.ps1 (Windows host)
+  → QEMU (Batocera x86_64, virtio-gpu-gl)
+    → boot-custom.sh patches ES launch line (idempotent, runs every boot)
+    → Openbox WM → kiosk.py (WebKit, renders the gose-*.html pages)
+    → gose_vm_server.py (shell server, port 8780 loopback)
+    → gose-pad-nav.py (docs/27 input bridge: physical pads → shell nav events)
+    → watchdog.py (JS heartbeat + kill-on-stale; kiosk freeze protection)
+    → GOSE Agent (gose_agent, port 8731, token-gated)
+```
+
+**Controller flow (docs/27 — the law):** physical pads arrive via `pad_passthrough.py`
+(input-level passthrough, host side). The shell reads pad events only through the
+`gose-pad-nav.py` bridge. Pages must NEVER read the gamepad API directly (that's a
+bug; flag it).
+
+**Port map:**
+| Port | Service | Who reaches it |
+|------|---------|----------------|
+| 8780 | `gose_vm_server.py` (shell server) | loopback only (kiosk + scripts) |
+| 8731 | GOSE Agent | host loopback + tailnet (token-gated) |
+| 2222 | SSH (dropbear) | host loopback + tailnet only |
+
+**The revert hazard:** `watchdog.py` monitors the kiosk heartbeat. If the kiosk stalls
+long enough, it kills and restarts the kiosk — which reloads from disk. Any UI change
+you push must already be on disk or it will be reverted on the next watchdog cycle.
+Always use `reload_ui.py` (or `push_library.py` / `inject_gose_layer.py`) to push
+before testing; don't assume an in-memory state survives a watchdog cycle.
+
+## Boot sequence + brand
+
+1. **`crystal-boot.html`** — stage 1: pure-black screen, rotating ASCII GOSE Core
+   crystal, scales to fill any viewport. `crystal-frames.js` supplies the frame data;
+   regenerate it with `tools/crystal_ascii.py` if the mesh changes.
+2. **`gose-boot.html`** — stage 2: GOSE Core icon rise + glow animation, themed.
+3. **Home or OOBE** — if first-boot (`gose-oobe.html`); otherwise `gose-home.html`.
+
+**Brand assets** (`gui/mockup/assets/brand/`):
+- `gose-core.svg` / `gose-core.png` — full mark (crystal + halo + ring); use for boot
+  splash and large hero spots.
+- `gose-core-mark.svg` / `gose-core-mark.png` — crystal only, square viewBox; use for
+  headers, taskbar Start, login, and the tiny Core beside each AI's name.
+- `gose-crystal.png` / `gose-logo.png` — Zeke's finished renders (two-background matted).
+- SVG assets are crisp at any size and animatable. See `docs/15-brand.md`.
+
+## AI permission model (implemented; docs/16)
+
+Three tiers, enforced server-side on every call:
+- **Observe** (`gose:observe`) — read-only: screenshot, list games, read game state.
+  Default for a freshly paired AI.
+- **Play** (`gose:play`) — launch/stop games, send controller input.
+- **Admin** (`gose:admin`) — full OS: shell, settings, install, network, power.
+
+Grants live in `ai_grants.json` / `ai_tokens.json` (NOT committed to the image — the
+`verify-image-clean.ps1` gate rejects any image that carries them). An AI can never
+self-elevate. The owner credential is a **physical hold-✕ on the OS-admin controller**
+— there is no dev-token shortcut for user-facing flows (`feedback_user_sovereignty`).
+Elevation sessions are 5-min sliding windows. `/ai/audit.jsonl` logs every AI op.
+
+## Play pipeline (implemented)
+
+1. AI pairs → gets `Observe` token.
+2. Owner elevates to `Play` via hold-✕.
+3. AI calls `games.playmaps` → picks a game → `games.playmap {id}` → reads the play map.
+4. AI arms a seat: `POST /ai/seat` → virtual controller bound at grant time.
+5. `POST /launch` → game starts; AI reads board over RetroArch NCI (UDP 127.0.0.1:55355).
+6. `play.wait` (push-call) notifies AI when the game is ready; Release button disarms.
+
+Play maps live in `agent/gose_agent/play_maps/` (baked into the image). Schema:
+`id`, `name`, `system`, `controls`, `ram_fields`, `game_flow`. Cross-links a
+`ram_profile` in `agent/gose_agent/profiles/`.
+
+Verified: AI-vs-AI Pong clean (25/25 NCI reads); 14/14 breaker checks passed
+(2026-06-13 ship audit). NCI is reliable on a clean single launch; "flaky NCI" = multiple
+emulator instances or rushed relaunches, not inherent fragility.
+
+## Packaging + ship path
+
+1. **Build** (Linux host required): `sudo ./pc-image/build-gose-pc.sh`
+   - Bakes shell (`gui/mockup/*.html` + `assets/`) + guest runtime (`gose-vm-host/` guest set)
+     into the image at build time. No manual push step.
+   - Hardened `batocera.conf.gose`: SSH off, Samba off, `security.enabled=1`.
+   - Output: `pc-image/build/gose-pc-x86_64.img.gz`.
+2. **Gate**: `pc-image/verify-image-clean.ps1` — fail-closed; rejects if any cred file
+   or SSH-on state is present. Called automatically by `package-bundle.ps1`.
+3. **Package** (Windows): `pc-image/dist/package-bundle.ps1`
+   - Defaults `-ImageGz` to the clean build output (NOT the dev disk).
+   - Assembles the `dist/` bundle: `GOSE.bat`, `gose-launcher.ps1`, icon.
+4. **Untested seam:** a real `sudo build-gose-pc.sh` + `package-bundle.ps1` end-to-end
+   on a Linux host has not been run. That is the conclusive test.
+
+**DO NOT** ship the dev disk (`D:\gose-vm\batocera-x86_64-*.img.gz`) directly — it
+carries SSH on + root pw "linux" + the owner token + dev session state.
 
 ## Repo map
-- `docs/` — brief, research, install runbook, architecture, decisions, protocol, GUI/controller plans.
-- `agent/` — **GOSE Agent**: the device-side daemon the AI talks to. Runs on the
-  Odin under ROCKNIX/Batocera. Capabilities: input injection, shell, game launch,
-  system status, screen capture. Has **mock backends** so it runs/tests in any
-  Linux container (no real `/dev/uinput` needed).
-- `agent/client/` — Python client SDK + CLI for the AI side (the AI agents) and for testing.
-- `agent/gose_agent/profiles/` — per-game RAM maps for the **game-state interface**
-  ("Mineflayer for retro"): read game state from emulator memory, no screenshots.
-  Accepts stable-retro type descriptors; `agent/tools/import_stable_retro.py` imports
-  their maps. See `docs/08-game-state-interface.md`. Demo: `agent/examples/pong_no_screenshots.py`.
-- `gui/mockup/` — concept PNGs + **navigable HTML prototypes**: boot splash
-  (`boot.html`), login/user-select (`login.html`), the **GOSE Boot Menu / "BIOS"**
-  (`bootmenu.html`), and the Windows-like desktop (`desktop.html`). Shared theme
-  tokens in `assets/themes.css` (default sleek-black **onyx**, switchable in
-  Settings). Multi-input: gamepad focus-nav + pointer + mouse + keyboard + PS5.
-  See `docs/06-gui-plan.md`; boot/BIOS model in `docs/10-boot-menu.md`.
-- `gui/` — Windows-like front-end work (theme and/or custom app). `[CUSTOM]`
-- `mcp/` — **MCP server**: how AI agents/Claude drive the device (stdio
-  JSON-RPC, proxies to the agent). Zero-dep. See `mcp/README.md`.
-- `docs/09-toolchain.md` — curated open-source tools to adopt (coding→OS→games→design).
-- `scripts/` — reproducible, idempotent device setup scripts + mock-testable logic:
-  `gose_bootmenu.py` (Boot Menu trigger), `gose_input.py` (platform/input model),
-  `gose_vm.py` (**GOSE-PC VM launcher**, QEMU command builder), `gose-preview.py`
-  (zero-dep UI preview in a browser).
-- `pc-image/` — **GOSE-PC image build**: `build-gose-pc.sh` (Batocera x86_64 + the
-  `gose-layer/` → `.img`/`.ova`; dry-run works), `make_ova.py` (OVA packager,
-  tested). Real build `[needs build]`. See `pc-image/README.md`.
-- `ROADMAP.md` — build order + live status checklist.
+
+- `docs/` — numbered design docs + `docs/README.md` index (every doc, one line, status).
+  Key docs: `04` (ADRs), `15` (brand), `16` (AI permissions), `19` (license audit),
+  `21` (widget standard), `23` (windowing design), `25` (OOBE), `27` (controller standard),
+  `31` (security), `32` (build bakes the shell), `33` (prep-for-ship).
+- `agent/` 🔒 — GOSE Agent daemon + client SDK + CLI + 134-test suite + RAM profiles +
+  play-map registry. **Path-frozen** (external tooling + MCP configs reference by exact path).
+- `mcp/` 🔒 — zero-dep stdio MCP server (`gose_mcp_server.py`). **Path-frozen.**
+- `gui/mockup/` 🔒 — **the live shell UI**. HTML pages + assets deploy to guest
+  `/userdata/gose-ui/`. **Path-frozen** (kiosk + server reference exact paths).
+- `pc-image/gose-vm-host/` 🔒 — guest + host runtime scripts. **Path-frozen** (the most
+  deploy-sensitive tree — external runbooks reference exact paths).
+- `pc-image/dist/` — distributable bundle.
+- `pc-image/gose-layer/` — files injected onto Batocera userdata (agent autostart,
+  batocera.conf.gose seed, ES theme).
+- `scripts/` — device setup + mock-testable logic; QEMU launcher; UI preview.
+- `STRUCTURE.md` — full what-lives-where map with deploy targets.
 
 ## How to work in this repo
-- Dev branch: **`main`** (the historical `claude/odin2-gaming-os-4SWOh` branch is
+
+- **Dev branch: `main`** (the historical `claude/odin2-gaming-os-4SWOh` branch is
   retired, 61+ commits behind). Develop, commit, push to main. Do NOT open a PR
   unless the owner asks.
-- Run the agent test suite (no deps, works in-container):
-  `python3 -m unittest discover -s agent/tests -v`
-- Run the agent in mock mode: `python3 -m gose_agent` (from `agent/`), then drive
-  it with `python3 client/cli.py ping` (from `agent/`).
-- Most "real device" steps (flashing, uinput, HDMI) can only be validated on the
-  actual Odin 2 — mark those as **[needs hardware]** and keep them in the runbook.
+- **Agent test suite** (stdlib-only, no deps):
+  `cd agent && python3 -m unittest discover -s tests -v` (expect 134 passing).
+- **UI preview** (zero-dep): `python3 scripts/gose-preview.py`
+- **VM dry-run**: `python3 scripts/gose_vm.py --dry-run`
+- **Image build dry-run**: `./pc-image/build-gose-pc.sh --dry-run`
+- **Agent mock mode**: `cd agent && python3 -m gose_agent`; drive with
+  `python3 client/cli.py ping` (from `agent/`).
+- `[needs hardware]` = can only be validated on the Odin 2. Keep a flag; don't stub out.
+- `[needs build]` = needs a Linux host with network + root + qemu for real image build.
 
-## How the AIs connect (owner, 2026-06-03)
-- **The AI agents will most likely use MCP**, or **SSH / console**. → We built an
-  MCP server (`mcp/`) + the CLI works over SSH + `system.run` is the console path.
-  Remaining: confirm any auth/transport specifics they need (e.g., HTTP/SSE MCP
-  transport vs stdio). The tool layer is done either way.
+## Open items
 
-## Open items needing the owner's input
-- Confirm the AI agents' MCP transport (stdio vs HTTP/SSE) + auth, if any.
-- Confirm exact Odin 2 variant once acquired (currently NOT yet purchased) —
-  affects image + RAM headroom. Stay variant-agnostic until then.
-- Does the Odin 2 support simultaneous OTG + charging? (affects portable multi-dongle).
+- CI build (`build-image.yml`) — workflow committed; live end-to-end run not verified.
+- OTA update delivery — not designed yet.
+- Windowing phases 2–3 (native-X integration, snap groups, overview) — design in docs/23.
+- Zeke's hold-✕ OOBE walkthrough — pending owner availability.
+- Odin 2 variant + purchase — device not yet acquired; confirm on arrival.
+- Odin 2 simultaneous OTG + charging — unknown until hardware in hand.
