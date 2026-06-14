@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE Core — Terminal Preview</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #07070f;
+  }
+
+  body {
+    font-family: "Courier New", Courier, monospace;
+    color: #c8cee8;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: radial-gradient(120% 90% at 50% 38%, #0e1128 0%, #08091a 55%, #07070f 100%);
+  }
+
+  /* ── Terminal window chrome ───────────────────────────────────────────── */
+  .terminal {
+    display: flex;
+    flex-direction: column;
+    background: #09091a;
+    border: 1px solid #1e2045;
+    border-radius: 6px;
+    box-shadow:
+      0 0 0 1px #12133088,
+      0 8px 42px #000000cc,
+      0 0 60px #3a2fff22;
+    min-width: 700px;
+    max-width: 96vw;
+    overflow: hidden;
+  }
+
+  /* Title bar */
+  .titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    background: #0d0d22;
+    border-bottom: 1px solid #1e2045;
+    user-select: none;
+  }
+
+  .dot {
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .dot.red { background: #2a1520; border: 1px solid #5a2535; }
+  .dot.yel { background: #1e1a0a; border: 1px solid #5a4a1a; }
+  .dot.grn { background: #0a1e14; border: 1px solid #1a5038; }
+
+  .titlebar-label {
+    font-size: 11px;
+    color: #4a508a;
+    letter-spacing: .08em;
+    margin-left: auto;
+    margin-right: auto;
+    text-transform: uppercase;
+  }
+
+  /* Terminal body */
+  .term-body {
+    display: flex;
+    flex-direction: column;
+    padding: 14px 18px 16px;
+    gap: 0;
+  }
+
+  /* Prompt / log lines */
+  .log {
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre;
+    letter-spacing: .01em;
+  }
+
+  .prompt { color: #3a6fff; }
+  .cmd    { color: #8ab4ff; }
+  .ok     { color: #3fc878; }
+  .warn   { color: #c8a840; }
+  .dim    { color: #3a3d60; }
+  .cyan   { color: #9fe4ff; }
+  .white  { color: #e0ecff; }
+
+  /* Crystal display area */
+  .crystal-section {
+    margin: 8px 0 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .crystal-wrap {
+    display: inline-block;
+    position: relative;
+    animation: glow-pulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes glow-pulse {
+    0%, 100% { filter: drop-shadow(0 0 10px #6a4dff66) drop-shadow(0 0 22px #3a2fff33); }
+    50%       { filter: drop-shadow(0 0 18px #5cd0ff88) drop-shadow(0 0 36px #4060ff44); }
+  }
+
+  pre.crystal {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 13px;
+    line-height: 1.20;
+    letter-spacing: 0;
+    white-space: pre;
+    user-select: none;
+    display: block;
+  }
+
+  /* Separator */
+  .sep {
+    border: none;
+    border-top: 1px solid #1a1d38;
+    margin: 8px 0;
+    width: 100%;
+  }
+
+  /* Bottom status bar */
+  .statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 18px 10px;
+    font-size: 10.5px;
+    color: #2a2e55;
+    letter-spacing: .05em;
+    user-select: none;
+  }
+
+  .statusbar .badge {
+    color: #3a6fff;
+    background: #0d1030;
+    border: 1px solid #1e2555;
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 9.5px;
+    letter-spacing: .1em;
+  }
+
+  /* Cursor blink */
+  .cursor {
+    display: inline-block;
+    width: 8px; height: 1.15em;
+    background: #3a6fff;
+    vertical-align: text-bottom;
+    animation: blink 1.1s step-end infinite;
+    margin-left: 1px;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+</style>
+</head>
+<body>
+
+<div class="terminal">
+
+  <!-- Title bar -->
+  <div class="titlebar">
+    <div class="dot red"></div>
+    <div class="dot yel"></div>
+    <div class="dot grn"></div>
+    <span class="titlebar-label">gose@core — boot sequence</span>
+  </div>
+
+  <!-- Terminal body -->
+  <div class="term-body">
+
+    <!-- Pre-crystal boot log -->
+    <div class="log">
+<span class="dim">──────────────────────────────────────────────────────────────────</span>
+<span class="prompt">gose@core</span><span class="dim">:</span><span class="cyan">~</span><span class="dim">$</span> <span class="cmd">gose-boot --sequence init</span>
+<span class="dim">  [</span><span class="ok">  OK  </span><span class="dim">]</span> <span class="white">GOSE Core</span> :: initializing...
+<span class="dim">  [</span><span class="ok">  OK  </span><span class="dim">]</span> loading crystal mesh... <span class="ok">979922 vertices</span>
+<span class="dim">  [</span><span class="warn"> WAIT </span><span class="dim">]</span> mounting facets... <span class="warn">60 frames · real mesh</span>
+<span class="dim">  [</span><span class="ok">  OK  </span><span class="dim">]</span> chromatic map: <span class="cyan">blue→violet</span> baked RGB
+<span class="dim">  [</span><span class="ok">  OK  </span><span class="dim">]</span> core pulse: <span class="cyan">ACTIVE</span>  ·  rotation: <span class="white">6°/frame</span>  ·  <span class="ok">360° loop</span>
+<span class="dim">──────────────────────────────────────────────────────────────────</span>
+</div>
+
+    <!-- Crystal -->
+    <div class="crystal-section">
+      <div class="crystal-wrap">
+        <pre class="crystal" id="crystal" aria-label="GOSE Core rotating crystal"></pre>
+      </div>
+    </div>
+
+    <!-- Post-crystal log -->
+    <div class="log">
+<span class="dim">──────────────────────────────────────────────────────────────────</span>
+<span class="dim">  [</span><span class="ok">  OK  </span><span class="dim">]</span> energy core: <span class="white" style="color:#9fe4ff">+</span> <span class="ok">ACTIVE</span>  ·  substrate: <span class="cyan">ready</span>
+<span class="dim">  [</span><span class="ok">  OK  </span><span class="dim">]</span> AI seats: <span class="white">4 reserved</span>  ·  permissions: <span class="ok">gated</span>
+<span class="dim">  [</span><span class="ok">  OK  </span><span class="dim">]</span> <span class="white">GOSE v0.1</span> — gaming operating system emulator
+<span class="prompt">gose@core</span><span class="dim">:</span><span class="cyan">~</span><span class="dim">$</span> <span class="dim">_</span><span class="cursor"></span>
+</div>
+
+  </div><!-- /term-body -->
+
+  <div class="statusbar">
+    <span>64 cols × 44 rows · 6°/frame · 60 frames · 360° loop</span>
+    <span class="badge">GOSE CORE</span>
+    <span>real mesh · 979922 vertices · baked RGB</span>
+  </div>
+
+</div><!-- /terminal -->
+
+<!-- crystal-frames.js defines window.CRYSTAL_FRAMES as innerHTML-ready HTML strings -->
+<script src="crystal-frames.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var el = document.getElementById('crystal');
+
+  if (!window.CRYSTAL_FRAMES || window.CRYSTAL_FRAMES.length === 0) {
+    el.textContent = '[crystal-frames.js not loaded — run: py -3.11 gui/mockup/tools/crystal_ascii.py]';
+    return;
+  }
+
+  var frames = window.CRYSTAL_FRAMES;
+  var n = frames.length;
+  var idx = 0;
+
+  // Seed first frame immediately
+  el.innerHTML = frames[0];
+
+  // 80ms per frame ≈ 12.5 fps
+  var FRAME_MS = 80;
+
+  function advance() {
+    idx = (idx + 1) % n;
+    el.innerHTML = frames[idx];
+  }
+
+  setInterval(advance, FRAME_MS);
+})();
+</script>
+</body>
+</html>

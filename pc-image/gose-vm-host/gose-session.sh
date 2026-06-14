@@ -51,9 +51,10 @@ fi
 # Pattern is the absolute kiosk.py path; gose-session.sh / pad-nav / server do NOT contain it.
 pgrep -f '/userdata/gose-ui/kiosk\.py' | xargs -r kill 2>/dev/null; true
 # Boot splash on the FIRST kiosk launch per VM boot (/tmp clears on reboot); the landing page on relaunches.
+# Stage-1 = crystal-boot.html (all-black, rotating ASCII GOSE Core), which hands off to gose-boot.html.
 if [ ! -f /tmp/gose-booted ]; then
   touch /tmp/gose-booted
-  exec python3 /userdata/gose-ui/kiosk.py http://127.0.0.1:8780/gose-boot.html
+  exec python3 /userdata/gose-ui/kiosk.py http://127.0.0.1:8780/crystal-boot.html
 else
   exec python3 /userdata/gose-ui/kiosk.py "http://127.0.0.1:8780/$LAND"
 fi
