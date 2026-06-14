@@ -72,6 +72,33 @@
     "reference_scripts": "Verified implementations in Wren's tree: vs-human = D:\\gose-vm\\wren_pong_p2.py (auto-calibrating, prediction); AI-vs-AI = D:\\Wren\\scratch\\wren_ai_vs_ai.py (the steps above). The steps in this play-map are self-contained — no external file is required to replay them."
   },
 
+  "remote_ai_play": {
+    "_verified": "2026-06-14 — live session; Wren drove P2 in-guest, rallied a full match after the remote-MCP path failed 9-0.",
+    "latency_wall": "An AI driving the paddle via the remote MCP/agent path (each input OR read is a remote round-trip, ~1-2 s) CANNOT play Pong in real time. The ball crosses the screen in ~1 s, so every response arrives too late — the paddle is always behind and the AI loses ~9-0. Confirmed live 2026-06-14. Do NOT try to play via remote MCP at 1-2 s latency.",
+    "solution": "Run a small Python loop INSIDE the VM. It talks to the agent on localhost:8731 (loopback, sub-ms), reads the board + sends input at ~30 Hz. That latency is low enough to track and predict the ball.",
+    "runner": {
+      "repo_path": "agent/gose_agent/play_maps/runners/pong1k2p_runner.py",
+      "vm_deploy_path": "/userdata/gose-ui/ai-play/pong1k2p_runner.py",
+      "launch": "GOSE_AI_TOKEN=<play-or-admin-token> python3 pong1k2p_runner.py",
+      "note": "Must run INSIDE the VM. Token from env var GOSE_AI_TOKEN or argv[1]. No hardcoded secrets."
+    },
+    "auth": {
+      "rule": "A guest-internal connection to 127.0.0.1:8731 is NOT auto-admin. The open-loopback => admin shortcut applies to the host/dev side only (when no token is configured). A guest connection MUST send a valid token.",
+      "tier_matters": "OBSERVE tier can read state but CANNOT send input — the paddle stays frozen (input denied, proven live 2026-06-14). Use a PLAY or ADMIN token.",
+      "grant_flow_bug": "Known bug (being fixed separately): granting an AI 'admin' did not always take effect in the grant flow. If your granted tier seems not to apply, that is the grant-flow bug — not your code or the auth protocol."
+    },
+    "algorithm": {
+      "name": "predict-the-bounce",
+      "summary": "From two consecutive reads compute velocity (vx, vy). When ball_x is increasing toward the right paddle (vx > 0), project ball_y to the paddle's x-plane (MY_X ~200) accounting for top/bottom wall reflection (triangle-wave fold on [Y_MIN=8, Y_MAX=200]). Position the paddle center at that projected y with a ±6 px dead-band. Reactive tracking of live ball_y lags a fast ball and loses; prediction keeps up.",
+      "impl": "See runner source, function _predict_y."
+    },
+    "restart": {
+      "new_game": "After game-over: send NCI RESET to RetroArch (UDP 127.0.0.1:55355; may need 2-4 sends) then tap 'start'. See game_flow.new_game.",
+      "p1_gated_start": "'start' is P1-gated — the AI on P2 cannot begin a match from the title/game-over screen. The human (P1) must tap Start.",
+      "gose_launch_dry": "gose_launch via the agent was dry-mode (no-op, pid -1) in the 2026-06-14 session — could not relaunch the game from the agent. Use the NCI RESET + P1 start path instead."
+    }
+  },
+
   "ai_play_notes": [
     "Drive the RIGHT paddle (js0/default controller) by calling input.button with NO seat arg — exactly what gose_tap does.",
     "Track ball_y reactively at ~15 Hz, or predict: project ball trajectory to the paddle's x-plane using velocity + wall-fold. See D:\\gose-vm\\wren_pong_p2.py for the verified implementation.",

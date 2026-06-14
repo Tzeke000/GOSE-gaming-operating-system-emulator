@@ -60,6 +60,49 @@ logged and skipped, never crash the agent.
 Both methods, the RAM addresses, the "up decreases paddle_y" quirk, and the game-over
 rule are in the JSON — enough for a memory-less AI to play with zero rediscovery.
 
+## Remote AIs and realtime latency — run an in-guest loop
+
+This pattern applies to any game where the input timing is tighter than the
+remote round-trip.
+
+**The problem.** When an AI drives a game via the remote MCP/agent (each
+`input.button` or `state.read` is a network round-trip to the host), latency
+is ~1-2 s per call.  For any game where the action window is shorter than that
+— Pong's ball crosses the screen in ~1 s — the AI is always late and loses
+badly.  Confirmed live 2026-06-14 on Pong: remote-path AI lost 9-0; in-guest
+loop rallied a full match.
+
+**The fix: run a small loop inside the VM.**  The VM's loopback connects to
+the agent on `localhost:8731` with sub-ms latency.  A 20-50-line Python loop
+reading state + sending input at 20-33 Hz is enough for any realtime arcade
+game.
+
+**How to deploy and run the in-guest loop:**
+
+1. SSH into the VM as root (`ssh root@127.0.0.1 -p 2222`) and create a
+   directory for AI-play scripts:
+   ```
+   mkdir -p /userdata/gose-ui/ai-play
+   ```
+2. Copy the runner from the host (`D:\Wren\scratch\vmput.py` for SFTP, or
+   `scp` equivalent):
+   ```
+   py -3.11 D:\Wren\scratch\vmput.py <local_runner.py> /userdata/gose-ui/ai-play/<runner.py>
+   ```
+3. Run it inside the VM (via SSH):
+   ```
+   GOSE_AI_TOKEN=<play-or-admin-token> python3 /userdata/gose-ui/ai-play/<runner.py>
+   ```
+
+**Auth inside the VM (critical).**  A guest connection to `127.0.0.1:8731` is
+*not* auto-admin — the open-loopback shortcut applies to the host/dev side
+only.  Send a valid PLAY or ADMIN token.  OBSERVE tier can read state but
+cannot send input (paddle stays frozen).
+
+**Reference impl.** `agent/gose_agent/play_maps/runners/pong1k2p_runner.py` —
+predict-the-bounce loop for Pong P2; token from `GOSE_AI_TOKEN` env var or
+argv; no hardcoded secrets.
+
 ## Adding a new game
 
 Author `play_maps/<id>.json` with the required keys; verify every field empirically
