@@ -82,7 +82,7 @@ GAMEPAD_BTN_RANGES = (
 BUTTON_KEYMAP = {
     ecodes.BTN_SOUTH:  "Return",        # A
     ecodes.BTN_EAST:   "Escape",        # B
-    ecodes.BTN_TL:     "Escape",        # L1  -> back (#109)
+    ecodes.BTN_TL:     "bracketleft",   # L1  -> prev tab / back-cycle
     ecodes.BTN_TR:     "bracketright",  # R1  -> forward / tab-cycle (#109)
     ecodes.BTN_START:  "Return",        # Start (also activates)
     ecodes.BTN_SELECT: "Escape",        # Back (same as B; no combo needed, #109)
@@ -1937,8 +1937,8 @@ def selftest():
     # button maps
     check("BTN_TR -> bracketright (R1 forward/tab #109)",
           nav.map_event(E(ecodes.EV_KEY, ecodes.BTN_TR, 1)) == ["bracketright"])
-    check("BTN_TL -> Escape (L1 back #109)",
-          nav.map_event(E(ecodes.EV_KEY, ecodes.BTN_TL, 1)) == ["Escape"])
+    check("BTN_TL -> bracketleft (L1 prev tab)",
+          nav.map_event(E(ecodes.EV_KEY, ecodes.BTN_TL, 1)) == ["bracketleft"])
     check("BTN_THUMBL -> [] (L3 handled in feed, not map_event)",
           nav.map_event(E(ecodes.EV_KEY, ecodes.BTN_THUMBL, 1)) == [])
     check("BTN_THUMBR -> [] (R3 handled in feed, not map_event)",
@@ -2032,16 +2032,16 @@ def selftest():
     check("WM: Guide down -> wm.carousel posted", posts == ["wm.carousel"])
     check("WM: Guide down -> flag file set", os.path.exists(flagp))
     check("WM: Guide down -> no key emitted", rec == [])
-    # while held: L1 = Escape (#109 back) -> wm.cancel in the modal.
+    # while held: L1 = bracketleft -> wm.prev in the modal (backward-cycle).
     # R1 in the carousel is the SCREENSHOT CHORD (its own section below) — NOT pressed
     # here, so this carousel's release-selects path stays uncontaminated by the
     # _shot_taken latch. Forward-cycle is still covered by the d-pad (wm.right).
     n1.feed(E(ecodes.EV_KEY, ecodes.BTN_TL, 1), DEV)
-    check("WM: L1 (now back=Escape) in modal -> wm.cancel + exit", posts[-1] == "wm.cancel" and w1.mode is None)
+    check("WM: L1 in modal -> wm.prev (modal stays)", posts[-1] == "wm.prev" and w1.mode == "carousel")
     # re-open carousel for the rest of the n1 tests
     posts.clear(); rec.clear()
     n1.feed(E(ecodes.EV_KEY, ecodes.BTN_MODE, 1), DEV)
-    check("WM: re-open carousel after L1-cancel", posts == ["wm.carousel"] and w1.mode == "carousel")
+    check("WM: re-open carousel after L1-prev", posts == ["wm.carousel"] and w1.mode == "carousel")
     # d-pad cycles too
     n1.feed(E(ecodes.EV_ABS, ecodes.ABS_HAT0X, 1), DEV)
     check("WM: d-pad right in modal -> wm.right", posts[-1] == "wm.right")
