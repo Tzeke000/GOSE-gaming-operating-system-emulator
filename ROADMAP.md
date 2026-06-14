@@ -1,84 +1,136 @@
 # GOSE Roadmap & Live Status
 
-Legend: ✅ done · 🟡 in progress · ⬜ todo · 🔌 `[needs hardware]` (can't finish in
-the cloud container) · 🧱 blocked
+> Current as of **2026-06-14** (v0.6). Legend: ✅ done · 🟡 in progress · ⬜ todo ·
+> 🔌 `[needs hardware]` · 🏗️ `[needs build]` (Linux host required)
 
-## Phase 0 — Foundation (this repo)
-- ✅ Verify Odin 2 Linux support (ROCKNIX stable; Batocera v42 SM8550)
-- ✅ Project memory + docs (`CLAUDE.md`, `docs/`)
-- ✅ Architecture + control protocol defined
-- ✅ GOSE Agent scaffold w/ mock backends + tests (runs in-container)
-- ✅ Client SDK + CLI
-- ✅ Reproducible setup scripts (skeleton)
-- ✅ SessionStart hook so web sessions are primed
+---
 
-## Phase 1 — Base OS on hardware 🔌  (device NOT yet acquired)
-- ⬜ Acquire Odin 2 (+ Super Dock, A2 microSD ×2, 8BitDo Adapter 2, USB-C→HDMI)
-- ⬜ Confirm exact variant on arrival (2 / Mini / Portal)
-- ⬜ **Single Linux = ROCKNIX** (ADR-0012): flash ROCKNIX to microSD; abl mod; boot
-      from SD alongside stock Android (runbook §D). Batocera = fallback only.
-- ⬜ First-boot checklist (controller nav, Wi-Fi, BT, GPU, audio) (§F)
-- ⬜ Bench PSP/PS2/Switch on ROCKNIX → confirm it's the keeper
+## Done
 
-## Phase 2 — Emulation 🔌
-- ⬜ PSP runs great, upscaled (flagship)
-- ⬜ Standard ladder w/ sane defaults (NES…PS2, GC, N64, Dreamcast, arcade)
-- ⬜ Switch best-effort per-title; light PC via Box64/Wine
+### Shell & UI (live)
+- ✅ ~50 `gose-*.html` pages: home/desktop, store, library, AI Hub, settings, wifi,
+  bluetooth, OOBE, file manager, diagnostics, net monitor, padtest, parental controls,
+  spectate, stress, GPU, cheevos, saves, friends, gallery, import/upload, task manager,
+  terminal, and more.
+- ✅ Boot sequence: `crystal-boot.html` (rotating ASCII crystal, generated from real mesh)
+  → `gose-boot.html` (Core icon rise) → home or OOBE.
+- ✅ GOSE Core crystal brand — boot splash, taskbar, every AI's presence indicator.
+  Assets: `gui/mockup/assets/brand/gose-core*.svg|png` (Zeke's finished renders).
+- ✅ Theme system: default Onyx + Midnight / Neon / Light, switchable in Settings.
+- ✅ Widget standard (docs/21): `widget.js`/`widget.css` contract; desktop widgets + game bar.
+- ✅ Windowing wave-1: `GoseWM` (`assets/gose-wm.js` + WinBox); System widget wired;
+  `wm-test.html` static test harness. Full design in docs/23 (phases 2–3 pending).
+- ✅ Crystal-shard software cursor (CSS kite polygon + gradient + facet theme).
+- ✅ Kiosk freeze watchdog: JS heartbeat + server tick endpoint + kill-on-stale.
 
-## Phase 3 — Controllers 🔌
-- ⬜ Pair/verify Xbox (xpadneo), PS4/5, Switch, 8BitDo
-- ⬜ 8BitDo USB Adapter 2 universal path; multi-controller; 6 via dock
+### Controller & Input
+- ✅ Controller standard (docs/27): one button language, one input path;
+  `gose-pad-nav.py` bridges physical pads to the shell. Pages must not read the
+  gamepad API directly.
+- ✅ Input chooser (`input-select.html`) + platform/input model (`assets/platform.js`).
+- ✅ Multi-input: gamepad focus-nav + gamepad pointer + mouse/kbd + PS5 DualSense.
 
-## Phase 4 — Peripherals 🔌
-- ⬜ HDMI (dock + USB-C→HDMI fallback), USB hub, Ethernet, USB mic
-- ⬜ Confirm simultaneous OTG + charging
+### AI Permission Model (docs/16)
+- ✅ Three tiers: `Observe / Play / Admin`; freshly paired AI gets `Observe` only.
+- ✅ Grants enforced server-side on every call; revocation instant.
+- ✅ Grant → token issuance wired: UI approval issues `ai_tokens.json` (SB-4.2).
+- ✅ Owner credential = physical hold-✕ on the OS-admin controller; no dev-token
+  shortcut for user-facing flows.
+- ✅ Elevation sessions: 5-min sliding windows.
+- ✅ `/ai/audit.jsonl` logs every AI op.
+- ✅ Owner-gated privileged routes (e.g. `/controllers/admin`).
 
-## Phase 5 — Windows-like GUI `[CUSTOM]`
-- ✅ Windows-PC concept images + **navigable HTML prototypes** (`gui/mockup/`)
-- ✅ Boot splash + login/user-select screens (boot.html, login.html)
-- ✅ GOSE Boot Menu / "BIOS" — hold L1+R1 at power-on; mock-tested trigger logic
-  (`scripts/gose_bootmenu.py`) + `bootmenu.html`. Real evdev/GPIO read [needs hardware]
-- ✅ Theme system: default Onyx (sleek black) + Midnight/Neon/Light, switchable in Settings
-- ✅ Vendored Lucide icons + Inter font (licenses incl.)
-- ✅ Multi-input in prototype: gamepad focus-nav + gamepad pointer + mouse/kbd + PS5
-- ✅ Boot-time navigation chooser (`input-select.html`) + platform/input model
-  (`scripts/gose_input.py`, `assets/platform.js`): device→Native, PC→Keyboard
-- ✅ GOSE on PC = **VM** (ADR-0013): QEMU launcher `scripts/gose_vm.py` (tested) +
-  `scripts/gose-preview.py` UI preview
-- ✅ GOSE-PC image build scaffolded (`pc-image/`): GOSE layer + OVA packager
-  (tested) + `build-gose-pc.sh` (dry-run verified)
-- ✅ New GOSE logo wired into boot splash, boot menu, login, desktop Start button
-- ✅ GOSE EmulationStation theme (`pc-image/gose-layer/themes/gose/`): onyx, brand,
-  Inter, gamelist + carousel + help bar; XML tested + preview render
-- ✅ Pinned base = Batocera 42 "Papilio Ulysses" (2025-10-12) in `build-gose-pc.sh`
-- ⬜ **Run the real GOSE-PC build** (on a Linux host w/ network+root+qemu) → publish
-  `GOSE-PC.img` + `GOSE-PC.ova` `[needs build]`
-- ⬜ Theme visual tuning on real EmulationStation `[needs device]`
-- ✅ Toolchain curated (`docs/09-toolchain.md`); input stack (`docs/07-controllers.md`)
-- ⬜ Ship AntiMicroX profile for desktop pointer; Skyscraper for box art `[on device]`
-- 🟡 Plan written (`docs/06-gui-plan.md`)
-- ⬜ Lock the visual direction with the owner, then pick Path A vs B
-- ⬜ Path A: Windows-style ES theme (home→system→library→launch, controller-only)
-- ⬜ Tools area (terminal, file manager, network tools, AI bridge launcher)
-- ⬜ Evaluate Path B (custom front-end) where theme falls short
+### AI Play Pipeline
+- ✅ Seat manager: virtual pad binding per token; humans-first seating.
+- ✅ `play.wait` push-call; Release button disarms.
+- ✅ Play-map registry: baked into image (`agent/gose_agent/play_maps/`); schema
+  documented in docs/32-play-map-registry.md.
+- ✅ Per-game RAM profiles (`agent/gose_agent/profiles/`): pong1k2p verified live.
+- ✅ RetroArch NCI (UDP RAM reads): reliable on a clean single launch (25/25 reads).
+- ✅ Verified end-to-end: AI-vs-AI Pong (9-0); 14/14 breaker checks passed (2026-06-13).
 
-## Phase 6 — AI control `[CUSTOM]`
-- ✅ GOSE Agent: input/system/games/screen capabilities (mock-backed)
-- ✅ **Game-state interface** (read state from memory, no screenshots) + profiles
-- ✅ Adopt ecosystem: stable-retro type compat + importer (ADR-0006)
-- 🔌 Real backends on device (uinput pad, framebuffer capture, real game launch)
-- 🔌 Verify RAM-map addresses on hardware (Mario 64 via Mupen64Plus-Next)
-- 🔌 USB-cable path (USB gadget networking → `usb0`)
-- ✅ Expose GOSE Agent over **MCP** (`mcp/` — AI agents/Claude connect via standard)
-- ✅ SSH/console path (CLI over SSH + `system.run`)
-- ⬜ Confirm MCP transport/auth specifics with the owner (stdio vs HTTP/SSE)
-- 🟡 AI bridge: MCP is the main path now; bridge.py kept for non-MCP/intent style
+### OOBE & First Boot
+- ✅ `gose-oobe.html`: language → WiFi → user create → controller pairing → privacy
+  (all off by default, opt-in). Pad drives the wizard.
+- ✅ Deterministic OOBE gate: boots to OOBE when `.oobe-done` absent; redirects to
+  home otherwise.
 
-## Phase 7 — Reproducibility
-- 🟡 `scripts/setup-device.sh` grows with every customization
-- ⬜ Full "re-flash → one script → restored" validated on hardware
+### Distribution & Packaging
+- ✅ `build-gose-pc.sh`: bakes shell + agent from repo sources into clean image; SSH
+  off, Samba off, `security.enabled=1`. Dry-run verified; real run `[needs build]`.
+- ✅ `verify-image-clean.ps1`: fail-closed gate (rejects cred files + SSH-on state).
+- ✅ `pc-image/dist/` distributable double-click bundle: `GOSE.bat` / `gose-launcher.ps1`
+  / provision / decompression progress / console-hide after VM up / clean exit.
+- ✅ CI workflow: `.github/workflows/build-image.yml` committed; live end-to-end run
+  `[needs build]`.
+- ✅ VERSION file as single source of truth (`0.6`).
+- ✅ `global.autosave=1` ships by default (ADR-0014).
+- ✅ License audit: docs/19 (findings frozen; ship-blocker review done).
+- ✅ Hardened `batocera.conf.gose` seed; SSH/Samba off in shipped image.
 
-## Immediate next actions
-1. Owner: confirm Odin 2 variant + whether to start with ROCKNIX (recommended).
-2. Owner: share the AI-agent API (endpoints, auth, message format) to unblock the bridge.
-3. Claude (next session): build the Path-A Windows ES theme; flesh out real agent backends behind feature flags.
+### Infrastructure
+- ✅ GOSE Agent: daemon (`python3 -m gose_agent`), client SDK + CLI, 134-test suite
+  (stdlib-only), mock backends (no real `/dev/uinput` needed).
+- ✅ MCP server (`mcp/`): zero-dep stdio; AI agents drive the device via `gose_*` tools.
+- ✅ `gose_vm_server.py` shell server (port 8780); `kiosk.py` WebKit kiosk.
+- ✅ Tailscale: agent 8731 + SSH 2222 served tailnet-only; hostfwd loopback-only.
+- ✅ Stable-retro RAM map importer (~1,009 games).
+- ✅ GOSE Agent over MCP (`mcp/` — docs/12 resolved: stdio transport).
+
+---
+
+## In Progress
+
+- 🟡 **Windowing phases 2–3** — native-X-window integration, snap groups, overview
+  (design approved in docs/23; implementation pending).
+- 🟡 **CI end-to-end** — `build-image.yml` committed; live clean-image run on a Linux
+  host not yet verified.
+- 🟡 **Global search** — apps + settings + files done; games + history pending.
+- 🟡 **Gamepad nav consistency** — most pages done; some still keyboard-first.
+- 🟡 **On-screen keyboard** — present; controller-driving the OSK is partial.
+
+---
+
+## Planned / Open
+
+### Near-term (no hardware blocker)
+- ⬜ **OTA update delivery** — no over-the-air mechanism yet.
+- ⬜ **Zeke's hold-✕ OOBE walkthrough** — owner walk of the physical-presence path
+  (pending owner availability; `[needs Zeke]`).
+- ⬜ **Real `build-gose-pc.sh` end-to-end** on a Linux host → publish
+  `gose-pc-x86_64.img.gz`. `[needs build]`
+- ⬜ **Code-signing** the launcher/installer (unsigned `.bat`/`.ps1` trip SmartScreen).
+- ⬜ **Steam listing path** — store assets, screenshots, depot upload, app config.
+- ⬜ **Crash recovery / safe mode** — boot-success counter; 3 failed starts → restore
+  previous gose-ui + minimal safe-mode page.
+- ⬜ **Backup/restore + factory reset** — tar userdata + saves to USB/rclone; "Reset GOSE"
+  wipes config not ROMs.
+- ⬜ **i18n string layer** — extract strings from ~50 HTML pages to locale JSON before
+  they multiply; ship en only.
+- ⬜ **Audit log UI + encrypted AI credential** — `/ai/audit.jsonl` backend live;
+  UI surface + per-boot auto-connect credential (age/libsodium) pending.
+- ⬜ **Multi-account session switching** — accounts model exists; switch-user flow pending.
+- ⬜ Notification center (richer), clipboard manager, in-game performance overlay (FPS).
+- ⬜ Boot/shutdown animations; richer sound design.
+
+### Needs hardware (Odin 2 — device not yet acquired)
+- 🔌 **Odin 2 bring-up** — confirm variant on purchase; flash ROCKNIX to microSD; abl mod;
+  first-boot checklist (controller, Wi-Fi, BT, GPU, audio). `[needs hardware]`
+- 🔌 Real `uinput`/evdev input backends; verify RAM-map addresses on device.
+- 🔌 HDMI / peripheral enumeration on the Odin 2.
+- 🔌 Real battery/thermal/brightness sensors (VM reads host values; device has its own).
+- 🔌 Per-game perf profiles + dock mode.
+- 🔌 Simultaneous OTG + charging — unknown until hardware in hand.
+
+---
+
+## Repo & Working Rules
+
+- **Dev branch: `main`** — commit and push to main; do NOT open a PR unless the owner asks.
+- **Agent test gate:** `cd agent && py -3.11 -m unittest discover -s tests -v` (134 tests).
+- **UI preview:** `python3 scripts/gose-preview.py`
+- **VM dry-run:** `python3 scripts/gose_vm.py --dry-run`
+- `[needs hardware]` = can only be validated on the Odin 2.
+- `[needs build]` = needs a Linux host with network + root + qemu for real image build.
+
+See `CLAUDE.md` for the full session workflow, open items, and packaging hazards.

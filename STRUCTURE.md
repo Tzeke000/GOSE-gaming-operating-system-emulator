@@ -1,5 +1,7 @@
 # STRUCTURE.md — what lives where (and what must not move)
 
+> Current as of **2026-06-14** (v0.6).
+
 The definitive repo map. One section per tree, load-bearing files called out,
 and — critically — **deploy targets**: several trees are referenced *by exact
 path* from outside this repo (the running VM host at `D:\gose-vm\`, the guest at
@@ -7,8 +9,8 @@ path* from outside this repo (the running VM host at `D:\gose-vm\`, the guest at
 trees are marked **🔒 path-frozen**: organize them with READMEs/indexes, never
 by moving or renaming files.
 
-Reading order for newcomers: `CLAUDE.md` → `ROADMAP.md` → `README.md` →
-`docs/README.md` (index of every numbered doc) → this file.
+Reading order for newcomers: `CLAUDE.md` → `ROADMAP.md` → `docs/README.md`
+(index of every numbered doc) → this file.
 
 ## Root
 
@@ -18,6 +20,7 @@ Reading order for newcomers: `CLAUDE.md` → `ROADMAP.md` → `README.md` →
 | `README.md` | Orientation: vision, quickstart, history, repo map. |
 | `ROADMAP.md` | Live status checklist across all phases. |
 | `STRUCTURE.md` | This file. |
+| `VERSION` | Single source of truth for the version number (`0.6`). |
 | `requirements-dev.txt` | Dev-only deps (render scripts); the core agent has **zero** required deps. |
 | `ruff.toml` | Lint config. |
 | `.gitignore` | Python junk, images/ROMs, tokens/logs, node_modules. `pc-image/` has its own. |
@@ -116,8 +119,8 @@ browser preview of the UI).
 ## `.claude/` 🔒 path-frozen
 
 `settings.json` + `hooks/session-start.sh` — SessionStart primer + agent
-self-test. (Note: the hook's echoed "dev branch" line and next-actions list
-predate the move to committing on `main` and the docs/12 resolution.)
+self-test. Dev branch is `main` (historical branch retired); docs/12 resolved
+the agent connection spec (MCP/stdio).
 
 ## What ships where (deploy summary)
 
