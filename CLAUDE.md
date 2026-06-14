@@ -149,7 +149,7 @@ carries SSH on + root pw "linux" + the owner token + dev session state.
   Key docs: `04` (ADRs), `15` (brand), `16` (AI permissions), `19` (license audit),
   `21` (widget standard), `23` (windowing design), `25` (OOBE), `27` (controller standard),
   `31` (security), `32` (build bakes the shell), `33` (prep-for-ship).
-- `agent/` 🔒 — GOSE Agent daemon + client SDK + CLI + 134-test suite + RAM profiles +
+- `agent/` 🔒 — GOSE Agent daemon + client SDK + CLI + 181-test suite + RAM profiles +
   play-map registry. **Path-frozen** (external tooling + MCP configs reference by exact path).
 - `mcp/` 🔒 — zero-dep stdio MCP server (`gose_mcp_server.py`). **Path-frozen.**
 - `gui/mockup/` 🔒 — **the live shell UI**. HTML pages + assets deploy to guest
@@ -168,7 +168,7 @@ carries SSH on + root pw "linux" + the owner token + dev session state.
   retired, 61+ commits behind). Develop, commit, push to main. Do NOT open a PR
   unless the owner asks.
 - **Agent test suite** (stdlib-only, no deps):
-  `cd agent && python3 -m unittest discover -s tests -v` (expect 134 passing).
+  `cd agent && python3 -m unittest discover -s tests -v` (expect 181 passing).
 - **UI preview** (zero-dep): `python3 scripts/gose-preview.py`
 - **VM dry-run**: `python3 scripts/gose_vm.py --dry-run`
 - **Image build dry-run**: `./pc-image/build-gose-pc.sh --dry-run`

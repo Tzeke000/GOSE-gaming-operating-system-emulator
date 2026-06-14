@@ -126,7 +126,7 @@ Version: **0.6** (current as of 2026-06-14).
 | `docs/` | Numbered design docs (brief, research, ADRs, protocol, GUI, controllers, windowing, permission model, security, license, OOBE, store, build, …). Indexed with statuses in `docs/README.md`. |
 | `gui/mockup/` | **The live GOSE shell UI** (name is historical). The ~50 `gose-*.html` pages + `assets/` deploy into the guest at `/userdata/gose-ui/`. Load-bearing sub-paths: `assets/themes.css` (theme tokens), `assets/gose-wm.js` + `assets/vendor/winbox/` (windowing), `assets/widget.js`/`widget.css` (widget standard), `assets/brand/` (GOSE Core SVG + PNG assets), `assets/sounds/` + `assets/sound.js`. `crystal-boot.html` + `crystal-frames.js` (stage-1 boot), `gose-boot.html` (stage-2 boot). `tools/crystal_ascii.py` generates `crystal-frames.js` from the real crystal mesh. |
 | `pc-image/` | Image build + VM host tooling. `build-gose-pc.sh` — bakes the clean image (Batocera x86_64 + gose-layer, shell baked in at build time). `gose-vm-host/` — guest + host runtime scripts (🔒 path-frozen): `gose_vm_server.py` (shell server), `kiosk.py`, `gose-pad-nav.py`, `pad_passthrough.py`, `boot-gose-vm.ps1`, `watchdog.py`, etc. `gose-layer/` — files injected onto Batocera userdata: agent autostart, `batocera.conf.gose`, ES theme. `dist/` — distributable double-click bundle (`GOSE.bat`, `gose-launcher.ps1`, assembled by `package-bundle.ps1`). `verify-image-clean.ps1` — fail-closed packaging gate. |
-| `agent/` | **GOSE Agent** (🔒 path-frozen): device-side AI-control daemon (`python3 -m gose_agent`), client SDK + CLI, 134-test suite (stdlib-only), per-game RAM maps (`profiles/`), play-map registry (`play_maps/`). Mock backends run anywhere (no real `/dev/uinput` needed). |
+| `agent/` | **GOSE Agent** (🔒 path-frozen): device-side AI-control daemon (`python3 -m gose_agent`), client SDK + CLI, 181-test suite (stdlib-only), per-game RAM maps (`profiles/`), play-map registry (`play_maps/`). Mock backends run anywhere (no real `/dev/uinput` needed). |
 | `mcp/` | Zero-dep stdio MCP server (🔒 path-frozen) — how AI agents / Claude drive the device via `gose_*` tools. Registered by exact path in external MCP configs. |
 | `ai-bridge/` | Adapter skeleton (reference only; MCP is the shipped transport per docs/12). |
 | `scripts/` | Device setup + mock-testable logic: `gose_bootmenu.py`, `gose_input.py`, `gose_vm.py` (QEMU launcher, `--dry-run`), `gose-preview.py` (zero-dep UI preview). |
@@ -137,7 +137,7 @@ Version: **0.6** (current as of 2026-06-14).
 ## Prove it runs locally (no hardware, no network)
 
 ```bash
-cd agent && python3 -m unittest discover -s tests -v   # 134 tests, stdlib-only
+cd agent && python3 -m unittest discover -s tests -v   # 181 tests, stdlib-only
 python3 scripts/gose-preview.py                         # click through the shell UI
 python3 scripts/gose_vm.py --dry-run                    # see the QEMU launch command
 ./pc-image/build-gose-pc.sh --dry-run                  # see the image-build plan

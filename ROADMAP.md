@@ -69,7 +69,7 @@
 - ✅ Hardened `batocera.conf.gose` seed; SSH/Samba off in shipped image.
 
 ### Infrastructure
-- ✅ GOSE Agent: daemon (`python3 -m gose_agent`), client SDK + CLI, 134-test suite
+- ✅ GOSE Agent: daemon (`python3 -m gose_agent`), client SDK + CLI, 181-test suite
   (stdlib-only), mock backends (no real `/dev/uinput` needed).
 - ✅ MCP server (`mcp/`): zero-dep stdio; AI agents drive the device via `gose_*` tools.
 - ✅ `gose_vm_server.py` shell server (port 8780); `kiosk.py` WebKit kiosk.
@@ -127,7 +127,7 @@
 ## Repo & Working Rules
 
 - **Dev branch: `main`** — commit and push to main; do NOT open a PR unless the owner asks.
-- **Agent test gate:** `cd agent && py -3.11 -m unittest discover -s tests -v` (134 tests).
+- **Agent test gate:** `cd agent && py -3.11 -m unittest discover -s tests -v` (181 tests).
 - **UI preview:** `python3 scripts/gose-preview.py`
 - **VM dry-run:** `python3 scripts/gose_vm.py --dry-run`
 - `[needs hardware]` = can only be validated on the Odin 2.

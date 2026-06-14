@@ -37,7 +37,7 @@ and the VM image reference these paths — do not move files.
 - `gose_agent/profiles/` — per-game RAM maps for the game-state interface
   (docs/08): `pong1k2p.json` (verified live), `mario64.json`.
 - `client/` — Python SDK (`gose_client.py`) + CLI (`cli.py`).
-- `tests/` — the suite (**134 tests**, stdlib-only). Gate for every commit:
+- `tests/` — the suite (**181 tests**, stdlib-only). Gate for every commit:
   `cd agent && py -3.11 -m unittest discover tests`.
 - `tools/import_stable_retro.py` — imports stable-retro RAM maps (~1,009 games).
 - `examples/pong_no_screenshots.py` — the no-screenshots play demo.

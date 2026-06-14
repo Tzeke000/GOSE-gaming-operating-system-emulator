@@ -78,9 +78,17 @@ class TestPinSeat(unittest.TestCase):
         os.unlink(self.path)
 
     def test_input_pinned_to_assigned_seat(self):
+        # omitted seat => pinned to the AI's assigned seat (the common drive pattern)
         msg = {"token": "tok-pinned", "op": "input.button"}
-        out = srv.AgentServer._pin_seat(msg, {"button": "up", "seat": 1})
+        out = srv.AgentServer._pin_seat(msg, {"button": "up"})
         self.assertEqual(out["seat"], 2)
+
+    def test_explicit_cross_seat_input_denied(self):
+        # an EXPLICIT request for a different seat is DENIED, not silently redirected
+        # (the cross-seat-input security fix; see server._pin_seat).
+        msg = {"token": "tok-pinned", "op": "input.button"}
+        with self.assertRaises(srv.P.AgentError):
+            srv.AgentServer._pin_seat(msg, {"button": "up", "seat": 1})
 
     def test_unassigned_token_not_pinned(self):
         msg = {"token": "tok-free", "op": "input.button"}
