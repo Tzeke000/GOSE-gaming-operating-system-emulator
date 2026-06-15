@@ -169,6 +169,9 @@ carries SSH on + root pw "linux" + the owner token + dev session state.
   unless the owner asks.
 - **Agent test suite** (stdlib-only, no deps):
   `cd agent && python3 -m unittest discover -s tests -v` (expect 181 passing).
+- **Host watchdog suite** (crash-recovery / safe mode, stdlib-only):
+  `cd pc-image/gose-vm-host && python3 -m unittest discover -s tests -v` (14 tests;
+  rollback cases need `rsync` → full on Linux/the VM, skip on a no-rsync host). See docs/35.
 - **UI preview** (zero-dep): `python3 scripts/gose-preview.py`
 - **VM dry-run**: `python3 scripts/gose_vm.py --dry-run`
 - **Image build dry-run**: `./pc-image/build-gose-pc.sh --dry-run`

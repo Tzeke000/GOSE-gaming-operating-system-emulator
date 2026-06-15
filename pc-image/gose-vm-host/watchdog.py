@@ -52,7 +52,8 @@ def acquire_singleton():
     my_pid = os.getpid()
     # Check for an existing claim.
     try:
-        existing = open(_LOCK_FILE).read().strip()
+        with open(_LOCK_FILE) as _lf:
+            existing = _lf.read().strip()
         if existing:
             try:
                 other = int(existing)
@@ -214,12 +215,14 @@ def accrue_playtime():
     if not game_running():
         return
     try:
-        rec = json.load(open(RECENT_F))
+        with open(RECENT_F) as _rf:
+            rec = json.load(_rf)
         if not rec:
             return
         key = rec[0].get("system", "") + "/" + rec[0].get("game", "")
         try:
-            pt = json.load(open(PLAYTIME_F))
+            with open(PLAYTIME_F) as _pf:
+                pt = json.load(_pf)
         except Exception:
             pt = {}
         pt[key] = pt.get(key, 0) + INTERVAL
@@ -234,7 +237,8 @@ def accrue_playtime():
 def read_attempts():
     # None == file missing (never started / unknown); int otherwise (0 == explicitly cleared by a good boot)
     try:
-        return int(open(BOOT_F).read().strip() or "0")
+        with open(BOOT_F) as _bf:
+            return int(_bf.read().strip() or "0")
     except Exception:
         return None
 
@@ -402,7 +406,8 @@ def enter_safe_mode():
     global _restored_once
     log("SAFE MODE tripped (>= %d failed UI starts)" % THRESHOLD)
     try:
-        open(SAFE_F, "w").write(time.strftime("%Y-%m-%d %H:%M:%S"))
+        with open(SAFE_F, "w") as _sf:
+            _sf.write(time.strftime("%Y-%m-%d %H:%M:%S"))
     except Exception:
         pass
     # Preferred recovery: silently roll back to the last known-good UI ONCE and let the loop restart it.
@@ -430,6 +435,7 @@ def enter_safe_mode():
     while not srv._exit:
         time.sleep(0.5)
     srv.shutdown()
+    srv.server_close()   # release the listening socket before the UI server rebinds the port
     try: os.remove(SAFE_F)
     except Exception: pass
     log("left safe mode (human action); resuming normal operation")

@@ -1,6 +1,6 @@
 # GOSE Roadmap & Live Status
 
-> Current as of **2026-06-14** (v0.6). Legend: ✅ done · 🟡 in progress · ⬜ todo ·
+> Current as of **2026-06-15** (v0.6). Legend: ✅ done · 🟡 in progress · ⬜ todo ·
 > 🔌 `[needs hardware]` · 🏗️ `[needs build]` (Linux host required)
 
 ---
@@ -22,6 +22,8 @@
   `wm-test.html` static test harness. Full design in docs/23 (phases 2–3 pending).
 - ✅ Crystal-shard software cursor (CSS kite polygon + gradient + facet theme).
 - ✅ Kiosk freeze watchdog: JS heartbeat + server tick endpoint + kill-on-stale.
+- ✅ Crash recovery / safe mode (docs/35): boot-success counter + known-good
+  `gose-ui.prev` snapshot/auto-rollback + controller-navigable safe-mode page; 14-test suite.
 
 ### Controller & Input
 - ✅ Controller standard (docs/27): one button language, one input path;
@@ -101,8 +103,6 @@
   `gose-pc-x86_64.img.gz`. `[needs build]`
 - ⬜ **Code-signing** the launcher/installer (unsigned `.bat`/`.ps1` trip SmartScreen).
 - ⬜ **Steam listing path** — store assets, screenshots, depot upload, app config.
-- ⬜ **Crash recovery / safe mode** — boot-success counter; 3 failed starts → restore
-  previous gose-ui + minimal safe-mode page.
 - ⬜ **Backup/restore + factory reset** — tar userdata + saves to USB/rclone; "Reset GOSE"
   wipes config not ROMs.
 - ⬜ **i18n string layer** — extract strings from ~50 HTML pages to locale JSON before
@@ -128,6 +128,8 @@
 
 - **Dev branch: `main`** — commit and push to main; do NOT open a PR unless the owner asks.
 - **Agent test gate:** `cd agent && py -3.11 -m unittest discover -s tests -v` (181 tests).
+- **Host watchdog test gate:** `cd pc-image/gose-vm-host && python3 -m unittest discover -s tests -v`
+  (14 tests; rollback cases need `rsync` → full coverage on Linux/the VM, skip on a no-rsync host).
 - **UI preview:** `python3 scripts/gose-preview.py`
 - **VM dry-run:** `python3 scripts/gose_vm.py --dry-run`
 - `[needs hardware]` = can only be validated on the Odin 2.
