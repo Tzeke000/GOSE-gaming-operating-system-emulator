@@ -23,6 +23,10 @@ _MOCK_PNG_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 )
 
+# Default long-side cap for the ffmpeg x11grab vision capture — keeps the PNG small
+# enough to return over the tool channel while staying legible. scale<1 shrinks further.
+_VISION_MAX_W = 480
+
 
 class ScreenCapability:
     def __init__(self):
@@ -60,9 +64,13 @@ class ScreenCapability:
                 env.setdefault("DISPLAY", ":0")
                 disp = env["DISPLAY"]
                 x11_in = disp if "." in disp.rsplit(":", 1)[-1] else disp + ".0"
+                # Downscale: a full-res desktop PNG is more than AI vision needs and
+                # overflows the tool channel. Cap the long side (scale<1 shrinks more).
+                max_w = max(64, int(round(_VISION_MAX_W * (scale if 0 < scale < 1 else 1.0))))
+                vf = "scale='min(%d,iw)':-2" % max_w
                 subprocess.run(
                     ["ffmpeg", "-loglevel", "error", "-f", "x11grab", "-draw_mouse", "0",
-                     "-i", x11_in, "-frames:v", "1", "-update", "1", "-y", out],
+                     "-i", x11_in, "-frames:v", "1", "-vf", vf, "-update", "1", "-y", out],
                     check=True, timeout=15, env=env)
             elif self.method == "fbgrab":
                 subprocess.run(["fbgrab", out], check=True, timeout=10)
