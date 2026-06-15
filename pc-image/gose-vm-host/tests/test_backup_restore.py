@@ -32,6 +32,11 @@ if sys.platform.startswith("linux"):
         g = None
 
 
+def _read(path):
+    with open(path) as f:
+        return f.read()
+
+
 @unittest.skipUnless(g is not None, "needs gose_vm_server importable on Linux (run in the VM)")
 class TestRestoreConfinement(unittest.TestCase):
     def setUp(self):
@@ -118,6 +123,81 @@ class TestRestoreConfinement(unittest.TestCase):
             g.subprocess.run = orig_run
         self.assertTrue(r["ok"])
         self.assertEqual(r["members"], 1)
+
+
+@unittest.skipUnless(g is not None, "needs gose_vm_server importable on Linux (run in the VM)")
+class TestBackupRestoreRoundtrip(unittest.TestCase):
+    """Full backup -> corrupt -> restore against a temp userdata tree (USERDATA param).
+    Proves GOSE state round-trips AND that roms/saves are never captured or touched."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="gv-ud-")
+        self._saved = {"USERDATA": g.USERDATA, "BACKUP_DIR": g.BACKUP_DIR, "_owner_ok": g._owner_ok}
+        g.USERDATA = self.tmp
+        g.BACKUP_DIR = os.path.join(self.tmp, "backups")
+        g._owner_ok = lambda payload: True
+        self._write("gose-ui/index.html", "V1")
+        self._write("gose-ui/sub/a.txt", "alpha")
+        self._write("system/gose/ai_tokens.json", "{}")
+        self._write("roms/nes/game.nes", "ROMDATA")   # must never be backed up
+        self._write("saves/game.srm", "SAVEDATA")     # must never be backed up
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            setattr(g, k, v)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _write(self, rel, body):
+        p = os.path.join(self.tmp, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w") as f:
+            f.write(body)
+
+    def _members(self, archive):
+        out = subprocess.run(["tar", "-tzf", archive], capture_output=True, text=True)
+        return [m for m in out.stdout.splitlines() if m.strip()]
+
+    def test_roundtrip_preserves_state_and_excludes_roms_saves(self):
+        b = g.gose_backup(reason="test")
+        self.assertTrue(b["ok"], b)
+        members = self._members(b["path"])
+        self.assertTrue(any(m.startswith("gose-ui") for m in members), members)      # captures GOSE state
+        self.assertFalse(any("roms" in m or "saves" in m for m in members), members)  # never roms/saves
+
+        # corrupt the live UI, then restore from the backup
+        self._write("gose-ui/index.html", "BROKEN")
+        os.remove(os.path.join(self.tmp, "gose-ui/sub/a.txt"))
+        r = g.gose_restore({"file": b["file"]})
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(_read(os.path.join(self.tmp, "gose-ui/index.html")), "V1")     # rolled back
+        self.assertEqual(_read(os.path.join(self.tmp, "gose-ui/sub/a.txt")), "alpha")   # restored
+        # roms + saves untouched the whole time
+        self.assertEqual(_read(os.path.join(self.tmp, "roms/nes/game.nes")), "ROMDATA")
+        self.assertEqual(_read(os.path.join(self.tmp, "saves/game.srm")), "SAVEDATA")
+
+
+@unittest.skipUnless(g is not None, "needs gose_vm_server importable on Linux (run in the VM)")
+class TestFactoryResetGate(unittest.TestCase):
+    """factory_reset must refuse without owner AND without the confirm token — both
+    return BEFORE any wipe, so these touch no live state."""
+
+    def setUp(self):
+        self._owner = g._owner_ok
+
+    def tearDown(self):
+        g._owner_ok = self._owner
+
+    def test_no_owner_rejected(self):
+        g._owner_ok = lambda payload: False
+        r = g.gose_factory_reset({"confirm": "RESET"})
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["code"], "ERR_NOT_OWNER")
+
+    def test_missing_confirm_rejected(self):
+        g._owner_ok = lambda payload: True
+        r = g.gose_factory_reset({})   # owner ok, but no confirm token -> refuse before wiping
+        self.assertFalse(r["ok"])
+        self.assertIn("confirm", r["error"])
 
 
 if __name__ == "__main__":

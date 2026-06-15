@@ -169,10 +169,10 @@ carries SSH on + root pw "linux" + the owner token + dev session state.
   unless the owner asks.
 - **Agent test suite** (stdlib-only, no deps):
   `cd agent && python3 -m unittest discover -s tests -v` (expect 181 passing).
-- **Host resilience suite** (crash-recovery/safe-mode + gose_restore confinement, stdlib-only):
-  `cd pc-image/gose-vm-host && python3 -m unittest discover -s tests -v` (21 tests; rollback +
+- **Host resilience suite** (crash-recovery/safe-mode + backup/restore, stdlib-only):
+  `cd pc-image/gose-vm-host && python3 -m unittest discover -s tests -v` (24 tests; rollback +
   server-import cases need `rsync` + a Linux /userdata → full on the VM, skip on a no-rsync host).
-  gose_vm_server.py now has an `if __name__` guard so it's importable for tests. See docs/35.
+  gose_vm_server.py has an `if __name__` guard + a `USERDATA` const so it's importable/testable. See docs/35.
 - **UI preview** (zero-dep): `python3 scripts/gose-preview.py`
 - **VM dry-run**: `python3 scripts/gose_vm.py --dry-run`
 - **Image build dry-run**: `./pc-image/build-gose-pc.sh --dry-run`

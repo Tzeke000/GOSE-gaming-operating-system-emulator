@@ -103,10 +103,10 @@
   `gose-pc-x86_64.img.gz`. `[needs build]`
 - ⬜ **Code-signing** the launcher/installer (unsigned `.bat`/`.ps1` trip SmartScreen).
 - ⬜ **Steam listing path** — store assets, screenshots, depot upload, app config.
-- 🟡 **Backup/restore + factory reset** — server side DONE + owner-gated (`gose_backup` /
-  `gose_restore` / `gose_factory_reset`; restore archive-confinement is now test-covered, 7 tests).
-  Remaining: the "Reset GOSE" / backup UI flow, USB/rclone destinations, and a happy-path
-  round-trip test (needs a `userdata`-root param so the funcs run against a temp tree).
+- 🟡 **Backup/restore + factory reset** — server side DONE + owner-gated + **test-covered** (10 tests:
+  `gose_restore` archive-confinement, full backup↔restore round-trip proving roms/saves are never
+  captured/touched, factory-reset gating). Remaining: the "Reset GOSE" / backup UI flow + USB/rclone
+  destinations.
 - ⬜ **i18n string layer** — extract strings from ~50 HTML pages to locale JSON before
   they multiply; ship en only.
 - ⬜ **Audit log UI + encrypted AI credential** — `/ai/audit.jsonl` backend live;
@@ -131,8 +131,8 @@
 - **Dev branch: `main`** — commit and push to main; do NOT open a PR unless the owner asks.
 - **Agent test gate:** `cd agent && py -3.11 -m unittest discover -s tests -v` (181 tests).
 - **Host resilience test gate:** `cd pc-image/gose-vm-host && python3 -m unittest discover -s tests -v`
-  (21 tests: watchdog crash-recovery 14 + gose_restore confinement 7; rollback/import cases need
-  `rsync` + a Linux /userdata → full coverage on the VM, skip on a no-rsync host).
+  (24 tests: watchdog crash-recovery 14 + backup/restore 10 = restore confinement 7, full backup↔restore
+  round-trip, factory-reset gating; rollback/import cases need `rsync` + a Linux /userdata → full on the VM).
 - **UI preview:** `python3 scripts/gose-preview.py`
 - **VM dry-run:** `python3 scripts/gose_vm.py --dry-run`
 - `[needs hardware]` = can only be validated on the Odin 2.

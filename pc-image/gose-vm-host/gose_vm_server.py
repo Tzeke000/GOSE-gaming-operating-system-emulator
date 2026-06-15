@@ -7326,7 +7326,10 @@ def collection_remove_game(coll_id, payload):
 # server CLEARS it the moment it serves the home page (proof the UI booted far enough to render).
 # A crash-loop that never reaches home lets the count climb -> watchdog trips safe mode at the threshold.
 BOOT_ATTEMPTS_F = ROOT + "/.boot_attempts"
-BACKUP_DIR = "/userdata/backups"
+# Data partition root. A constant (not a hardcoded literal) so backup/restore can be
+# pointed at a temp tree in tests; "/userdata" everywhere in production.
+USERDATA = "/userdata"
+BACKUP_DIR = USERDATA + "/backups"
 # What a backup captures (relative to /userdata): the whole GOSE UI/state dir minus caches/logs,
 # plus the AI account tokens + audit. NEVER roms, NEVER saves, NEVER the OS.
 _BACKUP_INCLUDE = ["gose-ui", "system/gose/ai_tokens.json", "system/gose/ai_audit.jsonl",
@@ -7369,13 +7372,13 @@ def gose_backup(reason="manual"):
                         pass
         except Exception:
             pass
-        members = [m for m in _BACKUP_INCLUDE if os.path.exists("/userdata/" + m)]
+        members = [m for m in _BACKUP_INCLUDE if os.path.exists(USERDATA + "/" + m)]
         if not members:
             return {"ok": False, "error": "nothing to back up"}
         name = "gose-" + time.strftime("%Y%m%d-%H%M%S") + ".tar.gz"
         final = os.path.join(BACKUP_DIR, name)
         tmp = os.path.join(BACKUP_DIR, ".tmp-" + name)
-        cmd = ["tar", "-czf", tmp, "-C", "/userdata"]
+        cmd = ["tar", "-czf", tmp, "-C", USERDATA]
         for ex in _BACKUP_EXCLUDE:
             cmd.append("--exclude=" + ex)
         cmd += members
@@ -7449,7 +7452,7 @@ def gose_restore(payload):
                            "system/gose/collections.json",
                            "system/gose", "system/gose/")):
                 return {"ok": False, "error": "archive escapes GOSE state: " + m}
-        ex = subprocess.run(["tar", "-xzf", path, "-C", "/userdata"],
+        ex = subprocess.run(["tar", "-xzf", path, "-C", USERDATA],
                             capture_output=True, text=True, timeout=180)
         if ex.returncode > 1:
             return {"ok": False, "error": "extract failed: " + (ex.stderr or "")[:200]}
