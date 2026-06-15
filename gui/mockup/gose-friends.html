@@ -69,6 +69,7 @@
   /* save chip */
   .save-chip{font-size:11.5px;font-weight:600;color:var(--accent);border:1px solid var(--accent);
     padding:2px 9px;border-radius:999px;cursor:pointer;background:transparent;margin-left:auto}
+  .save-chip.focus{box-shadow:var(--focusglow);border-color:var(--accent)}
   /* add-device row */
   .add-row{background:var(--surface);border:2px dashed var(--line);border-radius:14px;
     padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer;color:var(--muted)}
@@ -186,7 +187,7 @@ async function scan(){
   }catch(e){renderError("Could not reach the GOSE server.");}
   scanning = false;
   btn.classList.remove("scanning");
-  ic.textContent = "&#128247;";
+  ic.innerHTML = "&#128247;";   // innerHTML so the camera entity decodes (textContent showed it literally)
 }
 
 function render(d){
@@ -246,7 +247,7 @@ function peerCard(p){
       </div>
       ${act?`<div class="activity">&#9654; ${esc(actSys)}${esc(act)}</div>`:""}
     </div>
-    ${p.online&&isGose?`<button class="save-chip" data-save-ip="${ip}" data-save-name="${display}">Save</button>`:""}
+    ${p.online&&isGose?`<button class="save-chip focusable" data-save-ip="${ip}" data-save-name="${display}">Save</button>`:""}
   </div>`;
 }
 
@@ -269,6 +270,7 @@ function attachCardHandlers(){
     ar.addEventListener("click",()=>openAdd());
     ar.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" ")openAdd();});
   }
+  initFocus();   // (re)seat d-pad focus after the dynamic content renders
 }
 
 async function loadSaved(container){
@@ -303,6 +305,7 @@ function openAdd(name="",ip=""){
 function closeAdd(){
   document.getElementById("add-modal").classList.remove("on");
   addModalOpen = false;
+  initFocus();   // return d-pad focus to the page
 }
 document.getElementById("add-cancel").addEventListener("click",closeAdd);
 document.getElementById("add-save").addEventListener("click", async()=>{
@@ -325,12 +328,52 @@ document.getElementById("scan-btn").addEventListener("click",()=>{if(!scanning)s
 document.getElementById("back").addEventListener("click",()=>history.back());
 document.getElementById("back").addEventListener("keydown",e=>{if(e.key==="Enter")history.back();});
 
-// ---- pad nav ----
+// ---- pad nav: spatial d-pad focus over .focusable (scoped to the modal when open) ----
+function focusables(){
+  const root = addModalOpen ? document.getElementById("add-modal") : document;
+  return [].slice.call(root.querySelectorAll(".focusable")).filter(el=>el.offsetParent!==null);
+}
+function cur(){return document.querySelector(".focusable.focus");}
+function setF(el){if(!el)return;const c=cur();if(c)c.classList.remove("focus");
+  el.classList.add("focus");try{el.scrollIntoView({block:"nearest"});}catch(e){}}
+function move(dir){
+  const list=focusables();if(!list.length)return;
+  const a=cur();if(!a||list.indexOf(a)<0){setF(list[0]);return;}
+  const r=a.getBoundingClientRect();let best=null,bd=1e9;
+  for(const el of list){if(el===a)continue;
+    const b=el.getBoundingClientRect();
+    const dx=(b.left+b.width/2)-(r.left+r.width/2),dy=(b.top+b.height/2)-(r.top+r.height/2);
+    const ok={right:dx>6,left:dx<-6,down:dy>6,up:dy<-6}[dir];if(!ok)continue;
+    const al=(dir==="left"||dir==="right")?Math.abs(dx):Math.abs(dy);
+    const of=(dir==="left"||dir==="right")?Math.abs(dy):Math.abs(dx);
+    const dd=al+of*2;if(dd<bd){bd=dd;best=el;}}
+  if(!best){const i=list.indexOf(a);                       // wrap so arrows never dead-end
+    best=(dir==="right"||dir==="down")?list[(i+1)%list.length]:list[(i-1+list.length)%list.length];
+    if(best===a)best=null;}
+  if(best){if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();setF(best);}
+}
+function activate(el){if(!el)return;if(el.tagName==="INPUT"){el.focus();return;}el.click();}
+function initFocus(){const list=focusables();if(!cur()||list.indexOf(cur())<0)setF(list[0]);}
+
 window.addEventListener("keydown",e=>{
-  if(addModalOpen){if(e.key==="Escape")closeAdd();return;}
-  if(e.key==="Escape"||e.key==="b") history.back();
-  if(e.key==="y"||e.key==="Y") scan();
-  if(e.key==="x"||e.key==="X") openAdd();
+  const k=e.key, typing=document.activeElement&&document.activeElement.tagName==="INPUT";
+  if(addModalOpen){
+    if(k==="Escape"||k==="Backspace"){closeAdd();e.preventDefault();return;}
+    if(typing) return;                                     // let the focused input + OSK own the keys
+    if(k.indexOf("Arrow")===0){move(k.slice(5).toLowerCase());e.preventDefault();return;}
+    if(k==="Enter"||k===" "){activate(cur());e.preventDefault();return;}
+    return;
+  }
+  if(k==="ArrowRight")move("right");
+  else if(k==="ArrowLeft")move("left");
+  else if(k==="ArrowDown")move("down");
+  else if(k==="ArrowUp")move("up");
+  else if(k==="Enter"||k===" ")activate(cur());
+  else if(k==="Escape"||k==="b"||k==="B")history.back();
+  else if(k==="y"||k==="Y")scan();
+  else if(k==="x"||k==="X")openAdd();
+  else return;
+  e.preventDefault();
 });
 
 // ---- helpers ----
@@ -350,6 +393,7 @@ function renderError(msg){
 }
 
 // ---- init ----
+initFocus();   // seat focus on the static bar (back / scan) before content loads
 (async()=>{
   await checkEnabled();
   await scan();

@@ -88,7 +88,9 @@
 - 🟡 **CI end-to-end** — `build-image.yml` committed; live clean-image run on a Linux
   host not yet verified.
 - 🟡 **Global search** — apps + settings + files done; games + history pending.
-- 🟡 **Gamepad nav consistency** — most pages done; some still keyboard-first.
+- 🟡 **Gamepad nav consistency** — audited (46 navigable / 3 offenders / 0 display-only of 49 interactive
+  pages). `gose-friends.html` FIXED (added spatial d-pad focus-nav + made the save-chip reachable).
+  Remaining offenders: `gose-upload.html`, `gose-parental.html` (need the same `.focusable` + `move()` pattern).
 - 🟡 **On-screen keyboard** — present; controller-driving the OSK is partial.
 
 ---
