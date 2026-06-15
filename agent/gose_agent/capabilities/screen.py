@@ -1,8 +1,13 @@
 """Screen capture capability: give the AI eyes on the device.
 
-Real backend tries common Linux capture paths (grim/wlroots, scrot/X11, fbgrab,
-raw framebuffer). Mock backend returns a tiny valid PNG so the perception loop is
-exercisable without a display (CI / container).
+Real backend tries common Linux capture paths (grim/wlroots, scrot/X11, ffmpeg
+x11grab, fbgrab, raw framebuffer). Mock backend returns a tiny valid PNG so the
+perception loop is exercisable without a display (CI / container).
+
+NOTE: ffmpeg x11grab is preferred over fbgrab because when the desktop is GPU/GL-
+composited (virgl, qemu gtk,gl=on) the legacy framebuffer /dev/fb0 is powered down,
+so fbgrab/fb0 capture a BLANK frame for both the shell AND games. x11grab reads the
+real X display and works over GL. (overlay_window.py uses the same path.)
 """
 from __future__ import annotations
 
@@ -29,7 +34,11 @@ class ScreenCapability:
             return "grim"
         if shutil.which("scrot"):      # X11
             return "scrot"
-        if shutil.which("fbgrab"):     # framebuffer
+        # ffmpeg x11grab — the only path that works under GL compositing (see module
+        # docstring). Needs ffmpeg + a live X display.
+        if shutil.which("ffmpeg") and (os.environ.get("DISPLAY") or os.path.exists("/tmp/.X11-unix/X0")):
+            return "ffmpeg-x11"
+        if shutil.which("fbgrab"):     # framebuffer (blind under GL — last resort)
             return "fbgrab"
         if os.path.exists("/dev/fb0"):
             return "fb0"
@@ -46,6 +55,15 @@ class ScreenCapability:
                 subprocess.run(["grim", out], check=True, timeout=10)
             elif self.method == "scrot":
                 subprocess.run(["scrot", "-o", out], check=True, timeout=10)
+            elif self.method == "ffmpeg-x11":
+                env = dict(os.environ)
+                env.setdefault("DISPLAY", ":0")
+                disp = env["DISPLAY"]
+                x11_in = disp if "." in disp.rsplit(":", 1)[-1] else disp + ".0"
+                subprocess.run(
+                    ["ffmpeg", "-loglevel", "error", "-f", "x11grab", "-draw_mouse", "0",
+                     "-i", x11_in, "-frames:v", "1", "-update", "1", "-y", out],
+                    check=True, timeout=15, env=env)
             elif self.method == "fbgrab":
                 subprocess.run(["fbgrab", out], check=True, timeout=10)
             else:  # raw framebuffer — best-effort copy; real conversion TBD
