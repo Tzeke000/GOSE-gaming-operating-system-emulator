@@ -416,7 +416,7 @@
             '<input class="inp focusable" data-field="pin" inputmode="numeric" placeholder="8 digits" value="'+esc(S.account.pin)+'"></div>'+
         '</div>'+
         '<div class="hint" id="cred-hint" style="color:var(--muted);font-size:12px;margin-top:-6px">'+
-          'Set at least one — either a PIN or a password (or both).</div>'+
+          'Set one — a PIN or a password.</div>'+
         '<div class="field"><label>Your color</label>'+
           '<div class="swatches">'+ACCENTS.map(function(a){
             return '<span class="sw focusable'+(S.account.accent===a?' sel':'')+'" data-acc="'+a+'" style="background:'+a+'"></span>'; }).join("")+'</div></div>'+
@@ -609,6 +609,28 @@
     // live-capture text fields so the required-account gate updates as you type (incl. via the OSK)
     [].slice.call(card.querySelectorAll("input[data-field]")).forEach(function(inp){
       inp.addEventListener("input", function(){ captureInputs(); refreshGate(); }); });
+    // PIN-XOR-password: when the user types in one credential field, disable+clear the other
+    // so the exclusivity is visually obvious and both can never be set simultaneously.
+    if(s.id==="account"){
+      var pwInp=card.querySelector('input[data-field="password"]');
+      var pinInp=card.querySelector('input[data-field="pin"]');
+      function syncCredFields(){
+        var hasPw=pwInp&&String(pwInp.value||"").length>0;
+        var hasPin=pinInp&&String(pinInp.value||"").length>0;
+        if(pwInp && pinInp){
+          if(hasPw){
+            pinInp.disabled=true; pinInp.style.opacity="0.35"; pinInp.value=""; S.account.pin="";
+          } else if(hasPin){
+            pwInp.disabled=true; pwInp.style.opacity="0.35"; pwInp.value=""; S.account.password="";
+          } else {
+            pwInp.disabled=false; pwInp.style.opacity="";
+            pinInp.disabled=false; pinInp.style.opacity="";
+          }
+        }
+      }
+      if(pwInp) pwInp.addEventListener("input", syncCredFields);
+      if(pinInp) pinInp.addEventListener("input", syncCredFields);
+    }
     wireClicks();
   }
   // mouse support (preview): click activates — re-run after any partial re-render adds focusables
@@ -1116,6 +1138,7 @@
                // boot). Closes the post-OOBE "has_pin but no hash" window in which an unauthenticated
                // loopback caller could set the owner PIN via /auth/pin/set. (Empty = no PIN, ignored.)
                pin:String(S.account.pin||""),
+               password:String(S.account.password||""),
                has_password:!!S.account.password, has_pin:!!S.account.pin, accent:S.account.accent},
       remote_access: raPayload,   // null = skipped (SSH credential stays as-is)
       privacy:S.privacy, locale:S.locale, keyboard:S.keyboard, timezone:null,
@@ -1153,11 +1176,12 @@
       var pw=String(S.account.password||"");
       if(pw && pw.length<8)
         return "Password must be at least 8 characters.";
-      // #106: require at least one credential — a username with no PIN and no
-      // password leaves the device with no lock and no SSH auth. One of the two
-      // is required; both is also fine. The badge copy already says "required".
+      // Require EXACTLY ONE credential — not zero (device must be lockable), not
+      // both (PIN-XOR-password: the two auth paths must not coexist at OOBE).
+      if(pin && pw)
+        return "Set a PIN or a password — not both.";
       if(!pin && !pw)
-        return "Set a PIN (8 digits) or a password (8+ characters) — at least one is required.";
+        return "Set a PIN (8 digits) or a password (8+ characters) — exactly one is required.";
     }
     if(s.id==="remoteaccess"){
       // optional step — no entry is fine (they'll skip). But if they typed a password, validate it.

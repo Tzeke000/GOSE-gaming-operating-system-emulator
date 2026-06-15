@@ -134,6 +134,7 @@ _LIMITS = {"/capture/shot": (20, 60), "/capture/clip": (8, 60), "/capture/buffer
            "/diag/bundle": (4, 120),
            # coarse backstop only — the real brute-force guard is the 5-try/30s PIN lockout
            "/auth/pin": (30, 60), "/auth/pin/set": (10, 60),
+           "/auth/password": (30, 60), "/auth/password/set": (10, 60),
            "/ai/copilot/alert": (20, 60),
            # gpu probe: first call is slow (~6-8s), subsequent are instant (cached);
            # refresh=1 re-runs the probe — rate-limited to avoid re-running it repeatedly.
@@ -2585,6 +2586,13 @@ def _owner_credential(payload):
                 return True, pin, "pin"
         except Exception:
             pass
+    if p.get("password"):
+        pw = str(p.get("password"))         # the account password is an owner credential too
+        try:
+            if pw_verify({"password": pw}).get("valid"):
+                return True, pw, "password"
+        except Exception:
+            pass
     return False, None, None
 
 def _owner_ok(payload):
@@ -4651,6 +4659,11 @@ def oobe_complete(payload):
         salt = secrets.token_hex(16)
         users[0].update({"pin_salt": salt, "pin_hash": _pin_compute(raw_pin, salt),
                          "pin_algo": PIN_ALGO, "has_pin": True})
+    raw_pw = str(acct.get("password") or "")        # the account password is hashed here too (XOR with PIN)
+    if PW_RE.match(raw_pw):
+        salt = secrets.token_hex(16)
+        users[0].update({"pw_salt": salt, "pw_hash": _pin_compute(raw_pw, salt),
+                         "pw_algo": PIN_ALGO, "has_password": True})
     write_json_atomic(ACCOUNTS_F, {"users": users,
                                    "device_name": (p.get("device_name") or "GOSE").strip()[:48],
                                    "locale": p.get("locale"), "keyboard": p.get("keyboard"),
@@ -4863,6 +4876,99 @@ def pin_set(payload):
         _PIN_FAILS["n"] = 0
         _PIN_FAILS["until"] = 0.0
     LOG.info("PIN set for owner %s (len %d)", o.get("username"), len(pin))
+    return {"ok": True, "set": True}
+
+# ---- Account PASSWORD: a sign-in credential ALTERNATIVE to the PIN (Zeke 2026-06-15). The
+#      owner picks EXACTLY ONE of PIN / password at OOBE; both are first-class owner credentials.
+#      Mirrors the PIN path: scrypt hash (reusing _pin_compute), rate-limited verify, and a
+#      first-set that requires owner presence so it can't be claimed unauthenticated. ----
+PW_RE        = re.compile(r"^.{8,}$")        # set/change: 8+ characters (any)
+PW_MAX_TRIES = 5
+PW_LOCKOUT_S = 30
+_PW_GUARD    = threading.Lock()
+_PW_FAILS    = {"n": 0, "until": 0.0}
+
+def _pw_locked_for():
+    return max(0.0, _PW_FAILS["until"] - time.time())
+
+def pw_status():
+    o = _owner_record()
+    with _PW_GUARD:
+        lf = _pw_locked_for()
+        left = 0 if lf > 0 else max(0, PW_MAX_TRIES - _PW_FAILS["n"])
+    return {"ok": True, "enabled": bool(o and o.get("has_password")),
+            "set": bool(o and o.get("pw_hash") and o.get("pw_salt")),
+            "locked_for": round(lf, 1), "tries_left": left}
+
+def pw_verify(payload):
+    """POST /auth/password {password} -> {ok, valid, tries_left?, locked_for?}. Constant-time
+    compare; consecutive misses arm the lockout; a success resets it. Mirrors pin_verify."""
+    pw = str((payload or {}).get("password") or "")
+    o = _owner_record()
+    if not (o and o.get("pw_hash") and o.get("pw_salt")):
+        return {"ok": False, "error": "no password is set", "set": False}
+    with _PW_GUARD:
+        lf = _pw_locked_for()
+        if lf > 0:
+            return {"ok": True, "valid": False, "locked_for": round(lf, 1), "tries_left": 0}
+        valid = False
+        if pw:                              # non-empty; the constant-time hash compare is the gate
+            try:
+                import hmac
+                valid = hmac.compare_digest(_pin_compute(pw, o["pw_salt"]), o["pw_hash"])
+            except Exception as e:
+                LOG.error("password verify failed: %s", e)
+        if valid:
+            _PW_FAILS["n"] = 0
+            _PW_FAILS["until"] = 0.0
+            LOG.info("password ok (owner %s)", o.get("username"))
+            return {"ok": True, "valid": True}
+        _PW_FAILS["n"] += 1
+        if _PW_FAILS["n"] >= PW_MAX_TRIES:
+            _PW_FAILS["n"] = 0
+            _PW_FAILS["until"] = time.time() + PW_LOCKOUT_S
+            LOG.warning("password lockout armed (%ss)", PW_LOCKOUT_S)
+            return {"ok": True, "valid": False, "locked_for": float(PW_LOCKOUT_S), "tries_left": 0}
+        LOG.warning("password wrong (%d/%d)", _PW_FAILS["n"], PW_MAX_TRIES)
+        return {"ok": True, "valid": False, "tries_left": PW_MAX_TRIES - _PW_FAILS["n"]}
+
+def pw_set(payload):
+    """POST /auth/password/set {password, current?}. FIRST set (no hash yet) requires OWNER
+    PRESENCE (_owner_ok: dev/owner token OR a hold-✕ confirm) — same boundary as pin_set, so an
+    unauthenticated caller can't claim the owner password; the legit owner's password is hashed at
+    OOBE. CHANGING an existing password requires the current one."""
+    p = payload or {}
+    pw = str(p.get("password") or "")
+    if not PW_RE.match(pw):
+        return {"ok": False, "error": "password must be at least 8 characters"}
+    acc = _accounts_load()
+    o = _owner_record(acc)
+    if not o:
+        return {"ok": False, "error": "no owner account yet — finish first-boot setup"}
+    if o.get("pw_hash") and o.get("pw_salt"):
+        # CHANGING an existing password: require the current one (rate-limited verify).
+        cur = pw_verify({"password": str(p.get("current") or "")})
+        if not cur.get("valid"):
+            out = {"ok": False, "error": "current password required to change it"}
+            for k in ("locked_for", "tries_left"):
+                if k in cur:
+                    out[k] = cur[k]
+            return out
+    elif not _owner_ok(p):
+        # FIRST set (no hash): only the present owner (dev/owner token or hold-✕) may set it.
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner presence required to set the device password — set it during first-time "
+                         "setup, or hold the ✕ button on the device controller"}
+    salt = secrets.token_hex(16)
+    o["pw_salt"] = salt
+    o["pw_hash"] = _pin_compute(pw, salt)
+    o["pw_algo"] = PIN_ALGO
+    o["has_password"] = True
+    write_json_atomic(ACCOUNTS_F, acc)
+    with _PW_GUARD:
+        _PW_FAILS["n"] = 0
+        _PW_FAILS["until"] = 0.0
+    LOG.info("password set for owner %s", o.get("username"))
     return {"ok": True, "set": True}
 
 # ---- Multi-user profiles (#58 / #31) -----------------------------------------------
@@ -7846,7 +7952,7 @@ _DIAG_NEVER = {
     "ai_tokens.json", "token", "ssh_cred.json", "ai_audit.jsonl",
 }
 _DIAG_NEVER_EXT = {".key", ".pem", ".p12", ".pfx", ".crt"}
-_DIAG_SECRET_KEYS = {"pin_hash", "pin_salt", "password", "secret", "token", "ssh_key"}
+_DIAG_SECRET_KEYS = {"pin_hash", "pin_salt", "pw_hash", "pw_salt", "password", "secret", "token", "ssh_key"}
 _DIAG_LOG_CAP = 2000    # lines per log (tail)
 _DIAG_LOG_MAXBYTES = 512 * 1024  # 512 KB absolute ceiling per log
 
@@ -7867,7 +7973,7 @@ def _diag_safe_path(p):
 
 def _scrub_accounts():
     """Load accounts.json and remove all secret fields before bundling."""
-    _SECRET_FIELDS = {"pin_hash", "pin_salt", "password", "secret", "ssh_key", "token"}
+    _SECRET_FIELDS = {"pin_hash", "pin_salt", "pw_hash", "pw_salt", "password", "secret", "ssh_key", "token"}
     try:
         d = json.load(open("/userdata/system/gose/accounts.json"))
     except Exception:
@@ -11322,6 +11428,8 @@ class H(http.server.SimpleHTTPRequestHandler):
             return self._json(users_active())
         if route == "/auth/pin":
             return self._json(pin_status())
+        if route == "/auth/password":
+            return self._json(pw_status())
         if route == "/storage.json":
             return self._json(storage_info())
         if route == "/storage/breakdown":
@@ -11840,6 +11948,15 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/auth/pin/set":
                 return self._json(pin_set(payload))
             return self._json(pin_verify(payload))
+        if route in ("/auth/password", "/auth/password/set"):
+            try:
+                n = int(self.headers.get("Content-Length", 0))
+                payload = json.loads(self.rfile.read(n).decode() or "{}") if n else {}
+            except Exception:
+                payload = {}
+            if route == "/auth/password/set":
+                return self._json(pw_set(payload))
+            return self._json(pw_verify(payload))
         if route in ("/parental",):
             try:
                 n = int(self.headers.get("Content-Length", 0))

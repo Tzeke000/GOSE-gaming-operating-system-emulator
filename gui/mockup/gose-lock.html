@@ -37,6 +37,13 @@
   .pad .k.focus{border-color:var(--accent);box-shadow:var(--focusglow,0 0 0 2px var(--accent));background:#1d2238}
   .pad .k.fn{font-size:15px;color:#aeb4d2}
   .pad.locked .k{opacity:.35;pointer-events:none}
+  /* password sign-in (alternative to PIN) — a text field; the shared OSK drives it on a pad */
+  .pwwrap{position:relative;z-index:2;margin-top:16px;display:flex;justify-content:center}
+  .pwinp{width:300px;max-width:80vw;background:#161826cc;border:2px solid #ffffff2e;border-radius:13px;
+    padding:13px 16px;font-size:18px;color:#eaf0ff;font-family:inherit;outline:none;text-align:center;
+    letter-spacing:2px;backdrop-filter:blur(8px)}
+  .pwinp:focus{border-color:var(--accent);box-shadow:var(--focusglow,0 0 0 2px var(--accent))}
+  .pwinp:disabled{opacity:.4}
   .hint{position:fixed;bottom:42px;z-index:2;color:#8b92b0;font-size:14px;animation:pulse 2.4s infinite;
     max-width:80vw;text-align:center}
   .hint.err{color:#ff9e9e;animation:none}
@@ -55,6 +62,8 @@
     <div class="pin" id="pin" style="display:none"></div>
   </div>
   <div class="pad" id="pad"></div>
+  <div class="pwwrap" id="pwwrap" style="display:none"><input class="pwinp" id="pwinp" type="password"
+    autocomplete="off" spellcheck="false" placeholder="Password"></div>
   <div class="hint" id="hint" data-i18n="lock.hint_any">Press any key or click to unlock</div>
 <script src="assets/i18n.js"></script>
 <script src="assets/cursor.js"></script>
@@ -146,10 +155,40 @@
         if(d&&d.ok===false&&d.set===false){showPad("setup");return;}   // hash vanished → re-setup
         hint(_t("lock.error_wrong","Wrong PIN — try again")+(d&&d.tries_left?" ("+d.tries_left+" left)":""),true);
       }).catch(()=>{dots();shake();hint("Can't reach sign-in — try again",true);});}
+  // ---- password sign-in (alternative to PIN; the owner sets EXACTLY ONE at OOBE) ----
+  function showPw(){
+    mode="password";$("pwwrap").style.display="flex";$("pad").classList.remove("on");$("pin").style.display="none";
+    if(window.GOSE&&GOSE.modalPush)GOSE.modalPush();
+    hint(_t("lock.hint_password","Enter your password"));
+    var inp=$("pwinp");inp.value="";inp.disabled=false;
+    setTimeout(function(){try{inp.focus();}catch(e){}},60);   // focus opens the shared OSK (cursor.js)
+  }
+  function submitPw(){
+    if(mode!=="password")return;
+    var inp=$("pwinp"),pw=inp.value;if(!pw)return;
+    fetch("/auth/password",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({password:pw})}).then(r=>r.json()).then(d=>{
+        if(d&&d.ok&&d.valid){unlock();return;}
+        inp.value="";
+        if(d&&d.locked_for>0){lockoutPw(d.locked_for);return;}
+        hint(_t("lock.error_wrong_password","Wrong password — try again")+(d&&d.tries_left?" ("+d.tries_left+" left)":""),true);
+        try{inp.focus();}catch(e){}
+      }).catch(function(){hint("Can't reach sign-in — try again",true);});
+  }
+  function lockoutPw(s){var left=Math.ceil(s);clearInterval(lockT);var inp=$("pwinp");inp.disabled=true;
+    var tickL=function(){if(left<=0){clearInterval(lockT);inp.disabled=false;
+        hint(_t("lock.hint_password","Enter your password"));try{inp.focus();}catch(e){}return;}
+      hint(_t("lock.error_locked","Too many attempts — wait 30 s").replace("30 s",left+"s"),true);left--;};
+    tickL();lockT=setInterval(tickL,1000);}
   let _padT=null;function showPadSoon(m){clearTimeout(_padT);_padT=setTimeout(()=>showPad(m),1400);}
   buildPad();
   addEventListener("keydown",e=>{
     if(mode==="init")return;                       // waiting on the server's answer
+    if(mode==="password"){
+      // the password field + shared OSK own input here; Enter (hardware or OSK chain) submits
+      if(e.key==="Enter"){e.preventDefault();submitPw();}
+      return;                                       // let the OSK/input handle typing + navigation
+    }
     if(mode==="free"){unlock();return;}
     const k=e.key;
     if(k==="ArrowUp")moveFocus(-1,0);else if(k==="ArrowDown")moveFocus(1,0);
@@ -164,21 +203,24 @@
   // gives the display identity. Fetch failure = stay in free mode (the lock must never brick).
   Promise.all([
     fetch("/auth/pin",{cache:"no-store"}).then(r=>r.json()).catch(()=>null),
-    fetch("/oobe/status",{cache:"no-store"}).then(r=>r.json()).catch(()=>null)
-  ]).then(([st,os])=>{
+    fetch("/oobe/status",{cache:"no-store"}).then(r=>r.json()).catch(()=>null),
+    fetch("/auth/password",{cache:"no-store"}).then(r=>r.json()).catch(()=>null)
+  ]).then(([st,os,pst])=>{
     const o=os&&os.owner;
     if(o){const nm=o.username||o.display||"Owner";
       $("name").textContent=nm;$("av").textContent=(nm[0]||"?").toUpperCase();
       // owner accent = FALLBACK only (pre-ui_prefs installs); the canonical store wins
       if(o.accent&&!localStorage.getItem("gose-accent"))document.documentElement.style.setProperty("--accent",o.accent);}
     const wanted=(st&&st.enabled)||localStorage.getItem("gose-signin")==="PIN";
-    if(wanted&&st&&st.set){pinLen=st.pin_len||0;
+    const pwSet=!!(pst&&pst.set);
+    if(wanted&&st&&st.set){pinLen=st.pin_len||0;   // PIN sign-in (the owner picks ONE: PIN xor password)
       if(st.locked_for>0){showPad("enter");lockout(st.locked_for);}else showPad("enter");}
+    else if(pwSet){showPw();if(pst.locked_for>0)lockoutPw(pst.locked_for);}   // password sign-in
     else if(wanted&&st&&o)showPad("setup");        // migration: has_pin but no stored hash
-    else mode="free";   // no PIN wanted — or sign-in unreachable (availability over a
+    else mode="free";   // no credential wanted — or sign-in unreachable (availability over a
                         // theoretical bypass: it's a convenience lock and the page itself
                         // came from that same server; never strand the owner)
-    if(location.hash.indexOf("dbg")>=0)console.log("[lock] mode="+mode+" set="+(st&&st.set)+" owner="+(o&&o.username));
+    if(location.hash.indexOf("dbg")>=0)console.log("[lock] mode="+mode+" pin_set="+(st&&st.set)+" pw_set="+pwSet);
   });
 </script>
 <script src="assets/a11y.js"></script>
