@@ -235,6 +235,7 @@ async function tryUnlock(){
       document.getElementById("gate").style.display="none";
       document.getElementById("pane").classList.add("on");
       loadSystems();
+      initFocus(document.getElementById("r-enabled"));   // focus the first pane control after unlock
     } else {
       err.textContent = d.error || "Incorrect PIN";
       if(d.locked_for) err.textContent="Locked — try again in "+Math.ceil(d.locked_for)+"s";
@@ -268,8 +269,10 @@ function renderRatings(){
     <div class="rp focusable${r===state.max_rating?" sel":""}" tabindex="0"
       data-r="${r}" title="${RATING_DESC[r]}">${RATING_LABELS[r]}</div>`).join("");
   row.querySelectorAll(".rp").forEach(el=>{
-    el.addEventListener("click",()=>{state.max_rating=el.dataset.r;renderRatings();});
-    el.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){state.max_rating=el.dataset.r;renderRatings();}});
+    el.addEventListener("click",()=>{
+      state.max_rating=el.dataset.r;
+      row.querySelectorAll(".rp").forEach(p=>p.classList.toggle("sel",p===el));   // in-place: keep d-pad focus
+    });
   });
 }
 
@@ -287,11 +290,10 @@ function renderSystems(){
 }
 
 function toggleSystem(sid){
-  if(state.hidden_systems.includes(sid))
-    state.hidden_systems = state.hidden_systems.filter(x=>x!==sid);
-  else
-    state.hidden_systems = [...state.hidden_systems, sid];
-  renderSystems();
+  const hid = state.hidden_systems.includes(sid);
+  state.hidden_systems = hid ? state.hidden_systems.filter(x=>x!==sid) : [...state.hidden_systems, sid];
+  const el = document.querySelector('#sys-grid .sc[data-sid="'+sid+'"]');
+  if(el) el.classList.toggle("hid", !hid);   // in-place: keep d-pad focus
 }
 
 function updateLimHint(){
@@ -353,18 +355,54 @@ function showToast(msg,cls=""){
 document.getElementById("back").addEventListener("click",()=>history.back());
 document.getElementById("back").addEventListener("keydown",e=>{if(e.key==="Enter")history.back();});
 
-// ---- pad nav ----
+// ---- pad nav: spatial d-pad focus over .focusable (auto-scopes to the gate vs pane via visibility) ----
+function focusables(){
+  return [].slice.call(document.querySelectorAll(".focusable")).filter(el=>el.offsetParent!==null);
+}
+function cur(){return document.querySelector(".focusable.focus");}
+function setF(el){if(!el)return;const c=cur();if(c)c.classList.remove("focus");
+  el.classList.add("focus");try{el.scrollIntoView({block:"nearest"});}catch(e){}}
+function move(dir){
+  const list=focusables();if(!list.length)return;
+  const a=cur();if(!a||list.indexOf(a)<0){setF(list[0]);return;}
+  const r=a.getBoundingClientRect();let best=null,bd=1e9;
+  for(const el of list){if(el===a)continue;
+    const b=el.getBoundingClientRect();
+    const dx=(b.left+b.width/2)-(r.left+r.width/2),dy=(b.top+b.height/2)-(r.top+r.height/2);
+    const ok={right:dx>6,left:dx<-6,down:dy>6,up:dy<-6}[dir];if(!ok)continue;
+    const al=(dir==="left"||dir==="right")?Math.abs(dx):Math.abs(dy);
+    const of=(dir==="left"||dir==="right")?Math.abs(dy):Math.abs(dx);
+    const dd=al+of*2;if(dd<bd){bd=dd;best=el;}}
+  if(!best){const i=list.indexOf(a);                       // wrap so arrows never dead-end
+    best=(dir==="right"||dir==="down")?list[(i+1)%list.length]:list[(i-1+list.length)%list.length];
+    if(best===a)best=null;}
+  if(best){if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();setF(best);}
+}
+function activate(el){if(!el)return;if(el.tagName==="INPUT"){el.focus();return;}el.click();}
+function initFocus(seed){const list=focusables();
+  if(seed&&list.indexOf(seed)>=0){setF(seed);return;}
+  if(!cur()||list.indexOf(cur())<0)setF(list[0]);}
+
 window.addEventListener("keydown",e=>{
-  if(!unlocked && ["0","1","2","3","4","5","6","7","8","9"].includes(e.key)){
-    pinKey(e.key); return;
-  }
-  if(!unlocked && e.key==="Backspace") {pinKey("⌫"); return;}
-  if(e.key==="Escape"||e.key==="b"){history.back();}
+  const k=e.key, typing=document.activeElement&&document.activeElement.tagName==="INPUT";
+  // physical-keyboard PIN entry still works at the gate
+  if(!unlocked && ["0","1","2","3","4","5","6","7","8","9"].includes(k)){pinKey(k);return;}
+  if(!unlocked && k==="Backspace"){pinKey("⌫");return;}
+  if(typing && k.indexOf("Arrow")!==0 && k!=="Escape") return;   // let the number input take its own keys
+  if(k==="ArrowRight")move("right");
+  else if(k==="ArrowLeft")move("left");
+  else if(k==="ArrowDown")move("down");
+  else if(k==="ArrowUp")move("up");
+  else if(k==="Enter"||k===" ")activate(cur());
+  else if(k==="Escape"||k==="b"||k==="B")history.back();
+  else return;
+  e.preventDefault();
 });
 
 // ---- init ----
 buildPad();
 renderDots();
+initFocus(document.querySelector("#ppad .k"));   // seat d-pad focus on the first PIN key
 // if owner_token is passed via URL (AI context), auto-unlock
 const qs = new URLSearchParams(location.search);
 const ot = qs.get("owner_token");
@@ -376,7 +414,8 @@ if(ot){
       if(d.ok){pendingPin="";unlocked=true;
         document.getElementById("gate").style.display="none";
         document.getElementById("pane").classList.add("on");
-        applyState(d.parental);loadSystems();}
+        applyState(d.parental);loadSystems();
+        initFocus(document.getElementById("r-enabled"));}
     }catch(e){}
   })();
 }

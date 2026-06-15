@@ -88,9 +88,11 @@
 - 🟡 **CI end-to-end** — `build-image.yml` committed; live clean-image run on a Linux
   host not yet verified.
 - 🟡 **Global search** — apps + settings + files done; games + history pending.
-- 🟡 **Gamepad nav consistency** — audited (46 navigable / 3 offenders / 0 display-only of 49 interactive
-  pages). `gose-friends.html` FIXED (added spatial d-pad focus-nav + made the save-chip reachable).
-  Remaining offenders: `gose-upload.html`, `gose-parental.html` (need the same `.focusable` + `move()` pattern).
+- ✅ **Gamepad nav consistency** — audited all 49 interactive pages (46 already navigable). Both REAL
+  offenders fixed + verified: `gose-friends.html` + `gose-parental.html` got the spatial d-pad focus-nav
+  pattern (`gose-parental`'s PIN pad was unnavigable → a controller user literally couldn't unlock it).
+  The 3rd flagged page (`gose-upload.html`) is a PC/phone companion upload page (file-picker, opened
+  off-device), NOT a controller surface — no nav needed.
 - 🟡 **On-screen keyboard** — present; controller-driving the OSK is partial.
 
 ---
