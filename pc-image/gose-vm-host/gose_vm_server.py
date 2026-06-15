@@ -12254,12 +12254,16 @@ class Server(socketserver.ThreadingTCPServer):
         self.socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEPORT, 1)
         super().server_bind()
 
-h = functools.partial(H, directory=ROOT)
-ensure_user_dirs()   # Desktop/Documents/Downloads/Pictures/Music/Videos exist on boot
-threading.Thread(target=_queue_worker, daemon=True).start()   # download queue: one install at a time
-threading.Thread(target=auto_scrape_boot, daemon=True).start()   # auto-fill missing cover art on boot
-threading.Thread(target=_session_watcher, daemon=True).start()  # playtime: finalize session on SIGKILL/unexpected exit
-_PORT = int(os.environ.get("GOSE_UI_PORT") or 8780)   # override = isolated test instances
-print("serving GOSE UI + live /status.json on 127.0.0.1:%d (threaded)" % _PORT)
-# threaded: a slow /fs/sizes (du) or the 4s agent socket no longer blocks page loads
-Server(("127.0.0.1", _PORT), h).serve_forever()
+if __name__ == "__main__":
+    # Server entrypoint — guarded so this module can be IMPORTED (e.g. by the test
+    # suite) without binding the UI port and blocking in serve_forever(). Importers get
+    # the functions/classes/constants; only running this file as a script starts the server.
+    h = functools.partial(H, directory=ROOT)
+    ensure_user_dirs()   # Desktop/Documents/Downloads/Pictures/Music/Videos exist on boot
+    threading.Thread(target=_queue_worker, daemon=True).start()   # download queue: one install at a time
+    threading.Thread(target=auto_scrape_boot, daemon=True).start()   # auto-fill missing cover art on boot
+    threading.Thread(target=_session_watcher, daemon=True).start()  # playtime: finalize session on SIGKILL/unexpected exit
+    _PORT = int(os.environ.get("GOSE_UI_PORT") or 8780)   # override = isolated test instances
+    print("serving GOSE UI + live /status.json on 127.0.0.1:%d (threaded)" % _PORT)
+    # threaded: a slow /fs/sizes (du) or the 4s agent socket no longer blocks page loads
+    Server(("127.0.0.1", _PORT), h).serve_forever()
