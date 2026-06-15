@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE — AI Audit Log</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-400-normal.woff2) format('woff2');font-weight:400}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html{background:#07070f}html,body{margin:0;height:100%;overflow:hidden}
+  body{font-family:Inter,system-ui,sans-serif;color:var(--text);background:var(--bg);
+    background-attachment:fixed;display:flex;flex-direction:column}
+  .ic{display:inline-block;width:1em;height:1em;background:currentColor;vertical-align:-.16em;
+    -webkit-mask:var(--u) center/contain no-repeat;mask:var(--u) center/contain no-repeat}
+  .top{display:flex;align-items:center;gap:12px;padding:18px 36px 4px}
+  .top img{width:32px;height:32px}.top h1{font-size:20px;margin:0}.top .s{color:var(--muted);font-size:12px}
+  .top .home{margin-left:auto;color:var(--muted);font-size:13px}
+  /* filter chips */
+  .filters{display:flex;gap:9px;align-items:center;padding:10px 36px 6px}
+  .chip{font-size:12.5px;font-weight:700;border-radius:10px;padding:7px 14px;border:2px solid var(--line);
+    background:var(--surface2);color:var(--muted);cursor:pointer}
+  .chip.sel{color:#06121a;background:var(--accent);border-color:transparent}
+  .chip.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
+  .filters .count{margin-left:auto;color:var(--muted);font-size:12px}
+  /* the log */
+  .log{flex:1;overflow:auto;margin:6px 36px 0;background:var(--surface);border:1px solid var(--line);
+    border-radius:13px}
+  .row{display:flex;align-items:center;gap:14px;padding:11px 18px;border-bottom:1px solid var(--line);font-size:13.5px}
+  .row:last-child{border-bottom:none}
+  .row .when{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;flex:none;width:148px}
+  .row .who{display:flex;align-items:center;gap:9px;flex:none;width:150px;overflow:hidden}
+  .row .av{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;color:#06121a;flex:none}
+  .row .who b{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .op{flex:1;color:var(--text);font-family:ui-monospace,Consolas,monospace;font-size:13px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .res{flex:none;font-weight:700;font-size:12px;border-radius:8px;padding:3px 10px}
+  .res.ok{color:#3fe0a0;background:#3fe0a014}.res.no{color:#ff8a8a;background:#ff6b6b14}
+  .row .code{flex:none;color:#ff8a8a99;font-size:11px;font-family:ui-monospace,monospace}
+  .empty{padding:40px;text-align:center;color:var(--muted);font-size:14px}
+  .foot{margin:8px 36px 16px;display:flex;gap:10px;color:var(--muted);font-size:13px;
+    background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:10px 16px}
+  .foot .h{margin-left:auto}.foot b{color:var(--text)}
+</style></head>
+<body>
+  <div class="top"><img src="assets/brand/gose-core-mark.png" alt="GOSE">
+    <div><h1>AI Audit Log</h1><div class="s" id="sub">Every action your AI agents took on this device</div></div>
+    <div class="home"><span class="ic" data-i="sparkles"></span> Esc — AI Players</div>
+  </div>
+  <div class="filters" id="filters">
+    <div class="chip focusable sel" data-fk="f:all"  data-filter="all">All</div>
+    <div class="chip focusable"     data-fk="f:ok"   data-filter="ok">Allowed</div>
+    <div class="chip focusable"     data-fk="f:no"   data-filter="no">Denied</div>
+    <span class="count" id="count">—</span>
+  </div>
+  <div class="log" id="log"><div class="empty">Loading…</div></div>
+  <div class="foot"><span class="ic" data-i="sparkles"></span> The log is read-only — a record an AI can never edit
+    <span class="h"><b>←→</b> filter · <b>↑↓</b> scroll · <b>A</b> apply · <b>B/Esc</b> back</span></div>
+<script src="assets/cursor.js"></script>
+<script>
+  document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
+  var $=function(id){return document.getElementById(id);};
+  var esc=function(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});};
+  function paint(){document.querySelectorAll("[data-i]").forEach(function(e){
+    e.style.setProperty("--u","url(assets/icons/"+e.dataset.i+".svg)");});}
+
+  var ACCENTS=["#5cd0ff","#7d8cff","#37d39b","#ff7a9c","#ffce5c","#b388ff"];
+  function accFor(n){n=n||"?";var h=0;for(var i=0;i<n.length;i++)h=(h*31+n.charCodeAt(i))>>>0;return ACCENTS[h%ACCENTS.length];}
+
+  var ENTRIES=[];      // newest-first, scrubbed {ts,name,op,ok,code}
+  var FILTER="all";    // all | ok | no
+  var lastSig="";
+
+  function whenStr(ts){
+    if(!ts)return "—";
+    var d=new Date(ts*1000);
+    var day=d.toLocaleDateString([],{month:"short",day:"numeric"});
+    var tm=d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    return day+" · "+tm;
+  }
+  function shown(){
+    return ENTRIES.filter(function(e){
+      return FILTER==="all" || (FILTER==="ok"?e.ok:!e.ok); });
+  }
+  function render(){
+    document.querySelectorAll(".chip").forEach(function(c){
+      c.classList.toggle("sel", c.dataset.filter===FILTER); });
+    var list=shown();
+    $("count").textContent=list.length+" of "+ENTRIES.length+" event"+(ENTRIES.length===1?"":"s");
+    if(!ENTRIES.length){ $("log").innerHTML='<div class="empty">No AI activity recorded yet.</div>'; return; }
+    if(!list.length){ $("log").innerHTML='<div class="empty">No '+(FILTER==="ok"?"allowed":"denied")+' events.</div>'; return; }
+    $("log").innerHTML=list.map(function(e){
+      var nm=e.name||"unknown";
+      return '<div class="row">'+
+        '<span class="when">'+esc(whenStr(e.ts))+'</span>'+
+        '<span class="who"><span class="av" style="background:'+accFor(nm)+'">'+esc(String(nm)[0]||"?")+'</span>'+
+        '<b>'+esc(nm)+'</b></span>'+
+        '<span class="op">'+esc(e.op||"—")+'</span>'+
+        (e.code&&!e.ok?'<span class="code">'+esc(e.code)+'</span>':'')+
+        '<span class="res '+(e.ok?'ok':'no')+'">'+(e.ok?'allowed':'denied')+'</span>'+
+      '</div>'; }).join("");
+  }
+
+  // ---- focus over the filter chips (roving, docs/27); the log scrolls on up/down ----
+  function chips(){return [].slice.call(document.querySelectorAll(".chip.focusable"));}
+  function cur(){return document.querySelector(".chip.focus");}
+  function setF(el){if(!el)return;var c=cur();if(c)c.classList.remove("focus");el.classList.add("focus");}
+  function moveChip(dir){
+    var list=chips();if(!list.length)return;var i=list.indexOf(cur());
+    if(i<0){setF(list[0]);return;}
+    setF(list[(i+(dir>0?1:-1)+list.length)%list.length]);
+  }
+  function applyFocused(){var c=cur();if(c&&c.dataset.filter){FILTER=c.dataset.filter;render();setF(c);}}
+
+  addEventListener("keydown",function(e){
+    var k=e.key;
+    if(k==="ArrowRight"||k==="Right")moveChip(1);
+    else if(k==="ArrowLeft"||k==="Left")moveChip(-1);
+    else if(k==="ArrowDown"||k==="Down")$("log").scrollTop+=120;
+    else if(k==="ArrowUp"||k==="Up")$("log").scrollTop-=120;
+    else if(k==="Enter"||k===" ")applyFocused();
+    else if(k==="Escape"||k==="Backspace")location.href="gose-ai.html";
+    else return;
+    e.preventDefault();
+  });
+  chips().forEach(function(el){el.onclick=function(){setF(el);applyFocused();};});
+
+  // ---- poll the audit endpoint (newest-first) ----
+  function poll(){
+    fetch("/ai/audit?limit=200",{cache:"no-store"}).then(function(r){return r.json();})
+      .then(function(d){
+        var e=((d&&d.entries)||[]).slice().reverse();   // server is oldest->newest; show newest first
+        var sig=JSON.stringify(e.length)+":"+(e[0]?e[0].ts+e[0].op:"");
+        if(sig!==lastSig){lastSig=sig;ENTRIES=e;render();}
+      }).catch(function(){});
+  }
+
+  paint();setF(chips()[0]);render();poll();setInterval(poll,5000);
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>

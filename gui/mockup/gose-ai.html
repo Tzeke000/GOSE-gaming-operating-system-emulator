@@ -61,6 +61,9 @@
   .audit .list{display:flex;gap:14px;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
   .ae{flex:none}.ae b{color:var(--text);font-weight:600}
   .ae .ok{color:#3fe0a0;font-weight:700}.ae .no{color:#ff8a8a;font-weight:700}
+  .audit .auditmore{margin-left:auto;flex:none;color:var(--accent);font-weight:700;font-size:12px;
+    text-decoration:none;border:2px solid transparent;border-radius:8px;padding:3px 9px;cursor:pointer}
+  .audit .auditmore.focus{border-color:var(--accent);box-shadow:var(--focusglow)}
   /* the per-agent access panel — a modal layer; B/Esc backs out to the list (docs/27 §3.2/§3.7) */
   .pmask{position:fixed;inset:0;background:#06060cc8;display:flex;align-items:center;justify-content:center;z-index:60}
   .panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px 24px;width:560px;max-width:92vw;max-height:86vh;overflow:auto}
@@ -102,7 +105,7 @@
   </div>
   <div class="reqs" id="reqs"></div>
   <div class="wrap" id="wrap"></div>
-  <div class="audit" id="audit" style="display:none"><span class="lbl">ACTIVITY</span><div class="list" id="audit-list"></div></div>
+  <div class="audit" id="audit" style="display:none"><span class="lbl">ACTIVITY</span><div class="list" id="audit-list"></div><a class="auditmore focusable" data-fk="auditmore" data-href="gose-audit.html">Full log ›</a></div>
   <div class="foot"><span class="ic" data-i="sparkles"></span> You grant access; an AI can ask but never self-elevate
     <span class="h"><b>↑↓←→</b> move · <b>A/Enter</b> open / apply · <b>B/Esc</b> back · <b>X</b> revoke (shortcut)</span></div>
   <div class="toast" id="toast"></div>
@@ -230,10 +233,10 @@
       var t=PANEL.tok;
       h='<div class="head"><div class="av" style="background:'+accFor(t.name)+'">'+esc(t.name[0])+'</div>'+
         '<div><h3>'+esc(t.name)+' — paired</h3><div class="hs">'+(TLABEL[t.tier]||esc(t.tier))+' tier · '+esc(t.why||"token issued")+'</div></div></div>'+
-        ‘<div class="tokbox"><div><b style="color:var(--text)">’+esc(t.name)+"’s pairing token</b> · connect to the GOSE Agent on this device, TCP port <b style=\"color:var(--text)\">8731</b></div>"+
-        ‘<code>’+esc(t.token)+’</code>’+
-        ‘<div>Give this token to your AI (e.g. GoseClient(host, 8731, token=…)). Keep it secret — it IS the key, and it is shown <b style="color:var(--text)">only this once</b>. ‘+
-        ‘If your AI used <b style="color:var(--text)">POST /ai/request</b> to ask for pairing, it can also collect its token via <b style="color:var(--text)">GET /ai/token?name=…&amp;claim=…</b> (one-time claim).</div></div>’+
+        '<div class="tokbox"><div><b style="color:var(--text)">'+esc(t.name)+"'s pairing token</b> · connect to the GOSE Agent on this device, TCP port <b style=\"color:var(--text)\">8731</b></div>"+
+        '<code>'+esc(t.token)+'</code>'+
+        '<div>Give this token to your AI (e.g. GoseClient(host, 8731, token=…)). Keep it secret — it IS the key, and it is shown <b style="color:var(--text)">only this once</b>. '+
+        'If your AI used <b style="color:var(--text)">POST /ai/request</b> to ask for pairing, it can also collect its token via <b style="color:var(--text)">GET /ai/token?name=…&amp;claim=…</b> (one-time claim).</div></div>'+
         '<div class="prow focusable" data-fk="p:done" data-close="1" style="margin-top:12px"><div class="rnm">Done</div><span class="rval">B</span></div>';
     }
     var m=document.createElement("div");m.className="pmask";m.id="pmask";
@@ -368,6 +371,7 @@
     if(d.tier){if(PANEL&&PANEL.agent)setTier(PANEL.agent,d.tier);return;}
     if(d.seat!==undefined){if(PANEL&&PANEL.agent)setSeat(PANEL.agent,+d.seat||null);return;}
     if(d.pair){doPair();return;}
+    if(d.href){location.href=d.href;return;}        // e.g. the activity strip's "Full log ›"
     if(el.tagName==="INPUT"){el.focus();return;}   // shared OSK auto-opens (cursor.js)
   }
 

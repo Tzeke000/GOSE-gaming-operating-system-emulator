@@ -109,8 +109,10 @@
   destinations.
 - ⬜ **i18n string layer** — extract strings from ~50 HTML pages to locale JSON before
   they multiply; ship en only.
-- ⬜ **Audit log UI + encrypted AI credential** — `/ai/audit.jsonl` backend live;
-  UI surface + per-boot auto-connect credential (age/libsodium) pending.
+- 🟡 **Audit log UI + encrypted AI credential** — full owner-facing audit viewer DONE
+  (`gose-audit.html`: filterable all/allowed/denied log of every AI op, newest-first,
+  controller-navigable, linked from the AI Players activity strip). Pending: the per-boot
+  auto-connect encrypted credential (age/libsodium).
 - ⬜ **Multi-account session switching** — accounts model exists; switch-user flow pending.
 - ⬜ Notification center (richer), clipboard manager, in-game performance overlay (FPS).
 - ⬜ Boot/shutdown animations; richer sound design.
