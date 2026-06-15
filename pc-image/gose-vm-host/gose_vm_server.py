@@ -4822,11 +4822,12 @@ def pin_verify(payload):
         return {"ok": True, "valid": False, "tries_left": PIN_MAX_TRIES - _PIN_FAILS["n"]}
 
 def pin_set(payload):
-    """POST /auth/pin/set {pin, current?}. First set (no hash yet — fresh account or the
-    has_pin-only migration) needs no current PIN: there is no secret to check against, and
-    the alternative is locking the owner out of his own device. CHANGING an existing PIN
-    requires the current one, verified through the same rate-limited path (so the change
-    endpoint can't be used to brute-force either)."""
+    """POST /auth/pin/set {pin, current?}. FIRST set (no hash yet) requires OWNER PRESENCE
+    (_owner_ok: dev/owner token OR a hold-✕ confirm) — the legit owner's PIN is hashed at OOBE
+    (first boot, physically present), so an UNAUTHENTICATED loopback caller can NOT set the owner
+    PIN in the post-OOBE has_pin-without-hash window (the privesc that gap allowed). CHANGING an
+    existing PIN requires the current one, verified through the same rate-limited path (so the
+    change endpoint can't be used to brute-force either)."""
     p = payload or {}
     pin = str(p.get("pin") or "")
     if not PIN_RE.match(pin):
@@ -4836,6 +4837,7 @@ def pin_set(payload):
     if not o:
         return {"ok": False, "error": "no owner account yet — finish first-boot setup"}
     if o.get("pin_hash") and o.get("pin_salt"):
+        # CHANGING an existing PIN: require the current one (rate-limited verify path).
         cur = pin_verify({"pin": str(p.get("current") or "")})
         if not cur.get("valid"):
             out = {"ok": False, "error": "current PIN required to change the PIN"}
@@ -4843,6 +4845,13 @@ def pin_set(payload):
                 if k in cur:
                     out[k] = cur[k]
             return out
+    elif not _owner_ok(p):
+        # FIRST set (no hash): only the present owner (dev/owner token or hold-✕) may set the owner
+        # PIN. An unauthenticated caller must not be able to claim it in the has_pin-without-hash
+        # window; the legit owner's PIN is set at OOBE (see oobe_complete) before this is reachable.
+        return {"ok": False, "code": "ERR_NOT_OWNER",
+                "error": "owner presence required to set the device PIN — set it during first-time setup, "
+                         "or hold the ✕ button on the device controller"}
     salt = secrets.token_hex(16)
     o["pin_salt"] = salt
     o["pin_hash"] = _pin_compute(pin, salt)

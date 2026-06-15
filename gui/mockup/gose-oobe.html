@@ -1112,6 +1112,10 @@
     }
     var payload={
       account:{username:(S.account.username||"owner"), display:S.account.name,
+               // Send the raw PIN so its hash is set HERE at OOBE (owner physically present, first
+               // boot). Closes the post-OOBE "has_pin but no hash" window in which an unauthenticated
+               // loopback caller could set the owner PIN via /auth/pin/set. (Empty = no PIN, ignored.)
+               pin:String(S.account.pin||""),
                has_password:!!S.account.password, has_pin:!!S.account.pin, accent:S.account.accent},
       remote_access: raPayload,   // null = skipped (SSH credential stays as-is)
       privacy:S.privacy, locale:S.locale, keyboard:S.keyboard, timezone:null,
