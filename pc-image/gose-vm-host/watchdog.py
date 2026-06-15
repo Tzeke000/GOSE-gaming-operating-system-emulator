@@ -374,12 +374,12 @@ class _SafeHandler(http.server.BaseHTTPRequestHandler):
             ok = restore_prev()
             msg = "Restored — restarting the interface…" if ok else "No previous interface saved; trying again…"
             clear_attempts()
-            self._send(200, "application/json", json.dumps({"ok": ok, "msg": msg}))
-            self.server._exit = True
+            self.server._exit = True   # register exit BEFORE responding (so a caller that checks right
+            self._send(200, "application/json", json.dumps({"ok": ok, "msg": msg}))   # after never races it
         elif action == "/boot/retry":
             clear_attempts()
-            self._send(200, "application/json", json.dumps({"ok": True, "msg": "Restarting the interface…"}))
             self.server._exit = True
+            self._send(200, "application/json", json.dumps({"ok": True, "msg": "Restarting the interface…"}))
         else:
             self._send(404, "application/json", json.dumps({"ok": False}))
 

@@ -132,6 +132,11 @@ class TestSafeModeServer(_WDTemp):
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         self.addCleanup(srv.server_close)   # close the listening socket
         self.addCleanup(srv.shutdown)       # stop serve_forever first (cleanups run LIFO)
+        for _ in range(150):                # wait until it actually accepts — avoids a serve-thread bind race
+            try:
+                _get(wd.UI_PORT, "/health"); break
+            except OSError:
+                time.sleep(0.02)
         return srv
 
     def test_get_serves_safe_page(self):
