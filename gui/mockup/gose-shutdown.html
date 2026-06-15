@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en" data-theme="onyx">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GOSE</title>
+<link rel="stylesheet" href="assets/themes.css">
+<link rel="stylesheet" href="assets/a11y.css">
+<style>
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-600-normal.woff2) format('woff2');font-weight:600}
+  @font-face{font-family:Inter;src:url(assets/fonts/inter-latin-700-normal.woff2) format('woff2');font-weight:700}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#07070f}
+  body{font-family:Inter,system-ui,sans-serif;color:#eef1f8;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:22px;
+    background:radial-gradient(120% 90% at 50% 38%, #14193a 0%, #0b0c1e 55%, #07070f 100%)}
+  /* Boot uses rise+glow; shutdown mirrors with contract+fade-out */
+  .logo{width:132px;height:132px;object-fit:contain;
+    filter:drop-shadow(0 0 26px #6a4dffaa);
+    animation:contract 1.8s cubic-bezier(.4,0,.8,1) both}
+  @keyframes contract{
+    0%  {opacity:1;transform:scale(1)   translateY(0);  filter:drop-shadow(0 0 26px #6a4dffaa)}
+    60% {opacity:.9;transform:scale(.82) translateY(6px); filter:drop-shadow(0 0 18px #5cd0ff88)}
+    100%{opacity:0;transform:scale(.55) translateY(18px);filter:drop-shadow(0 0 4px  #6a4dff22)}
+  }
+  .word{font-size:34px;font-weight:700;letter-spacing:.14em;animation:fadeout .9s ease 1.0s both}
+  .word b{background:linear-gradient(90deg,#5cd0ff,#9a5bff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{font-size:12.5px;letter-spacing:.22em;text-transform:uppercase;color:#8a90c0;animation:fadeout .7s ease .7s both}
+  @keyframes fadeout{0%{opacity:1}100%{opacity:0}}
+  /* Status line — "Shutting down…" or "Restarting…" fades in then fades out */
+  .status{position:fixed;bottom:64px;font-size:12.5px;letter-spacing:.18em;text-transform:uppercase;
+    color:#8a90c0;opacity:0;animation:statuslife 2.0s ease .2s both}
+  @keyframes statuslife{
+    0%  {opacity:0}
+    20% {opacity:1}
+    70% {opacity:1}
+    100%{opacity:0}
+  }
+</style></head>
+<body>
+  <img class="logo" src="assets/brand/gose-crystal.png" alt="">
+  <div class="word"><b>GOSE</b></div>
+  <div class="sub">Game Operating System Emulator</div>
+  <div class="status" id="status-line">Shutting down&hellip;</div>
+<script src="assets/sound.js"></script>
+<script>
+  document.documentElement.dataset.theme = localStorage.getItem('gose-theme') || 'onyx';
+
+  // Determine action from URL param (?action=shutdown|restart)
+  var params = new URLSearchParams(location.search);
+  var action = params.get('action') || 'shutdown';
+  var isRestart = (action === 'restart');
+
+  // Update status text
+  var statusEl = document.getElementById('status-line');
+  if (statusEl) statusEl.textContent = isRestart ? 'Restarting…' : 'Shutting down…';
+
+  // Play shutdown/restart sound if the API exists (it does — sound.js defines both events)
+  try { if (window.GOSESOUND) GOSESOUND.play(isRestart ? 'restart' : 'shutdown', {force:true}); } catch(e) {}
+
+  // Fire the /sys/power POST after a delay so the animation is visible
+  // (caller already navigated here; we own the POST now)
+  var _postDone = false;
+  function doPost() {
+    if (_postDone) return;
+    _postDone = true;
+    fetch('/sys/power', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action: isRestart ? 'restart' : 'shutdown'})
+    }).catch(function(){});
+  }
+  // Fire POST at 1.2 s — animation is well underway, VM has time to respond
+  setTimeout(doPost, 1200);
+  // Safety fallback: if the page somehow stays alive past 4 s, fire POST anyway
+  setTimeout(doPost, 4000);
+</script>
+<script src="assets/a11y.js"></script>
+</body></html>

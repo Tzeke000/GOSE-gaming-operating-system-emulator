@@ -87,7 +87,8 @@
   (design approved in docs/23; implementation pending).
 - 🟡 **CI end-to-end** — `build-image.yml` committed; live clean-image run on a Linux
   host not yet verified.
-- 🟡 **Global search** — apps + settings + files done; games + history pending.
+- ✅ **Global search** — apps + settings + files + **games + recently-played history** (gose-apps.html
+  now reads /games.json + /recent.json; the home launcher's "Search apps & games" promise is fulfilled).
 - ✅ **Gamepad nav consistency** — audited all 49 interactive pages (46 already navigable). Both REAL
   offenders fixed + verified: `gose-friends.html` + `gose-parental.html` got the spatial d-pad focus-nav
   pattern (`gose-parental`'s PIN pad was unnavigable → a controller user literally couldn't unlock it).
@@ -119,7 +120,8 @@
   auto-connect encrypted credential (age/libsodium).
 - ⬜ **Multi-account session switching** — accounts model exists; switch-user flow pending.
 - ⬜ Notification center (richer), clipboard manager, in-game performance overlay (FPS).
-- ⬜ Boot/shutdown animations; richer sound design.
+- 🟡 Boot/shutdown animations — shutdown/restart screen DONE (`gose-shutdown.html`: crystal contract-out
+  + "Shutting down…/Restarting…", power callers navigate there first). Boot animations already done; richer sound design pending.
 
 ### Needs hardware (Odin 2 — device not yet acquired)
 - 🔌 **Odin 2 bring-up** — confirm variant on purchase; flash ROCKNIX to microSD; abl mod;

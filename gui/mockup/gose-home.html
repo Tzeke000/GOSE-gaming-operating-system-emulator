@@ -328,12 +328,25 @@
   // A pad-navigable confirm step for the destructive two is a future refinement.
   function powerAct(action,label){
     return ()=>{
-      if(window.GOSESOUND)GOSESOUND.play(action==='suspend'?'sleep':action,{force:true});
-      fetch('/sys/power',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({action})}).then(r=>r.json()).then(j=>{
-        if(window.GOSE&&GOSE.notify)GOSE.notify({title:'Power',icon:'power',
-          body:(j&&j.simulated)?(label+' — '+(j.note||'simulated')):(label+(j&&j.ok?' requested':' failed'))});
-      }).catch(()=>{}); }; }
+      // Suspend has no shutdown-screen — keep its original sound+POST path.
+      if(action==='suspend'){
+        if(window.GOSESOUND)GOSESOUND.play('sleep',{force:true});
+        fetch('/sys/power',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action})}).then(r=>r.json()).then(j=>{
+          if(window.GOSE&&GOSE.notify)GOSE.notify({title:'Power',icon:'power',
+            body:(j&&j.simulated)?(label+' — '+(j.note||'simulated')):(label+(j&&j.ok?' requested':' failed'))});
+        }).catch(()=>{});
+        return;
+      }
+      // Shutdown / restart: navigate to the animation screen, which owns the POST.
+      // Fallback POST fires here if navigation somehow fails (belt-and-suspenders).
+      var _navDone=false;
+      try{ location.href='gose-shutdown.html?action='+encodeURIComponent(action); _navDone=true; }catch(e){}
+      if(!_navDone){
+        fetch('/sys/power',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({action})}).catch(()=>{});
+      }
+    }; }
   GW.define({ id:"battery", title:"Battery & Power", icon:"battery", size:{w:250}, pos:{x:1650,y:300}, poll:5000,
     load:()=>fetch('/sys/battery',{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false})),
     render:(b)=>{ b=b||{};

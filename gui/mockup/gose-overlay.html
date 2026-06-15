@@ -482,7 +482,14 @@
       api("/game/ff",{on:fon}).then(d=>{S.ff=!!(d&&d.on);render();});return;}
     if(it.rewind){var ron=!S.rewindEnabled;S.rewindEnabled=ron;render();   // #37 per-game enable (next launch)
       api("/game/rewind",{on:ron}).then(d=>say((d&&d.ok)?("Rewind "+(d.enabled?"on":"off")+" — next launch"):"Rewind change failed"));return;}
-    if(it.act){api("/sys/power",{action:it.act});return;}
+    if(it.act){
+      if(it.act==='sleep'){api('/sys/power',{action:it.act});return;}
+      // shutdown / restart: navigate to the animation screen; it owns the POST.
+      // Fallback POST fires if navigation fails.
+      var _navOk=false;
+      try{location.href='gose-shutdown.html?action='+encodeURIComponent(it.act);_navOk=true;}catch(e){}
+      if(!_navOk){api('/sys/power',{action:it.act});}
+      return;}
     if(it.power){S.powerMode=true;build();return;}
     if(it.remap){
       // #50 per-game controls: open the remap page for the current game

@@ -49,8 +49,7 @@
     <div class="head"><img src="assets/brand/gose-crystal.png" alt="GOSE"><h1 data-i18n="apps.title">Apps</h1>
       <span class="x"><span class="ic" data-i="apps"></span> <span data-i18n="app.close">Esc — desktop</span></span></div>
     <div class="search"><span class="ic" data-i="search"></span><input id="q" placeholder="Search apps…" data-i18n-placeholder="apps.search_ph"></div>
-    <div class="ph" id="ph" data-i18n="apps.all_apps">ALL APPS</div>
-    <div class="grid" id="grid"></div>
+    <div id="results"></div>
     <div class="power">
       <button data-pw="sleep"><span class="ic" data-i="moon"></span><span data-i18n="apps.sleep">Sleep</span></button>
       <button data-pw="restart"><span class="ic" data-i="rotate-ccw"></span><span data-i18n="apps.restart">Restart</span></button>
@@ -98,15 +97,32 @@
   function esc(s){return(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
   function paint(){if(window.GICON){GICON.paint(document);return;}document.querySelectorAll("[data-i]").forEach(e=>e.style.setProperty("--u",`url(assets/icons/${e.dataset.i}.svg)`));}
   function say(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(say._t);say._t=setTimeout(()=>t.classList.remove("show"),1800);}
+  // Render shown[] into #results as one or more labelled grid sections.
+  // groups: [{label, items:[indices into shown]}] — built in filter() so render() stays dumb.
+  let _groups=[];
   function render(){
-    $("grid").innerHTML=shown.length?shown.map((a,i)=>`<div class="app ${i===foc?'focus':''}" data-i2="${i}">
-      <div class="ai">${a.iconUrl
-        ? `<img src="${esc(a.iconUrl)}" style="width:34px;height:34px;border-radius:8px;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block'"><span class="ic" data-i="${esc(a.ic)}" style="display:none"></span>`
-        : `<span class="ic" data-i="${esc(a.ic)}"></span>`}</div>
-      <div class="nm">${esc(a.nm)}</div><div class="ds">${esc(a.ds)}</div>${a.soon?'<span class="soon">SOON</span>':''}</div>`).join("")
-      :'<div class="ds" style="padding:20px">No apps match.</div>';
-    [...$("grid").children].forEach(el=>el.dataset.i2!==undefined&&(el.onclick=()=>{foc=+el.dataset.i2;launch();}));
-    const f=$("grid").querySelector(".app.focus");if(f)f.scrollIntoView({block:"nearest"});
+    const R=$("results");
+    if(!shown.length){R.innerHTML='<div class="ds" style="padding:20px">No results.</div>';return;}
+    let html="";
+    _groups.forEach(function(g){
+      if(!g.items.length)return;
+      html+='<div class="ph">'+esc(g.label)+'</div><div class="grid">';
+      g.items.forEach(function(i){
+        const a=shown[i];
+        html+='<div class="app '+(i===foc?'focus':'')+'" data-i2="'+i+'">';
+        html+='<div class="ai">'+(a.iconUrl
+          ? '<img src="'+esc(a.iconUrl)+'" style="width:34px;height:34px;border-radius:8px;object-fit:contain" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline-block\'"><span class="ic" data-i="'+esc(a.ic)+'" style="display:none"></span>'
+          : '<span class="ic" data-i="'+esc(a.ic)+'"></span>')+'</div>';
+        html+='<div class="nm">'+esc(a.nm)+'</div><div class="ds">'+esc(a.ds)+'</div>'+(a.soon?'<span class="soon">SOON</span>':'');
+        html+='</div>';
+      });
+      html+='</div>';
+    });
+    R.innerHTML=html;
+    R.querySelectorAll(".app").forEach(function(el){
+      if(el.dataset.i2!==undefined)el.onclick=function(){foc=+el.dataset.i2;launch();};
+    });
+    const f=R.querySelector(".app.focus");if(f)f.scrollIntoView({block:"nearest"});
     paint();
   }
   function launch(){const a=shown[foc];if(!a)return;
@@ -142,7 +158,40 @@
         cmd:"flatpak run "+a.id, iconUrl:"/appicon?id="+a.id});});
     filter();
   }).catch(()=>{});}
-  // Windows-Start-style search: apps + Settings pages + a Files search action
+  // Games: fetched once from /games.json and flattened into GAMES[].
+  // Shape per entry: {nm, ds, ic, system, href, iconUrl?}
+  var GAMES=[];
+  fetch("/games.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+    var systems=Array.isArray(d.systems)?d.systems:[];
+    systems.forEach(function(sys){
+      var sysLabel=sys.name||sys.system||"";
+      (sys.games||[]).forEach(function(g){
+        GAMES.push({nm:g.name||"",ds:sysLabel,ic:"gamepad-2",
+          href:"gose-library.html",
+          iconUrl:g.img||null,
+          _system:sys.system||"",_game:g.name||""});
+      });
+    });
+    filter();
+  }).catch(function(){});  // failed fetch must not break the page
+  // Recently played: fetched once per session and cached in RECENT[].
+  // Shape per entry: {nm, ds, ic, system, game, href} — deep-links to library (no ?q= support confirmed).
+  var RECENT=[], _recentLoaded=false;
+  function loadRecent(cb){
+    if(_recentLoaded){if(cb)cb();return;}
+    fetch("/recent.json",{cache:"no-store"}).then(r=>r.json()).then(d=>{
+      _recentLoaded=true;
+      var rows=Array.isArray(d.games)?d.games:[];
+      RECENT=rows.slice(0,8).map(function(r){
+        return{nm:r.name||r.game||"",ds:(r.sysname||r.system||""),ic:"gamepad-2",
+          href:"gose-library.html",
+          iconUrl:r.img||null,
+          _system:r.system||"",_game:r.game||""};
+      });
+      if(cb)cb();
+    }).catch(function(){_recentLoaded=true;if(cb)cb();});
+  }
+  // Windows-Start-style search: apps + Settings pages + a Files search action + Games + Recently Played
   const SETTINGS=[["Display","display"],["Sound & audio","sound"],["Network & Wi-Fi","net"],
     ["Wallpaper & Personalization","personalize"],["Time & Language","time"],["Power & Battery","power"],
     ["Privacy & Security","privacy"],["Accounts","accounts"],["About this device","about"],["Live wallpaper","personalize"]];
@@ -153,13 +202,38 @@
   let lastQ=null;
   function filter(){const raw=$("q").value.trim(), q=raw.toLowerCase();
     const qChanged=(q!==lastQ); lastQ=q;
-    if(!q){shown=APPS.slice();foc=qChanged?0:Math.min(foc,shown.length-1);$("ph").textContent="ALL APPS";render();return;}
+    if(!q){
+      // Empty query: all apps immediately, then add recently played when the fetch resolves.
+      function _renderEmpty(){
+        shown=APPS.slice().concat(RECENT);
+        foc=qChanged?0:Math.min(foc,shown.length-1);
+        var appsIdx=APPS.map(function(_,i){return i;});
+        var recentIdx=RECENT.map(function(_,i){return APPS.length+i;});
+        _groups=[{label:"ALL APPS",items:appsIdx}];
+        if(RECENT.length)_groups.push({label:"RECENTLY PLAYED",items:recentIdx});
+        render();
+      }
+      // Render APPS synchronously so the page isn't blank during the fetch.
+      _renderEmpty();
+      if(!_recentLoaded)loadRecent(_renderEmpty);
+      return;
+    }
     const apps=APPS.filter(a=>a.nm.toLowerCase().includes(q)||a.ds.toLowerCase().includes(q));
     const sets=SETTINGS.filter(s=>s[0].toLowerCase().includes(q)||("settings".includes(q)))
       .map(s=>({nm:s[0],ds:"Settings",ic:"settings",href:"gose-settings.html#"+s[1]}));
     const files=[{nm:'Search Files for "'+raw+'"',ds:"Open in Files",ic:"folder",href:"gose-files.html"}];
-    shown=apps.concat(sets).concat(files);foc=qChanged?0:Math.min(foc,shown.length-1);
-    $("ph").textContent="RESULTS — "+(apps.length+sets.length);render();}
+    const games=GAMES.filter(g=>g.nm.toLowerCase().includes(q)||g.ds.toLowerCase().includes(q))
+      .slice(0,12)
+      .map(function(g){return Object.assign({},g,{href:"gose-library.html?q="+encodeURIComponent(raw)});});
+    // Build flat shown[] with group index map for render()
+    var appItems=apps.concat(sets).concat(files);
+    shown=appItems.concat(games);
+    foc=qChanged?0:Math.min(foc,shown.length-1);
+    var appGroupIdx=appItems.map(function(_,i){return i;});
+    var gameGroupIdx=games.map(function(_,i){return appItems.length+i;});
+    _groups=[{label:"RESULTS — "+(apps.length+sets.length),items:appGroupIdx}];
+    if(games.length)_groups.push({label:"GAMES",items:gameGroupIdx});
+    render();}
   function move(d){if(!shown.length)return;foc=(foc+d+shown.length)%shown.length;render();}
   $("q").addEventListener("input",filter);
   document.querySelectorAll("[data-pw]").forEach(b=>b.onclick=()=>{
@@ -180,7 +254,7 @@
   // would be a SECOND path also calling move()/launch() — on any build where
   // getGamepads is live (Chromium / a libmanette WebKit) that double-fires, moving
   // the grid TWO cells per press. Keydown above is the single source of truth.
-  render(); loadInstalled(); setInterval(loadInstalled, 8000);
+  filter(); loadInstalled(); setInterval(loadInstalled, 8000);
   (function(){const hq=(location.hash.match(/q=([^&]+)/)||[])[1]; if(hq){$("q").value=decodeURIComponent(hq);filter();}})();
 </script>
 <script src="assets/a11y.js"></script>
