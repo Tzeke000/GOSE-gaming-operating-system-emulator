@@ -151,6 +151,7 @@
 <script src="assets/icons.js"></script>
 <script src="assets/sound.js"></script>
 <script src="assets/cursor.js"></script>
+<script src="assets/owner-confirm.js"></script>
 <script>
 document.documentElement.dataset.theme = localStorage.getItem("gose-theme") || "onyx";
 
@@ -353,7 +354,11 @@ function doRestoreSaves(path, file){
     `Restore all saves from "${file}"? This will overwrite matching save files. Games not in the archive are untouched.`,
     async()=>{
       toast("Restoring…");
-      const r=await api("POST","/saves/import",{archive_path:path});
+      // Owner-gated (server requires owner proof — import overwrites saves). Route through the
+      // hold-✕ confirm when available; the server still enforces the gate if owner-confirm.js isn't.
+      const r=(window.GOSE_OWNER&&GOSE_OWNER.ownerPost)
+        ? await GOSE_OWNER.ownerPost("/saves/import",{archive_path:path},"Restore saves — overwrites matching files")
+        : await api("POST","/saves/import",{archive_path:path});
       if(r.ok) toast(`Restored ${r.members} member${r.members!==1?"s":""} from ${r.file}`);
       else toast("Restore failed: "+r.error,true);
     });

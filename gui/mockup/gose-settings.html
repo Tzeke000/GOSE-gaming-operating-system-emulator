@@ -99,6 +99,7 @@
 <script src="assets/icons.js"></script>
 <script src="assets/sound.js"></script>
 <script src="assets/cursor.js"></script>
+<script src="assets/owner-confirm.js"></script>
 <script>
   document.documentElement.dataset.theme=localStorage.getItem("gose-theme")||"onyx";
   const THEMES=["onyx","midnight","neon","aurora"];
@@ -450,6 +451,15 @@
     try{const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify(body||{})});return await r.json();}catch(e){return null;}
   }
+  // Owner-gated POST: routes through owner-confirm.js (hold-✕ presence). The server gates these
+  // routes too, so the plain-postJSON fallback (no owner-confirm.js loaded) is still safe — it
+  // just won't auto-prompt for the hold. Used for privacy/security toggles (owner-only).
+  async function ownerPostJSON(url,body,summary){
+    try{
+      if(window.GOSE_OWNER&&GOSE_OWNER.ownerPost) return await GOSE_OWNER.ownerPost(url,body||{},summary||"");
+      return await postJSON(url,body);
+    }catch(e){return null;}
+  }
   async function doSys(r){
     if(r.op==="backup"){
       showToast("Backing up…");
@@ -558,17 +568,17 @@
     else if(r.apply==="fps"){const on=(r.i===1);post("/game/fps",{on});  // v:["Off","On"]
       showToast("FPS counter: "+(on?"On — shows next game launch":"Off"));}
     else if(r.apply==="cap"){(async()=>{const v=["ask","always","never"][r.i||0];
-      const x=await postJSON("/privacy",{screen_capture:v});
+      const x=await ownerPostJSON("/privacy",{screen_capture:v},"Change screen-capture privacy");
       showToast((x&&x.ok)?("Screen capture: "+r.v[r.i]+(v==="never"?" — captures & replay buffer blocked":"")):"Screen capture: failed");})();}
-    else if(r.apply==="boxart"){(async()=>{const x=await postJSON("/privacy",{boxart_scrape:r.i===1});
+    else if(r.apply==="boxart"){(async()=>{const x=await ownerPostJSON("/privacy",{boxart_scrape:r.i===1},"Change cover-art download setting");
       showToast((x&&x.ok)?("Cover art download: "+r.v[r.i]):"Cover art: failed");})();}
-    else if(r.apply==="diag"){(async()=>{const x=await postJSON("/privacy",{diagnostics:r.i===1});
+    else if(r.apply==="diag"){(async()=>{const x=await ownerPostJSON("/privacy",{diagnostics:r.i===1},"Change diagnostics setting");
       showToast((x&&x.ok)?("Diagnostics: "+r.v[r.i]+" — GOSE sends nothing today"):"Diagnostics: failed");})();}
     // #60 QR share privacy toggle
-    else if(r.apply==="share_qr"){(async()=>{const x=await postJSON("/privacy",{share_qr:r.i===1});
+    else if(r.apply==="share_qr"){(async()=>{const x=await ownerPostJSON("/privacy",{share_qr:r.i===1},"Change QR-share setting");
       showToast((x&&x.ok)?("QR share: "+r.v[r.i]+(r.i===0?" — links won't be created":"")):"QR share: failed");})();}
     // #73 friends/presence toggle
-    else if(r.apply==="friends_presence"){(async()=>{const x=await postJSON("/privacy",{friends_presence:r.i===1});
+    else if(r.apply==="friends_presence"){(async()=>{const x=await ownerPostJSON("/privacy",{friends_presence:r.i===1},"Change device-presence setting");
       showToast((x&&x.ok)?("Device presence: "+r.v[r.i]+(r.i===0?" — devices won't be discovered":"")):"Device presence: failed");})();}
     // #57 sound pack picker — applies live, server-syncs the key so it persists across devices
     else if(r.apply==="snd_pack"){

@@ -11769,6 +11769,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                     payload.get("system", ""), payload.get("game", ""),
                     payload.get("dest")))
             if route == "/saves/import":
+                # Owner-gate: import OVERWRITES existing save files (destructive). Symmetric with
+                # /system/backup and /saves/backup's destructive siblings. Path handling itself is
+                # safe (realpath-confined + member-validated) but an unauthenticated loopback caller
+                # must not be able to clobber the owner's saves. (security finding #3, 2026-06-17)
+                if not _owner_ok(payload):
+                    return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                       "error": "owner proof required to import (overwrite) saves"})
                 system = payload.get("system")
                 ap = payload.get("archive_path") or payload.get("path")
                 if system:
@@ -12268,6 +12275,14 @@ class H(http.server.SimpleHTTPRequestHandler):
             if route == "/ui/prefs":
                 return self._json(ui_prefs_set(payload))
             if route == "/privacy":
+                # Owner-gate: privacy toggles are device-owner settings — screen_capture="always"
+                # disables the capture-consent guard, friends_presence exposes the device on the
+                # tailnet, diagnostics/share_qr/boxart leak/transmit. A guest/child/local page must
+                # not flip them. OOBE applies privacy via oobe_complete -> _apply_oobe_privacy (not
+                # this route), so no pre-OOBE carve-out is needed here. (security finding #2, 2026-06-17)
+                if not _owner_ok(payload):
+                    return self._json({"ok": False, "code": "ERR_NOT_OWNER",
+                                       "error": "owner proof required to change privacy settings"})
                 return self._json(privacy_set(payload))
             if route == "/sys/ssh":
                 # legacy toggle: a STATE change is owner-only now (docs/31 SB-1) — closes the
