@@ -608,7 +608,12 @@
     if(s.id==="ready") runFinale();
     // live-capture text fields so the required-account gate updates as you type (incl. via the OSK)
     [].slice.call(card.querySelectorAll("input[data-field]")).forEach(function(inp){
-      inp.addEventListener("input", function(){ captureInputs(); refreshGate(); }); });
+      inp.addEventListener("input", function(){
+        // PIN is digits-only, max 8 — strip anything else IN PLACE so a stray non-digit
+        // (e.g. a leaked bracket keysym, or a letter from a physical keyboard) can never
+        // silently invalidate the PIN. Defense-in-depth alongside the R1/L1 fix above.
+        if(inp.dataset.field==="pin"){ var dv=inp.value.replace(/\D/g,"").slice(0,8); if(dv!==inp.value) inp.value=dv; }
+        captureInputs(); refreshGate(); }); });
     // PIN-XOR-password: when the user types in one credential field, disable+clear the other
     // so the exclusivity is visually obvious and both can never be set simultaneously.
     if(s.id==="account"){
@@ -1307,8 +1312,17 @@
 
   // ---- keyboard (the pad-nav daemon synthesizes these in the kiosk) ----
   document.addEventListener("keydown", function(e){
-    if(oskVisible()) return;      // the on-screen keyboard owns input while it is open
     var k=e.key;
+    if(oskVisible()){
+      // The OSK owns typing/arrows/Enter while it is open — BUT R1/L1 stay the global
+      // step accelerators (footer: "R1 ▷ Continue … from anywhere"). preventDefault is
+      // REQUIRED: pad-nav synthesizes R1/L1 as the ']' / '[' keysyms, and without this
+      // they leak into the focused input — a stray ']' corrupted the 8-digit PIN, so
+      // Continue then failed with "PIN must be exactly 8 digits" and setup got stuck.
+      if(k==="]"||k==="PageDown"){ next(); e.preventDefault(); }
+      else if(k==="["||k==="PageUp"){ back(); e.preventDefault(); }
+      return;
+    }
     if(k==="ArrowRight") move("right");
     else if(k==="ArrowLeft") move("left");
     else if(k==="ArrowDown"){ cancelHold(); if(!accountMove(1)) move("down"); }
